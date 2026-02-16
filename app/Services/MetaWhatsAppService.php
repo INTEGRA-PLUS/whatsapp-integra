@@ -46,6 +46,22 @@ class MetaWhatsAppService
         ]);
     }
 
+    public function sendTemplate(string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
+    {
+        return $this->sendRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'to' => $to,
+            'type' => 'template',
+            'template' => [
+                'name' => $templateName,
+                'language' => [
+                    'code' => $languageCode
+                ],
+                'components' => $components
+            ]
+        ]);
+    }
+
     public function sendDocument(string $phoneNumberId, string $to, string $documentUrl, string $filename = '')
     {
         return $this->sendRequest($phoneNumberId, [
