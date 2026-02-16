@@ -249,4 +249,57 @@ class MessageApiController extends Controller
             'wamid' => $message->wamid
         ]);
     }
+
+    public function getConversations(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if (!$instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $perPage = $request->query('per_page', 20);
+        
+        $conversations = WhatsAppConversation::where('instance_id', $instance->id)
+            ->orderBy('last_message_at', 'desc')
+            ->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $conversations->items(),
+            'meta' => [
+                'current_page' => $conversations->currentPage(),
+                'last_page' => $conversations->lastPage(),
+                'per_page' => $conversations->perPage(),
+                'total' => $conversations->total()
+            ]
+        ]);
+    }
+
+    public function getMessages(Request $request, $conversationId)
+    {
+        $instance = $this->validateInstance($request);
+        if (!$instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $conversation = WhatsAppConversation::where('instance_id', $instance->id)
+            ->findOrFail($conversationId);
+
+        $perPage = $request->query('per_page', 50);
+
+        $messages = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->orderBy('sent_at', 'desc')
+            ->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $messages->items(),
+            'meta' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total()
+            ]
+        ]);
+    }
 }

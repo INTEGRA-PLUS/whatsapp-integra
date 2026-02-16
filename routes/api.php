@@ -12,4 +12,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/messages/send', [MessageApiController::class, 'sendMessage']);
     Route::post('/messages/template', [MessageApiController::class, 'sendTemplate']);
     Route::post('/messages/register', [MessageApiController::class, 'registerMessage']);
+    
+    Route::get('/conversations', [MessageApiController::class, 'getConversations']);
+    Route::get('/conversations/{id}/messages', [MessageApiController::class, 'getMessages']);
 });
