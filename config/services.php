@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'meta' => [
+        'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
+        'access_token' => env('ACCESS_TOKEN_META'),
+        'app_secret' => env('META_APP_SECRET'),
+        'api_version' => env('META_API_VERSION', 'v21.0'),
+    ],
+
 ];

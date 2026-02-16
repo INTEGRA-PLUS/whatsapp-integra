@@ -20,9 +20,9 @@ class WhatsAppWebhookController extends Controller
 
     public function verify(Request $request)
     {
-        $mode = $request->query('hub_mode');
-        $token = $request->query('hub_verify_token');
-        $challenge = $request->query('hub_challenge');
+        $mode = $request->input('hub_mode');
+        $token = $request->input('hub_verify_token');
+        $challenge = $request->input('hub_challenge');
 
         $verifyToken = config('services.meta.webhook_verify_token');
 
