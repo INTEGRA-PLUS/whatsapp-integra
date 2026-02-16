@@ -52,4 +52,14 @@ Route::middleware('auth')->group(function () {
     });
     
     Route::post('/stop-impersonating', [App\Http\Controllers\MasterController::class, 'stopImpersonating'])->name('stop-impersonating');
+
+    // API routes for Chat (moved from api.php to share session)
+    Route::prefix('api/chat')->group(function () {
+        Route::get('/conversations', [ChatController::class, 'conversations']);
+        Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
+        Route::get('/updates', [ChatController::class, 'updates']);
+        Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
+        Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
+        Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
+    });
 });
