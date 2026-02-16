@@ -20,11 +20,26 @@ class WhatsAppWebhookController extends Controller
 
     public function verify(Request $request)
     {
-        $mode = $request->input('hub_mode');
-        $token = $request->input('hub_verify_token');
-        $challenge = $request->input('hub_challenge');
+        // Try both underscore and dot notation (standard vs Laravel conversion)
+        $mode = $request->query('hub_mode') ?? $request->query('hub.mode');
+        $token = $request->query('hub_verify_token') ?? $request->query('hub.verify_token');
+        $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge');
 
         $verifyToken = config('services.meta.webhook_verify_token');
+        
+        // Log all possible sources of input for debugging
+        Log::info('🔍 Verificando Webhook (Debug Extendido)', [
+            'method' => $request->method(),
+            'full_url' => $request->fullUrl(),
+            'query_params' => $request->query(),
+            'all_input' => $request->all(),
+            'raw_query_string' => $request->server('QUERY_STRING'), // Critical check for Nginx/Apache config
+            'extracted' => [
+                'mode' => $mode,
+                'token' => $token,
+                'expected' => $verifyToken
+            ]
+        ]);
 
         if ($mode === 'subscribe' && $token === $verifyToken) {
             Log::info('✅ Webhook verificado exitosamente');
@@ -33,7 +48,8 @@ class WhatsAppWebhookController extends Controller
 
         Log::warning('❌ Intento de verificación fallido', [
             'mode' => $mode,
-            'token' => $token
+            'token' => $token,
+            'expected' => $verifyToken
         ]);
 
         return response('Forbidden', 403);
