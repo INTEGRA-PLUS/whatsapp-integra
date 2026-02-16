@@ -49,7 +49,10 @@ return [
 
         'public_uploads' => [
             'driver' => 'local',
-            'root' => public_path(),
+             // Force cPanel path if available, otherwise fallback to public_path()
+            'root' => isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT']) 
+                     ? $_SERVER['DOCUMENT_ROOT'] 
+                     : (file_exists('/home/intesoga/whatsapp.integracolombia.com') ? '/home/intesoga/whatsapp.integracolombia.com' : public_path()),
             'url' => env('APP_URL'),
             'visibility' => 'public',
             'throw' => false,

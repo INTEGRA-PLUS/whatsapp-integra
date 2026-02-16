@@ -74,6 +74,10 @@ Route::get('/debug-path-test', function () {
     
     // Intentar escribir un archivo de prueba
     try {
+        // Clear config cache to ensure new filesystem config is loaded
+        Artisan::call('optimize:clear');
+        $info['cache_cleared'] = "Cache limpiada (optimize:clear)";
+
         $testFile = 'whatsapp/media/test_debug.txt';
         $content = "Prueba de escritura: " . now();
         
