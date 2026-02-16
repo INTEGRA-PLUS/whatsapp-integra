@@ -9,6 +9,16 @@ use App\Http\Controllers\WhatsAppWebhookController;
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
 Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook']);
 
+// Utilidad para servidor compartido (cPanel)
+Route::get('/run-storage-link', function () {
+    try {
+        Artisan::call('storage:link');
+        return 'Symlink creado correctamente: ' . Artisan::output();
+    } catch (\Exception $e) {
+        return 'Error al crear symlink: ' . $e->getMessage();
+    }
+});
+
 // Auth routes
 Route::get('/login', function () {
     return view('auth.login');
