@@ -25,20 +25,29 @@ class WhatsAppWebhookController extends Controller
         $token = $request->query('hub_verify_token') ?? $request->query('hub.verify_token');
         $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge');
 
+        // Fallback: Manually parse REQUEST_URI if server config strips query string
+        if (!$mode && $request->server('REQUEST_URI')) {
+            $queryString = parse_url($request->server('REQUEST_URI'), PHP_URL_QUERY);
+            if ($queryString) {
+                parse_str($queryString, $queryParams);
+                $mode = $queryParams['hub_mode'] ?? $queryParams['hub.mode'] ?? null;
+                $token = $queryParams['hub_verify_token'] ?? $queryParams['hub.verify_token'] ?? null;
+                $challenge = $queryParams['hub_challenge'] ?? $queryParams['hub.challenge'] ?? null;
+            }
+        }
+
         $verifyToken = config('services.meta.webhook_verify_token');
         
         // Log all possible sources of input for debugging
         Log::info('🔍 Verificando Webhook (Debug Extendido)', [
             'method' => $request->method(),
             'full_url' => $request->fullUrl(),
-            'query_params' => $request->query(),
-            'all_input' => $request->all(),
-            'raw_query_string' => $request->server('QUERY_STRING'), // Critical check for Nginx/Apache config
-            'extracted' => [
+            'request_uri' => $request->server('REQUEST_URI'), // Checking if this persists
+            'parsed_fallback' => [
                 'mode' => $mode,
-                'token' => $token,
-                'expected' => $verifyToken
-            ]
+                'token' => $token
+            ],
+            'expected' => $verifyToken
         ]);
 
         if ($mode === 'subscribe' && $token === $verifyToken) {
