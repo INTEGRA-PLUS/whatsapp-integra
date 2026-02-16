@@ -150,6 +150,22 @@
                                 <p v-if="msg.content" class="text-sm">@{{ msg.content }}</p>
                             </div>
 
+                            <div v-else-if="msg.type === 'template' || msg.type === 'document'" 
+                                :class="['flex items-center gap-3 rounded-lg p-3 mb-1 border shadow-inner transition hover:shadow-lg', 
+                                    msg.direction === 'outbound' ? 'bg-white bg-opacity-10 border-white border-opacity-20' : 'bg-gray-100 border-gray-200'
+                                ]"
+                            >
+                                <div :class="['p-2 rounded-lg shadow-md', msg.direction === 'outbound' ? 'bg-white text-red-600' : 'bg-red-500 text-white']">
+                                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-bold text-sm">@{{ msg.type === 'template' ? 'Plantilla WhatsApp' : 'Archivo PDF' }}</p>
+                                    <p class="text-xs opacity-90 break-words">@{{ msg.content }}</p>
+                                </div>
+                            </div>
+
                             <div class="text-xs mt-1 flex items-center justify-end gap-1">
                                 <span>@{{ formatTime(msg.created_at) }}</span>
                                 <span v-if="msg.direction === 'outbound'">
