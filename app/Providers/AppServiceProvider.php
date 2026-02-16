@@ -11,17 +11,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Fix for cPanel: Check for sibling directory "whatsapp.integracolombia.com"
-        // This is necessary because the code is in "whatsapp-integra" and public is in "whatsapp.integracolombia.com"
-        $customPublicPath = base_path('../whatsapp.integracolombia.com');
+        // En cPanel, forzar la ruta pública correcta si estamos en el entorno de producción
+        $productionPublicPath = '/home/intesoga/whatsapp.integracolombia.com';
         
-        if (file_exists($customPublicPath)) {
-            $this->app->bind('path.public', function () use ($customPublicPath) {
-                return $customPublicPath;
+        if (file_exists($productionPublicPath)) {
+            $this->app->bind('path.public', function() use ($productionPublicPath) {
+                return $productionPublicPath;
             });
-        } elseif (isset($_SERVER['DOCUMENT_ROOT']) && !app()->runningInConsole()) {
-            // Fallback to DOCUMENT_ROOT if the specific folder isn't found
-            $this->app->bind('path.public', function () {
+        } elseif (isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT'])) {
+             // Fallback genérico para cPanel
+            $this->app->bind('path.public', function() {
                 return $_SERVER['DOCUMENT_ROOT'];
             });
         }
