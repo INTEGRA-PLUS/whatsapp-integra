@@ -65,6 +65,36 @@ Route::get('/run-storage-link', function () {
     return implode("<br>", $output);
 });
 
+// Debug para verificar rutas y permisos de escritura en cPanel
+Route::get('/debug-path-test', function () {
+    $info = [];
+    $info['document_root'] = $_SERVER['DOCUMENT_ROOT'] ?? 'N/A';
+    $info['public_path'] = public_path();
+    $info['disk_config'] = config('filesystems.disks.public_uploads');
+    
+    // Intentar escribir un archivo de prueba
+    try {
+        $testFile = 'whatsapp/media/test_debug.txt';
+        $content = "Prueba de escritura: " . now();
+        
+        $success = Storage::disk('public_uploads')->put($testFile, $content);
+        
+        if ($success) {
+            $fullPath = public_path($testFile);
+            $info['write_status'] = "✅ Éxito al escribir archivo";
+            $info['file_exists_check'] = file_exists($fullPath) ? "✅ El archivo existe físicamente en: $fullPath" : "❌ El archivo NO aparece donde debería";
+            $info['url_generated'] = Storage::disk('public_uploads')->url($testFile);
+        } else {
+            $info['write_status'] = "❌ Falló la escritura (Storage::put retornó false)";
+        }
+        
+    } catch (\Exception $e) {
+        $info['write_error'] = $e->getMessage();
+    }
+    
+    return $info;
+});
+
 // Auth routes
 Route::get('/login', function () {
     return view('auth.login');
