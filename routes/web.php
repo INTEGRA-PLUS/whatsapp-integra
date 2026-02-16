@@ -9,13 +9,29 @@ use App\Http\Controllers\WhatsAppWebhookController;
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
 Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook']);
 
-// Utilidad para servidor compartido (cPanel)
+// Utilidad para servidor compartido (cPanel) - Estructura personalizada
 Route::get('/run-storage-link', function () {
+    $targetFolder = storage_path('app/public');
+    $linkFolder = $_SERVER['DOCUMENT_ROOT'] . '/storage';
+
+    if (!file_exists($targetFolder)) {
+        return "El directorio de origen no existe: " . $targetFolder;
+    }
+
+    // Si existe el link o carpeta, intentar limpiarlo
+    if (file_exists($linkFolder)) {
+        if (is_link($linkFolder)) {
+            unlink($linkFolder);
+        } else {
+            return "Ya existe una carpeta 'storage' en " . $linkFolder . " que NO es un link. Por favor bórrala manualmente vía FTP/cPanel.";
+        }
+    }
+
     try {
-        Artisan::call('storage:link');
-        return 'Symlink creado correctamente: ' . Artisan::output();
+        symlink($targetFolder, $linkFolder);
+        return "✅ Enlace simbólico creado correctamente:<br><b>Origen (Archivos):</b> $targetFolder<br><b>Destino (Public):</b> $linkFolder";
     } catch (\Exception $e) {
-        return 'Error al crear symlink: ' . $e->getMessage();
+        return "❌ Error creando enlace: " . $e->getMessage();
     }
 });
 
