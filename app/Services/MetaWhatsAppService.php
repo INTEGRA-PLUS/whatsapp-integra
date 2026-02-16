@@ -98,10 +98,14 @@ class MetaWhatsAppService
 
             Storage::disk('public_uploads')->put($path, $mediaResponse->body());
 
+             // Fix permissions explicitly
+            chmod(public_path($path), 0644);
+
             return [
                 'filename' => $filename,
                 'path' => $path,
-                'url' => Storage::disk('public_uploads')->url($path),
+                // Force URL construction to match requirement
+                'url' => rtrim(config('app.url'), '/') . "/{$path}",
                 'mime_type' => $mimeType,
                 'size' => strlen($mediaResponse->body())
             ];
