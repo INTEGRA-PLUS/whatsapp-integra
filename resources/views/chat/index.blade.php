@@ -141,8 +141,12 @@
                         ]">
                             <p v-if="msg.type === 'text'" class="break-words">@{{ msg.content }}</p>
                             
-                            <div v-else-if="msg.type === 'image'">
-                                <img :src="msg.media_url" class="rounded mb-2 max-w-full">
+                            <div v-else-if="msg.type === 'image'" class="relative">
+                                <img 
+                                    :src="msg.media_url" 
+                                    class="rounded-lg mb-2 max-h-48 object-cover cursor-pointer hover:opacity-90 transition shadow-sm"
+                                    @click="openImageModal(msg.media_url)"
+                                >
                                 <p v-if="msg.content" class="text-sm">@{{ msg.content }}</p>
                             </div>
 
@@ -188,6 +192,17 @@
             </template>
         </div>
     </div>
+    <!-- Image Modal -->
+    <div v-if="selectedImage" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 p-4" @click="closeImageModal">
+        <div class="relative max-w-4xl w-full max-h-screen flex flex-col items-center justify-center">
+            <button class="absolute top-4 right-4 text-white hover:text-gray-300 z-50" @click="closeImageModal">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+            <img :src="selectedImage" class="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" @click.stop>
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -213,7 +228,8 @@ createApp({
             pollingFrequency: 10000,
             lastUpdateTimestamp: null,
             lastUpdate: 'Nunca',
-            isPolling: false
+            isPolling: false,
+            selectedImage: null // For modal
         }
     },
     
@@ -240,6 +256,16 @@ createApp({
     },
     
     methods: {
+        openImageModal(url) {
+            this.selectedImage = url;
+            document.body.style.overflow = 'hidden';
+        },
+        
+        closeImageModal() {
+            this.selectedImage = null;
+            document.body.style.overflow = '';
+        },
+        
         changeInstance() {
             this.stopPolling();
             this.conversations = [];
