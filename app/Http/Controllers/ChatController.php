@@ -222,8 +222,8 @@ class ChatController extends Controller
 
         $instance = $conversation->instance;
 
-        $path = $request->file('image')->store('whatsapp/outbound', 'public');
-        $imageUrl = url(Storage::url($path));
+        $path = $request->file('image')->store('whatsapp/outbound', 'public_uploads');
+        $imageUrl = Storage::disk('public_uploads')->url($path);
 
         $result = $this->metaService->sendImage(
             $instance->phone_number_id,

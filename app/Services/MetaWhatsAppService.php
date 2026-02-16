@@ -96,12 +96,12 @@ class MetaWhatsAppService
             $filename = uniqid('wa_') . '_' . time() . '.' . $extension;
             $path = "whatsapp/media/{$filename}";
 
-            Storage::disk('public')->put($path, $mediaResponse->body());
+            Storage::disk('public_uploads')->put($path, $mediaResponse->body());
 
             return [
                 'filename' => $filename,
                 'path' => $path,
-                'url' => Storage::disk('public')->url($path),
+                'url' => Storage::disk('public_uploads')->url($path),
                 'mime_type' => $mimeType,
                 'size' => strlen($mediaResponse->body())
             ];
