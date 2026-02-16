@@ -38,18 +38,6 @@ class WhatsAppWebhookController extends Controller
 
         $verifyToken = config('services.meta.webhook_verify_token');
         
-        // Log all possible sources of input for debugging
-        Log::info('🔍 Verificando Webhook (Debug Extendido)', [
-            'method' => $request->method(),
-            'full_url' => $request->fullUrl(),
-            'request_uri' => $request->server('REQUEST_URI'), // Checking if this persists
-            'parsed_fallback' => [
-                'mode' => $mode,
-                'token' => $token
-            ],
-            'expected' => $verifyToken
-        ]);
-
         if ($mode === 'subscribe' && $token === $verifyToken) {
             Log::info('✅ Webhook verificado exitosamente');
             return response($challenge, 200)->header('Content-Type', 'text/plain');
@@ -58,7 +46,7 @@ class WhatsAppWebhookController extends Controller
         Log::warning('❌ Intento de verificación fallido', [
             'mode' => $mode,
             'token' => $token,
-            'expected' => $verifyToken
+            'ip' => $request->ip()
         ]);
 
         return response('Forbidden', 403);
