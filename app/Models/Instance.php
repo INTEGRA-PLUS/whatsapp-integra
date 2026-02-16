@@ -19,8 +19,7 @@ class Instance extends Model
         'type',
         'status',
         'active',
-        'meta',
-        'api_token'
+        'meta'
     ];
 
     protected $casts = [

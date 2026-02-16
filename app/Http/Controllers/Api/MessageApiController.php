@@ -28,7 +28,7 @@ class MessageApiController extends Controller
             return null;
         }
 
-        return Instance::where('api_token', $token)
+        return Instance::where('phone_number_id', $token)
             ->where('active', true)
             ->first();
     }
