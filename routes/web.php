@@ -9,30 +9,60 @@ use App\Http\Controllers\WhatsAppWebhookController;
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
 Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook']);
 
-// Utilidad para servidor compartido (cPanel) - Estructura personalizada
+// Utilidad para servidor compartido (cPanel) - Estructura personalizada + Permisos
 Route::get('/run-storage-link', function () {
     $targetFolder = storage_path('app/public');
     $linkFolder = $_SERVER['DOCUMENT_ROOT'] . '/storage';
 
+    $output = [];
+
+    // 1. Crear directorios si no existen con permisos amplios
     if (!file_exists($targetFolder)) {
-        return "El directorio de origen no existe: " . $targetFolder;
+        mkdir($targetFolder, 0755, true);
+        $output[] = "Directorio creado: $targetFolder";
     }
 
-    // Si existe el link o carpeta, intentar limpiarlo
+    // 2. Revisar/Crear Symlink
     if (file_exists($linkFolder)) {
         if (is_link($linkFolder)) {
-            unlink($linkFolder);
+            $output[] = "El link ya existe.";
         } else {
-            return "Ya existe una carpeta 'storage' en " . $linkFolder . " que NO es un link. Por favor bórrala manualmente vía FTP/cPanel.";
+            return "ERROR: Ya existe una carpeta 'storage' que NO es un link.";
+        }
+    } else {
+        try {
+            symlink($targetFolder, $linkFolder);
+            $output[] = "✅ Link creado exitosamente.";
+        } catch (\Exception $e) {
+            return "❌ Error creando link: " . $e->getMessage();
         }
     }
 
+    // 3. INTENTO DE CORREGIR PERMISOS (Fix 403 Forbidden)
     try {
-        symlink($targetFolder, $linkFolder);
-        return "✅ Enlace simbólico creado correctamente:<br><b>Origen (Archivos):</b> $targetFolder<br><b>Destino (Public):</b> $linkFolder";
+        // Asegurar que la carpeta fisica tenga permisos de ejecución/lectura
+        chmod($targetFolder, 0755); 
+        $output[] = "Permisos carpeta root public: 0755 verificado.";
+
+        // Recorrer subcarpetas (whatsapp, media, etc)
+        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($targetFolder));
+        
+        foreach ($iterator as $item) {
+            if ($item->getBasename() == '..') continue; // Saltar padre
+            
+            if ($item->isDir()) {
+                chmod($item->getPathname(), 0755);
+            } else {
+                chmod($item->getPathname(), 0644);
+            }
+        }
+        $output[] = "✅ Permisos corregidos recursivamente (Dir: 755, Files: 644).";
+        
     } catch (\Exception $e) {
-        return "❌ Error creando enlace: " . $e->getMessage();
+        $output[] = "⚠️ No se pudieron cambiar todos los permisos: " . $e->getMessage();
     }
+
+    return implode("<br>", $output);
 });
 
 // Auth routes
