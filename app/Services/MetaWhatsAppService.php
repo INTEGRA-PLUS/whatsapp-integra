@@ -98,8 +98,11 @@ class MetaWhatsAppService
 
             Storage::disk('public_uploads')->put($path, $mediaResponse->body());
 
-             // Fix permissions explicitly
-            chmod(public_path($path), 0644);
+             // Fix permissions explicitly using the disk path
+            $fullPath = Storage::disk('public_uploads')->path($path);
+            if (file_exists($fullPath)) {
+                chmod($fullPath, 0644);
+            }
 
             return [
                 'filename' => $filename,

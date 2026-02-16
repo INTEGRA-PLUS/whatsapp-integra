@@ -84,9 +84,15 @@ Route::get('/debug-path-test', function () {
         $success = Storage::disk('public_uploads')->put($testFile, $content);
         
         if ($success) {
-            $fullPath = public_path($testFile);
+            // Check explicit path
+            $correctPath = '/home/intesoga/whatsapp.integracolombia.com/whatsapp/media/test_debug.txt';
             $info['write_status'] = "✅ Éxito al escribir archivo";
-            $info['file_exists_check'] = file_exists($fullPath) ? "✅ El archivo existe físicamente en: $fullPath" : "❌ El archivo NO aparece donde debería";
+            $info['file_check_correct_path'] = file_exists($correctPath) ? "✅ EXITOSO: Archivo encontrado en: $correctPath" : "❌ FALLÓ: Archivo NO encontrado en: $correctPath";
+            
+            // Check wrong path just in case
+            $wrongPath = public_path($testFile);
+            $info['file_check_wrong_path'] = file_exists($wrongPath) ? "⚠️ ADVERTENCIA: Archivo encontrado en la ruta interna (incorrecta): $wrongPath" : "✅ Correcto: Archivo NO está en la ruta interna";
+            
             $info['url_generated'] = Storage::disk('public_uploads')->url($testFile);
         } else {
             $info['write_status'] = "❌ Falló la escritura (Storage::put retornó false)";
