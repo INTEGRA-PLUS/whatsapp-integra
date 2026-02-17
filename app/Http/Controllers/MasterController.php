@@ -43,6 +43,10 @@ class MasterController extends Controller
         }
 
         $companies = $query->orderBy('created_at', 'desc')->paginate(20);
+
+        if ($request->ajax()) {
+            return view('master.partials.companies-table', compact('companies'));
+        }
         
         return view('master.index', compact('companies'));
     }
