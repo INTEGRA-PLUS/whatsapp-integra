@@ -9,12 +9,40 @@ use Illuminate\Support\Facades\Auth;
 
 class MasterController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $this->authorizeMaster();
-        $companies = Company::with(['users' => function($query) {
-            $query->where('role', 'admin')->where('active', true);
-        }])->withCount(['users', 'instances'])->get();
+
+        $query = Company::with(['users' => function($query) {
+            $query->where('role', 'admin');
+        }])->withCount(['users', 'instances']);
+
+        // Search Scope
+        if ($request->has('search') && $request->search != '') {
+            $searchTerm = $request->search;
+            $query->where(function($q) use ($searchTerm) {
+                $q->where('name', 'like', "%{$searchTerm}%")
+                  ->orWhere('email', 'like', "%{$searchTerm}%")
+                  ->orWhereHas('users', function($q) use ($searchTerm) {
+                      $q->where('role', 'admin')
+                        ->where(function($subQ) use ($searchTerm) {
+                            $subQ->where('name', 'like', "%{$searchTerm}%")
+                                 ->orWhere('email', 'like', "%{$searchTerm}%");
+                        });
+                  });
+            });
+        }
+
+        // Status Filter
+        if ($request->has('status') && $request->status !== null) {
+            if ($request->status == 'active') {
+                $query->where('active', true);
+            } elseif ($request->status == 'inactive') {
+                $query->where('active', false);
+            }
+        }
+
+        $companies = $query->orderBy('created_at', 'desc')->paginate(20);
         
         return view('master.index', compact('companies'));
     }

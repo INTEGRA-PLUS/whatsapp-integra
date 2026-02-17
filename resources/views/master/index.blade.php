@@ -5,10 +5,10 @@
 @section('content')
 <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
     <div class="px-4 py-6 sm:px-0">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-gray-900">Panel de Administración Master</h2>
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4 sm:mb-0">Panel de Administración Master</h2>
             <button onclick="document.getElementById('createCompanyModal').classList.remove('hidden')" 
-                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">
+                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition duration-200">
                 + Nueva Empresa
             </button>
         </div>
@@ -19,50 +19,137 @@
         </div>
         @endif
 
-        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            @foreach($companies as $company)
-            <div class="bg-white overflow-hidden shadow rounded-lg transform transition hover:scale-105">
-                <div class="px-4 py-5 sm:p-6">
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0 bg-indigo-500 rounded-md p-3">
-                            <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                            </svg>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                            <dt class="text-sm font-medium text-gray-500 truncate">
-                                {{ $company->name }}
-                            </dt>
-                            <dd class="flex items-baseline">
-                                <div class="text-2xl font-semibold text-gray-900">
-                                    {{ $company->users_count }}
-                                </div>
-                                <div class="ml-2 flex items-baseline text-sm font-semibold text-green-600">
-                                    <span class="sr-only">Usuarios</span>
-                                    Usuarios
-                                </div>
-                            </dd>
-                        </div>
-                    </div>
+        @if(session('error'))
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            {{ session('error') }}
+        </div>
+        @endif
+
+        <!-- Search & Filter Form -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6">
+            <form action="{{ route('master.index') }}" method="GET" class="flex flex-col sm:flex-row gap-4">
+                <div class="flex-1">
+                    <label for="search" class="sr-only">Buscar</label>
+                    <input type="text" name="search" id="search" placeholder="Buscar por empresa, email o admin..." 
+                        value="{{ request('search') }}"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
                 </div>
-                <div class="bg-gray-50 px-4 py-4 sm:px-6">
-                    <div class="text-sm flex justify-between items-center space-x-2">
-                        <span class="text-gray-500">{{ $company->instances_count }} Instancias</span>
-                        <div class="flex space-x-2">
-                            <button onclick='openEditModal(@json($company))' class="font-medium text-yellow-600 hover:text-yellow-500">
-                                Editar
-                            </button>
-                            <form action="{{ route('master.impersonate', $company->id) }}" method="POST" class="inline">
-                                @csrf
-                                <button type="submit" class="font-medium text-indigo-600 hover:text-indigo-500">
-                                    Administrar <span aria-hidden="true">&rarr;</span>
-                                </button>
-                            </form>
-                        </div>
-                    </div>
+                <div class="w-full sm:w-48">
+                    <label for="status" class="sr-only">Estado</label>
+                    <select name="status" id="status" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Todos los estados</option>
+                        <option value="active" {{ request('status') == 'active' ? 'selected' : '' }}>Activos</option>
+                        <option value="inactive" {{ request('status') == 'inactive' ? 'selected' : '' }}>Inactivos</option>
+                    </select>
                 </div>
+                <button type="submit" class="bg-gray-800 text-white px-6 py-2 rounded-md hover:bg-gray-700 transition duration-200">
+                    Buscar
+                </button>
+                @if(request()->has('search') || request()->has('status'))
+                    <a href="{{ route('master.index') }}" class="bg-gray-200 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-300 transition duration-200 flex items-center justify-center">
+                        Limpiar
+                    </a>
+                @endif
+            </form>
+        </div>
+
+        <!-- Companies Table -->
+        <div class="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Empresa
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Administrador
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Estadísticas
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Estado
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Acciones
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        @forelse($companies as $company)
+                        <tr class="hover:bg-gray-50 transition duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-lg">
+                                        {{ substr($company->name, 0, 1) }}
+                                    </div>
+                                    <div class="ml-4">
+                                        <div class="text-sm font-medium text-gray-900">{{ $company->name }}</div>
+                                        <div class="text-sm text-gray-500">{{ $company->email }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                @if($company->users->isNotEmpty())
+                                    <div class="text-sm text-gray-900">{{ $company->users->first()->name }}</div>
+                                    <div class="text-sm text-gray-500">{{ $company->users->first()->email }}</div>
+                                @else
+                                    <span class="text-sm text-gray-400 italic">Sin administrador</span>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-sm text-gray-900 flex flex-col gap-1">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 w-fit">
+                                        {{ $company->users_count }} Usuarios
+                                    </span>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 w-fit">
+                                        {{ $company->instances_count }} Instancias
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ $company->active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
+                                    {{ $company->active ? 'Activo' : 'Inactivo' }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <div class="flex justify-end space-x-3">
+                                    <button onclick='openEditModal(@json($company))' class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 px-3 py-1 rounded hover:bg-indigo-100 transition">
+                                        Editar
+                                    </button>
+                                    <form action="{{ route('master.impersonate', $company->id) }}" method="POST" class="inline">
+                                        @csrf
+                                        <button type="submit" class="text-gray-600 hover:text-gray-900 bg-gray-100 px-3 py-1 rounded hover:bg-gray-200 transition" title="Administrar como este usuario">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                                            </svg>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="5" class="px-6 py-10 text-center text-gray-500">
+                                <div class="flex flex-col items-center justify-center">
+                                    <svg class="h-12 w-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <p class="text-lg">No se encontraron empresas.</p>
+                                    <p class="text-sm">Intenta ajustar los filtros de búsqueda.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
-            @endforeach
+            
+            <!-- Pagination -->
+            <div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+                {{ $companies->appends(request()->query())->links() }}
+            </div>
         </div>
     </div>
 </div>
