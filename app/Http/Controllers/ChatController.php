@@ -60,7 +60,7 @@ class ChatController extends Controller
             ->orderByDesc('last_message_at')
             ->paginate(50);
 
-        return response()->json($conversations);
+        return response()->json($this->sanitizeUtf8($conversations->toArray()));
     }
 
     public function updates(Request $request)
@@ -103,12 +103,12 @@ class ChatController extends Controller
                 ->get();
         }
 
-        return response()->json([
+        return response()->json($this->sanitizeUtf8([
             'conversations' => $updatedConversations,
             'new_messages' => $newMessages,
             'updated_statuses' => $updatedStatuses,
             'timestamp' => now()->toIso8601String()
-        ]);
+        ]));
     }
 
     public function messages($conversationId)
@@ -129,11 +129,11 @@ class ChatController extends Controller
 
         $conversation->markAsRead();
 
-        return response()->json([
+        return response()->json($this->sanitizeUtf8([
             'conversation' => $conversation,
             'messages' => $messages,
             'timestamp' => now()->toIso8601String()
-        ]);
+        ]));
     }
 
     public function sendMessage(Request $request, $conversationId)
@@ -187,11 +187,11 @@ class ChatController extends Controller
                 'last_message_at' => now()
             ]);
 
-            return response()->json([
+            return response()->json($this->sanitizeUtf8([
                 'success' => true,
                 'message' => 'Mensaje enviado',
                 'data' => $message->load('sender')
-            ]);
+            ]));
         }
 
         return response()->json([
@@ -250,11 +250,11 @@ class ChatController extends Controller
                 'last_message_at' => now()
             ]);
 
-            return response()->json([
+            return response()->json($this->sanitizeUtf8([
                 'success' => true,
                 'message' => 'Imagen enviada',
                 'data' => $message->load('sender')
-            ]);
+            ]));
         }
 
         return response()->json([
@@ -280,5 +280,35 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Conversación cerrada'
         ]);
+    }
+
+    /**
+     * Recursively sanitize array data to ensure valid UTF-8.
+     *
+     * @param mixed $input
+     * @return mixed
+     */
+    private function sanitizeUtf8($input)
+    {
+        if (is_string($input)) {
+            return mb_convert_encoding($input, 'UTF-8', 'UTF-8');
+        } elseif (is_object($input)) {
+            // Convert objects to arrays for sanitization if they have toArray method
+            if (method_exists($input, 'toArray')) {
+                $input = $input->toArray();
+            } else {
+                $input = (array) $input;
+            }
+            foreach ($input as &$value) {
+                $value = $this->sanitizeUtf8($value);
+            }
+            unset($value);
+        } elseif (is_array($input)) {
+            foreach ($input as &$value) {
+                $value = $this->sanitizeUtf8($value);
+            }
+            unset($value);
+        }
+        return $input;
     }
 }
