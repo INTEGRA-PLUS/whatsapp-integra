@@ -55,6 +55,34 @@ class InstanceController extends Controller
             ->with('success', 'Instancia creada exitosamente');
     }
 
+    public function update(Request $request, $id)
+    {
+        $user = auth()->user();
+        
+        $instance = Instance::where('id', $id)
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'phone_number_id' => 'required|string',
+            'waba_id' => 'required|string',
+            'display_phone_number' => 'nullable|string',
+            'active' => 'boolean'
+        ]);
+
+        $instance->update([
+            'name' => $request->name,
+            'phone_number_id' => $request->phone_number_id,
+            'waba_id' => $request->waba_id,
+            'display_phone_number' => $request->display_phone_number,
+            'active' => $request->has('active') ? $request->active : 0
+        ]);
+
+        return redirect()->route('instances.index')
+            ->with('success', 'Instancia actualizada exitosamente');
+    }
+
     public function destroy($id)
     {
         $user = auth()->user();

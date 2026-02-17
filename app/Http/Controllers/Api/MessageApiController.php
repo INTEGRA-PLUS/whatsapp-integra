@@ -263,9 +263,15 @@ class MessageApiController extends Controller
             ->orderBy('last_message_at', 'desc')
             ->paginate($perPage);
 
+        $items = $conversations->items();
+        // Ensure items are arrays for sanitization
+        $data = array_map(function($item) {
+            return $item->toArray();
+        }, $items);
+
         return response()->json([
             'success' => true,
-            'data' => $conversations->items(),
+            'data' => $this->sanitizeUtf8($data),
             'meta' => [
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
@@ -291,9 +297,14 @@ class MessageApiController extends Controller
             ->orderBy('sent_at', 'desc')
             ->paginate($perPage);
 
+        $items = $messages->items();
+        $data = array_map(function($item) {
+            return $item->toArray();
+        }, $items);
+
         return response()->json([
             'success' => true,
-            'data' => $messages->items(),
+            'data' => $this->sanitizeUtf8($data),
             'meta' => [
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
@@ -301,5 +312,24 @@ class MessageApiController extends Controller
                 'total' => $messages->total()
             ]
         ]);
+    }
+
+    /**
+     * Recursively sanitize array data to ensure valid UTF-8.
+     *
+     * @param mixed $input
+     * @return mixed
+     */
+    private function sanitizeUtf8($input)
+    {
+        if (is_string($input)) {
+            return mb_convert_encoding($input, 'UTF-8', 'UTF-8');
+        } elseif (is_array($input)) {
+            foreach ($input as &$value) {
+                $value = $this->sanitizeUtf8($value);
+            }
+            unset($value);
+        }
+        return $input;
     }
 }

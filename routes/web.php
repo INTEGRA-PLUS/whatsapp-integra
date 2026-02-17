@@ -137,7 +137,7 @@ Route::post('/logout', function (Illuminate\Http\Request $request) {
 Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
-    Route::resource('instances', InstanceController::class)->only(['index', 'store', 'destroy']);
+    Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
 
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {
