@@ -150,6 +150,15 @@
                                 <p v-if="msg.content" class="text-sm">@{{ msg.content }}</p>
                             </div>
 
+                            <div v-else-if="msg.type === 'audio'" class="min-w-[250px]">
+                                <audio controls :src="msg.media_url" class="w-full"></audio>
+                            </div>
+
+                            <div v-else-if="msg.type === 'video'" class="relative">
+                                <video controls :src="msg.media_url" class="rounded-lg mb-2 max-h-60 max-w-full"></video>
+                                <p v-if="msg.content" class="text-sm">@{{ msg.content }}</p>
+                            </div>
+
                             <div v-else-if="msg.type === 'template' || msg.type === 'document'" 
                                 :class="['flex items-center gap-3 rounded-lg p-3 mb-1 border shadow-inner transition hover:shadow-lg', 
                                     msg.direction === 'outbound' ? 'bg-white bg-opacity-10 border-white border-opacity-20' : 'bg-gray-100 border-gray-200'
@@ -161,8 +170,11 @@
                                     </svg>
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="font-bold text-sm">@{{ msg.type === 'template' ? 'Plantilla WhatsApp' : 'Archivo PDF' }}</p>
+                                    <p class="font-bold text-sm">@{{ msg.type === 'template' ? 'Plantilla WhatsApp' : 'Archivo' }}</p>
                                     <p class="text-xs opacity-90 break-words">@{{ msg.content }}</p>
+                                    <a v-if="msg.type === 'document' && msg.media_url" :href="msg.media_url" target="_blank" class="text-xs underline hover:text-blue-500 mt-1 block">
+                                        Descargar
+                                    </a>
                                 </div>
                             </div>
 
