@@ -39,11 +39,11 @@ class WhatsAppWebhookController extends Controller
         $verifyToken = config('services.meta.webhook_verify_token');
         
         if ($mode === 'subscribe' && $token === $verifyToken) {
-            Log::info('✅ Webhook verificado exitosamente');
+            Log::channel('whatsapp')->info('✅ Webhook verificado exitosamente');
             return response($challenge, 200)->header('Content-Type', 'text/plain');
         }
 
-        Log::warning('❌ Intento de verificación fallido', [
+        Log::channel('whatsapp')->warning('❌ Intento de verificación fallido', [
             'mode' => $mode,
             'token' => $token,
             'ip' => $request->ip()
@@ -56,7 +56,9 @@ class WhatsAppWebhookController extends Controller
     {
         $data = $request->all();
 
-        Log::info('📩 Webhook recibido de Meta', ['data' => $data]);
+        Log::channel('whatsapp')->info('📩 Webhook recibido de Meta', [
+            'payload' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+        ]);
 
         try {
             if (isset($data['entry'])) {
@@ -69,7 +71,7 @@ class WhatsAppWebhookController extends Controller
                 }
             }
         } catch (\Exception $e) {
-            Log::error('❌ Error procesando webhook', [
+            Log::channel('whatsapp')->error('❌ Error procesando webhook', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -83,7 +85,7 @@ class WhatsAppWebhookController extends Controller
         $metadata = $value['metadata'];
         $phoneNumberId = $metadata['phone_number_id'];
 
-        Log::info('🔍 Identificando instancia', [
+        Log::channel('whatsapp')->info('🔍 Identificando instancia', [
             'phone_number_id' => $phoneNumberId
         ]);
 
@@ -92,13 +94,13 @@ class WhatsAppWebhookController extends Controller
             ->first();
 
         if (!$instance) {
-            Log::warning('⚠️ No se encontró instancia activa', [
+            Log::channel('whatsapp')->warning('⚠️ No se encontró instancia activa', [
                 'phone_number_id' => $phoneNumberId
             ]);
             return;
         }
 
-        Log::info('✅ Instancia identificada', [
+        Log::channel('whatsapp')->info('✅ Instancia identificada', [
             'instance_id' => $instance->id,
             'company_id' => $instance->company_id
         ]);
@@ -142,7 +144,7 @@ class WhatsAppWebhookController extends Controller
 
         $existingMessage = WhatsAppMessage::where('wamid', $wamid)->first();
         if ($existingMessage) {
-            Log::info('ℹ️ Mensaje duplicado, ignorando', ['wamid' => $wamid]);
+            Log::channel('whatsapp')->info('ℹ️ Mensaje duplicado, ignorando', ['wamid' => $wamid]);
             return;
         }
 
@@ -225,7 +227,7 @@ class WhatsAppWebhookController extends Controller
 
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);
 
-        Log::info('✅ Mensaje procesado', [
+        Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,
             'message_id' => $savedMessage->id
         ]);
@@ -249,16 +251,28 @@ class WhatsAppWebhookController extends Controller
         } elseif ($newStatus === 'read') {
             $updateData['read_at'] = now();
         } elseif ($newStatus === 'failed') {
-            $errorMessage = 'Error desconocido';
-            if (isset($status['errors']) && count($status['errors']) > 0) {
-                $errorMessage = $status['errors'][0]['message'] ?? $errorMessage;
-            }
+            $errors = $status['errors'] ?? [];
+            $primaryError = $errors[0] ?? [];
+            $errorCode = $primaryError['code'] ?? null;
+            $errorTitle = $primaryError['title'] ?? null;
+            $errorMessage = $primaryError['message'] ?? 'Error desconocido';
+
             $updateData['error_message'] = $errorMessage;
+
+            Log::channel('whatsapp')->warning('⚠️ Mensaje fallido', [
+                'wamid' => $wamid,
+                'recipient_id' => $status['recipient_id'] ?? null,
+                'error_code' => $errorCode,
+                'error_title' => $errorTitle,
+                'error_message' => $errorMessage,
+                'all_errors' => json_encode($errors, JSON_UNESCAPED_UNICODE),
+                'full_status' => json_encode($status, JSON_UNESCAPED_UNICODE),
+            ]);
         }
 
         $message->update($updateData);
 
-        Log::info('✅ Estado actualizado', [
+        Log::channel('whatsapp')->info('✅ Estado actualizado', [
             'wamid' => $wamid,
             'status' => $newStatus
         ]);
