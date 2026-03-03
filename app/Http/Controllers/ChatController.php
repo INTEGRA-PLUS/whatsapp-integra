@@ -99,7 +99,7 @@ class ChatController extends Controller
             $updatedStatuses = WhatsAppMessage::where('conversation_id', $request->conversation_id)
                 ->where('updated_at', '>', $since)
                 ->whereIn('status', ['delivered', 'read', 'failed'])
-                ->select('id', 'wamid', 'status', 'delivered_at', 'read_at')
+                ->select('id', 'wamid', 'status', 'delivered_at', 'read_at', 'error_message')
                 ->get();
         }
 

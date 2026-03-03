@@ -130,6 +130,26 @@
                     </div>
                 </div>
 
+                <div v-if="hasPaymentIssue" class="bg-red-50 border-l-4 border-red-500 p-4 m-4 rounded shadow-sm">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-red-800">
+                                Problema de envío: Error de pago en Meta
+                            </h3>
+                            <div class="mt-2 text-sm text-red-700">
+                                <p>
+                                    No se pudo entregar el mensaje. La cuenta de WhatsApp Business asociada presenta un <strong>problema de elegibilidad de pago (Business eligibility payment issue)</strong>. Por favor solicita al administrador que verifique los métodos de pago en el Administrador de Meta.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div ref="messagesContainer" class="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-100 scrollbar-thin">
                     <div 
                         v-for="msg in messages" 
@@ -269,6 +289,17 @@ createApp({
                 c.name.toLowerCase().includes(query) ||
                 c.phone_number.includes(query)
             );
+        },
+        hasPaymentIssue() {
+            if (this.messages.length === 0) return false;
+            
+            // Check the last message in the current conversation
+            const lastMessage = this.messages[this.messages.length - 1];
+            
+            return lastMessage.direction === 'outbound' && 
+                   lastMessage.status === 'failed' && 
+                   lastMessage.error_message && 
+                   lastMessage.error_message.toLowerCase().includes('business eligibility payment');
         }
     },
     
@@ -432,6 +463,9 @@ createApp({
                         const message = this.messages.find(m => m.id === statusUpdate.id);
                         if (message) {
                             message.status = statusUpdate.status;
+                            if (statusUpdate.error_message) {
+                                message.error_message = statusUpdate.error_message;
+                            }
                         }
                     });
                 }
