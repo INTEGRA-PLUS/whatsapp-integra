@@ -27,7 +27,11 @@ class WhatsAppMessage extends Model
         'delivered_at',
         'read_at',
         'error_message',
-        'metadata'
+        'metadata',
+        'incoming_invoice_id',
+        'incoming_contract_id',
+        'incoming_payment_id',
+        'incoming_company_nit'
     ];
 
     protected $casts = [

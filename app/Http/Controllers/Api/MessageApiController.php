@@ -42,7 +42,11 @@ class MessageApiController extends Controller
 
         $validator = Validator::make($request->all(), [
             'to' => 'required|string',
-            'message' => 'required|string|max:4096'
+            'message' => 'required|string|max:4096',
+            'incoming_invoice_id' => 'nullable|integer',
+            'incoming_contract_id' => 'nullable|integer',
+            'incoming_payment_id' => 'nullable|integer',
+            'incoming_company_nit' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -80,7 +84,11 @@ class MessageApiController extends Controller
                 'content' => $messageContent,
                 'direction' => 'outbound',
                 'status' => 'sent',
-                'sent_at' => now()
+                'sent_at' => now(),
+                'incoming_invoice_id' => $request->incoming_invoice_id,
+                'incoming_contract_id' => $request->incoming_contract_id,
+                'incoming_payment_id' => $request->incoming_payment_id,
+                'incoming_company_nit' => $request->incoming_company_nit,
             ]);
 
             $conversation->update([
@@ -112,7 +120,11 @@ class MessageApiController extends Controller
             'to' => 'required|string',
             'template_name' => 'required|string',
             'language_code' => 'nullable|string',
-            'components' => 'nullable|array'
+            'components' => 'nullable|array',
+            'incoming_invoice_id' => 'nullable|integer',
+            'incoming_contract_id' => 'nullable|integer',
+            'incoming_payment_id' => 'nullable|integer',
+            'incoming_company_nit' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -159,7 +171,11 @@ class MessageApiController extends Controller
                     'template' => $templateName,
                     'language' => $languageCode,
                     'components' => $components
-                ]
+                ],
+                'incoming_invoice_id' => $request->incoming_invoice_id,
+                'incoming_contract_id' => $request->incoming_contract_id,
+                'incoming_payment_id' => $request->incoming_payment_id,
+                'incoming_company_nit' => $request->incoming_company_nit,
             ]);
 
             $conversation->update([
@@ -197,7 +213,11 @@ class MessageApiController extends Controller
             'name' => 'nullable|string', // contact name
             'media_url' => 'nullable|string',
             'metadata' => 'nullable|array',
-            'sent_at' => 'nullable' // ISO8601 timestamp
+            'sent_at' => 'nullable', // ISO8601 timestamp
+            'incoming_invoice_id' => 'nullable|integer',
+            'incoming_contract_id' => 'nullable|integer',
+            'incoming_payment_id' => 'nullable|integer',
+            'incoming_company_nit' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -235,7 +255,11 @@ class MessageApiController extends Controller
             'direction' => $direction,
             'status' => $status,
             'metadata' => $request->metadata,
-            'sent_at' => $sentAt
+            'sent_at' => $sentAt,
+            'incoming_invoice_id' => $request->incoming_invoice_id,
+            'incoming_contract_id' => $request->incoming_contract_id,
+            'incoming_payment_id' => $request->incoming_payment_id,
+            'incoming_company_nit' => $request->incoming_company_nit,
         ]);
 
         $conversation->update([
