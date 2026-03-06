@@ -105,6 +105,23 @@ Route::get('/debug-path-test', function () {
     return $info;
 });
 
+// Debug para diagnosticar columnas de base de datos directamente desde Laravel
+Route::get('/debug-db-columns', function () {
+    try {
+        $columns = Illuminate\Support\Facades\Schema::getColumnListing('whatsapp_messages');
+        $dbName = Illuminate\Support\Facades\DB::connection()->getDatabaseName();
+        
+        return response()->json([
+            'database_name' => $dbName,
+            'table_exists' => Illuminate\Support\Facades\Schema::hasTable('whatsapp_messages'),
+            'columns_laravel_sees' => $columns,
+            'has_incoming_invoice_id' => in_array('incoming_invoice_id', $columns)
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()]);
+    }
+});
+
 // Auth routes
 Route::get('/login', function () {
     return view('auth.login');
