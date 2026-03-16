@@ -338,6 +338,62 @@ class MessageApiController extends Controller
         ]);
     }
 
+    public function getWhatsAppMessages(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if (!$instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'incoming_company_nit' => 'required',
+            'date_from' => 'required|date',
+            'date_to' => 'required|date',
+            'status' => 'nullable|string',
+            'per_page' => 'nullable|integer|min:1|max:500'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $query = WhatsAppMessage::query();
+        
+        // Filter by company nit
+        $query->where('incoming_company_nit', $request->incoming_company_nit);
+
+        // Filter by date range
+        $dateFrom = Carbon::parse($request->date_from)->startOfDay();
+        $dateTo = Carbon::parse($request->date_to)->endOfDay();
+        $query->whereBetween('created_at', [$dateFrom, $dateTo]);
+
+        // Filter by status if provided
+        if ($request->has('status') && !empty($request->status)) {
+            $statuses = array_map('trim', explode(',', $request->status));
+            $query->whereIn('status', $statuses);
+        }
+
+        // Pagination
+        $perPage = $request->query('per_page', 100);
+        $messages = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+        $items = $messages->items();
+        $data = array_map(function($item) {
+            return $item->toArray();
+        }, $items);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->sanitizeUtf8($data),
+            'meta' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total()
+            ]
+        ]);
+    }
+
     /**
      * Recursively sanitize array data to ensure valid UTF-8.
      *
