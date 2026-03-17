@@ -47,6 +47,7 @@ class MessageApiController extends Controller
             'incoming_contract_id' => 'nullable|integer',
             'incoming_payment_id' => 'nullable|integer',
             'incoming_company_nit' => 'nullable|integer',
+            'template_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -89,6 +90,7 @@ class MessageApiController extends Controller
                 'incoming_contract_id' => $request->incoming_contract_id,
                 'incoming_payment_id' => $request->incoming_payment_id,
                 'incoming_company_nit' => $request->incoming_company_nit,
+                'template_id' => $request->template_id,
             ]);
 
             $conversation->update([
@@ -125,6 +127,7 @@ class MessageApiController extends Controller
             'incoming_contract_id' => 'nullable|integer',
             'incoming_payment_id' => 'nullable|integer',
             'incoming_company_nit' => 'nullable|integer',
+            'template_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -176,6 +179,7 @@ class MessageApiController extends Controller
                 'incoming_contract_id' => $request->incoming_contract_id,
                 'incoming_payment_id' => $request->incoming_payment_id,
                 'incoming_company_nit' => $request->incoming_company_nit,
+                'template_id' => $request->template_id,
             ]);
 
             $conversation->update([
@@ -218,6 +222,7 @@ class MessageApiController extends Controller
             'incoming_contract_id' => 'nullable|integer',
             'incoming_payment_id' => 'nullable|integer',
             'incoming_company_nit' => 'nullable|integer',
+            'template_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -260,6 +265,7 @@ class MessageApiController extends Controller
             'incoming_contract_id' => $request->incoming_contract_id,
             'incoming_payment_id' => $request->incoming_payment_id,
             'incoming_company_nit' => $request->incoming_company_nit,
+            'template_id' => $request->template_id,
         ]);
 
         $conversation->update([

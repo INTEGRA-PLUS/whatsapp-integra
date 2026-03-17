@@ -31,7 +31,8 @@ class WhatsAppMessage extends Model
         'incoming_invoice_id',
         'incoming_contract_id',
         'incoming_payment_id',
-        'incoming_company_nit'
+        'incoming_company_nit',
+        'template_id'
     ];
 
     protected $casts = [
