@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\WhatsAppWebhookController;
+use Inertia\Inertia;
 
 // Webhooks públicos
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
@@ -124,8 +125,8 @@ Route::get('/debug-db-columns', function () {
 
 // Auth routes
 Route::get('/login', function () {
-    return view('auth.login');
-})->name('login');
+    return Inertia::render('Auth/Login');
+})->name('login')->middleware('guest');
 
 Route::post('/login', function (Illuminate\Http\Request $request) {
     $credentials = $request->validate([
@@ -165,6 +166,14 @@ Route::middleware('auth')->group(function () {
     });
     
     Route::post('/stop-impersonating', [App\Http\Controllers\MasterController::class, 'stopImpersonating'])->name('stop-impersonating');
+
+    // Settings routes
+    Route::prefix('settings')->name('settings.')->group(function () {
+        Route::get('/', [App\Http\Controllers\SettingsController::class, 'index'])->name('index');
+        Route::put('/profile', [App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('profile');
+        Route::put('/password', [App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('password');
+        Route::delete('/sessions', [App\Http\Controllers\SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
+    });
 
     // API routes for Chat (moved from api.php to share session)
     Route::prefix('api/chat')->group(function () {

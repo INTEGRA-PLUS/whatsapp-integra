@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Models\Instance;
+use Inertia\Inertia;
 
 class InstanceController extends Controller
 {
@@ -25,7 +26,9 @@ class InstanceController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        return view('instances.index', compact('instances'));
+        return Inertia::render('Instances/Index', [
+            'instances' => $instances,
+        ]);
     }
 
     public function store(Request $request)

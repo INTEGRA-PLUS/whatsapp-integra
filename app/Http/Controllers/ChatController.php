@@ -9,6 +9,7 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use Inertia\Inertia;
 
 class ChatController extends Controller
 {
@@ -33,7 +34,9 @@ class ChatController extends Controller
             ->where('active', true)
             ->get();
 
-        return view('chat.index', compact('instances'));
+        return Inertia::render('Chat/Index', [
+            'instances' => $instances,
+        ]);
     }
 
     public function conversations(Request $request)
