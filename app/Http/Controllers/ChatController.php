@@ -39,6 +39,26 @@ class ChatController extends Controller
         ]);
     }
 
+    public function kanban()
+    {
+        $user = auth()->user();
+
+        if ($user->isMaster() && !session('impersonated_by')) {
+            return redirect()->route('master.index');
+        }
+
+        $conversations = WhatsAppConversation::whereHas('instance', function ($query) use ($user) {
+            $query->where('company_id', $user->company_id);
+        })
+        ->with('assignedAgent:id,name')
+        ->orderByDesc('last_message_at')
+        ->get();
+
+        return Inertia::render('Chat/Kanban', [
+            'conversations' => $this->sanitizeUtf8($conversations),
+        ]);
+    }
+
     public function conversations(Request $request)
     {
         $user = auth()->user();

@@ -37,6 +37,7 @@ export function AppSidebar() {
     } else {
         mainNavItems = [
             { title: 'Chat', href: route('chat.index'), icon: MessageSquare },
+            { title: 'CRM', href: route('chat.kanban'), icon: Layers },
             { title: 'Instancias', href: route('instances.index'), icon: Settings },
         ];
     }

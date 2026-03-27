@@ -156,6 +156,7 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');
 
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {
