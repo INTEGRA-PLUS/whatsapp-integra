@@ -26,6 +26,7 @@ class HandleInertiaRequests extends Middleware
                     'company_id' => $request->user()->company_id,
                 ] : null,
                 'isImpersonating' => (bool) session('impersonated_by'),
+                'fromMaster'      => (bool) session('from_master'),
             ],
             'flash' => [
                 'success' => fn () => session('success'),

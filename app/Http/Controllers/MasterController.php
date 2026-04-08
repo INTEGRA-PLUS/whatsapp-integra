@@ -212,7 +212,7 @@ class MasterController extends Controller
         $this->authorizeMaster();
 
         $originalUserId = Auth::id();
-        
+
         $userToImpersonate = User::where('company_id', $companyId)
             ->whereIn('role', ['admin', 'agent'])
             ->first();
@@ -222,6 +222,7 @@ class MasterController extends Controller
         }
 
         session()->put('impersonated_by', $originalUserId);
+        session()->put('from_master', true);
         Auth::login($userToImpersonate);
 
         return redirect()->route('chat.index')->with('success', "Ahora estás actuando como {$userToImpersonate->name} en {$userToImpersonate->company->name}");
@@ -234,6 +235,7 @@ class MasterController extends Controller
         }
 
         $originalUserId = session()->pull('impersonated_by');
+        session()->forget('from_master');
         $originalUser = User::find($originalUserId);
 
         if ($originalUser && $originalUser->isMaster()) {

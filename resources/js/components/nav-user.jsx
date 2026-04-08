@@ -1,5 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
-import { ChevronsUpDown, LogOut, Moon, Settings, Sun, SunMoon } from 'lucide-react';
+import { ChevronsUpDown, LogOut, Moon, Settings, ShieldCheck, Sun, SunMoon } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     DropdownMenu,
@@ -35,6 +35,10 @@ export function NavUser() {
 
     function handleLogout() {
         router.post(route('logout'));
+    }
+
+    function handleReturnToMaster() {
+        router.post(route('stop-impersonating'));
     }
 
     function cycleAppearance() {
@@ -96,6 +100,15 @@ export function NavUser() {
                                 Tema: {appearanceLabel}
                             </DropdownMenuItem>
                         </DropdownMenuGroup>
+                        {auth?.fromMaster && (
+                            <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={handleReturnToMaster} className="cursor-pointer text-indigo-600 focus:text-indigo-600 focus:bg-indigo-50 dark:focus:bg-indigo-950/40">
+                                    <ShieldCheck className="mr-2 size-4" />
+                                    Volver al Master
+                                </DropdownMenuItem>
+                            </>
+                        )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={handleLogout} className="cursor-pointer" variant="destructive">
                             <LogOut className="mr-2 size-4" />
