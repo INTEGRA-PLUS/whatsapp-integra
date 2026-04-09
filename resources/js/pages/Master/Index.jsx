@@ -90,6 +90,22 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
 
     const { data: list, links } = companies;
 
+    function handleCreate(e) {
+        e.preventDefault();
+        router.post(route('master.companies.store'), createForm, { onSuccess: () => { setShowCreate(false); setCreateForm({ name: '', email: '', admin_name: '', admin_email: '', password: '' }); } });
+    }
+
+    function handleEdit(e) {
+        e.preventDefault();
+        router.put(route('master.companies.update', editingCompany.id), editForm, { onSuccess: () => setEditingCompany(null) });
+    }
+
+    function openEdit(company) {
+        const admin = company.users?.[0];
+        setEditForm({ name: company.name, email: company.email, admin_name: admin?.name ?? '', admin_email: admin?.email ?? '', password: '', active: !!company.active });
+        setEditingCompany(company);
+    }
+
     // --- CHART COMPONENTS ---
     const LineChart = ({ data, color = "#6366f1", height = 180 }) => {
         if (!data || data.length === 0) return <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">Sin datos en este rango</div>;
@@ -489,22 +505,6 @@ function Field({ label, value, onChange, type = 'text', required = false, placeh
             <input type={type} value={value} onChange={e => onChange(e.target.value)} required={required} placeholder={placeholder} className="h-14 w-full rounded-2xl border border-border/40 bg-background px-6 text-sm font-bold shadow-inner outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/40 transition-all font-mono" />
         </div>
     );
-}
-
-function handleCreate(e) {
-    e.preventDefault();
-    router.post(route('master.companies.store'), createForm, { onSuccess: () => { setShowCreate(false); setCreateForm({ name: '', email: '', admin_name: '', admin_email: '', password: '' }); } });
-}
-
-function handleEdit(e) {
-    e.preventDefault();
-    router.put(route('master.companies.update', editingCompany.id), editForm, { onSuccess: () => setEditingCompany(null) });
-}
-
-function openEdit(company) {
-    const admin = company.users?.[0];
-    setEditForm({ name: company.name, email: company.email, admin_name: admin?.name ?? '', admin_email: admin?.email ?? '', password: '', active: !!company.active });
-    setEditingCompany(company);
 }
 
 MasterIndex.layout = page => <AppLayout>{page}</AppLayout>;
