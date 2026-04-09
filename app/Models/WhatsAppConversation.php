@@ -20,6 +20,7 @@ class WhatsAppConversation extends Model
         'last_message',
         'last_message_at',
         'status',
+        'kanban_column_id',
         'assigned_to',
         'unread_count',
         'metadata'
@@ -45,6 +46,11 @@ class WhatsAppConversation extends Model
     public function assignedAgent()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function kanbanColumn()
+    {
+        return $this->belongsTo(\App\Models\KanbanColumn::class, 'kanban_column_id');
     }
 
     public function markAsRead()

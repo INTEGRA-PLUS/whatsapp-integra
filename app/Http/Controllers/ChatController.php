@@ -6,9 +6,11 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Instance;
+use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use App\Http\Controllers\KanbanController;
 use Inertia\Inertia;
 
 class ChatController extends Controller
@@ -47,6 +49,12 @@ class ChatController extends Controller
             return redirect()->route('master.index');
         }
 
+        KanbanController::ensureDefaultColumns($user->company_id);
+
+        $columns = KanbanColumn::where('company_id', $user->company_id)
+            ->orderBy('position')
+            ->get();
+
         $conversations = WhatsAppConversation::whereHas('instance', function ($query) use ($user) {
             $query->where('company_id', $user->company_id);
         })
@@ -54,8 +62,14 @@ class ChatController extends Controller
         ->orderByDesc('last_message_at')
         ->get();
 
+        $instances = Instance::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->get(['id', 'name']);
+
         return Inertia::render('Chat/Kanban', [
+            'columns'       => $columns,
             'conversations' => $this->sanitizeUtf8($conversations),
+            'instances'     => $instances,
         ]);
     }
 

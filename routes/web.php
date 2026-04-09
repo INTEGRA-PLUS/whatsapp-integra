@@ -185,4 +185,14 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
     });
+
+    // Kanban API routes
+    Route::prefix('api/kanban')->group(function () {
+        Route::get('/columns', [App\Http\Controllers\KanbanController::class, 'columns']);
+        Route::post('/columns', [App\Http\Controllers\KanbanController::class, 'storeColumn']);
+        Route::put('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'updateColumn']);
+        Route::delete('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'deleteColumn']);
+        Route::post('/conversations/{id}/move', [App\Http\Controllers\KanbanController::class, 'moveCard']);
+        Route::post('/cards', [App\Http\Controllers\KanbanController::class, 'storeCard']);
+    });
 });
