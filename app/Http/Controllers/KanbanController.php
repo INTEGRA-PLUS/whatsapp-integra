@@ -30,6 +30,65 @@ class KanbanController extends Controller
         }
     }
 
+    // GET /api/kanban/columns/{id}/cards?page=1&per_page=30&search=
+    public function columnCards(Request $request, int $columnId)
+    {
+        $user   = auth()->user();
+        $column = KanbanColumn::where('company_id', $user->company_id)->findOrFail($columnId);
+
+        $isFirst = !KanbanColumn::where('company_id', $user->company_id)
+            ->where('position', '<', $column->position)
+            ->exists();
+
+        $perPage = min((int) ($request->per_page ?? 30), 100);
+
+        $query = WhatsAppConversation::whereHas('instance', function ($q) use ($user) {
+            $q->where('company_id', $user->company_id);
+        })
+        ->with('assignedAgent:id,name')
+        ->when($request->search, fn ($q, $s) => $q->search($s))
+        ->orderByDesc('last_message_at');
+
+        if ($isFirst) {
+            // First column absorbs unassigned conversations too
+            $query->where(function ($q) use ($columnId) {
+                $q->where('kanban_column_id', $columnId)->orWhereNull('kanban_column_id');
+            });
+        } else {
+            $query->where('kanban_column_id', $columnId);
+        }
+
+        $paginated = $query->paginate($perPage);
+
+        return response()->json([
+            'data'         => $this->sanitizeUtf8($paginated->items()),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'total'        => $paginated->total(),
+        ]);
+    }
+
+    private function sanitizeUtf8(mixed $input): mixed
+    {
+        if (is_string($input)) {
+            return mb_convert_encoding($input, 'UTF-8', 'UTF-8');
+        }
+        if ($input instanceof \Illuminate\Database\Eloquent\Model) {
+            $input = $input->toArray();
+        } elseif (is_object($input) && method_exists($input, 'toArray')) {
+            $input = $input->toArray();
+        } elseif (is_object($input)) {
+            $input = (array) $input;
+        }
+        if (is_array($input)) {
+            foreach ($input as &$value) {
+                $value = $this->sanitizeUtf8($value);
+            }
+            unset($value);
+        }
+        return $input;
+    }
+
     // GET /api/kanban/columns
     public function columns()
     {

@@ -192,6 +192,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/columns', [App\Http\Controllers\KanbanController::class, 'storeColumn']);
         Route::put('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'updateColumn']);
         Route::delete('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'deleteColumn']);
+        Route::get('/columns/{id}/cards', [App\Http\Controllers\KanbanController::class, 'columnCards']);
         Route::post('/conversations/{id}/move', [App\Http\Controllers\KanbanController::class, 'moveCard']);
         Route::post('/cards', [App\Http\Controllers\KanbanController::class, 'storeCard']);
     });

@@ -55,21 +55,18 @@ class ChatController extends Controller
             ->orderBy('position')
             ->get();
 
-        $conversations = WhatsAppConversation::whereHas('instance', function ($query) use ($user) {
+        $total = WhatsAppConversation::whereHas('instance', function ($query) use ($user) {
             $query->where('company_id', $user->company_id);
-        })
-        ->with('assignedAgent:id,name')
-        ->orderByDesc('last_message_at')
-        ->get();
+        })->count();
 
         $instances = Instance::where('company_id', $user->company_id)
             ->where('active', true)
             ->get(['id', 'name']);
 
         return Inertia::render('Chat/Kanban', [
-            'columns'       => $columns,
-            'conversations' => $this->sanitizeUtf8($conversations),
-            'instances'     => $instances,
+            'columns'             => $columns,
+            'total_conversations' => $total,
+            'instances'           => $instances,
         ]);
     }
 
