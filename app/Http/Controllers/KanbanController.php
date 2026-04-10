@@ -42,15 +42,16 @@ class KanbanController extends Controller
 
         $perPage = min((int) ($request->per_page ?? 30), 100);
 
-        $query = WhatsAppConversation::whereHas('instance', function ($q) use ($user) {
-            $q->where('company_id', $user->company_id);
-        })
-        ->with('assignedAgent:id,name')
-        ->when($request->search, fn ($q, $s) => $q->search($s))
-        ->orderByDesc('last_message_at');
+        // Use whereIn with instance IDs instead of whereHas (avoids correlated subquery)
+        $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
+
+        $query = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->select(['id', 'instance_id', 'phone_number', 'name', 'last_message', 'last_message_at', 'status', 'kanban_column_id', 'assigned_to', 'unread_count'])
+            ->with('assignedAgent:id,name')
+            ->when($request->search, fn ($q, $s) => $q->search($s))
+            ->orderByDesc('last_message_at');
 
         if ($isFirst) {
-            // First column absorbs unassigned conversations too
             $query->where(function ($q) use ($columnId) {
                 $q->where('kanban_column_id', $columnId)->orWhereNull('kanban_column_id');
             });
@@ -58,13 +59,12 @@ class KanbanController extends Controller
             $query->where('kanban_column_id', $columnId);
         }
 
-        $paginated = $query->paginate($perPage);
+        $paginated = $query->simplePaginate($perPage);
 
         return response()->json([
             'data'         => $this->sanitizeUtf8($paginated->items()),
             'current_page' => $paginated->currentPage(),
-            'last_page'    => $paginated->lastPage(),
-            'total'        => $paginated->total(),
+            'has_more'     => $paginated->hasMorePages(),
         ]);
     }
 
@@ -98,6 +98,37 @@ class KanbanController extends Controller
         return response()->json(
             KanbanColumn::where('company_id', $companyId)->orderBy('position')->get()
         );
+    }
+
+    // GET /api/kanban/counts
+    public function columnCounts()
+    {
+        $user        = auth()->user();
+        $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
+        $columns     = KanbanColumn::where('company_id', $user->company_id)->orderBy('position')->get();
+        $firstColId  = $columns->first()?->id;
+
+        // Single query: group by kanban_column_id
+        $counts = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->selectRaw('kanban_column_id, COUNT(*) as total')
+            ->groupBy('kanban_column_id')
+            ->pluck('total', 'kanban_column_id')
+            ->toArray();
+
+        $nullCount = $counts[''] ?? $counts[null] ?? 0;
+        // Remove the null key — it will be merged into the first column
+        unset($counts[''], $counts[null]);
+
+        $result = [];
+        foreach ($columns as $col) {
+            $count = $counts[$col->id] ?? 0;
+            if ($col->id === $firstColId) {
+                $count += $nullCount;
+            }
+            $result[$col->id] = $count;
+        }
+
+        return response()->json($result);
     }
 
     // POST /api/kanban/columns

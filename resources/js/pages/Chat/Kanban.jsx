@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import {
@@ -23,12 +23,13 @@ import {
 import {
     DndContext,
     DragOverlay,
-    closestCorners,
+    closestCenter,
     KeyboardSensor,
     PointerSensor,
     useSensor,
     useSensors,
     defaultDropAnimationSideEffects,
+    useDroppable,
 } from '@dnd-kit/core';
 import {
     arrayMove,
@@ -70,7 +71,7 @@ async function apiRequest(method, url, body = null) {
 
 // ─── KanbanCard ──────────────────────────────────────────────────────────────
 
-const KanbanCard = ({ conv, isOverlay, ...props }) => (
+const KanbanCard = memo(({ conv, isOverlay, ...props }) => (
     <div
         {...props}
         className={clsx(
@@ -148,9 +149,9 @@ const KanbanCard = ({ conv, isOverlay, ...props }) => (
             </div>
         </div>
     </div>
-);
+));
 
-const SortableKanbanCard = ({ conv }) => {
+const SortableKanbanCard = memo(({ conv }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: conv.id });
     return (
         <div
@@ -162,16 +163,20 @@ const SortableKanbanCard = ({ conv }) => {
             <KanbanCard conv={conv} />
         </div>
     );
-};
+});
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = ({ col, items, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard }) => {
+const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const Icon = getIcon(col.icon);
 
-    const { setNodeRef } = useSortable({ id: col.id, data: { type: 'Column', col } });
+    const itemIds = useMemo(() => items.map(i => i.id), [items]);
+
+    // Each column is its own droppable zone. We prefix with "col-" so dnd-kit
+    // never confuses column ids with conversation ids.
+    const { setNodeRef, isOver } = useDroppable({ id: `col-${col.id}` });
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
@@ -209,7 +214,7 @@ const BoardColumn = ({ col, items, loading, hasMore, error, onLoadMore, onRename
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400/70">{col.subtitle || 'Procesos'}</span>
                             <span className="size-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-                            <span className="text-[10px] font-black text-teal-600 dark:text-teal-400">{items.length}</span>
+                            <span className="text-[10px] font-black text-teal-600 dark:text-teal-400">{totalCount ?? items.length}</span>
                         </div>
                     </div>
                 </div>
@@ -225,8 +230,8 @@ const BoardColumn = ({ col, items, loading, hasMore, error, onLoadMore, onRename
             </div>
 
             {/* Body */}
-            <div ref={setNodeRef} className="flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-20 min-h-[200px]">
-                <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+            <div ref={setNodeRef} className={`flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-20 min-h-[200px] transition-colors duration-200 rounded-3xl ${isOver ? 'bg-teal-500/5 ring-2 ring-teal-500/20' : ''}`}>
+                <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
                     {items.map(conv => <SortableKanbanCard key={conv.id} conv={conv} />)}
                 </SortableContext>
 
@@ -277,7 +282,7 @@ const BoardColumn = ({ col, items, loading, hasMore, error, onLoadMore, onRename
                 )}
 
                 {/* Load more */}
-                {hasMore && !loading && items.length > 0 && (
+                {hasMore && !loading && !error && items.length > 0 && (
                     <button
                         onClick={() => onLoadMore(col.id)}
                         className="w-full py-3 flex items-center justify-center gap-2 text-[11px] font-black text-slate-400 hover:text-teal-600 uppercase tracking-widest border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-teal-500/30 transition-all"
@@ -295,7 +300,7 @@ const BoardColumn = ({ col, items, loading, hasMore, error, onLoadMore, onRename
             </div>
         </div>
     );
-};
+});
 
 // ─── NewCardModal ─────────────────────────────────────────────────────────────
 
@@ -396,33 +401,126 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     );
 
     const [activeId, setActiveId]           = useState(null);
-    const dragOriginContainer               = useRef(null);
+    // Real card counts per column from the server (not just loaded cards).
+    const [colCounts, setColCounts]         = useState({});
+
+    // We keep a ref to the latest boardData so handleDragEnd can read the
+    // current state synchronously without relying on stale closures.
+    const boardDataRef = useRef(boardData);
+    useEffect(() => { boardDataRef.current = boardData; }, [boardData]);
+
+    // Track in-flight drag moves: cardId → targetColId (as string).
+    // While a move API call is pending, loadColumnCards must NOT wipe the card
+    // from its new column or re-add it to the old one.
+    const pendingMovesRef = useRef(new Map());
+
+    // AbortController per column so we can cancel stale requests.
+    const abortControllersRef = useRef({});
 
     // ── Data fetching ──────────────────────────────────────────────────────
 
     const loadColumnCards = useCallback(async (colId, page, search, reset = false) => {
+        // Cancel any in-flight request for this column
+        if (abortControllersRef.current[colId]) {
+            abortControllersRef.current[colId].abort();
+        }
+        const controller = new AbortController();
+        abortControllersRef.current[colId] = controller;
+
         setColMeta(prev => ({ ...prev, [colId]: { ...prev[colId], loading: true } }));
         try {
             const params = new URLSearchParams({ page, per_page: PER_PAGE });
             if (search) params.set('search', search);
-            const data = await apiRequest('GET', `/api/kanban/columns/${colId}/cards?${params}`);
-            setBoardData(prev => ({
-                ...prev,
-                [colId]: reset ? data.data : [...(prev[colId] ?? []), ...data.data],
-            }));
+
+            const res = await fetch(`/api/kanban/columns/${colId}/cards?${params}`, {
+                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
+                signal: controller.signal,
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+
+            // If this controller was replaced (another request started), ignore.
+            if (controller.signal.aborted) return;
+
+            setBoardData(prev => {
+                const pending = pendingMovesRef.current;
+
+                // 1. Collect IDs of all cards that are CURRENTLY visible in OTHER columns in the local state.
+                // These are cards the user has moved, but the server might not have updated yet.
+                const occupiedElsewhere = new Set();
+                Object.entries(prev).forEach(([k, cards]) => {
+                    if (String(k) !== String(colId)) {
+                        cards.forEach(c => occupiedElsewhere.add(c.id));
+                    }
+                });
+
+                // 2. Filter the incoming server cards.
+                const serverCards = data.data.filter(c => {
+                    // Rule A: If the card is already visible in another column locally, IGNORE the server data for this column.
+                    if (occupiedElsewhere.has(c.id)) return false;
+
+                    // Rule B: If the card has a pending move to a DIFFERENT column, IGNORE it here.
+                    const pendingTarget = pending.get(c.id);
+                    if (pendingTarget !== undefined && String(pendingTarget) !== String(colId)) return false;
+
+                    return true;
+                });
+
+                if (reset) {
+                    // Reset mode (search or initial load):
+                    // Keep the server cards and ONLY add back cards that are locally in this column
+                    // AND have a pending move specifically to this column.
+                    const serverIds = new Set(serverCards.map(c => c.id));
+                    const preservedFromDrag = (prev[colId] ?? []).filter(c => {
+                        if (serverIds.has(c.id)) return false;
+                        const pendingTarget = pending.get(c.id);
+                        return pendingTarget !== undefined && String(pendingTarget) === String(colId);
+                    });
+                    return { ...prev, [colId]: [...serverCards, ...preservedFromDrag] };
+                }
+
+                // Append mode (scroll/pagination):
+                const existing    = prev[colId] ?? [];
+                const existingIds = new Set(existing.map(c => c.id));
+                const newItems    = serverCards.filter(c => !existingIds.has(c.id));
+                return { ...prev, [colId]: [...existing, ...newItems] };
+            });
             setColMeta(prev => ({
                 ...prev,
-                [colId]: { page: data.current_page, hasMore: data.current_page < data.last_page, loading: false, error: null },
+                [colId]: { page: data.current_page, hasMore: data.has_more, loading: false, error: null },
             }));
         } catch (err) {
+            if (err.name === 'AbortError') return; // Request was cancelled, ignore
             console.error(`Error cargando columna ${colId}:`, err);
             setColMeta(prev => ({ ...prev, [colId]: { ...prev[colId], loading: false, error: err.message } }));
         }
     }, []);
 
-    // Initial load — fire once per column on mount
+    // Fetch real card counts per column
+    const loadCounts = useCallback(async () => {
+        try {
+            const data = await apiRequest('GET', '/api/kanban/counts');
+            setColCounts(data);
+        } catch (err) {
+            console.error('Error cargando conteos:', err);
+        }
+    }, []);
+
+    // Initial load — load columns one-by-one to avoid race conditions,
+    // and fetch counts in parallel.
     useEffect(() => {
-        (initialColumns ?? []).forEach(col => loadColumnCards(col.id, 1, '', true));
+        let cancelled = false;
+        async function loadAll() {
+            const cols = initialColumns ?? [];
+            // Fire counts request in parallel with card loading
+            loadCounts();
+            for (const col of cols) {
+                if (cancelled) break;
+                await loadColumnCards(col.id, 1, '', true);
+            }
+        }
+        loadAll();
+        return () => { cancelled = true; };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Debounce search
@@ -435,18 +533,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     const isFirstRender = useRef(true);
     useEffect(() => {
         if (isFirstRender.current) { isFirstRender.current = false; return; }
-        columns.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true));
+        // Cancel all in-flight requests before starting new search
+        Object.values(abortControllersRef.current).forEach(c => c.abort());
+        abortControllersRef.current = {};
+        let cancelled = false;
+        async function searchAll() {
+            for (const col of columns) {
+                if (cancelled) break;
+                await loadColumnCards(col.id, 1, debouncedSearch, true);
+            }
+        }
+        searchAll();
+        return () => { cancelled = true; };
     }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleLoadMore = (colId) => {
         const meta = colMeta[colId];
         if (!meta || meta.loading) return;
-        if (meta.error) {
-            // retry from page 1
-            loadColumnCards(colId, 1, debouncedSearch, true);
-            return;
-        }
-        if (!meta.hasMore) return;
+        if (!meta.error && !meta.hasMore) return;
         loadColumnCards(colId, meta.page + 1, debouncedSearch, false);
     };
 
@@ -513,63 +617,94 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     }, [activeId, boardData]);
 
     const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
 
-    function findContainer(id) {
-        if (id in boardData) return id;
-        return Object.keys(boardData).find(key => boardData[key].some(item => item.id === id));
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    // Given a dnd id (card id or "col-X" column droppable id), returns the
+    // boardData key (string) for the column that owns it.
+    function getColKey(id, data) {
+        const d    = data ?? boardDataRef.current;
+        const keys = Object.keys(d);
+        const s    = String(id);
+        if (s.startsWith('col-')) {
+            const target = s.slice(4);
+            return keys.find(k => String(k) === target) ?? null;
+        }
+        return keys.find(k => d[k].some(item => String(item.id) === s)) ?? null;
     }
 
-    const handleDragStart = (event) => {
-        setActiveId(event.active.id);
-        dragOriginContainer.current = findContainer(event.active.id);
+    // ── Drag handlers ──────────────────────────────────────────────────────
+
+    const handleDragStart = ({ active }) => {
+        setActiveId(active.id);
     };
 
-    const handleDragOver = ({ active, over }) => {
-        if (!over) return;
-        const activeContainer = findContainer(active.id);
-        const overContainer   = findContainer(over.id);
-        if (!activeContainer || !overContainer || activeContainer === overContainer) return;
-
-        setBoardData(prev => {
-            const activeItems = prev[activeContainer] ?? [];
-            const overItems   = prev[overContainer]   ?? [];
-            const activeIndex = activeItems.findIndex(i => i.id === active.id);
-            const overIndex   = overItems.findIndex(i => i.id === over.id);
-            const newIndex    = over.id in prev
-                ? overItems.length + 1
-                : overIndex >= 0 ? overIndex + (overIndex === overItems.length - 1 ? 1 : 0) : overItems.length + 1;
-            return {
-                ...prev,
-                [activeContainer]: activeItems.filter(i => i.id !== active.id),
-                [overContainer]: [...overItems.slice(0, newIndex), activeItems[activeIndex], ...overItems.slice(newIndex)],
-            };
-        });
-    };
+    // NOTE: we intentionally do NOT use onDragOver for cross-column moves.
+    // Moving state during the drag caused the snap-back bug. Instead we
+    // commit the move only once in handleDragEnd.
 
     const handleDragEnd = ({ active, over }) => {
-        const originContainer  = dragOriginContainer.current;
-        const currentContainer = over ? (findContainer(over.id) ?? findContainer(active.id)) : null;
-
-        dragOriginContainer.current = null;
         setActiveId(null);
+        if (!over) return;
 
-        if (!originContainer || !currentContainer) return;
+        // Read the CURRENT (non-stale) boardData from the ref.
+        const snapshot      = boardDataRef.current;
+        const originKey     = getColKey(active.id, snapshot);
+        const dropId        = String(over.id);
+        // The drop target can be a column droppable ("col-X") or another card.
+        const targetKey     = dropId.startsWith('col-')
+            ? dropId.slice(4)
+            : getColKey(over.id, snapshot);
 
-        if (originContainer !== currentContainer) {
-            apiRequest('POST', `/api/kanban/conversations/${active.id}/move`, { column_id: currentContainer })
-                .catch(err => console.error('Error al mover tarjeta:', err));
-        } else {
-            const activeIndex = boardData[currentContainer]?.findIndex(i => i.id === active.id) ?? -1;
-            const overIndex   = boardData[currentContainer]?.findIndex(i => i.id === over?.id)  ?? -1;
-            if (activeIndex !== -1 && overIndex !== -1 && activeIndex !== overIndex) {
-                setBoardData(prev => ({
+        if (!originKey || !targetKey) return;
+
+        if (targetKey !== originKey) {
+            // ── Cross-column move ──────────────────────────────────────────
+            // Register the pending move BEFORE updating state so that any
+            // concurrent loadColumnCards calls respect it immediately.
+            const cardId = Number(active.id);
+            pendingMovesRef.current.set(cardId, String(targetKey));
+
+            setBoardData(prev => {
+                const originItems = prev[originKey] ?? [];
+                const card        = originItems.find(i => String(i.id) === String(active.id));
+                if (!card) return prev;
+                
+                // Update the column id on the card object as well
+                const updatedCard = { ...card, kanban_column_id: Number(targetKey) };
+
+                return {
                     ...prev,
-                    [currentContainer]: arrayMove(prev[currentContainer], activeIndex, overIndex),
-                }));
-            }
+                    [originKey]:  originItems.filter(i => String(i.id) !== String(active.id)),
+                    [targetKey]:  [updatedCard, ...(prev[targetKey] ?? [])],
+                };
+            });
+
+            // Update counts optimistically
+            setColCounts(prev => ({
+                ...prev,
+                [originKey]: Math.max(0, (prev[originKey] ?? 0) - 1),
+                [targetKey]: (prev[targetKey] ?? 0) + 1,
+            }));
+
+            apiRequest('POST', `/api/kanban/conversations/${active.id}/move`, { column_id: Number(targetKey) })
+                .then(() => pendingMovesRef.current.delete(cardId))
+                .catch(err => {
+                    pendingMovesRef.current.delete(cardId);
+                    console.error('Error al mover tarjeta:', err);
+                });
+        } else {
+            // ── Same-column reorder ────────────────────────────────────────
+            setBoardData(prev => {
+                const items     = prev[targetKey] ?? [];
+                const activeIdx = items.findIndex(i => String(i.id) === String(active.id));
+                const overIdx   = items.findIndex(i => String(i.id) === dropId);
+                if (activeIdx === -1 || overIdx === -1 || activeIdx === overIdx) return prev;
+                return { ...prev, [targetKey]: arrayMove(items, activeIdx, overIdx) };
+            });
         }
     };
 
@@ -659,9 +794,8 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                 <div className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
                     <DndContext
                         sensors={sensors}
-                        collisionDetection={closestCorners}
+                        collisionDetection={closestCenter}
                         onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
                         onDragEnd={handleDragEnd}
                     >
                         {columns.map(col => (
@@ -669,6 +803,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                                 key={col.id}
                                 col={col}
                                 items={boardData[col.id] ?? []}
+                                totalCount={colCounts[col.id]}
                                 loading={colMeta[col.id]?.loading ?? false}
                                 hasMore={colMeta[col.id]?.hasMore ?? false}
                                 error={colMeta[col.id]?.error ?? null}

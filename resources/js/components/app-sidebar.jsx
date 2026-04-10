@@ -7,7 +7,9 @@ import {
     Package,
     PlusCircle,
     Home,
-    Layers
+    Layers,
+    Users,
+    ShieldCheck
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -35,11 +37,16 @@ export function AppSidebar() {
             { title: 'Planes', href: route('master.index', { tab: 'plans' }), icon: Package },
         ];
     } else {
+        const permissions = usePage().props.auth.user.permissions || [];
+        const hasPermission = (perm) => permissions.includes(perm);
+
         mainNavItems = [
-            { title: 'Chat', href: route('chat.index'), icon: MessageSquare },
-            { title: 'CRM', href: route('chat.kanban'), icon: Layers },
-            { title: 'Instancias', href: route('instances.index'), icon: Settings },
-        ];
+            { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
+            { title: 'CRM', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
+            { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
+            { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
+            { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
+        ].filter(item => item.show !== false);
     }
 
     return (

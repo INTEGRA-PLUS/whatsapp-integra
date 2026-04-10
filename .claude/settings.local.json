@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/juanm/Desktop/istinge/whatsapp-integra/resources -type f \\\\\\(-name *.jsx -o -name *.tsx -o -name *.js -o -name *.ts \\\\\\))",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"kanban\\\\|chat.kanban\" /c/Users/juanm/Desktop/istinge/whatsapp-integra/resources/js --include=*.jsx --include=*.js)",
+      "Bash(php artisan:*)",
+      "Bash(npx vite:*)"
+    ]
+  }
+}

@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\InstanceController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use Inertia\Inertia;
 
@@ -136,6 +138,14 @@ Route::post('/login', function (Illuminate\Http\Request $request) {
 
     if (auth()->attempt($credentials, $request->boolean('remember'))) {
         $request->session()->regenerate();
+        
+        $user = auth()->user();
+        session(['company_id' => $user->company_id]);
+
+        if ($user->hasRole('master')) {
+            return redirect()->route('master.index');
+        }
+
         return redirect()->intended('/chat');
     }
 
@@ -156,6 +166,8 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::resource('users', UserController::class)->middleware('permission:users.view');
+    Route::resource('roles', RoleController::class)->middleware('permission:roles.view');
     Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');
 
     // Rutas Master
@@ -189,6 +201,7 @@ Route::middleware('auth')->group(function () {
     // Kanban API routes
     Route::prefix('api/kanban')->group(function () {
         Route::get('/columns', [App\Http\Controllers\KanbanController::class, 'columns']);
+        Route::get('/counts', [App\Http\Controllers\KanbanController::class, 'columnCounts']);
         Route::post('/columns', [App\Http\Controllers\KanbanController::class, 'storeColumn']);
         Route::put('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'updateColumn']);
         Route::delete('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'deleteColumn']);

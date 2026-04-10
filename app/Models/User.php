@@ -4,17 +4,17 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use Notifiable;
+    use Notifiable, HasRoles;
 
     protected $fillable = [
         'company_id',
         'name',
         'email',
         'password',
-        'role',
         'active',
     ];
 
@@ -39,16 +39,33 @@ class User extends Authenticatable
 
     public function isAdmin()
     {
-        return $this->role === 'admin';
+        return $this->hasRole('admin');
     }
 
     public function isAgent()
     {
-        return in_array($this->role, ['admin', 'agent']);
+        return $this->hasRole(['admin', 'agent']);
     }
 
     public function isMaster()
     {
-        return $this->role === 'master';
+        return $this->hasRole('master');
+    }
+
+    protected static function booted()
+    {
+        static::created(function ($user) {
+            // Si es el primer usuario de la compañía (excluyendo la master si fuera necesario)
+            // Le asignamos el rol admin automáticamente
+            if ($user->company_id && \App\Models\User::where('company_id', $user->company_id)->count() === 1) {
+                setPermissionsTeamId($user->company_id);
+                $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
+                    'name' => 'admin',
+                    'company_id' => $user->company_id,
+                    'guard_name' => 'web'
+                ]);
+                $user->assignRole($adminRole);
+            }
+        });
     }
 }

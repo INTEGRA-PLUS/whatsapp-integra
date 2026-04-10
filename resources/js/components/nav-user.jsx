@@ -65,7 +65,14 @@ export function NavUser() {
                             </Avatar>
                             <div className="grid flex-1 text-left text-sm leading-tight">
                                 <span className="truncate font-semibold">{user.name}</span>
-                                <span className="text-muted-foreground truncate text-xs">{ROLE_LABELS[user.role] ?? user.role}</span>
+                                <div className="flex items-center gap-1 overflow-hidden">
+                                    <span className="text-[10px] bg-sidebar-primary/10 text-sidebar-primary px-1 rounded font-bold uppercase truncate">
+                                        {user.roles?.[0] || 'Sin Rol'}
+                                    </span>
+                                    <span className="text-muted-foreground truncate text-[10px] opacity-70">
+                                        {user.company_name}
+                                    </span>
+                                </div>
                             </div>
                             <ChevronsUpDown className="ml-auto size-4" />
                         </SidebarMenuButton>
