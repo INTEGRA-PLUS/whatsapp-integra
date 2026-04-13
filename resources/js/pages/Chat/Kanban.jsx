@@ -71,18 +71,21 @@ async function apiRequest(method, url, body = null) {
 
 // ─── KanbanCard ──────────────────────────────────────────────────────────────
 
-const KanbanCard = memo(({ conv, isOverlay, ...props }) => (
+const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
     <div
         {...props}
         className={clsx(
             'group relative bg-white dark:bg-slate-900/60 backdrop-blur-xl p-4 rounded-[1.5rem] border transition-all duration-300 select-none',
             isOverlay
-                ? 'border-teal-500/50 shadow-2xl scale-[1.02] z-50 cursor-grabbing ring-4 ring-teal-500/5'
-                : 'border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-black/20 hover:border-teal-500/30 cursor-grab active:cursor-grabbing'
+                ? 'border-teal-500/50 shadow-[0_20px_50px_rgba(20,184,166,0.3)] scale-[1.05] rotate-[2deg] z-50 cursor-grabbing ring-4 ring-teal-500/5'
+                : isDragging
+                    ? 'opacity-0'
+                    : 'border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-black/20 hover:border-teal-500/30 cursor-grab active:cursor-grabbing'
         )}
     >
+        {/* Placeholder dashed border when dragging (visible only if we don't use opacity-0 above) */}
         <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-            <GripVertical className="size-4 text-slate-300 dark:text-slate-600" />
+            <GripVertical className="size-4 text-slate-300 dark:text-slate-600 group-hover:text-teal-500 transition-colors" />
         </div>
 
         <div className="flex items-start mb-4">
@@ -153,14 +156,20 @@ const KanbanCard = memo(({ conv, isOverlay, ...props }) => (
 
 const SortableKanbanCard = memo(({ conv }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: conv.id });
+    
     return (
         <div
             ref={setNodeRef}
-            style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.3 : 1 }}
+            style={{ transform: CSS.Transform.toString(transform), transition }}
             {...attributes}
             {...listeners}
+            className="group outline-none"
         >
-            <KanbanCard conv={conv} />
+            {isDragging ? (
+                <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[1.5rem] border-2 border-dashed border-teal-500/20 dark:border-teal-500/10 min-h-[170px] w-full" />
+            ) : (
+                <KanbanCard conv={conv} />
+            )}
         </div>
     );
 });
@@ -230,7 +239,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
             </div>
 
             {/* Body */}
-            <div ref={setNodeRef} className={`flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-20 min-h-[200px] transition-colors duration-200 rounded-3xl ${isOver ? 'bg-teal-500/5 ring-2 ring-teal-500/20' : ''}`}>
+            <div ref={setNodeRef} className={`flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-24 min-h-[250px] transition-all duration-300 rounded-3xl ${isOver ? 'bg-teal-500/[0.03] ring-2 ring-teal-500/10' : ''}`}>
                 <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
                     {items.map(conv => <SortableKanbanCard key={conv.id} conv={conv} />)}
                 </SortableContext>
@@ -640,6 +649,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
     const handleDragStart = ({ active }) => {
         setActiveId(active.id);
+        document.body.classList.add('cursor-grabbing-active');
     };
 
     // NOTE: we intentionally do NOT use onDragOver for cross-column moves.
@@ -648,6 +658,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
     const handleDragEnd = ({ active, over }) => {
         setActiveId(null);
+        document.body.classList.remove('cursor-grabbing-active');
         if (!over) return;
 
         // Read the CURRENT (non-stale) boardData from the ref.
@@ -823,7 +834,13 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
                         <div className="flex-shrink-0 w-2 lg:w-4" />
 
-                        <DragOverlay dropAnimation={{ sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }) }}>
+                        <DragOverlay 
+                            dropAnimation={{ 
+                                duration: 250,
+                                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                                sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }) 
+                            }}
+                        >
                             {activeConv ? <KanbanCard conv={activeConv} isOverlay /> : null}
                         </DragOverlay>
                     </DndContext>
@@ -835,6 +852,11 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.1); border-radius: 20px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.2); }
+                
+                body.cursor-grabbing-active, 
+                body.cursor-grabbing-active * { 
+                    cursor: grabbing !important; 
+                }
             `}} />
         </>
     );
