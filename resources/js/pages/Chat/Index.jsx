@@ -249,6 +249,8 @@ export default function ChatIndex({ instances }) {
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
     const [tags, setTags] = useState([]);
     const [selectedTagId, setSelectedTagId] = useState('');
+    const [selectedAgentId, setSelectedAgentId] = useState('');
+    const [agentFilterQuery, setAgentFilterQuery] = useState('');
     const [isCreatingTag, setIsCreatingTag] = useState(false);
     const [newTagName, setNewTagName] = useState('');
     const [newTagColor, setNewTagColor] = useState('#0d9488');
@@ -365,6 +367,13 @@ export default function ChatIndex({ instances }) {
         if (filterMyAssignments) {
             items = items.filter(c => Number(c.assigned_to) === Number(auth.user.id));
         }
+        if (selectedAgentId) {
+            if (selectedAgentId === 'unassigned') {
+                items = items.filter(c => !c.assigned_to);
+            } else {
+                items = items.filter(c => Number(c.assigned_to) === Number(selectedAgentId));
+            }
+        }
         if (selectedTagId) {
             items = items.filter(c => (c.tags || []).some(t => String(t.id) === String(selectedTagId)));
         }
@@ -373,7 +382,7 @@ export default function ChatIndex({ instances }) {
         return items.filter(
             c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q),
         );
-    }, [conversations, searchQuery, filterMyAssignments, selectedTagId, auth.user.id]);
+    }, [conversations, searchQuery, filterMyAssignments, selectedTagId, selectedAgentId, auth.user.id]);
 
     const scrollToBottom = useCallback(() => {
         const el = messagesContainerRef.current;
@@ -592,17 +601,17 @@ export default function ChatIndex({ instances }) {
                             <DropdownMenuTrigger asChild>
                                 <button className={clsx(
                                     "p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center",
-                                    (filterMyAssignments || selectedTagId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
+                                    (filterMyAssignments || selectedTagId || selectedAgentId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
                                 )}>
                                     <MoreHorizontal className="size-5" />
                                 </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
+                            <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
                                 <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones de Chat</DropdownMenuLabel>
                                 <DropdownMenuSeparator className="bg-border/5" />
                                 
                                 <DropdownMenuItem 
-                                    onClick={() => setFilterMyAssignments(!filterMyAssignments)}
+                                    onClick={() => { setFilterMyAssignments(!filterMyAssignments); setSelectedAgentId(''); }}
                                     className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
                                 >
                                     <div className={clsx(
@@ -619,6 +628,73 @@ export default function ChatIndex({ instances }) {
                                     </div>
                                     {filterMyAssignments && <Check className="size-4 text-teal-600 ml-auto" />}
                                 </DropdownMenuItem>
+
+                                {isAdmin && companyUsers.length > 0 && (
+                                    <>
+                                        <DropdownMenuSeparator className="bg-border/5" />
+                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2 flex justify-between items-center">
+                                            <span>Filtrar por Agente</span>
+                                            {selectedAgentId && <span className="text-[8px] bg-teal-600 text-white px-1 rounded">Activo</span>}
+                                        </DropdownMenuLabel>
+                                        
+                                        {/* Search Input for Agents */}
+                                        <div className="px-2 pb-2" onClick={(e) => e.stopPropagation()}>
+                                            <div className="relative">
+                                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/40" />
+                                                <input 
+                                                    type="text"
+                                                    placeholder="Buscar agente..."
+                                                    value={agentFilterQuery}
+                                                    onChange={(e) => setAgentFilterQuery(e.target.value)}
+                                                    className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-7 pr-2 py-1.5 text-[11px] focus:ring-1 focus:ring-teal-600/20 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="max-h-60 overflow-y-auto px-1 py-1 custom-scrollbar">
+                                            {!agentFilterQuery && (
+                                                <DropdownMenuItem 
+                                                    onClick={() => { setSelectedAgentId(selectedAgentId === 'unassigned' ? '' : 'unassigned'); setFilterMyAssignments(false); }}
+                                                    className="flex items-center gap-3 py-2 px-3 cursor-pointer group"
+                                                >
+                                                    <div className={clsx(
+                                                        "size-7 rounded-lg flex items-center justify-center transition-all",
+                                                        selectedAgentId === 'unassigned' ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600"
+                                                    )}>
+                                                        <XIcon className="size-3.5" />
+                                                    </div>
+                                                    <span className="text-xs font-bold flex-1 text-amber-600 dark:text-amber-400">Sin Asignar</span>
+                                                    {selectedAgentId === 'unassigned' && <Check className="size-3.5 text-teal-600" />}
+                                                </DropdownMenuItem>
+                                            )}
+                                            
+                                            {companyUsers
+                                                .filter(u => u.name.toLowerCase().includes(agentFilterQuery.toLowerCase()))
+                                                .map(u => (
+                                                    <DropdownMenuItem 
+                                                        key={u.id}
+                                                        onClick={() => { setSelectedAgentId(selectedAgentId === String(u.id) ? '' : String(u.id)); setFilterMyAssignments(false); }}
+                                                        className="flex items-center gap-3 py-2 px-3 cursor-pointer group"
+                                                    >
+                                                        <div className={clsx(
+                                                            "size-7 rounded-lg flex items-center justify-center transition-all",
+                                                            selectedAgentId === String(u.id) ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600"
+                                                        )}>
+                                                            <User className="size-3.5" />
+                                                        </div>
+                                                        <span className="text-xs font-bold flex-1">{u.name}</span>
+                                                        {selectedAgentId === String(u.id) && <Check className="size-3.5 text-teal-600" />}
+                                                    </DropdownMenuItem>
+                                                ))
+                                            }
+                                            {companyUsers.filter(u => u.name.toLowerCase().includes(agentFilterQuery.toLowerCase())).length === 0 && (
+                                                <div className="py-4 text-center">
+                                                    <p className="text-[10px] font-bold text-muted-foreground">No se encontraron agentes</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
 
                                 <DropdownMenuSeparator className="bg-border/5" />
                                 <DropdownMenuItem 
@@ -660,6 +736,7 @@ export default function ChatIndex({ instances }) {
                                     onClick={() => {
                                         setFilterMyAssignments(false);
                                         setSelectedTagId('');
+                                        setSelectedAgentId('');
                                         setSearchQuery('');
                                         loadConversations();
                                     }}
