@@ -97,6 +97,13 @@ class ChatController extends Controller
                     $q->where('tags.id', $tagId);
                 });
             })
+            ->when($request->assigned_to, function ($query, $assignedTo) {
+                if ($assignedTo === 'unassigned') {
+                    $query->whereNull('assigned_to');
+                } else {
+                    $query->where('assigned_to', $assignedTo);
+                }
+            })
             ->orderByDesc('last_message_at')
             ->paginate(50);
 

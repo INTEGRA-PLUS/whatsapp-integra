@@ -241,6 +241,10 @@ export default function ChatIndex({ instances }) {
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [newMessage, setNewMessage] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
     const [lastUpdate, setLastUpdate] = useState('Nunca');
@@ -396,27 +400,72 @@ export default function ChatIndex({ instances }) {
         }
     }, [instances, selectedInstanceId]);
 
-    const loadConversations = useCallback(async () => {
-        if (!selectedInstanceId) return;
+    // ── Search Debounce ───────────────────────────────────────────────────
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    useEffect(() => {
+        // Reset and load when search changes
+        setPage(1);
+        setConversations([]);
+        setHasMore(true);
+    }, [debouncedSearch, selectedInstanceId, selectedTagId, selectedAgentId, filterMyAssignments]);
+
+    const loadConversations = useCallback(async (pageNum = 1) => {
+        if (!selectedInstanceId || loadingMore) return;
+        
         try {
-            const res = await axios.get('/api/chat/conversations', {
-                params: { instance_id: selectedInstanceId },
-            });
-            setConversations(res.data.data);
+            setLoadingMore(true);
+            const params = { 
+                instance_id: selectedInstanceId,
+                page: pageNum,
+                search: debouncedSearch,
+                tag_id: selectedTagId,
+                assigned_to: selectedAgentId === 'unassigned' ? 'unassigned' : selectedAgentId,
+            };
+            
+            if (filterMyAssignments) params.assigned_to = auth.user.id;
+
+            const res = await axios.get('/api/chat/conversations', { params });
+            
+            const newItems = res.data.data;
+            setConversations(prev => pageNum === 1 ? newItems : [...prev, ...newItems]);
+            setHasMore(res.data.next_page_url !== null);
+            setPage(pageNum);
         } catch (err) {
             console.error('Error cargando conversaciones:', err);
+        } finally {
+            setLoadingMore(false);
         }
-    }, [selectedInstanceId]);
+    }, [selectedInstanceId, debouncedSearch, selectedTagId, selectedAgentId, filterMyAssignments, auth.user.id]);
 
     useEffect(() => {
-        loadConversations();
+        loadConversations(1);
+    }, [debouncedSearch, selectedInstanceId, selectedTagId, selectedAgentId, filterMyAssignments, loadConversations]);
+
+    const sidebarScrollRef = useRef(null);
+    const observerTarget = useRef(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && hasMore && !loadingMore) {
+                    loadConversations(page + 1);
+                }
+            },
+            { threshold: 0.5 }
+        );
+
+        if (observerTarget.current) observer.observe(observerTarget.current);
+        return () => observer.disconnect();
+    }, [hasMore, loadingMore, page, loadConversations]);
+
+    useEffect(() => {
         startPolling();
         return () => stopPolling();
-    }, [loadConversations]);
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, scrollToBottom]);
+    }, [selectedInstanceId, lastUpdateTimestamp]);
 
     function startPolling() {
         stopPolling();
@@ -783,24 +832,41 @@ export default function ChatIndex({ instances }) {
                                 </div>
                             </div>
                             
-                            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                {filteredConversations.map(conv => (
-                                    <ConversationItem 
-                                        key={conv.id}
-                                        conv={conv}
-                                        isActive={selectedConversation?.id === conv.id}
-                                        onSelect={selectConversation}
-                                        onAttachTag={attachTag}
-                                        onDetachTag={detachTag}
-                                        onNewTag={handleNewTag}
-                                        onAssign={assignConversation}
-                                        tags={tags}
-                                        companyUsers={companyUsers}
-                                        isAdmin={isAdmin}
-                                        formatTime={formatTime}
-                                        StatusIcons={StatusIcons}
-                                    />
+                            <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
+                                {conversations.map(conv => (
+                                    <div key={conv.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 72px' }}>
+                                        <ConversationItem 
+                                            conv={conv}
+                                            isActive={selectedConversation?.id === conv.id}
+                                            onSelect={selectConversation}
+                                            onAttachTag={attachTag}
+                                            onDetachTag={detachTag}
+                                            onNewTag={handleNewTag}
+                                            onAssign={assignConversation}
+                                            tags={tags}
+                                            companyUsers={companyUsers}
+                                            isAdmin={isAdmin}
+                                            formatTime={formatTime}
+                                            StatusIcons={StatusIcons}
+                                        />
+                                    </div>
                                 ))}
+
+                                {/* Sentinel for Infinite Scroll */}
+                                <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
+                                    {loadingMore && (
+                                        <div className="flex items-center gap-2 text-[10px] font-black text-teal-600/40 uppercase tracking-widest">
+                                            <div className="size-3 border-2 border-teal-600/20 border-t-teal-600 rounded-full animate-spin" />
+                                            Cargando más...
+                                        </div>
+                                    )}
+                                </div>
+
+                                {conversations.length === 0 && !loadingMore && (
+                                    <div className="p-8 text-center">
+                                        <p className="text-xs text-muted-foreground font-medium italic opacity-60">No se encontraron chats</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
