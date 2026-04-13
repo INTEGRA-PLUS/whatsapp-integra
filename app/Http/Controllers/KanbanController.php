@@ -211,7 +211,10 @@ class KanbanController extends Controller
         $column = KanbanColumn::where('company_id', $user->company_id)
             ->findOrFail($validated['column_id']);
 
-        $conversation->update(['kanban_column_id' => $column->id]);
+        $conversation->update([
+            'kanban_column_id' => $column->id,
+            'last_message_at'  => now(), // Update timestamp to keep it at the top
+        ]);
 
         return response()->json(['success' => true]);
     }
