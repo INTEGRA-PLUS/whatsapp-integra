@@ -155,4 +155,19 @@ class UserController extends Controller
         return redirect()->route('users.index')
             ->with('success', 'Usuario eliminado exitosamente');
     }
+
+    /**
+     * Get users for the company (API).
+     */
+    public function getCompanyUsers()
+    {
+        $user = auth()->user();
+        
+        $users = User::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->select(['id', 'name', 'email'])
+            ->get();
+
+        return response()->json($users);
+    }
 }

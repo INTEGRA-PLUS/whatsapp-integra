@@ -53,6 +53,14 @@ class WhatsAppConversation extends Model
         return $this->belongsTo(\App\Models\KanbanColumn::class, 'kanban_column_id');
     }
 
+    /**
+     * The tags that belong to the conversation.
+     */
+    public function tags(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class, 'whatsapp_conversation_tag', 'whatsapp_conversation_id', 'tag_id');
+    }
+
     public function markAsRead()
     {
         $this->update(['unread_count' => 0]);
@@ -65,11 +73,12 @@ class WhatsAppConversation extends Model
 
     public function getInitialsAttribute()
     {
-        $words = explode(' ', $this->name ?? 'U');
+        $name = $this->name ?? $this->phone_number ?? 'U';
+        $words = explode(' ', $name);
         if (count($words) >= 2) {
             return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
         }
-        return strtoupper(substr($words[0], 0, 2));
+        return strtoupper(substr($name, 0, 2));
     }
 
     public function scopeOpen($query)

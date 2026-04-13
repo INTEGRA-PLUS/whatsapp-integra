@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
-import { Head } from '@inertiajs/react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
+import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import axios from 'axios';
+import { clsx } from 'clsx';
 import { 
     Search, 
     Send, 
     Image as ImageIcon, 
     MoreVertical, 
+    MoreHorizontal,
     Phone, 
     Info, 
     Check, 
@@ -18,10 +20,221 @@ import {
     Clock,
     User,
     MessageSquare,
-    ChevronDown
+    ChevronDown,
+    Filter,
+    Tag as TagIcon,
+    PlusCircle,
+    X as XIcon,
+    UserPlus
 } from 'lucide-react';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+    DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
+
+// ─── StatusIcons Sub-component ───────────────────────────────────────────────
+
+const StatusIcons = memo(({ status }) => {
+    if (status === 'sent') return <Check className="size-3 text-muted-foreground/40" />;
+    if (status === 'delivered') return <CheckCheck className="size-3 text-muted-foreground/40" />;
+    if (status === 'read') return <CheckCheck className="size-3 text-sky-400" />;
+    return <Clock className="size-2.5 text-muted-foreground/30" />;
+});
+
+// ─── ConversationItem Component ──────────────────────────────────────────────
+
+const ConversationItem = memo(({ 
+    conv, 
+    isActive, 
+    onSelect, 
+    onAttachTag, 
+    onDetachTag, 
+    onNewTag, 
+    onAssign,
+    tags, 
+    companyUsers,
+    isAdmin,
+    formatTime
+}) => {
+    return (
+        <div
+            onClick={() => onSelect(conv)}
+            className={clsx(
+                "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-b border-border/5 group/conv",
+                isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
+            )}
+        >
+            <div className="relative flex-shrink-0">
+                <div className="size-12 rounded-full bg-[#dfe5e7] dark:bg-[#4f5659] flex items-center justify-center text-white font-bold text-lg overflow-hidden uppercase">
+                    {conv.initials}
+                </div>
+                {conv.unread_count > 0 && (
+                    <div className="absolute top-0 -right-1 bg-[#25d366] text-white rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-[#111b21]">
+                        {conv.unread_count}
+                    </div>
+                )}
+            </div>
+            <div className="flex-1 min-w-0 border-b border-border/5 pb-0.5">
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <p className="text-sm font-bold text-foreground truncate">
+                            {conv.name || conv.phone_number}
+                        </p>
+                        {conv.assigned_agent && (
+                            <span 
+                                title={`Asignado a ${conv.assigned_agent.name}`}
+                                className="shrink-0 text-[7px] leading-none bg-teal-500/10 text-teal-600 dark:text-teal-400 px-1.5 py-1 rounded-md font-black uppercase tracking-tighter border border-teal-500/10"
+                            >
+                                {conv.assigned_agent.name.split(' ')[0]}
+                            </span>
+                        )}
+                    </div>
+                    
+                    <div className="flex items-center gap-1 shrink-0 ml-auto">
+                        <span className={`text-[10px] whitespace-nowrap ${conv.unread_count > 0 ? 'text-[#25d366] font-bold' : 'text-muted-foreground/60'}`}>
+                            {formatTime(conv.last_message_at)}
+                        </span>
+                        
+                        {/* Admin Assignment Picker */}
+                        {isAdmin && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button 
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={clsx(
+                                            "p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all",
+                                            conv.assigned_to ? "text-teal-600" : "text-muted-foreground/60 hover:text-teal-600"
+                                        )}
+                                        title={conv.assigned_agent?.name ? `Asignado a ${conv.assigned_agent.name}` : "Asignar agente"}
+                                    >
+                                        <UserPlus className="size-3" />
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent onClick={(e) => e.stopPropagation()} align="end" className="w-56 rounded-lg border-border/10 shadow-xl">
+                                    <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Asignar Responsable</DropdownMenuLabel>
+                                    <DropdownMenuSeparator className="bg-border/5" />
+                                    <DropdownMenuItem 
+                                        onClick={(e) => { e.stopPropagation(); onAssign(conv.id, null); }}
+                                        className="flex items-center gap-2 py-2 px-3 cursor-pointer"
+                                    >
+                                        <XIcon className="size-3 text-muted-foreground" />
+                                        <span className="text-[11px] font-bold flex-1">Sin Asignar</span>
+                                        {!conv.assigned_to && <Check className="size-3 text-teal-600" />}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="bg-border/5" />
+                                    <div className="max-h-48 overflow-y-auto">
+                                        {companyUsers.map(u => (
+                                            <DropdownMenuItem 
+                                                key={u.id}
+                                                onClick={(e) => { e.stopPropagation(); onAssign(conv.id, u.id); }}
+                                                className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/user"
+                                            >
+                                                <div className={clsx(
+                                                    "size-2.5 rounded-full",
+                                                    Number(conv.assigned_to) === Number(u.id) ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-700"
+                                                )} />
+                                                <span className="text-[11px] font-bold flex-1">{u.name}</span>
+                                                {Number(conv.assigned_to) === Number(u.id) && <Check className="size-3 text-teal-600" />}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </div>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
+
+                        {/* Tag Picker Button */}
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button 
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-teal-600"
+                                >
+                                    <TagIcon className="size-3" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent onClick={(e) => e.stopPropagation()} align="end" className="w-48 rounded-lg border-border/10 shadow-xl">
+                                <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Etiquetas</DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                <div className="max-h-48 overflow-y-auto">
+                                    {tags.map(tag => {
+                                        const hasTag = (conv.tags || []).some(t => t.id === tag.id);
+                                        return (
+                                            <DropdownMenuItem 
+                                                key={tag.id}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    hasTag ? onDetachTag(conv.id, tag.id) : onAttachTag(conv.id, tag.id);
+                                                }}
+                                                className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/tag"
+                                            >
+                                                <div className="size-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                <span className="text-[11px] font-bold flex-1">{tag.name}</span>
+                                                {hasTag && <Check className="size-3 text-teal-600" />}
+                                            </DropdownMenuItem>
+                                        );
+                                    })}
+                                </div>
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                <DropdownMenuItem 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        onNewTag(conv.id);
+                                    }}
+                                    className="flex items-center gap-2 py-2 px-3 cursor-pointer text-teal-600"
+                                >
+                                    <PlusCircle className="size-3" />
+                                    <span className="text-[11px] font-bold">Nueva Etiqueta</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
+                
+                {(conv.tags || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 mb-1">
+                        {conv.tags.map(tag => (
+                            <span 
+                                key={tag.id} 
+                                className="text-[8px] font-black px-1.5 py-0.5 rounded-full text-white uppercase tracking-tighter shadow-sm"
+                                style={{ backgroundColor: tag.color }}
+                            >
+                                {tag.name}
+                            </span>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex items-center gap-1 mt-0.5">
+                    {isActive && <StatusIcons status="read" />}
+                    <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                        {conv.assigned_agent && (
+                            <span className="text-[9px] font-black text-teal-600/60 uppercase tracking-tighter whitespace-nowrap">
+                                @{conv.assigned_agent.name.split(' ')[0]}:
+                            </span>
+                        )}
+                        <p className="text-xs text-muted-foreground truncate leading-relaxed">
+                            {conv.last_message || '...'}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function ChatIndex({ instances }) {
+    const { auth } = usePage().props;
+    
+    // Helper to check permissions
+    const can = (permission) => auth.user.permissions.includes(permission);
+    const isAdmin = can('chat.update');
+
     const [selectedInstanceId, setSelectedInstanceId] = useState('');
     const [conversations, setConversations] = useState([]);
     const [messages, setMessages] = useState([]);
@@ -33,27 +246,134 @@ export default function ChatIndex({ instances }) {
     const [lastUpdate, setLastUpdate] = useState('Nunca');
     const [isPolling, setIsPolling] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
+    const [filterMyAssignments, setFilterMyAssignments] = useState(false);
+    const [tags, setTags] = useState([]);
+    const [selectedTagId, setSelectedTagId] = useState('');
+    const [isCreatingTag, setIsCreatingTag] = useState(false);
+    const [newTagName, setNewTagName] = useState('');
+    const [newTagColor, setNewTagColor] = useState('#0d9488');
+    const [taggingConversationId, setTaggingConversationId] = useState(null);
+    const [companyUsers, setCompanyUsers] = useState([]);
 
     const messagesContainerRef = useRef(null);
     const pollingIntervalRef = useRef(null);
 
+    // ── Callbacks for Performance ──────────────────────────────────────────
+
+    const loadTags = useCallback(async () => {
+        try {
+            const res = await axios.get('/api/tags');
+            setTags(res.data);
+        } catch (err) {
+            console.error('Error cargando etiquetas:', err);
+        }
+    }, []);
+
+    const loadUsers = useCallback(async () => {
+        try {
+            const res = await axios.get('/api/chat/users');
+            setCompanyUsers(res.data);
+        } catch (err) {
+            console.error('Error cargando usuarios:', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadTags();
+        loadUsers();
+    }, [loadTags, loadUsers]);
+
+    const assignConversation = useCallback(async (convId, userId) => {
+        try {
+            const res = await axios.post(`/api/chat/conversations/${convId}/assign`, { user_id: userId });
+            if (res.data.success) {
+                const agent = res.data.assigned_agent;
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, assigned_to: userId, assigned_agent: agent } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, assigned_to: userId, assigned_agent: agent } : prev));
+            }
+        } catch (err) {
+            console.error('Error asignando conversación:', err);
+        }
+    }, []);
+
+    const attachTag = useCallback(async (convId, tagId) => {
+        try {
+            const res = await axios.post(`/api/tags/conversations/${convId}/attach`, { tag_id: tagId });
+            if (res.data.success) {
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, tags: res.data.tags } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, tags: res.data.tags } : prev));
+            }
+        } catch (err) {
+            console.error('Error adjuntando etiqueta:', err);
+        }
+    }, []);
+
+    const detachTag = useCallback(async (convId, tagId) => {
+        try {
+            const res = await axios.post(`/api/tags/conversations/${convId}/detach`, { tag_id: tagId });
+            if (res.data.success) {
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, tags: res.data.tags } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, tags: res.data.tags } : prev));
+            }
+        } catch (err) {
+            console.error('Error quitando etiqueta:', err);
+        }
+    }, []);
+
+    const createTag = useCallback(async () => {
+        if (!newTagName.trim()) return;
+        try {
+            const res = await axios.post('/api/tags', { name: newTagName, color: newTagColor });
+            const createdTag = res.data;
+            setTags(prev => [...prev, createdTag]);
+            
+            if (taggingConversationId) {
+                await attachTag(taggingConversationId, createdTag.id);
+            }
+
+            setNewTagName('');
+            setIsCreatingTag(false);
+            setTaggingConversationId(null);
+        } catch (err) {
+            console.error('Error creando etiqueta:', err);
+        }
+    }, [newTagName, newTagColor, taggingConversationId, attachTag]);
+
+    const handleNewTag = useCallback((convId) => {
+        setTaggingConversationId(convId);
+        setIsCreatingTag(true);
+    }, []);
+
+    const selectConversation = useCallback(async (conv) => {
+        setSelectedConversation(conv);
+        try {
+            const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
+            setMessages(res.data.messages);
+            setLastUpdateTimestamp(res.data.timestamp);
+            setConversations(prev =>
+                prev.map(c => (c.id === conv.id ? { ...c, unread_count: 0 } : c)),
+            );
+        } catch (err) {
+            console.error('Error cargando mensajes:', err);
+        }
+    }, []);
+
+    // ── Logic ──────────────────────────────────────────────────────────────
+
     const filteredConversations = useMemo(() => {
-        if (!searchQuery) return conversations;
+        let items = conversations;
+        if (filterMyAssignments) {
+            items = items.filter(c => Number(c.assigned_to) === Number(auth.user.id));
+        }
+        if (selectedTagId) {
+            items = items.filter(c => (c.tags || []).some(t => String(t.id) === String(selectedTagId)));
+        }
+        if (!searchQuery) return items;
         const q = searchQuery.toLowerCase();
-        return conversations.filter(
+        return items.filter(
             c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q),
         );
-    }, [conversations, searchQuery]);
-
-    const hasPaymentIssue = useMemo(() => {
-        if (!messages.length) return false;
-        const last = messages[messages.length - 1];
-        return (
-            last.direction === 'outbound' &&
-            last.status === 'failed' &&
-            last.error_message?.toLowerCase().includes('business eligibility payment')
-        );
-    }, [messages]);
+    }, [conversations, searchQuery, filterMyAssignments, selectedTagId, auth.user.id]);
 
     const scrollToBottom = useCallback(() => {
         const el = messagesContainerRef.current;
@@ -61,24 +381,14 @@ export default function ChatIndex({ instances }) {
     }, []);
 
     useEffect(() => {
-        if (instances.length > 0) {
+        if (instances.length > 0 && !selectedInstanceId) {
             const first = instances[0];
             setSelectedInstanceId(String(first.id));
         }
-    }, [instances]);
+    }, [instances, selectedInstanceId]);
 
-    useEffect(() => {
+    const loadConversations = useCallback(async () => {
         if (!selectedInstanceId) return;
-        loadConversations();
-        startPolling();
-        return () => stopPolling();
-    }, [selectedInstanceId]);
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, scrollToBottom]);
-
-    async function loadConversations() {
         try {
             const res = await axios.get('/api/chat/conversations', {
                 params: { instance_id: selectedInstanceId },
@@ -87,7 +397,17 @@ export default function ChatIndex({ instances }) {
         } catch (err) {
             console.error('Error cargando conversaciones:', err);
         }
-    }
+    }, [selectedInstanceId]);
+
+    useEffect(() => {
+        loadConversations();
+        startPolling();
+        return () => stopPolling();
+    }, [loadConversations]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, scrollToBottom]);
 
     function startPolling() {
         stopPolling();
@@ -151,20 +471,6 @@ export default function ChatIndex({ instances }) {
         });
     }
 
-    async function selectConversation(conv) {
-        setSelectedConversation(conv);
-        try {
-            const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
-            setMessages(res.data.messages);
-            setLastUpdateTimestamp(res.data.timestamp);
-            setConversations(prev =>
-                prev.map(c => (c.id === conv.id ? { ...c, unread_count: 0 } : c)),
-            );
-        } catch (err) {
-            console.error('Error cargando mensajes:', err);
-        }
-    }
-
     async function sendMessage() {
         if (!newMessage.trim() || sending) return;
         const msg = newMessage;
@@ -208,7 +514,7 @@ export default function ChatIndex({ instances }) {
         }
     }
 
-    function formatTime(ts) {
+    const formatTime = useCallback((ts) => {
         if (!ts) return '';
         const date = new Date(ts);
         const now = new Date();
@@ -220,7 +526,7 @@ export default function ChatIndex({ instances }) {
         }
         if (diffHours < 48) return 'Ayer';
         return date.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' });
-    }
+    }, []);
 
     function formatMessageTimeOnly(ts) {
         if (!ts) return '';
@@ -248,13 +554,6 @@ export default function ChatIndex({ instances }) {
         setSelectedConversation(null);
         setSelectedInstanceId(e.target.value);
     }
-
-    const StatusIcons = ({ status }) => {
-        if (status === 'sent') return <Check className="size-3 text-muted-foreground/40" />;
-        if (status === 'delivered') return <CheckCheck className="size-3 text-muted-foreground/40" />;
-        if (status === 'read') return <CheckCheck className="size-3 text-sky-400" />;
-        return <Clock className="size-2.5 text-muted-foreground/30" />;
-    };
 
     return (
         <>
@@ -288,6 +587,93 @@ export default function ChatIndex({ instances }) {
                                 ))}
                             </select>
                         </div>
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button className={clsx(
+                                    "p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center",
+                                    (filterMyAssignments || selectedTagId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
+                                )}>
+                                    <MoreHorizontal className="size-5" />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
+                                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones de Chat</DropdownMenuLabel>
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                
+                                <DropdownMenuItem 
+                                    onClick={() => setFilterMyAssignments(!filterMyAssignments)}
+                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
+                                >
+                                    <div className={clsx(
+                                        "size-8 rounded-lg flex items-center justify-center transition-colors shadow-sm",
+                                        filterMyAssignments ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-teal-50 group-hover:text-teal-600"
+                                    )}>
+                                        <User className="size-4" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold leading-none mb-1">Mis Asignaciones</span>
+                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">
+                                            {filterMyAssignments ? 'Viendo solo mis chats' : 'Ver todos los chats'}
+                                        </span>
+                                    </div>
+                                    {filterMyAssignments && <Check className="size-4 text-teal-600 ml-auto" />}
+                                </DropdownMenuItem>
+
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                <DropdownMenuItem 
+                                    onClick={() => setIsCreatingTag(true)}
+                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
+                                >
+                                    <div className="size-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                                        <PlusCircle className="size-4" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold leading-none mb-1">Nueva Etiqueta</span>
+                                        <span className="text-[9px] font-medium opacity-60 leading-none">Crear segmentación</span>
+                                    </div>
+                                </DropdownMenuItem>
+
+                                {tags.length > 0 && (
+                                    <>
+                                        <DropdownMenuSeparator className="bg-border/5" />
+                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Filtrar por Etiqueta</DropdownMenuLabel>
+                                        <div className="max-h-48 overflow-y-auto px-1">
+                                            {tags.map(tag => (
+                                                <DropdownMenuItem 
+                                                    key={tag.id}
+                                                    onClick={() => setSelectedTagId(selectedTagId === String(tag.id) ? '' : String(tag.id))}
+                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
+                                                >
+                                                    <div className="size-3 rounded-full shadow-sm" style={{ backgroundColor: tag.color }} />
+                                                    <span className="text-xs font-bold flex-1">{tag.name}</span>
+                                                    {selectedTagId === String(tag.id) && <Check className="size-3.5 text-teal-600" />}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                                
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                <DropdownMenuItem 
+                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
+                                    onClick={() => {
+                                        setFilterMyAssignments(false);
+                                        setSelectedTagId('');
+                                        setSearchQuery('');
+                                        loadConversations();
+                                    }}
+                                >
+                                    <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
+                                        <Filter className="size-4" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold leading-none mb-1">Limpiar Filtros</span>
+                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">Restablecer vista</span>
+                                    </div>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </div>
 
@@ -321,43 +707,23 @@ export default function ChatIndex({ instances }) {
                             </div>
                             
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                {filteredConversations.map(conv => {
-                                    const isActive = selectedConversation?.id === conv.id;
-                                    return (
-                                        <div
-                                            key={conv.id}
-                                            onClick={() => selectConversation(conv)}
-                                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-border/5 ${
-                                                isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
-                                            }`}
-                                        >
-                                            <div className="relative flex-shrink-0">
-                                                <div className="size-12 rounded-full bg-[#dfe5e7] dark:bg-[#4f5659] flex items-center justify-center text-white font-bold text-lg overflow-hidden uppercase">
-                                                    {conv.initials}
-                                                </div>
-                                                {conv.unread_count > 0 && (
-                                                    <div className="absolute top-0 -right-1 bg-[#25d366] text-white rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-[#111b21]">
-                                                        {conv.unread_count}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 min-w-0 border-b border-border/5 pb-0.5">
-                                                <div className="flex justify-between items-baseline">
-                                                    <p className="text-sm font-medium text-foreground truncate">
-                                                        {conv.name || conv.phone_number}
-                                                    </p>
-                                                    <span className={`text-[10px] ${conv.unread_count > 0 ? 'text-[#25d366] font-bold' : 'text-muted-foreground'}`}>{formatTime(conv.last_message_at)}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1 mt-0.5">
-                                                    {isActive && <StatusIcons status="read" />}
-                                                    <p className="text-xs text-muted-foreground truncate leading-relaxed">
-                                                        {conv.last_message || '...'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                {filteredConversations.map(conv => (
+                                    <ConversationItem 
+                                        key={conv.id}
+                                        conv={conv}
+                                        isActive={selectedConversation?.id === conv.id}
+                                        onSelect={selectConversation}
+                                        onAttachTag={attachTag}
+                                        onDetachTag={detachTag}
+                                        onNewTag={handleNewTag}
+                                        onAssign={assignConversation}
+                                        tags={tags}
+                                        companyUsers={companyUsers}
+                                        isAdmin={isAdmin}
+                                        formatTime={formatTime}
+                                        StatusIcons={StatusIcons}
+                                    />
+                                ))}
                             </div>
                         </div>
 
@@ -387,10 +753,79 @@ export default function ChatIndex({ instances }) {
                                             </div>
                                             <div className="min-w-0">
                                                 <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.name}</h3>
-                                                <p className="text-[10px] text-muted-foreground leading-tight">{selectedConversation.phone_number}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <p className="text-[10px] text-muted-foreground leading-tight">{selectedConversation.phone_number}</p>
+                                                    {selectedConversation.assigned_agent && (
+                                                        <span className="text-[9px] bg-teal-600/10 text-teal-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">
+                                                            @{selectedConversation.assigned_agent.name}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
+                                            {/* Admin Assignment Button */}
+                                            {isAdmin && (
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button 
+                                                            className={clsx(
+                                                                "flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/10 text-[11px] font-black uppercase transition-all",
+                                                                selectedConversation.assigned_to ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-black/20 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                            )}
+                                                            title="Asignar agente"
+                                                        >
+                                                            <UserPlus className="size-3.5" />
+                                                            <span className="hidden sm:inline">
+                                                                {selectedConversation.assigned_agent?.name || 'Asignar'}
+                                                            </span>
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar Agente</DropdownMenuLabel>
+                                                        <DropdownMenuSeparator className="bg-border/5" />
+                                                        
+                                                        {/* Unassign option */}
+                                                        <DropdownMenuItem 
+                                                            onClick={() => assignConversation(selectedConversation.id, null)}
+                                                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
+                                                        >
+                                                            <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-red-50 group-hover:text-red-600 transition-colors shadow-sm">
+                                                                <XIcon className="size-4" />
+                                                            </div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-xs font-bold leading-none mb-1">Sin Asignar</span>
+                                                                <span className="text-[9px] font-medium text-muted-foreground leading-none">Remover responsable</span>
+                                                            </div>
+                                                            {!selectedConversation.assigned_to && <Check className="size-4 text-teal-600 ml-auto" />}
+                                                        </DropdownMenuItem>
+                                                        
+                                                        <DropdownMenuSeparator className="bg-border/5" />
+                                                        <div className="max-h-60 overflow-y-auto px-1 py-1">
+                                                            {companyUsers.map(u => (
+                                                                <DropdownMenuItem 
+                                                                    key={u.id}
+                                                                    onClick={() => assignConversation(selectedConversation.id, u.id)}
+                                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
+                                                                >
+                                                                    <div className={clsx(
+                                                                        "size-8 rounded-lg flex items-center justify-center transition-all shadow-sm",
+                                                                        Number(selectedConversation.assigned_to) === Number(u.id) ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-teal-50 group-hover:text-teal-600"
+                                                                    )}>
+                                                                        <User className="size-4" />
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-xs font-bold leading-none mb-1">{u.name}</span>
+                                                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">{u.email}</span>
+                                                                    </div>
+                                                                    {Number(selectedConversation.assigned_to) === Number(u.id) && <Check className="size-4 text-teal-600 ml-auto" />}
+                                                                </DropdownMenuItem>
+                                                            ))}
+                                                        </div>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            )}
+
                                             <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><Search className="size-5" /></button>
                                             <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><MoreVertical className="size-5" /></button>
                                         </div>
@@ -550,6 +985,67 @@ export default function ChatIndex({ instances }) {
                             onClick={e => e.stopPropagation()}
                             alt="full view"
                         />
+                    </div>
+                )}
+
+                {/* Create Tag Modal */}
+                {isCreatingTag && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-[#1c272e] rounded-3xl shadow-2xl w-full max-w-sm mx-4 p-6 border border-border/10">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-black text-foreground">Nueva Etiqueta</h3>
+                                <button onClick={() => { setIsCreatingTag(false); setTaggingConversationId(null); }} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
+                                    <XIcon className="size-4 text-muted-foreground" />
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2 block">Nombre</label>
+                                    <input 
+                                        type="text" 
+                                        autoFocus
+                                        value={newTagName}
+                                        onChange={e => setNewTagName(e.target.value)}
+                                        placeholder="Ej: Cliente VIP, Cobro..."
+                                        className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-teal-600/20 outline-none"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2 block">Color Distintivo</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {['#0d9488', '#2563eb', '#7c3aed', '#db2777', '#dc2626', '#d97706', '#059669', '#4b5563'].map(color => (
+                                            <button 
+                                                key={color}
+                                                onClick={() => setNewTagColor(color)}
+                                                className={clsx(
+                                                    "size-8 rounded-full border-2 transition-all shadow-sm",
+                                                    newTagColor === color ? "border-white dark:border-[#1c272e] ring-2 ring-teal-600 scale-110" : "border-transparent opacity-80 hover:opacity-100"
+                                                )}
+                                                style={{ backgroundColor: color }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="pt-4 flex gap-3">
+                                    <button 
+                                        onClick={() => { setIsCreatingTag(false); setTaggingConversationId(null); }}
+                                        className="flex-1 py-3 text-sm font-bold text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button 
+                                        onClick={createTag}
+                                        disabled={!newTagName.trim()}
+                                        className="flex-1 py-3 bg-teal-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-teal-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all"
+                                    >
+                                        Crear Etiqueta
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

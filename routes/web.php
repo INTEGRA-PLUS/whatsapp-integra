@@ -196,6 +196,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
+        Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
+        Route::get('/users', [UserController::class, 'getCompanyUsers']);
     });
 
     // Kanban API routes
@@ -208,5 +210,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/columns/{id}/cards', [App\Http\Controllers\KanbanController::class, 'columnCards']);
         Route::post('/conversations/{id}/move', [App\Http\Controllers\KanbanController::class, 'moveCard']);
         Route::post('/cards', [App\Http\Controllers\KanbanController::class, 'storeCard']);
+    });
+
+    // Tag API routes
+    Route::prefix('api/tags')->group(function () {
+        Route::get('/', [App\Http\Controllers\TagController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\TagController::class, 'store']);
+        Route::put('/{tag}', [App\Http\Controllers\TagController::class, 'update']);
+        Route::delete('/{tag}', [App\Http\Controllers\TagController::class, 'destroy']);
+        Route::post('/conversations/{id}/attach', [App\Http\Controllers\TagController::class, 'attachToConversation']);
+        Route::post('/conversations/{id}/detach', [App\Http\Controllers\TagController::class, 'detachFromConversation']);
     });
 });

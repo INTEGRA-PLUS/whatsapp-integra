@@ -9,6 +9,7 @@ use App\Models\Instance;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Models\User;
 use App\Services\MetaWhatsAppService;
 use App\Http\Controllers\KanbanController;
 use Inertia\Inertia;
@@ -84,12 +85,17 @@ class ChatController extends Controller
             ->firstOrFail();
 
         $conversations = WhatsAppConversation::forInstance($instanceId)
-            ->with('assignedAgent:id,name')
+            ->with(['assignedAgent:id,name', 'tags'])
             ->when($request->search, function ($query, $search) {
                 $query->search($search);
             })
             ->when($request->status, function ($query, $status) {
                 $query->where('status', $status);
+            })
+            ->when($request->tag_id, function ($query, $tagId) {
+                $query->whereHas('tags', function ($q) use ($tagId) {
+                    $q->where('tags.id', $tagId);
+                });
             })
             ->orderByDesc('last_message_at')
             ->paginate(50);
@@ -112,7 +118,7 @@ class ChatController extends Controller
             ->firstOrFail();
 
         $updatedConversations = WhatsAppConversation::forInstance($instanceId)
-            ->with('assignedAgent:id,name')
+            ->with(['assignedAgent:id,name', 'tags'])
             ->when($since, function ($query, $since) {
                 $query->where('updated_at', '>', $since);
             })
@@ -313,6 +319,36 @@ class ChatController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversación cerrada'
+        ]);
+    }
+
+    public function assign(Request $request, $conversationId)
+    {
+        $user = auth()->user();
+        $conversation = WhatsAppConversation::with('instance')->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $validated = $request->validate([
+            'user_id' => 'nullable|exists:users,id',
+        ]);
+
+        if ($validated['user_id']) {
+            $targetUser = User::where('id', $validated['user_id'])
+                ->where('company_id', $user->company_id)
+                ->firstOrFail();
+        }
+
+        $conversation->update([
+            'assigned_to' => $validated['user_id'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Conversación asignada',
+            'assigned_agent' => $conversation->assignedAgent()->select('id', 'name')->first()
         ]);
     }
 
