@@ -42,20 +42,23 @@ class KanbanController extends Controller
 
         $perPage = min((int) ($request->per_page ?? 30), 100);
 
-        // Use whereIn with instance IDs instead of whereHas (avoids correlated subquery)
-        $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
-
-        $query = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+        $query = WhatsAppConversation::query()
             ->select(['id', 'instance_id', 'phone_number', 'name', 'last_message', 'last_message_at', 'status', 'kanban_column_id', 'assigned_to', 'unread_count'])
-            ->with('assignedAgent:id,name')
+            ->with(['assignedAgent:id,name', 'tags'])
             ->when($request->search, fn ($q, $s) => $q->search($s))
             ->orderByDesc('last_message_at');
 
         if ($isFirst) {
-            $query->where(function ($q) use ($columnId) {
-                $q->where('kanban_column_id', $columnId)->orWhereNull('kanban_column_id');
-            });
+            // For the first column, we must include cards without a column assigned,
+            // but we MUST restrict to the company's instances.
+            $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
+            $query->whereIn('instance_id', $instanceIds)
+                  ->where(function ($q) use ($columnId) {
+                      $q->where('kanban_column_id', $columnId)->orWhereNull('kanban_column_id');
+                  });
         } else {
+            // For other columns, the column_id itself is enough to restrict to the company
+            // and allows using the (kanban_column_id, last_message_at) index perfectly.
             $query->where('kanban_column_id', $columnId);
         }
 
@@ -108,7 +111,7 @@ class KanbanController extends Controller
         $columns     = KanbanColumn::where('company_id', $user->company_id)->orderBy('position')->get();
         $firstColId  = $columns->first()?->id;
 
-        // Single query: group by kanban_column_id
+        // Optimized query: if we have instanceIds, we can group by kanban_column_id
         $counts = WhatsAppConversation::whereIn('instance_id', $instanceIds)
             ->selectRaw('kanban_column_id, COUNT(*) as total')
             ->groupBy('kanban_column_id')

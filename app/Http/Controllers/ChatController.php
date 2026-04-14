@@ -56,9 +56,11 @@ class ChatController extends Controller
             ->orderBy('position')
             ->get();
 
-        $total = WhatsAppConversation::whereHas('instance', function ($query) use ($user) {
-            $query->where('company_id', $user->company_id);
-        })->count();
+        $instanceIds = Instance::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->pluck('id');
+
+        $total = WhatsAppConversation::whereIn('instance_id', $instanceIds)->count();
 
         $instances = Instance::where('company_id', $user->company_id)
             ->where('active', true)

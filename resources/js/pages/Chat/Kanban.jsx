@@ -160,7 +160,12 @@ const SortableKanbanCard = memo(({ conv }) => {
     return (
         <div
             ref={setNodeRef}
-            style={{ transform: CSS.Transform.toString(transform), transition }}
+            style={{ 
+                transform: CSS.Transform.toString(transform), 
+                transition,
+                contentVisibility: 'auto',
+                containIntrinsicSize: '0 170px'
+            }}
             {...attributes}
             {...listeners}
             className="group outline-none"
@@ -515,18 +520,17 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         }
     }, []);
 
-    // Initial load — load columns one-by-one to avoid race conditions,
-    // and fetch counts in parallel.
+    // Initial load — load counts and columns in parallel for maximum speed.
     useEffect(() => {
         let cancelled = false;
         async function loadAll() {
             const cols = initialColumns ?? [];
-            // Fire counts request in parallel with card loading
             loadCounts();
-            for (const col of cols) {
-                if (cancelled) break;
-                await loadColumnCards(col.id, 1, '', true);
-            }
+            // Parallel load all columns
+            await Promise.all(cols.map(col => {
+                if (cancelled) return Promise.resolve();
+                return loadColumnCards(col.id, 1, '', true);
+            }));
         }
         loadAll();
         return () => { cancelled = true; };
@@ -547,10 +551,11 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         abortControllersRef.current = {};
         let cancelled = false;
         async function searchAll() {
-            for (const col of columns) {
-                if (cancelled) break;
-                await loadColumnCards(col.id, 1, debouncedSearch, true);
-            }
+            // Search all columns in parallel
+            await Promise.all(columns.map(col => {
+                if (cancelled) return Promise.resolve();
+                return loadColumnCards(col.id, 1, debouncedSearch, true);
+            }));
         }
         searchAll();
         return () => { cancelled = true; };
