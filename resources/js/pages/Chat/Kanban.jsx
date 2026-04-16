@@ -21,24 +21,10 @@ import {
     ChevronDown,
 } from 'lucide-react';
 import {
-    DndContext,
-    DragOverlay,
-    pointerWithin,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    defaultDropAnimationSideEffects,
-    useDroppable,
-} from '@dnd-kit/core';
-import {
-    arrayMove,
-    SortableContext,
-    sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
-    useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+    DragDropContext,
+    Droppable,
+    Draggable,
+} from '@hello-pangea/dnd';
 import { clsx } from 'clsx';
 
 const PER_PAGE = 30;
@@ -75,12 +61,12 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
     <div
         {...props}
         className={clsx(
-            'group relative bg-white dark:bg-slate-900/60 backdrop-blur-xl p-4 rounded-[1.5rem] border transition-all duration-300 select-none',
+            'group relative bg-white dark:bg-slate-900 p-4 rounded-[1.5rem] border select-none',
             isOverlay
-                ? 'border-teal-500/50 shadow-[0_20px_50px_rgba(20,184,166,0.3)] scale-[1.05] rotate-[2deg] z-50 cursor-grabbing ring-4 ring-teal-500/5'
+                ? 'border-teal-500 shadow-2xl z-50 cursor-grabbing ring-2 ring-teal-500/10 scale-[1.02] rotate-1 transition-transform duration-200'
                 : isDragging
                     ? 'opacity-0'
-                    : 'border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-black/20 hover:border-teal-500/30 cursor-grab active:cursor-grabbing'
+                    : 'border-slate-200/50 dark:border-slate-800/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
         )}
     >
         {/* Placeholder dashed border when dragging (visible only if we don't use opacity-0 above) */}
@@ -154,28 +140,25 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
     </div>
 ));
 
-const SortableKanbanCard = memo(({ conv }) => {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: conv.id });
-    
+const SortableKanbanCard = memo(({ conv, index }) => {
     return (
-        <div
-            ref={setNodeRef}
-            style={{ 
-                transform: CSS.Transform.toString(transform), 
-                transition,
-                contentVisibility: 'auto',
-                containIntrinsicSize: '0 170px'
-            }}
-            {...attributes}
-            {...listeners}
-            className="group outline-none"
-        >
-            {isDragging ? (
-                <div className="bg-slate-50 dark:bg-slate-900/40 rounded-[1.5rem] border-2 border-dashed border-teal-500/20 dark:border-teal-500/10 min-h-[170px] w-full" />
-            ) : (
-                <KanbanCard conv={conv} />
+        <Draggable draggableId={String(conv.id)} index={index}>
+            {(provided, snapshot) => (
+                <div
+                    ref={provided.innerRef}
+                    {...provided.draggableProps}
+                    {...provided.dragHandleProps}
+                    className="outline-none"
+                    style={provided.draggableProps.style}
+                >
+                    <KanbanCard 
+                        conv={conv} 
+                        isOverlay={snapshot.isDragging}
+                        isDragging={snapshot.isDragging} 
+                    />
+                </div>
             )}
-        </div>
+        </Draggable>
     );
 });
 
@@ -185,12 +168,6 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const Icon = getIcon(col.icon);
-
-    const itemIds = useMemo(() => items.map(i => i.id), [items]);
-
-    // Each column is its own droppable zone. We prefix with "col-" so dnd-kit
-    // never confuses column ids with conversation ids.
-    const { setNodeRef, isOver } = useDroppable({ id: `col-${col.id}` });
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
@@ -203,7 +180,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
             {/* Header */}
             <div className="flex items-center justify-between mb-6 px-3">
                 <div className="flex items-center gap-4">
-                    <div className={clsx('p-2.5 rounded-2xl shadow-lg text-white transition-transform group-hover/column:scale-105 duration-500', col.color)}>
+                    <div className={clsx('p-2.5 rounded-2xl shadow-lg text-white', col.color)}>
                         <Icon className="size-4" />
                     </div>
                     <div className="flex flex-col">
@@ -244,74 +221,86 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
             </div>
 
             {/* Body */}
-            <div ref={setNodeRef} className={`flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-24 min-h-[250px] transition-all duration-300 rounded-3xl ${isOver ? 'bg-teal-500/[0.03] ring-2 ring-teal-500/10' : ''}`}>
-                <SortableContext id={String(col.id)} items={itemIds} strategy={verticalListSortingStrategy}>
-                    {items.map(conv => <SortableKanbanCard key={conv.id} conv={conv} />)}
-                </SortableContext>
-
-                {/* Loading skeleton (first load) */}
-                {loading && items.length === 0 && (
-                    <div className="space-y-3">
-                        {[1, 2, 3].map(n => (
-                            <div key={n} className="bg-white dark:bg-slate-900/60 rounded-[1.5rem] border border-slate-200/50 dark:border-slate-800/50 p-4 animate-pulse">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="size-11 rounded-2xl bg-slate-100 dark:bg-slate-800" />
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full w-3/4" />
-                                        <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-1/2" />
-                                    </div>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full" />
-                                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-5/6" />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Error state */}
-                {error && (
-                    <div className="border-2 border-dashed border-red-200 dark:border-red-900/40 rounded-[2rem] py-10 px-4 flex flex-col items-center justify-center gap-2 text-center">
-                        <AlertCircle className="size-6 text-red-400" />
-                        <p className="text-[11px] font-bold text-red-400">Error al cargar tarjetas</p>
-                        <p className="text-[10px] text-slate-400">{error}</p>
-                        <button
-                            onClick={() => onLoadMore(col.id)}
-                            className="mt-1 text-[10px] font-black text-teal-600 uppercase tracking-widest hover:underline"
-                        >
-                            Reintentar
-                        </button>
-                    </div>
-                )}
-
-                {/* Empty state */}
-                {!loading && !error && items.length === 0 && (
-                    <div className="border-2 border-dashed border-slate-200 dark:border-slate-800/60 rounded-[2.5rem] py-16 flex flex-col items-center justify-center transition-all hover:bg-slate-50 dark:hover:bg-slate-900/30 hover:border-teal-500/20">
-                        <div className="p-4 bg-white dark:bg-slate-800 shadow-lg rounded-full mb-3">
-                            <LayoutDashboard className="size-6 text-slate-200 dark:text-slate-700" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 dark:text-slate-700">Arrastra aquí</p>
-                    </div>
-                )}
-
-                {/* Load more */}
-                {hasMore && !loading && !error && items.length > 0 && (
-                    <button
-                        onClick={() => onLoadMore(col.id)}
-                        className="w-full py-3 flex items-center justify-center gap-2 text-[11px] font-black text-slate-400 hover:text-teal-600 uppercase tracking-widest border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-teal-500/30 transition-all"
+            <Droppable droppableId={String(col.id)}>
+                {(provided, snapshot) => (
+                    <div 
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className={clsx(
+                            "flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-24 min-h-[250px] transition-all duration-300 rounded-3xl",
+                            snapshot.isDraggingOver ? 'bg-teal-500/[0.03] ring-2 ring-teal-500/10' : ''
+                        )}
                     >
-                        <ChevronDown className="size-3.5" /> Cargar más
-                    </button>
-                )}
+                        {items.map((conv, index) => (
+                            <SortableKanbanCard key={conv.id} conv={conv} index={index} />
+                        ))}
+                        {provided.placeholder}
 
-                {/* Loading more spinner */}
-                {loading && items.length > 0 && (
-                    <div className="flex justify-center py-4">
-                        <Loader2 className="size-5 text-teal-500 animate-spin" />
+                        {/* Loading skeleton (first load) */}
+                        {loading && items.length === 0 && (
+                            <div className="space-y-3">
+                                {[1, 2, 3].map(n => (
+                                    <div key={n} className="bg-white dark:bg-slate-900/60 rounded-[1.5rem] border border-slate-200/50 dark:border-slate-800/50 p-4 animate-pulse">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="size-11 rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                                            <div className="flex-1 space-y-2">
+                                                <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full w-3/4" />
+                                                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-1/2" />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full" />
+                                            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-5/6" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Error state */}
+                        {error && (
+                            <div className="border-2 border-dashed border-red-200 dark:border-red-900/40 rounded-[2rem] py-10 px-4 flex flex-col items-center justify-center gap-2 text-center">
+                                <AlertCircle className="size-6 text-red-400" />
+                                <p className="text-[11px] font-bold text-red-400">Error al cargar tarjetas</p>
+                                <p className="text-[10px] text-slate-400">{error}</p>
+                                <button
+                                    onClick={() => onLoadMore(col.id)}
+                                    className="mt-1 text-[10px] font-black text-teal-600 uppercase tracking-widest hover:underline"
+                                >
+                                    Reintentar
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Empty state */}
+                        {!loading && !error && items.length === 0 && (
+                            <div className="border-2 border-dashed border-slate-200 dark:border-slate-800/60 rounded-[2.5rem] py-16 flex flex-col items-center justify-center transition-all hover:bg-slate-50 dark:hover:bg-slate-900/30 hover:border-teal-500/20">
+                                <div className="p-4 bg-white dark:bg-slate-800 shadow-lg rounded-full mb-3">
+                                    <LayoutDashboard className="size-6 text-slate-200 dark:text-slate-700" />
+                                </div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 dark:text-slate-700">Arrastra aquí</p>
+                            </div>
+                        )}
+
+                        {/* Load more */}
+                        {hasMore && !loading && !error && items.length > 0 && (
+                            <button
+                                onClick={() => onLoadMore(col.id)}
+                                className="w-full py-3 flex items-center justify-center gap-2 text-[11px] font-black text-slate-400 hover:text-teal-600 uppercase tracking-widest border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-teal-500/30 transition-all"
+                            >
+                                <ChevronDown className="size-3.5" /> Cargar más
+                            </button>
+                        )}
+
+                        {/* Loading more spinner */}
+                        {loading && items.length > 0 && (
+                            <div className="flex justify-center py-4">
+                                <Loader2 className="size-5 text-teal-500 animate-spin" />
+                            </div>
+                        )}
                     </div>
                 )}
-            </div>
+            </Droppable>
         </div>
     );
 });
@@ -399,7 +388,7 @@ const NewCardModal = ({ instances, defaultColumnId, onClose, onCreated }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Kanban({ columns: initialColumns, total_conversations, instances }) {
+export default function Kanban({ columns: initialColumns, total_conversations, instances: initialInstances }) {
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
@@ -422,11 +411,6 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     // current state synchronously without relying on stale closures.
     const boardDataRef = useRef(boardData);
     useEffect(() => { boardDataRef.current = boardData; }, [boardData]);
-
-    // Track in-flight drag moves: cardId → targetColId (as string).
-    // While a move API call is pending, loadColumnCards must NOT wipe the card
-    // from its new column or re-add it to the old one.
-    const pendingMovesRef = useRef(new Map());
 
     // AbortController per column so we can cancel stale requests.
     const abortControllersRef = useRef({});
@@ -457,47 +441,15 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
             if (controller.signal.aborted) return;
 
             setBoardData(prev => {
-                const pending = pendingMovesRef.current;
-
-                // 1. Collect IDs of cards currently in local state that are NOT in this column.
-                // We must ensure a card NEVER appears twice across the board.
-                const cardsInOtherCols = new Set();
-                Object.entries(prev).forEach(([k, cards]) => {
-                    if (String(k) !== String(colId)) {
-                        cards.forEach(c => cardsInOtherCols.add(Number(c.id)));
-                    }
-                });
-
-                // 2. Filter incoming server cards
-                const filteredServerCards = data.data.filter(serverCard => {
-                    const id = Number(serverCard.id);
-
-                    // A. If the user JUST moved this card somewhere else, IGNORE it here.
-                    if (pending.has(id) && String(pending.get(id)) !== String(colId)) return false;
-
-                    // B. If the card is ALREADY visible in another column locally, IGNORE it here.
-                    if (cardsInOtherCols.has(id)) return false;
-
+                const newData = reset ? data.data : [...(prev[colId] ?? []), ...data.data];
+                // Simple de-duplicate by ID
+                const seen = new Set();
+                const unique = newData.filter(c => {
+                    if (seen.has(c.id)) return false;
+                    seen.add(c.id);
                     return true;
                 });
-
-                if (reset) {
-                    // When searching or first load, we start fresh but keep what's currently "pending" here.
-                    const serverIds = new Set(filteredServerCards.map(c => Number(c.id)));
-                    const localPendingHere = (prev[colId] ?? []).filter(c => {
-                        const id = Number(c.id);
-                        return !serverIds.has(id) && pending.get(id) === String(colId);
-                    });
-                    
-                    return { ...prev, [colId]: [...localPendingHere, ...filteredServerCards] };
-                }
-
-                // Append mode (pagination): only add cards we don't already have anywhere.
-                const allExistingIds = new Set();
-                Object.values(prev).flat().forEach(c => allExistingIds.add(Number(c.id)));
-                
-                const uniqueNewItems = filteredServerCards.filter(c => !allExistingIds.has(Number(c.id)));
-                return { ...prev, [colId]: [...(prev[colId] ?? []), ...uniqueNewItems] };
+                return { ...prev, [colId]: unique };
             });
             setColMeta(prev => ({
                 ...prev,
@@ -520,20 +472,10 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         }
     }, []);
 
-    // Initial load — load counts and columns in parallel for maximum speed.
+    // Initial load
     useEffect(() => {
-        let cancelled = false;
-        async function loadAll() {
-            const cols = initialColumns ?? [];
-            loadCounts();
-            // Parallel load all columns
-            await Promise.all(cols.map(col => {
-                if (cancelled) return Promise.resolve();
-                return loadColumnCards(col.id, 1, '', true);
-            }));
-        }
-        loadAll();
-        return () => { cancelled = true; };
+        loadCounts();
+        columns.forEach(col => loadColumnCards(col.id, 1, '', true));
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Debounce search
@@ -542,23 +484,11 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         return () => clearTimeout(t);
     }, [searchQuery]);
 
-    // Re-fetch all columns when search changes (skip on first render)
-    const isFirstRender = useRef(true);
+    // Re-fetch all columns when search changes
     useEffect(() => {
-        if (isFirstRender.current) { isFirstRender.current = false; return; }
-        // Cancel all in-flight requests before starting new search
-        Object.values(abortControllersRef.current).forEach(c => c.abort());
-        abortControllersRef.current = {};
-        let cancelled = false;
-        async function searchAll() {
-            // Search all columns in parallel
-            await Promise.all(columns.map(col => {
-                if (cancelled) return Promise.resolve();
-                return loadColumnCards(col.id, 1, debouncedSearch, true);
-            }));
+        if (debouncedSearch !== undefined) {
+            columns.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true));
         }
-        searchAll();
-        return () => { cancelled = true; };
     }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleLoadMore = (colId) => {
@@ -594,16 +524,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         if (!confirm('¿Eliminar esta etapa? Las tarjetas pasarán a la primera etapa disponible.')) return;
         try {
             await apiRequest('DELETE', `/api/kanban/columns/${id}`);
-            setColumns(prev => prev.filter(c => c.id !== id));
-            setBoardData(prev => {
-                const rest = { ...prev };
-                const moved = rest[id] ?? [];
-                delete rest[id];
-                const firstId = Object.keys(rest)[0];
-                if (firstId && moved.length) rest[firstId] = [...(rest[firstId] ?? []), ...moved];
-                return rest;
-            });
-            setColMeta(prev => { const m = { ...prev }; delete m[id]; return m; });
+            window.location.reload();
         } catch (err) {
             console.error('Error al eliminar columna:', err);
         }
@@ -613,135 +534,76 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         setNewCardColumn(null);
         const colId = card.kanban_column_id ?? columns[0]?.id;
         if (!colId) return;
-        setBoardData(prev => {
-            const cleaned = Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, v.filter(c => c.id !== card.id)]));
-            return { ...cleaned, [colId]: [card, ...(cleaned[colId] ?? [])] };
-        });
+        setBoardData(prev => ({ ...prev, [colId]: [card, ...(prev[colId] ?? [])] }));
+        setColCounts(prev => ({ ...prev, [colId]: (prev[colId] ?? 0) + 1 }));
     };
 
     // ── Drag and drop ──────────────────────────────────────────────────────
 
-    const activeConv = useMemo(() => {
-        if (!activeId) return null;
-        for (const cards of Object.values(boardData)) {
-            const found = cards.find(c => c.id === activeId);
-            if (found) return found;
+    const handleDragEnd = (result) => {
+        const { source, destination, draggableId } = result;
+
+        if (!destination) return;
+
+        if (
+            source.droppableId === destination.droppableId &&
+            source.index === destination.index
+        ) {
+            return;
         }
-        return null;
-    }, [activeId, boardData]);
 
-    const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-    );
-
-    // ── Helpers ────────────────────────────────────────────────────────────
-
-    // Given a dnd id (card id or "col-X" column droppable id), returns the
-    // boardData key (string) for the column that owns it.
-    function getColKey(id, data) {
-        const d    = data ?? boardDataRef.current;
-        const keys = Object.keys(d);
-        const s    = String(id);
-        if (s.startsWith('col-')) {
-            const target = s.slice(4);
-            return keys.find(k => String(k) === target) ?? null;
-        }
-        return keys.find(k => d[k].some(item => String(item.id) === s)) ?? null;
-    }
-
-    // ── Drag handlers ──────────────────────────────────────────────────────
-
-    const handleDragStart = ({ active }) => {
-        setActiveId(active.id);
-        document.body.classList.add('cursor-grabbing-active');
-    };
-
-    const handleDragEnd = ({ active, over }) => {
-        setActiveId(null);
-        document.body.classList.remove('cursor-grabbing-active');
-        if (!over) return;
-
-        const activeIdStr   = String(active.id);
-        const overIdStr     = String(over.id);
+        const activeIdStr = draggableId;
+        const originColId = source.droppableId;
+        const targetColId = destination.droppableId;
         
-        const snapshot      = boardDataRef.current;
-        const originKey     = getColKey(activeIdStr, snapshot);
-        
-        // Find the target column. It can be a "col-X" id or another card in that column.
-        let targetKey = null;
-        if (overIdStr.startsWith('col-')) {
-            targetKey = overIdStr.slice(4);
-        } else {
-            // Check if 'over' is one of our containers (SortableContext IDs)
-            const maybeColId = over.data?.current?.sortable?.containerId || getColKey(overIdStr, snapshot);
-            targetKey = maybeColId;
-        }
+        const snapshot = boardDataRef.current;
+        const card = snapshot[originColId].find(c => String(c.id) === activeIdStr);
 
-        if (!originKey || !targetKey) return;
+        if (!card) return;
 
-        const originKeyStr = String(originKey);
-        const targetKeyStr = String(targetKey);
-
-        if (targetKeyStr !== originKeyStr) {
-            // ── Cross-column move ──────────────────────────────────────────
-            const cardIdNum = Number(active.id);
-            const targetColId = Number(targetKeyStr);
-            
-            pendingMovesRef.current.set(cardIdNum, targetKeyStr);
-
+        if (originColId !== targetColId) {
+            // ── Cross-column move (Optimistic) ──────────────────────────────
             setBoardData(prev => {
-                const originItems = prev[originKeyStr] ?? [];
-                const card        = originItems.find(i => Number(i.id) === cardIdNum);
-                if (!card) return prev;
+                const newOrigin = [...(prev[originColId] ?? [])];
+                newOrigin.splice(source.index, 1);
                 
-                const updatedCard = { ...card, kanban_column_id: targetColId, last_message_at: new Date().toISOString() };
-
-                return {
-                    ...prev,
-                    [originKeyStr]: originItems.filter(i => Number(i.id) !== cardIdNum),
-                    [targetKeyStr]: [updatedCard, ...(prev[targetKeyStr] ?? [])],
-                };
+                const newTarget = [...(prev[targetColId] ?? [])];
+                newTarget.splice(destination.index, 0, { ...card, kanban_column_id: Number(targetColId) });
+                
+                return { ...prev, [originColId]: newOrigin, [targetColId]: newTarget };
             });
 
             setColCounts(prev => ({
                 ...prev,
-                [originKeyStr]: Math.max(0, (prev[originKeyStr] ?? 0) - 1),
-                [targetKeyStr]: (prev[targetKeyStr] ?? 0) + 1,
+                [originColId]: Math.max(0, (prev[originColId] ?? 0) - 1),
+                [targetColId]: (prev[targetColId] ?? 0) + 1,
             }));
 
-            apiRequest('POST', `/api/kanban/conversations/${active.id}/move`, { column_id: targetColId })
-                .then(() => setTimeout(() => pendingMovesRef.current.delete(cardIdNum), 2000))
+            apiRequest('POST', `/api/kanban/conversations/${activeIdStr}/move`, { column_id: targetColId })
                 .catch(err => {
-                    pendingMovesRef.current.delete(cardIdNum);
-                    console.error('Error al mover tarjeta:', err);
-                    alert('No se pudo guardar el movimiento.');
-                    loadColumnCards(originKeyStr, 1, debouncedSearch, true);
-                    loadColumnCards(targetKeyStr, 1, debouncedSearch, true);
+                    console.error('Move failed:', err);
+                    loadColumnCards(originColId, 1, debouncedSearch, true);
+                    loadColumnCards(targetColId, 1, debouncedSearch, true);
                     loadCounts();
                 });
         } else {
             // ── Same-column reorder ────────────────────────────────────────
             setBoardData(prev => {
-                const items     = prev[targetKeyStr] ?? [];
-                const activeIdx = items.findIndex(i => String(i.id) === activeIdStr);
-                const overIdx   = items.findIndex(i => String(i.id) === overIdStr);
-                if (activeIdx === -1 || overIdx === -1 || activeIdx === overIdx) return prev;
-                return { ...prev, [targetKeyStr]: arrayMove(items, activeIdx, overIdx) };
+                const items = [...(prev[originColId] ?? [])];
+                const [reorderedItem] = items.splice(source.index, 1);
+                items.splice(destination.index, 0, reorderedItem);
+                return { ...prev, [originColId]: items };
             });
         }
     };
 
-    // ── Stats ──────────────────────────────────────────────────────────────
-
-    const totalCards = Object.values(boardData).reduce((s, arr) => s + arr.length, 0);
-
-    const stats = [
+    // Stats memoized to avoid re-renders
+    const stats = useMemo(() => [
         { label: 'Proyectos',      value: total_conversations,                              icon: User,          color: 'text-blue-500',   bg: 'bg-blue-500/5' },
         { label: 'Etapas',         value: columns.length,                                   icon: LayoutDashboard, color: 'text-emerald-500', bg: 'bg-emerald-500/5' },
         { label: 'Pipeline Total', value: `$ ${(total_conversations * 150000).toLocaleString()}`, icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-500/5' },
         { label: 'Conversión',     value: '94%',                                            icon: CheckCircle2,  color: 'text-purple-500', bg: 'bg-purple-500/5' },
-    ];
+    ], [total_conversations, columns.length]);
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -751,7 +613,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
             {newCardColumn !== null && (
                 <NewCardModal
-                    instances={instances ?? []}
+                    instances={initialInstances ?? []}
                     defaultColumnId={newCardColumn}
                     onClose={() => setNewCardColumn(null)}
                     onCreated={handleCardCreated}
@@ -759,9 +621,6 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
             )}
 
             <div className="flex-1 flex flex-col min-h-0 bg-[#fdfdfe] dark:bg-[#080c14] overflow-hidden">
-                <div className="absolute top-0 right-0 w-[50%] h-[50%] bg-teal-500/5 blur-[120px] pointer-events-none rounded-full" />
-                <div className="absolute bottom-0 left-0 w-[30%] h-[30%] bg-purple-500/5 blur-[100px] pointer-events-none rounded-full" />
-
                 {/* Header */}
                 <div className="px-6 lg:px-10 pt-8 pb-4 relative z-10">
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -769,7 +628,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                             <div className="flex items-center gap-4 mb-1">
                                 <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">CRM Comercial</h1>
                                 <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] border border-emerald-500/10">
-                                    <span className="size-1 rounded-full bg-emerald-500 animate-pulse" />
+                                    <span className="size-1 rounded-full bg-emerald-500" />
                                     Board Dinámico
                                 </div>
                             </div>
@@ -781,14 +640,14 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                         <div className="flex items-center gap-3">
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                                    <Search className="size-3.5 text-slate-300 group-focus-within:text-teal-500 transition-colors" />
+                                    <Search className="size-3.5 text-slate-300" />
                                 </div>
                                 <input
                                     type="text"
                                     placeholder="Buscar..."
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900/50 backdrop-blur-md border border-slate-100 dark:border-slate-800 rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-teal-500/5 focus:border-teal-500/40 transition-all w-[240px] lg:w-[300px] shadow-sm placeholder:text-slate-300"
+                                    className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-teal-500/5 focus:border-teal-500/40 transition-all w-[240px] lg:w-[300px] shadow-sm placeholder:text-slate-300"
                                 />
                             </div>
                             <button onClick={addColumn} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-xs font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
@@ -799,7 +658,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
                         {stats.map((stat, i) => (
-                            <div key={i} className="bg-white dark:bg-slate-900/40 backdrop-blur-sm p-4 lg:p-5 rounded-3xl border border-slate-50 dark:border-slate-800/50 shadow-sm">
+                            <div key={i} className="bg-white dark:bg-slate-900 p-4 lg:p-5 rounded-3xl border border-slate-50 dark:border-slate-800 shadow-sm">
                                 <div className="flex items-center gap-4">
                                     <div className={clsx('p-3 rounded-2xl shadow-inner', stat.bg, stat.color)}>
                                         <stat.icon className="size-5" />
@@ -816,12 +675,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
                 {/* Board */}
                 <div className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={pointerWithin}
-                        onDragStart={handleDragStart}
-                        onDragEnd={handleDragEnd}
-                    >
+                    <DragDropContext onDragEnd={handleDragEnd}>
                         {columns.map(col => (
                             <BoardColumn
                                 key={col.id}
@@ -846,17 +700,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                         </div>
 
                         <div className="flex-shrink-0 w-2 lg:w-4" />
-
-                        <DragOverlay 
-                            dropAnimation={{ 
-                                duration: 250,
-                                easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
-                                sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: '0.4' } } }) 
-                            }}
-                        >
-                            {activeConv ? <KanbanCard conv={activeConv} isOverlay /> : null}
-                        </DragOverlay>
-                    </DndContext>
+                    </DragDropContext>
                 </div>
             </div>
 

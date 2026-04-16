@@ -384,7 +384,7 @@ export default function ChatIndex({ instances }) {
         if (!searchQuery) return items;
         const q = searchQuery.toLowerCase();
         return items.filter(
-            c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q),
+            c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q) || (c.last_message || '').toLowerCase().includes(q),
         );
     }, [conversations, searchQuery, filterMyAssignments, selectedTagId, selectedAgentId, auth.user.id]);
 
@@ -827,13 +827,21 @@ export default function ChatIndex({ instances }) {
                                         placeholder="Busca o empieza un chat nuevo"
                                         value={searchQuery}
                                         onChange={e => setSearchQuery(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
+                                        className="w-full pl-10 pr-10 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
                                     />
+                                    {searchQuery && (
+                                        <button 
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                        >
+                                            <XIcon className="size-4 text-muted-foreground/60 hover:text-foreground transition-colors" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
-                                {conversations.map(conv => (
+                                {filteredConversations.map(conv => (
                                     <div key={conv.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 72px' }}>
                                         <ConversationItem 
                                             conv={conv}
@@ -862,7 +870,7 @@ export default function ChatIndex({ instances }) {
                                     )}
                                 </div>
 
-                                {conversations.length === 0 && !loadingMore && (
+                                {filteredConversations.length === 0 && !loadingMore && (
                                     <div className="p-8 text-center">
                                         <p className="text-xs text-muted-foreground font-medium italic opacity-60">No se encontraron chats</p>
                                     </div>
