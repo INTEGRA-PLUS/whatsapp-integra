@@ -6,6 +6,8 @@ use App\Models\Tag;
 use App\Models\WhatsAppConversation;
 use Illuminate\Http\Request;
 
+use App\Models\KanbanColumn;
+
 class TagController extends Controller
 {
     public function index()
@@ -72,6 +74,12 @@ class TagController extends Controller
         ]);
 
         $tag = Tag::where('company_id', auth()->user()->company_id)->findOrFail($validated['tag_id']);
+
+        // When attaching a tag, update the kanban column to match this tag
+        $column = KanbanColumn::where('tag_id', $tag->id)->first();
+        if ($column) {
+            $conversation->update(['kanban_column_id' => $column->id]);
+        }
 
         $conversation->tags()->syncWithoutDetaching([$tag->id]);
 

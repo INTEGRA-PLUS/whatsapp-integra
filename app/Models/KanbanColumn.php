@@ -10,12 +10,18 @@ class KanbanColumn extends Model
 
     protected $fillable = [
         'company_id',
+        'tag_id',
         'name',
         'color',
         'icon',
         'subtitle',
         'position',
     ];
+
+    public function tag()
+    {
+        return $this->belongsTo(Tag::class);
+    }
 
     public function company()
     {

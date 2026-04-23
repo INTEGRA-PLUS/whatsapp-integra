@@ -9,25 +9,13 @@ use App\Models\Instance;
 
 class KanbanController extends Controller
 {
-    private static array $defaultColumns = [
-        ['name' => 'Nuevo Prospecto', 'color' => 'bg-blue-500',    'icon' => 'Plus',         'subtitle' => 'Primer contacto', 'position' => 0],
-        ['name' => 'En Atención',     'color' => 'bg-amber-500',   'icon' => 'MessageSquare', 'subtitle' => 'Chat activo',     'position' => 1],
-        ['name' => 'Seguimiento',     'color' => 'bg-purple-500',  'icon' => 'Calendar',      'subtitle' => 'Nutrición',       'position' => 2],
-        ['name' => 'Venta / Cerrado', 'color' => 'bg-emerald-500', 'icon' => 'CheckCircle2',  'subtitle' => 'Éxito',           'position' => 3],
-    ];
-
     /**
      * Ensure a company has at least the default columns seeded.
+     * (Deprecated: Now only tag-based columns are used)
      */
     public static function ensureDefaultColumns(int $companyId): void
     {
-        if (KanbanColumn::where('company_id', $companyId)->exists()) {
-            return;
-        }
-
-        foreach (self::$defaultColumns as $col) {
-            KanbanColumn::create(array_merge($col, ['company_id' => $companyId]));
-        }
+        // Default columns are now handled via Tag model creation
     }
 
     // GET /api/kanban/columns/{id}/cards?page=1&per_page=30&search=
@@ -96,10 +84,12 @@ class KanbanController extends Controller
     public function columns()
     {
         $companyId = auth()->user()->company_id;
-        self::ensureDefaultColumns($companyId);
 
         return response()->json(
-            KanbanColumn::where('company_id', $companyId)->orderBy('position')->get()
+            KanbanColumn::where('company_id', $companyId)
+                ->whereNotNull('tag_id')
+                ->orderBy('position')
+                ->get()
         );
     }
 
@@ -108,7 +98,10 @@ class KanbanController extends Controller
     {
         $user        = auth()->user();
         $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
-        $columns     = KanbanColumn::where('company_id', $user->company_id)->orderBy('position')->get();
+        $columns     = KanbanColumn::where('company_id', $user->company_id)
+            ->whereNotNull('tag_id')
+            ->orderBy('position')
+            ->get();
         $firstColId  = $columns->first()?->id;
 
         // Optimized query: if we have instanceIds, we can group by kanban_column_id
@@ -216,8 +209,13 @@ class KanbanController extends Controller
 
         $conversation->update([
             'kanban_column_id' => $column->id,
-            'last_message_at'  => now(), // Update timestamp to keep it at the top
+            'last_message_at'  => now(),
         ]);
+
+        // If the destination column is linked to a tag, ensure the conversation has it
+        if ($column->tag_id) {
+            $conversation->tags()->syncWithoutDetaching([$column->tag_id]);
+        }
 
         return response()->json(['success' => true]);
     }
@@ -242,11 +240,12 @@ class KanbanController extends Controller
         $columnId = null;
         if (!empty($validated['column_id'])) {
             $columnId = KanbanColumn::where('company_id', $user->company_id)
+                ->whereNotNull('tag_id')
                 ->find($validated['column_id'])?->id;
         }
         if (!$columnId) {
-            self::ensureDefaultColumns($user->company_id);
             $columnId = KanbanColumn::where('company_id', $user->company_id)
+                ->whereNotNull('tag_id')
                 ->orderBy('position')
                 ->value('id');
         }

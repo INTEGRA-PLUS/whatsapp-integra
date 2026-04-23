@@ -50,9 +50,8 @@ class ChatController extends Controller
             return redirect()->route('master.index');
         }
 
-        KanbanController::ensureDefaultColumns($user->company_id);
-
         $columns = KanbanColumn::where('company_id', $user->company_id)
+            ->whereNotNull('tag_id')
             ->orderBy('position')
             ->get();
 
