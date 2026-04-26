@@ -25,7 +25,8 @@ import {
     Tag as TagIcon,
     PlusCircle,
     X as XIcon,
-    UserPlus
+    UserPlus,
+    Zap
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -35,6 +36,16 @@ import {
     DropdownMenuSeparator,
     DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
+import QuickReplyPicker from '@/components/quick-reply-picker';
+
+const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+function detectQuickReplyToken(value, cursor) {
+    const before = value.slice(0, cursor);
+    const match = before.match(QUICK_REPLY_TOKEN);
+    if (!match) return null;
+    return { query: match[1], tokenStart: cursor - match[1].length - 1 };
+}
 
 // ─── StatusIcons Sub-component ───────────────────────────────────────────────
 
@@ -261,8 +272,15 @@ export default function ChatIndex({ instances }) {
     const [taggingConversationId, setTaggingConversationId] = useState(null);
     const [companyUsers, setCompanyUsers] = useState([]);
 
+    const [quickReplies, setQuickReplies] = useState([]);
+    const [qrOpen, setQrOpen] = useState(false);
+    const [qrQuery, setQrQuery] = useState('');
+    const [qrTokenStart, setQrTokenStart] = useState(0);
+    const [qrIndex, setQrIndex] = useState(0);
+
     const messagesContainerRef = useRef(null);
     const pollingIntervalRef = useRef(null);
+    const messageInputRef = useRef(null);
 
     // ── Callbacks for Performance ──────────────────────────────────────────
 
@@ -284,10 +302,102 @@ export default function ChatIndex({ instances }) {
         }
     }, []);
 
+    const loadQuickReplies = useCallback(async () => {
+        try {
+            const res = await axios.get('/api/quick-replies');
+            setQuickReplies(res.data);
+        } catch (err) {
+            console.error('Error cargando respuestas rápidas:', err);
+        }
+    }, []);
+
     useEffect(() => {
         loadTags();
         loadUsers();
-    }, [loadTags, loadUsers]);
+        loadQuickReplies();
+    }, [loadTags, loadUsers, loadQuickReplies]);
+
+    const qrMatches = useMemo(() => {
+        if (!qrOpen) return [];
+        const q = qrQuery.toLowerCase();
+        const filtered = q
+            ? quickReplies.filter(r => r.shortcut.toLowerCase().startsWith(q))
+            : quickReplies;
+        return filtered.slice(0, 8);
+    }, [qrOpen, qrQuery, quickReplies]);
+
+    useEffect(() => {
+        if (qrIndex >= qrMatches.length) setQrIndex(0);
+    }, [qrMatches.length, qrIndex]);
+
+    const closeQuickReplies = useCallback(() => {
+        setQrOpen(false);
+        setQrQuery('');
+        setQrIndex(0);
+    }, []);
+
+    const updateQuickReplyState = useCallback((value, cursor) => {
+        const detected = detectQuickReplyToken(value, cursor);
+        if (!detected) {
+            if (qrOpen) closeQuickReplies();
+            return;
+        }
+        setQrOpen(true);
+        setQrQuery(detected.query);
+        setQrTokenStart(detected.tokenStart);
+        setQrIndex(0);
+    }, [qrOpen, closeQuickReplies]);
+
+    const applyQuickReply = useCallback((reply) => {
+        const input = messageInputRef.current;
+        const cursor = input ? input.selectionStart ?? newMessage.length : newMessage.length;
+        const before = newMessage.slice(0, qrTokenStart);
+        const after = newMessage.slice(cursor);
+        const next = `${before}${reply.message}${after}`;
+        setNewMessage(next);
+        closeQuickReplies();
+        requestAnimationFrame(() => {
+            const el = messageInputRef.current;
+            if (!el) return;
+            el.focus();
+            const pos = before.length + reply.message.length;
+            try { el.setSelectionRange(pos, pos); } catch (_) {}
+        });
+    }, [newMessage, qrTokenStart, closeQuickReplies]);
+
+    const handleComposerChange = useCallback((e) => {
+        const value = e.target.value;
+        setNewMessage(value);
+        updateQuickReplyState(value, e.target.selectionStart ?? value.length);
+    }, [updateQuickReplyState]);
+
+    const handleComposerKeyDown = useCallback((e) => {
+        if (qrOpen && qrMatches.length > 0) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setQrIndex(i => (i + 1) % qrMatches.length); return; }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setQrIndex(i => (i - 1 + qrMatches.length) % qrMatches.length); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                applyQuickReply(qrMatches[qrIndex]);
+                return;
+            }
+        }
+        if (e.key === 'Escape' && qrOpen) {
+            e.preventDefault();
+            closeQuickReplies();
+            return;
+        }
+        if (e.key === 'Enter' && !qrOpen && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    }, [qrOpen, qrMatches, qrIndex, applyQuickReply, closeQuickReplies]);
+
+    useEffect(() => {
+        const el = messageInputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+    }, [newMessage]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -365,6 +475,24 @@ export default function ChatIndex({ instances }) {
     }, []);
 
     // ── Logic ──────────────────────────────────────────────────────────────
+
+    const hasActiveFilters = Boolean(
+        filterMyAssignments || selectedTagId || selectedAgentId || searchQuery.trim()
+    );
+
+    const activeFilterCount =
+        (filterMyAssignments ? 1 : 0) +
+        (selectedTagId ? 1 : 0) +
+        (selectedAgentId ? 1 : 0) +
+        (searchQuery.trim() ? 1 : 0);
+
+    const resetFilters = useCallback(() => {
+        setFilterMyAssignments(false);
+        setSelectedTagId('');
+        setSelectedAgentId('');
+        setAgentFilterQuery('');
+        setSearchQuery('');
+    }, []);
 
     const filteredConversations = useMemo(() => {
         let items = conversations;
@@ -780,15 +908,9 @@ export default function ChatIndex({ instances }) {
                                 )}
                                 
                                 <DropdownMenuSeparator className="bg-border/5" />
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                     className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
-                                    onClick={() => {
-                                        setFilterMyAssignments(false);
-                                        setSelectedTagId('');
-                                        setSelectedAgentId('');
-                                        setSearchQuery('');
-                                        loadConversations();
-                                    }}
+                                    onClick={() => { resetFilters(); loadConversations(); }}
                                 >
                                     <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
                                         <Filter className="size-4" />
@@ -830,7 +952,7 @@ export default function ChatIndex({ instances }) {
                                         className="w-full pl-10 pr-10 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
                                     />
                                     {searchQuery && (
-                                        <button 
+                                        <button
                                             onClick={() => setSearchQuery('')}
                                             className="absolute inset-y-0 right-0 pr-3 flex items-center"
                                         >
@@ -838,8 +960,25 @@ export default function ChatIndex({ instances }) {
                                         </button>
                                     )}
                                 </div>
+
+                                {hasActiveFilters && (
+                                    <button
+                                        type="button"
+                                        onClick={resetFilters}
+                                        className="mt-2 w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors text-xs font-semibold"
+                                        title="Quitar todos los filtros y volver a la vista base"
+                                    >
+                                        <span className="flex items-center gap-1.5">
+                                            <Filter className="size-3.5" />
+                                            {activeFilterCount === 1 ? '1 filtro activo' : `${activeFilterCount} filtros activos`}
+                                        </span>
+                                        <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider opacity-80">
+                                            Limpiar <XIcon className="size-3" />
+                                        </span>
+                                    </button>
+                                )}
                             </div>
-                            
+
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
                                 {filteredConversations.map(conv => (
                                     <div key={conv.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 72px' }}>
@@ -1082,24 +1221,34 @@ export default function ChatIndex({ instances }) {
                                     </div>
 
                                     {/* Input Area - WhatsApp Web Style */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 flex items-center gap-2 z-10 text-foreground">
-                                        <div className="flex items-center">
+                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 flex items-end gap-2 z-10 text-foreground">
+                                        <div className="flex items-center pb-0.5">
                                             <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
                                             <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
                                                 <Paperclip className="size-6" />
                                                 <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
                                             </label>
                                         </div>
-                                        
-                                        <div className="flex-1">
-                                            <input
-                                                type="text"
-                                                placeholder="Escribe un mensaje aquí"
+
+                                        <div className="flex-1 relative">
+                                            {qrOpen && (
+                                                <QuickReplyPicker
+                                                    matches={qrMatches}
+                                                    activeIndex={qrIndex}
+                                                    onSelect={applyQuickReply}
+                                                    query={qrQuery}
+                                                />
+                                            )}
+                                            <textarea
+                                                ref={messageInputRef}
+                                                rows={1}
+                                                placeholder="Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"
                                                 value={newMessage}
-                                                onChange={e => setNewMessage(e.target.value)}
-                                                onKeyUp={e => e.key === 'Enter' && sendMessage()}
+                                                onChange={handleComposerChange}
+                                                onKeyDown={handleComposerKeyDown}
                                                 disabled={sending}
-                                                className="w-full bg-white dark:bg-[#2a3942] border-none rounded-lg px-4 py-2 text-[14.5px] outline-none placeholder:text-muted-foreground/60 text-foreground"
+                                                className="block w-full bg-white dark:bg-[#2a3942] border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words"
+                                                style={{ maxHeight: '160px' }}
                                             />
                                         </div>
                                         

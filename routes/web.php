@@ -170,6 +170,11 @@ Route::middleware('auth')->group(function () {
     Route::resource('roles', RoleController::class)->middleware('permission:roles.view');
     Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');
 
+    // Quick Replies (Respuestas Rápidas) — admin page
+    Route::get('/quick-replies', [App\Http\Controllers\QuickReplyController::class, 'index'])
+        ->middleware('permission:quick_replies.view')
+        ->name('quick-replies.index');
+
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {
         Route::get('/', [App\Http\Controllers\MasterController::class, 'index'])->name('index');
@@ -210,6 +215,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/columns/{id}/cards', [App\Http\Controllers\KanbanController::class, 'columnCards']);
         Route::post('/conversations/{id}/move', [App\Http\Controllers\KanbanController::class, 'moveCard']);
         Route::post('/cards', [App\Http\Controllers\KanbanController::class, 'storeCard']);
+    });
+
+    // Quick Replies API routes
+    Route::prefix('api/quick-replies')->group(function () {
+        Route::get('/', [App\Http\Controllers\QuickReplyController::class, 'list']);
+        Route::post('/', [App\Http\Controllers\QuickReplyController::class, 'store'])->middleware('permission:quick_replies.create');
+        Route::put('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'update'])->middleware('permission:quick_replies.update');
+        Route::delete('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'destroy'])->middleware('permission:quick_replies.delete');
     });
 
     // Tag API routes

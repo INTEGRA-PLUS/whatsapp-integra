@@ -13,7 +13,7 @@ class InitPermissionsSeeder extends Seeder
     public function run(): void
     {
         // 1. Crear permisos base para módulos fijos
-        $modules = ['users', 'roles', 'instances', 'chat', 'crm'];
+        $modules = ['users', 'roles', 'instances', 'chat', 'crm', 'quick_replies'];
         $actions = ['view', 'create', 'update', 'delete'];
 
         foreach ($modules as $mod) {

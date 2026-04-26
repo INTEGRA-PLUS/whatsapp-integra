@@ -1,15 +1,16 @@
 import { Link, usePage } from '@inertiajs/react';
-import { 
-    LayoutGrid, 
-    MessageSquare, 
-    Settings, 
+import {
+    LayoutGrid,
+    MessageSquare,
+    Settings,
     Briefcase,
     Package,
     PlusCircle,
     Home,
     Layers,
     Users,
-    ShieldCheck
+    ShieldCheck,
+    Zap
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -43,6 +44,7 @@ export function AppSidebar() {
         mainNavItems = [
             { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
             { title: 'CRM', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
+            { title: 'Respuestas Rápidas', href: route('quick-replies.index'), icon: Zap, show: hasPermission('quick_replies.view') },
             { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
             { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
             { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
