@@ -1,0 +1,30 @@
+# Local development overlay — auto-loaded by `docker compose up`.
+# Exposes DB/Redis to the host and disables OPcache validation freezing
+# so code edits are picked up without rebuilding the image.
+#
+# Do NOT use on production hosts. Production uses docker-compose.prod.yml,
+# which must be passed explicitly with `-f`.
+
+services:
+  app:
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      LOG_LEVEL: debug
+      PHP_OPCACHE_VALIDATE_TIMESTAMPS: "1"
+    volumes:
+      - ./app:/var/www/html/app
+      - ./bootstrap:/var/www/html/bootstrap
+      - ./config:/var/www/html/config
+      - ./database:/var/www/html/database
+      - ./public:/var/www/html/public
+      - ./resources:/var/www/html/resources
+      - ./routes:/var/www/html/routes
+
+  db:
+    ports:
+      - "${DB_PORT_HOST:-3306}:3306"
+
+  redis:
+    ports:
+      - "${REDIS_PORT_HOST:-6379}:6379"

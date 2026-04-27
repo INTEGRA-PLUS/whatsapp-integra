@@ -1,0 +1,71 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Dependencies (rebuilt inside the image)
+node_modules
+vendor
+
+# Build output (rebuilt inside the image)
+public/build
+public/hot
+public/storage
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+auth.json
+
+# Local databases / dumps
+database/database.sqlite
+*.sql
+*.sqlite
+
+# Storage runtime data
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/framework/testing/*
+storage/app/public/*
+!storage/**/.gitignore
+
+# Tests / dev tooling
+tests
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+
+# Editor / IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker artifacts themselves
+docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Claude / project meta
+.claude
+memory
+README.md
+
+# One-off scripts that shouldn't ship to prod
+db_debug.php
+seed_test_data.php
+test_get_messages.php
+temp_app
+
+# Logs
+npm-debug.log
+yarn-error.log
+*.log
