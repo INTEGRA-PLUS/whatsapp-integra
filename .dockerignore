@@ -49,7 +49,7 @@ phpunit.xml
 Thumbs.db
 
 # Docker artifacts themselves
-docker
+# NOTE: do NOT exclude `docker/` — the Dockerfile COPYs configs from it.
 docker-compose*.yml
 Dockerfile*
 .dockerignore
