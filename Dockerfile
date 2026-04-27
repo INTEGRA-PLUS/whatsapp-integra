@@ -19,14 +19,25 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2 — PHP dependencies (Composer)
+# Runs on PHP 8.4 so platform checks match the runtime stage. We pull the
+# composer binary from the official image instead of using `composer:*` as the
+# base, because those tags lag the latest PHP minor.
 # ---------------------------------------------------------------------------
-FROM composer:2.7 AS vendor
+FROM php:8.4-cli-alpine AS vendor
 WORKDIR /app
+
+# Install only the PHP extensions composer needs to evaluate platform reqs.
+RUN apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev \
+    && docker-php-ext-install -j"$(nproc)" intl zip bcmath \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
 
 COPY composer.json composer.lock ./
 
 RUN --mount=type=cache,target=/tmp/composer-cache \
     COMPOSER_CACHE_DIR=/tmp/composer-cache \
+    COMPOSER_ALLOW_SUPERUSER=1 \
     composer install \
         --no-dev \
         --no-interaction \
@@ -39,7 +50,7 @@ RUN --mount=type=cache,target=/tmp/composer-cache \
 # ---------------------------------------------------------------------------
 # Stage 3 — Runtime base (PHP-FPM + Nginx + Supervisor in one image)
 # ---------------------------------------------------------------------------
-FROM php:8.3-fpm-alpine AS runtime
+FROM php:8.4-fpm-alpine AS runtime
 
 # OCI labels
 LABEL org.opencontainers.image.title="whatsapp-integra" \
