@@ -79,6 +79,15 @@ RUN apk add --no-cache \
         ca-certificates \
         fcgi \
         gettext \
+        # Runtime shared libs that the compiled PHP extensions link against.
+        # These MUST stay after the .build-deps purge below — otherwise
+        # `php` startup will warn `Unable to load dynamic library 'gd' / ...`.
+        icu-libs \
+        libpng \
+        libjpeg-turbo \
+        freetype \
+        libzip \
+        libxml2 \
     && cp /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo "${TZ}" > /etc/timezone \
     && apk add --no-cache --virtual .build-deps \
@@ -108,6 +117,11 @@ RUN apk add --no-cache \
     && pecl install redis \
     && docker-php-ext-enable redis \
     && apk del --no-network .build-deps \
+    # Nginx on Alpine creates its working dirs owned by user `nginx`, but our
+    # nginx.conf runs the worker as `www-data` to share storage perms with
+    # PHP-FPM. Re-own everything nginx needs to write to.
+    && mkdir -p /var/lib/nginx/tmp /var/lib/nginx/logs /var/log/nginx /run/nginx \
+    && chown -R www-data:www-data /var/lib/nginx /var/log/nginx /run/nginx \
     && rm -rf /tmp/* /var/cache/apk/*
 
 # PHP / FPM / Nginx / Supervisor configs
