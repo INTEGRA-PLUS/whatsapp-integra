@@ -110,21 +110,14 @@ class MetaWhatsAppService
 
             $extension = $this->getExtensionFromMime($mimeType);
             $filename = uniqid('wa_') . '_' . time() . '.' . $extension;
-            $path = "whatsapp/media/{$filename}";
+            $path = "public/whatsapp/media/{$filename}";
 
-            Storage::disk('public_uploads')->put($path, $mediaResponse->body());
-
-             // Fix permissions explicitly using the disk path
-            $fullPath = Storage::disk('public_uploads')->path($path);
-            if (file_exists($fullPath)) {
-                chmod($fullPath, 0644);
-            }
+            Storage::disk('s3_media')->put($path, $mediaResponse->body(), 'public');
 
             return [
                 'filename' => $filename,
                 'path' => $path,
-                // Force URL construction to match requirement
-                'url' => rtrim(config('app.url'), '/') . "/{$path}",
+                'url' => Storage::disk('s3_media')->url($path),
                 'mime_type' => $mimeType,
                 'size' => strlen($mediaResponse->body())
             ];
