@@ -110,7 +110,7 @@ class MetaWhatsAppService
 
             $extension = $this->getExtensionFromMime($mimeType);
             $filename = uniqid('wa_') . '_' . time() . '.' . $extension;
-            $path = "public/whatsapp/media/{$filename}";
+            $path = "whatsapp/media/{$filename}";
 
             Storage::disk('s3_media')->put($path, $mediaResponse->body(), 'public');
 

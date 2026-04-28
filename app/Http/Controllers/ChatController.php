@@ -270,7 +270,7 @@ class ChatController extends Controller
 
         $instance = $conversation->instance;
 
-        $path = $request->file('image')->storePublicly('public/whatsapp/media', 's3_media');
+        $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
         $imageUrl = Storage::disk('s3_media')->url($path);
 
         $result = $this->metaService->sendImage(
