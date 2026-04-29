@@ -8,14 +8,17 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use App\Services\AutoResponseService;
 
 class WhatsAppWebhookController extends Controller
 {
     private $metaService;
+    private $autoResponseService;
 
-    public function __construct(MetaWhatsAppService $metaService)
+    public function __construct(MetaWhatsAppService $metaService, AutoResponseService $autoResponseService)
     {
         $this->metaService = $metaService;
+        $this->autoResponseService = $autoResponseService;
     }
 
     public function verify(Request $request)
@@ -226,6 +229,10 @@ class WhatsAppWebhookController extends Controller
         $conversation->incrementUnread();
 
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);
+
+        if ($message['type'] === 'text') {
+            $this->autoResponseService->handleInbound($instance, $conversation, $message['text']['body']);
+        }
 
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,

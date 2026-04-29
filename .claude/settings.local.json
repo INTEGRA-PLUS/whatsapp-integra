@@ -6,7 +6,8 @@
       "Bash(grep -r \"kanban\\\\|chat.kanban\" /c/Users/juanm/Desktop/istinge/whatsapp-integra/resources/js --include=*.jsx --include=*.js)",
       "Bash(php artisan:*)",
       "Bash(npx vite:*)",
-      "Bash(docker compose *)"
+      "Bash(docker compose *)",
+      "Bash(php *)"
     ]
   }
 }

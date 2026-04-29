@@ -166,6 +166,31 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::prefix('campaigns')->name('campaigns.')->group(function () {
+        Route::get('/contacts/search', [App\Http\Controllers\WhatsAppCampaignController::class, 'searchContacts'])
+            ->middleware('permission:campaigns.view')->name('contacts.search');
+        Route::get('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'index'])
+            ->middleware('permission:campaigns.view')->name('index');
+        Route::get('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'show'])
+            ->middleware('permission:campaigns.view')->name('show');
+        Route::post('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'store'])
+            ->middleware('permission:campaigns.create')->name('store');
+        Route::post('/{campaign}/send', [App\Http\Controllers\WhatsAppCampaignController::class, 'send'])
+            ->middleware('permission:campaigns.update')->name('send');
+        Route::delete('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'destroy'])
+            ->middleware('permission:campaigns.delete')->name('destroy');
+    });
+
+    Route::prefix('auto-responses')->name('auto-responses.')->group(function () {
+        Route::get('/', [App\Http\Controllers\AutoResponseController::class, 'index'])
+            ->middleware('permission:auto_responses.view')->name('index');
+        Route::post('/', [App\Http\Controllers\AutoResponseController::class, 'store'])
+            ->middleware('permission:auto_responses.create')->name('store');
+        Route::put('/{auto_response}', [App\Http\Controllers\AutoResponseController::class, 'update'])
+            ->middleware('permission:auto_responses.update')->name('update');
+        Route::delete('/{auto_response}', [App\Http\Controllers\AutoResponseController::class, 'destroy'])
+            ->middleware('permission:auto_responses.delete')->name('destroy');
+    });
     Route::resource('users', UserController::class)->middleware('permission:users.view');
     Route::resource('roles', RoleController::class)->middleware('permission:roles.view');
     Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');
