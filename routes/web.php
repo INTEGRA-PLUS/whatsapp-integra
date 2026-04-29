@@ -166,6 +166,9 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::get('/reports', [App\Http\Controllers\ReportsController::class, 'index'])
+        ->middleware('permission:reports.view')->name('reports.index');
+
     Route::prefix('campaigns')->name('campaigns.')->group(function () {
         Route::get('/contacts/search', [App\Http\Controllers\WhatsAppCampaignController::class, 'searchContacts'])
             ->middleware('permission:campaigns.view')->name('contacts.search');
