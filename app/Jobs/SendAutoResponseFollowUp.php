@@ -54,11 +54,12 @@ class SendAutoResponseFollowUp implements ShouldQueue
             return;
         }
 
-        // Send the follow-up message
+        $renderedMessage = $rule->renderMessage($conversation);
+
         $result = $metaService->sendMessage(
             $instance->phone_number_id,
             $conversation->phone_number,
-            $rule->response_message
+            $renderedMessage
         );
 
         if (!($result['success'] ?? false)) {
@@ -74,16 +75,19 @@ class SendAutoResponseFollowUp implements ShouldQueue
             'conversation_id' => $conversation->id,
             'wamid' => $result['data']['messages'][0]['id'] ?? null,
             'type' => 'text',
-            'content' => $rule->response_message,
+            'content' => $renderedMessage,
             'direction' => 'outbound',
             'status' => 'sent',
             'sent_at' => now(),
+            'metadata' => ['auto_response_id' => $rule->id, 'follow_up' => true],
         ]);
 
         $conversation->update([
-            'last_message' => $rule->response_message,
+            'last_message' => $renderedMessage,
             'last_message_at' => now(),
         ]);
+
+        $rule->increment('fires_count', 1, ['last_fired_at' => now()]);
 
         Log::channel('whatsapp')->info('🤖 Follow-up enviado (1h después)', [
             'auto_response_id' => $rule->id,

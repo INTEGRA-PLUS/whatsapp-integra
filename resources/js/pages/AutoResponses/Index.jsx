@@ -9,7 +9,10 @@ const MATCH_LABELS = {
     contains: 'Contiene',
     starts_with: 'Empieza con',
     always: 'Siempre responde',
+    welcome: 'Mensaje de bienvenida',
 };
+
+const TRIGGERLESS_TYPES = ['always', 'welcome'];
 
 const emptyForm = {
     name: '',
@@ -18,6 +21,7 @@ const emptyForm = {
     response_message: '',
     instance_id: '',
     active: true,
+    cooldown_minutes: 60,
 };
 
 export default function AutoResponsesIndex({ autoResponses, instances }) {
@@ -31,6 +35,9 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
         return {
             ...form,
             instance_id: form.instance_id === '' ? null : Number(form.instance_id),
+            cooldown_minutes: form.cooldown_minutes === '' || form.cooldown_minutes === null
+                ? 0
+                : Number(form.cooldown_minutes),
         };
     }
 
@@ -61,6 +68,7 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
             response_message: item.response_message ?? '',
             instance_id: item.instance_id ? String(item.instance_id) : '',
             active: !!item.active,
+            cooldown_minutes: item.cooldown_minutes ?? 60,
         });
         setEditing(item);
     }
@@ -114,7 +122,7 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
                                 <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1">
                                     <div>
                                         <span className="text-muted-foreground">{MATCH_LABELS[item.match_type] ?? item.match_type}</span>
-                                        {item.match_type !== 'always' && (
+                                        {!TRIGGERLESS_TYPES.includes(item.match_type) && (
                                             <>
                                                 <span className="text-muted-foreground">: </span>
                                                 <span className="font-mono text-foreground">"{item.trigger_text}"</span>
@@ -124,6 +132,13 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
                                     <div className="text-foreground line-clamp-3 whitespace-pre-wrap">
                                         ↳ {item.response_message}
                                     </div>
+                                </div>
+
+                                <div className="flex items-center justify-between text-[11px] text-muted-foreground -mt-2">
+                                    <span>Disparada {item.fires_count ?? 0} {(item.fires_count ?? 0) === 1 ? 'vez' : 'veces'}</span>
+                                    {item.last_fired_at && (
+                                        <span>Última: {new Date(item.last_fired_at).toLocaleString()}</span>
+                                    )}
                                 </div>
 
                                 <div className="flex gap-2 pt-1">
@@ -175,16 +190,21 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
 }
 
 function FormFields({ form, setForm, instances, autoResponses, editingId = null, errors, onSubmit, onCancel, submitLabel }) {
-    const isAlwaysTakenByOther = autoResponses.some(r => 
-        r.match_type === 'always' && 
-        r.id !== editingId && 
-        (r.instance_id === (form.instance_id === '' ? null : Number(form.instance_id)))
+    const currentInstanceId = form.instance_id === '' ? null : Number(form.instance_id);
+    const isExclusiveTakenByOther = (type) => autoResponses.some(r =>
+        r.match_type === type &&
+        r.id !== editingId &&
+        r.instance_id === currentInstanceId
     );
+    const isAlwaysTakenByOther = isExclusiveTakenByOther('always');
+    const isWelcomeTakenByOther = isExclusiveTakenByOther('welcome');
+    const isCurrentTypeBlocked = (form.match_type === 'always' && isAlwaysTakenByOther) ||
+        (form.match_type === 'welcome' && isWelcomeTakenByOther);
 
     return (
         <form onSubmit={onSubmit} className="space-y-4">
             <Field label="Nombre" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} required placeholder="Ej: Saludo de bienvenida" error={errors?.name} />
-            
+
             <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">Tipo de coincidencia</label>
                 <select
@@ -195,26 +215,32 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                     <option value="contains">Contiene la palabra</option>
                     <option value="exact">Coincidencia exacta</option>
                     <option value="starts_with">Empieza con</option>
+                    {!isWelcomeTakenByOther && <option value="welcome">Mensaje de bienvenida (primer contacto)</option>}
                     {!isAlwaysTakenByOther && <option value="always">Siempre responde</option>}
                 </select>
                 {errors?.match_type && <p className="text-xs text-destructive mt-1">{errors.match_type}</p>}
-                
-                {isAlwaysTakenByOther && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
-                        Ya existe una respuesta configurada como "Siempre responde" para esta instancia.
-                    </p>
-                )}
 
                 {form.match_type === 'always' && (
                     <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
-                        Nota: Esta respuesta se enviará automáticamente con cualquier mensaje del usuario. 
+                        Nota: Esta respuesta se enviará automáticamente con cualquier mensaje del usuario.
                         Si no hay respuesta dentro de la primera hora, se reenviará el mensaje una única vez como recordatorio.
+                    </p>
+                )}
+
+                {form.match_type === 'welcome' && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                        Nota: Esta respuesta se enviará solo al primer mensaje de un contacto nuevo en esta instancia.
                     </p>
                 )}
             </div>
 
-            {form.match_type !== 'always' && (
-                <Field label="Texto disparador" value={form.trigger_text} onChange={v => setForm(f => ({ ...f, trigger_text: v }))} required placeholder='Ej: "Hola"' error={errors?.trigger_text} />
+            {!TRIGGERLESS_TYPES.includes(form.match_type) && (
+                <div className="space-y-1.5">
+                    <Field label="Texto disparador" value={form.trigger_text} onChange={v => setForm(f => ({ ...f, trigger_text: v }))} required placeholder='Ej: hola, buenas, saludos' error={errors?.trigger_text} />
+                    <p className="text-[11px] text-muted-foreground">
+                        Puedes definir varias palabras separadas por coma. Cualquiera que coincida disparará la respuesta.
+                    </p>
+                </div>
             )}
 
             <div className="space-y-1.5">
@@ -224,9 +250,12 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                     onChange={e => setForm(f => ({ ...f, response_message: e.target.value }))}
                     required
                     rows={4}
-                    placeholder="Hola, gracias por escribirnos. ¿En qué podemos ayudarte?"
+                    placeholder="Hola {name}, gracias por escribirnos. ¿En qué podemos ayudarte?"
                     className={`flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.response_message ? 'border-destructive' : 'border-input'}`}
                 />
+                <p className="text-[11px] text-muted-foreground">
+                    Variables disponibles: <code className="font-mono">{'{name}'}</code>, <code className="font-mono">{'{phone}'}</code>, <code className="font-mono">{'{wa_id}'}</code>.
+                </p>
                 {errors?.response_message && <p className="text-xs text-destructive mt-1">{errors.response_message}</p>}
             </div>
 
@@ -245,6 +274,22 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                 {errors?.instance_id && <p className="text-xs text-destructive mt-1">{errors.instance_id}</p>}
             </div>
 
+            <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Cooldown (minutos)</label>
+                <input
+                    type="number"
+                    min="0"
+                    max="10080"
+                    value={form.cooldown_minutes}
+                    onChange={e => setForm(f => ({ ...f, cooldown_minutes: e.target.value }))}
+                    className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.cooldown_minutes ? 'border-destructive' : 'border-input'}`}
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                    Tiempo mínimo entre auto-respuestas de esta regla a la misma conversación. 0 = sin límite.
+                </p>
+                {errors?.cooldown_minutes && <p className="text-xs text-destructive mt-1">{errors.cooldown_minutes}</p>}
+            </div>
+
             <label className="flex items-center gap-2 cursor-pointer">
                 <input
                     type="checkbox"
@@ -256,7 +301,7 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
             </label>
 
             <div className="flex gap-2 pt-2">
-                <Button type="submit" className="flex-1" disabled={isAlwaysTakenByOther && form.match_type === 'always'}>{submitLabel}</Button>
+                <Button type="submit" className="flex-1" disabled={isCurrentTypeBlocked}>{submitLabel}</Button>
                 <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
             </div>
         </form>

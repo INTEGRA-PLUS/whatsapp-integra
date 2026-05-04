@@ -38,14 +38,15 @@ class AutoResponseController extends Controller
 
         $user = auth()->user();
 
-        if ($data['match_type'] === 'always') {
+        if (in_array($data['match_type'], ['always', 'welcome'], true)) {
             $exists = AutoResponse::where('company_id', $user->company_id)
                 ->where('instance_id', $data['instance_id'] ?? null)
-                ->where('match_type', 'always')
+                ->where('match_type', $data['match_type'])
                 ->exists();
 
             if ($exists) {
-                return back()->withErrors(['match_type' => 'Ya existe una respuesta configurada como "Siempre responde" para esta instancia.']);
+                $label = $data['match_type'] === 'always' ? '"Siempre responde"' : '"Mensaje de bienvenida"';
+                return back()->withErrors(['match_type' => "Ya existe una respuesta configurada como {$label} para esta instancia."]);
             }
         }
 
@@ -53,14 +54,17 @@ class AutoResponseController extends Controller
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
 
+        $triggerlessTypes = ['always', 'welcome'];
+
         AutoResponse::create([
             'company_id' => $user->company_id,
             'instance_id' => $data['instance_id'] ?? null,
             'name' => $data['name'],
-            'trigger_text' => $data['match_type'] === 'always' ? '*' : $data['trigger_text'],
+            'trigger_text' => in_array($data['match_type'], $triggerlessTypes, true) ? '*' : $data['trigger_text'],
             'match_type' => $data['match_type'],
             'response_message' => $data['response_message'],
             'active' => $data['active'] ?? true,
+            'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
         ]);
 
         return redirect()->route('auto-responses.index')
@@ -77,15 +81,16 @@ class AutoResponseController extends Controller
 
         $data = $this->validateData($request);
 
-        if ($data['match_type'] === 'always') {
+        if (in_array($data['match_type'], ['always', 'welcome'], true)) {
             $exists = AutoResponse::where('company_id', $user->company_id)
                 ->where('instance_id', $data['instance_id'] ?? null)
-                ->where('match_type', 'always')
+                ->where('match_type', $data['match_type'])
                 ->where('id', '!=', $id)
                 ->exists();
 
             if ($exists) {
-                return back()->withErrors(['match_type' => 'Ya existe otra respuesta configurada como "Siempre responde" para esta instancia.']);
+                $label = $data['match_type'] === 'always' ? '"Siempre responde"' : '"Mensaje de bienvenida"';
+                return back()->withErrors(['match_type' => "Ya existe otra respuesta configurada como {$label} para esta instancia."]);
             }
         }
 
@@ -93,13 +98,16 @@ class AutoResponseController extends Controller
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
 
+        $triggerlessTypes = ['always', 'welcome'];
+
         $autoResponse->update([
             'instance_id' => $data['instance_id'] ?? null,
             'name' => $data['name'],
-            'trigger_text' => $data['match_type'] === 'always' ? '*' : $data['trigger_text'],
+            'trigger_text' => in_array($data['match_type'], $triggerlessTypes, true) ? '*' : $data['trigger_text'],
             'match_type' => $data['match_type'],
             'response_message' => $data['response_message'],
             'active' => $data['active'] ?? false,
+            'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
         ]);
 
         return redirect()->route('auto-responses.index')
@@ -124,11 +132,12 @@ class AutoResponseController extends Controller
     {
         return $request->validate([
             'name' => 'required|string|max:120',
-            'trigger_text' => 'required_if:match_type,exact,contains,starts_with|nullable|string|max:255',
-            'match_type' => 'required|in:exact,contains,starts_with,always',
+            'trigger_text' => 'required_if:match_type,exact,contains,starts_with|nullable|string|max:1000',
+            'match_type' => 'required|in:exact,contains,starts_with,always,welcome',
             'response_message' => 'required|string|max:4096',
             'instance_id' => 'nullable|integer|exists:instances,id',
             'active' => 'boolean',
+            'cooldown_minutes' => 'nullable|integer|min:0|max:10080',
         ]);
     }
 

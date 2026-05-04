@@ -17,10 +17,16 @@ class AutoResponse extends Model
         'match_type',
         'response_message',
         'active',
+        'cooldown_minutes',
+        'fires_count',
+        'last_fired_at',
     ];
 
     protected $casts = [
         'active' => 'boolean',
+        'cooldown_minutes' => 'integer',
+        'fires_count' => 'integer',
+        'last_fired_at' => 'datetime',
     ];
 
     public function company()
@@ -40,21 +46,52 @@ class AutoResponse extends Model
 
     public function matches(string $incoming): bool
     {
-        if ($this->match_type === 'always') {
+        if ($this->match_type === 'always' || $this->match_type === 'welcome') {
             return true;
         }
 
-        $needle = mb_strtolower(trim($this->trigger_text));
         $haystack = mb_strtolower(trim($incoming));
 
-        if ($needle === '' || $haystack === '') {
+        if ($haystack === '') {
             return false;
         }
 
-        return match ($this->match_type) {
-            'exact' => $haystack === $needle,
-            'starts_with' => str_starts_with($haystack, $needle),
-            default => str_contains($haystack, $needle),
-        };
+        $keywords = $this->keywords();
+
+        if (empty($keywords)) {
+            return false;
+        }
+
+        foreach ($keywords as $needle) {
+            $matched = match ($this->match_type) {
+                'exact' => $haystack === $needle,
+                'starts_with' => str_starts_with($haystack, $needle),
+                default => str_contains($haystack, $needle),
+            };
+
+            if ($matched) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function keywords(): array
+    {
+        return collect(explode(',', (string) $this->trigger_text))
+            ->map(fn ($k) => mb_strtolower(trim($k)))
+            ->filter(fn ($k) => $k !== '')
+            ->values()
+            ->all();
+    }
+
+    public function renderMessage(WhatsAppConversation $conversation): string
+    {
+        return strtr($this->response_message, [
+            '{name}' => $conversation->name ?? '',
+            '{phone}' => $conversation->phone_number ?? '',
+            '{wa_id}' => $conversation->wa_id ?? '',
+        ]);
     }
 }
