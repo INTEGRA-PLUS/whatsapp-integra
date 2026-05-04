@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendAutoResponseFollowUp;
 use App\Models\AutoResponse;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
@@ -17,18 +18,15 @@ class AutoResponseService
         $this->metaService = $metaService;
     }
 
-    public function handleInbound(Instance $instance, WhatsAppConversation $conversation, string $incomingText): void
+    public function handleInbound(Instance $instance, WhatsAppConversation $conversation, string $incomingText, string $wamid): void
     {
-        if (trim($incomingText) === '') {
-            return;
-        }
-
         $rule = AutoResponse::active()
             ->where('company_id', $instance->company_id)
             ->where(function ($q) use ($instance) {
                 $q->whereNull('instance_id')->orWhere('instance_id', $instance->id);
             })
             ->orderByRaw('instance_id IS NULL')
+            ->orderByRaw("CASE WHEN match_type = 'always' THEN 1 ELSE 0 END")
             ->orderBy('created_at', 'desc')
             ->get()
             ->first(fn (AutoResponse $r) => $r->matches($incomingText));
@@ -71,5 +69,15 @@ class AutoResponseService
             'auto_response_id' => $rule->id,
             'conversation_id' => $conversation->id,
         ]);
+
+        // If it's an 'always' response, schedule a follow-up if no interaction within 1 hour
+        if ($rule->match_type === 'always') {
+            SendAutoResponseFollowUp::dispatch(
+                $instance->id,
+                $conversation->id,
+                $rule->id,
+                $wamid
+            )->delay(now()->addHour());
+        }
     }
 }

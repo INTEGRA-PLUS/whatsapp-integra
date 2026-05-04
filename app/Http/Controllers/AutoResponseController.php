@@ -38,6 +38,17 @@ class AutoResponseController extends Controller
 
         $user = auth()->user();
 
+        if ($data['match_type'] === 'always') {
+            $exists = AutoResponse::where('company_id', $user->company_id)
+                ->where('instance_id', $data['instance_id'] ?? null)
+                ->where('match_type', 'always')
+                ->exists();
+
+            if ($exists) {
+                return back()->withErrors(['match_type' => 'Ya existe una respuesta configurada como "Siempre responde" para esta instancia.']);
+            }
+        }
+
         if (!empty($data['instance_id'])) {
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
@@ -46,7 +57,7 @@ class AutoResponseController extends Controller
             'company_id' => $user->company_id,
             'instance_id' => $data['instance_id'] ?? null,
             'name' => $data['name'],
-            'trigger_text' => $data['trigger_text'],
+            'trigger_text' => $data['match_type'] === 'always' ? '*' : $data['trigger_text'],
             'match_type' => $data['match_type'],
             'response_message' => $data['response_message'],
             'active' => $data['active'] ?? true,
@@ -66,6 +77,18 @@ class AutoResponseController extends Controller
 
         $data = $this->validateData($request);
 
+        if ($data['match_type'] === 'always') {
+            $exists = AutoResponse::where('company_id', $user->company_id)
+                ->where('instance_id', $data['instance_id'] ?? null)
+                ->where('match_type', 'always')
+                ->where('id', '!=', $id)
+                ->exists();
+
+            if ($exists) {
+                return back()->withErrors(['match_type' => 'Ya existe otra respuesta configurada como "Siempre responde" para esta instancia.']);
+            }
+        }
+
         if (!empty($data['instance_id'])) {
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
@@ -73,7 +96,7 @@ class AutoResponseController extends Controller
         $autoResponse->update([
             'instance_id' => $data['instance_id'] ?? null,
             'name' => $data['name'],
-            'trigger_text' => $data['trigger_text'],
+            'trigger_text' => $data['match_type'] === 'always' ? '*' : $data['trigger_text'],
             'match_type' => $data['match_type'],
             'response_message' => $data['response_message'],
             'active' => $data['active'] ?? false,
@@ -101,8 +124,8 @@ class AutoResponseController extends Controller
     {
         return $request->validate([
             'name' => 'required|string|max:120',
-            'trigger_text' => 'required|string|max:255',
-            'match_type' => 'required|in:exact,contains,starts_with',
+            'trigger_text' => 'required_if:match_type,exact,contains,starts_with|nullable|string|max:255',
+            'match_type' => 'required|in:exact,contains,starts_with,always',
             'response_message' => 'required|string|max:4096',
             'instance_id' => 'nullable|integer|exists:instances,id',
             'active' => 'boolean',

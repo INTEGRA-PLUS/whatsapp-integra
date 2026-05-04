@@ -40,6 +40,10 @@ class AutoResponse extends Model
 
     public function matches(string $incoming): bool
     {
+        if ($this->match_type === 'always') {
+            return true;
+        }
+
         $needle = mb_strtolower(trim($this->trigger_text));
         $haystack = mb_strtolower(trim($incoming));
 

@@ -230,9 +230,7 @@ class WhatsAppWebhookController extends Controller
 
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);
 
-        if ($message['type'] === 'text') {
-            $this->autoResponseService->handleInbound($instance, $conversation, $message['text']['body']);
-        }
+        $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
 
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,
