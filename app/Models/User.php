@@ -15,6 +15,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
         'active',
     ];
 
@@ -59,11 +60,17 @@ class User extends Authenticatable
             // Le asignamos el rol admin automáticamente
             if ($user->company_id && \App\Models\User::where('company_id', $user->company_id)->count() === 1) {
                 setPermissionsTeamId($user->company_id);
+                
                 $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
                     'name' => 'admin',
                     'company_id' => $user->company_id,
                     'guard_name' => 'web'
                 ]);
+
+                // Asegurar que el rol admin tenga todos los permisos disponibles
+                $allPermissions = \Spatie\Permission\Models\Permission::all();
+                $adminRole->syncPermissions($allPermissions);
+
                 $user->assignRole($adminRole);
             }
         });

@@ -156,6 +156,9 @@ class MasterController extends Controller
             'active' => true,
         ]);
 
+        // Explicitly set team ID for spatie permissions
+        setPermissionsTeamId($company->id);
+
         User::create([
             'company_id' => $company->id,
             'name' => $request->admin_name,
@@ -165,7 +168,7 @@ class MasterController extends Controller
             'active' => true,
         ]);
 
-        return redirect()->route('master.index')->with('success', 'Empresa creada exitosamente.');
+        return redirect()->route('master.index')->with('success', 'Empresa creada exitosamente con administrador configurado.');
     }
 
     public function update(Request $request, Company $company)
@@ -195,6 +198,7 @@ class MasterController extends Controller
             $userData = [
                 'name' => $request->admin_name,
                 'email' => $request->admin_email,
+                'role' => 'admin', // Ensure role column is set
             ];
 
             if ($request->filled('password')) {
@@ -202,6 +206,21 @@ class MasterController extends Controller
             }
 
             $adminUser->update($userData);
+
+            // Ensure they have the admin role in spatie permissions too
+            setPermissionsTeamId($company->id);
+            $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
+                'name' => 'admin',
+                'company_id' => $company->id,
+                'guard_name' => 'web'
+            ]);
+            
+            // Re-sync permissions just in case new ones were added
+            $adminRole->syncPermissions(\Spatie\Permission\Models\Permission::all());
+            
+            if (!$adminUser->hasRole('admin')) {
+                $adminUser->assignRole($adminRole);
+            }
         }
 
         return redirect()->route('master.index')->with('success', 'Empresa y administrador actualizados exitosamente.');
