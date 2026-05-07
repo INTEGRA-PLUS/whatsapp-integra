@@ -8,7 +8,7 @@ import { initializeTheme } from '@/hooks/use-appearance';
 initializeTheme();
 
 createInertiaApp({
-    title: (title) => title ? `${title} - WhatsApp Manager` : 'WhatsApp Manager',
+    title: (title) => title ? `${title} — Integra CRM` : 'Integra CRM',
     resolve: (name) =>
         resolvePageComponent(
             `./pages/${name}.jsx`,

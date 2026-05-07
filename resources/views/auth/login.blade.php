@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Iniciar Sesión | WhatsApp Manager')
+@section('title', 'Iniciar Sesión | Integra CRM — Portal de Gestión')
 
 @section('content')
 <div class="relative min-h-screen font-sans antialiased text-gray-900 overflow-hidden">
@@ -13,12 +13,54 @@
         <div class="w-full max-w-md space-y-8">
             {{-- Header/Logo section --}}
             <div class="flex flex-col items-center text-center">
-                <img class="h-16 w-auto mb-6" src="{{ asset('logo.png') }}" alt="Logo">
+                {{-- Integra CRM Logo SVG --}}
+                <div class="mb-6" style="width:120px;height:120px;">
+                    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" width="120" height="120" role="img" aria-label="Integra CRM Logo">
+                        <!-- Dark navy background circle -->
+                        <circle cx="100" cy="100" r="100" fill="#0d1b2e"/>
+                        <!-- Outer circuit ring -->
+                        <circle cx="100" cy="100" r="82" fill="none" stroke="#1a6b2a" stroke-width="1.2" stroke-dasharray="10 4" opacity="0.6"/>
+                        <!-- Middle circuit ring -->
+                        <circle cx="100" cy="100" r="68" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.5"/>
+                        <!-- Inner circuit ring -->
+                        <circle cx="100" cy="100" r="54" fill="none" stroke="#4ade80" stroke-width="1.8" opacity="0.4"/>
+                        <!-- Circuit dots -->
+                        <circle cx="100" cy="18" r="3.5" fill="#22c55e"/>
+                        <circle cx="161" cy="50" r="3" fill="#22c55e"/>
+                        <circle cx="175" cy="115" r="3" fill="#16a34a" opacity="0.8"/>
+                        <circle cx="39" cy="50" r="3" fill="#22c55e"/>
+                        <circle cx="25" cy="115" r="3" fill="#16a34a" opacity="0.8"/>
+                        <circle cx="100" cy="182" r="3" fill="#16a34a" opacity="0.7"/>
+                        <!-- Power button icon - neon green glow -->
+                        <filter id="glow">
+                            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                        <!-- Power arc -->
+                        <path d="M 73 68 A 35 35 0 1 0 127 68" fill="none" stroke="#4ade80" stroke-width="6" stroke-linecap="round" filter="url(#glow)"/>
+                        <!-- Power vertical line -->
+                        <line x1="100" y1="48" x2="100" y2="76" stroke="#4ade80" stroke-width="6" stroke-linecap="round" filter="url(#glow)"/>
+                        <!-- WhatsApp badge bottom-right -->
+                        <circle cx="148" cy="142" r="18" fill="#25d366"/>
+                        <path d="M148 128 c-7.7 0-14 6.3-14 14 0 2.5 0.7 4.9 1.9 6.9l-2 7.3 7.5-2c 2 1.1 4.2 1.7 6.6 1.7 7.7 0 14-6.3 14-14s-6.3-14-14-14z" fill="#25d366"/>
+                        <path d="M155.5 148.5 c-0.3 0.9-1.8 1.7-2.5 1.8-0.6 0.1-1.5 0.2-4.5-0.9-3.8-1.4-6.2-5.2-6.4-5.5-0.2-0.2-1.5-2-1.5-3.8 0-1.8 0.9-2.7 1.3-3.1 0.3-0.3 0.7-0.4 1-0.4h0.7c0.3 0 0.6 0 0.9 0.7l1.1 2.8c0.1 0.3 0.1 0.6-0.1 0.9l-0.6 0.8c-0.2 0.2-0.3 0.4-0.1 0.8 0.4 0.7 1.5 2.3 3.2 3.6 2.2 1.6 4 2.1 4.6 2.3 0.5 0.2 0.8 0.1 1.1-0.2l0.8-0.9c0.3-0.3 0.6-0.4 0.9-0.2l2.8 1.3c0.3 0.1 0.6 0.3 0.6 0.7l0 0.4z" fill="white"/>
+                        <!-- INTEGRA text -->
+                        <text x="100" y="172" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="26" fill="white" letter-spacing="2">INTEGRA</text>
+                        <!-- CRM text with green -->
+                        <text x="100" y="190" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="16" fill="#22c55e" letter-spacing="4">CRM</text>
+                        <!-- Decorative lines beside CRM -->
+                        <line x1="58" y1="183" x2="73" y2="183" stroke="#22c55e" stroke-width="1.5"/>
+                        <line x1="127" y1="183" x2="142" y2="183" stroke="#22c55e" stroke-width="1.5"/>
+                    </svg>
+                </div>
                 <h1 class="text-4xl font-extrabold tracking-tight text-gray-900 drop-shadow-sm">
-                    ¡Bienvenido de nuevo!
+                    Integra CRM
                 </h1>
-                <p class="mt-3 text-lg text-gray-600">
-                    Por favor ingresa tus credenciales para continuar gestionando tus chats.
+                <p class="mt-2 text-sm font-semibold text-green-600 uppercase tracking-widest">
+                    Portal de Gestión para Clientes de Integra Colombia
+                </p>
+                <p class="mt-3 text-base text-gray-500">
+                    Ingresa tus credenciales para acceder al sistema.
                 </p>
             </div>
 

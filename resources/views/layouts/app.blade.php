@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'WhatsApp Manager')</title>
+    <meta name="description" content="Portal privado de gestión CRM para clientes de Integra Colombia. Administra instancias de WhatsApp API de forma segura.">
+    <meta name="author" content="Integra Colombia">
+    <meta name="robots" content="noindex, nofollow">
+    <meta property="og:title" content="Integra CRM — Portal de Gestión">
+    <meta property="og:description" content="Portal privado de gestión para clientes de Integra Colombia.">
+    <meta property="og:site_name" content="Integra CRM — Integra Colombia">
+    <title>@yield('title', 'Integra CRM | Integra Colombia')</title>
     <link rel="icon" href="{{ asset('favicon.ico') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     @stack('styles')
@@ -16,7 +22,8 @@
             <div class="flex justify-between h-16">
                 <div class="flex">
                     <div class="flex-shrink-0 flex items-center">
-                        <h1 class="text-xl font-bold text-gray-900">WhatsApp Manager</h1>
+                        <h1 class="text-xl font-bold text-gray-900">Integra CRM</h1>
+                        <span class="ml-2 text-xs text-gray-400 font-medium">— Integra Colombia</span>
                     </div>
                     <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
                         @if(auth()->user()->isMaster())
