@@ -7,7 +7,14 @@
       "Bash(php artisan:*)",
       "Bash(npx vite:*)",
       "Bash(docker compose *)",
-      "Bash(php *)"
+      "Bash(php *)",
+      "Bash(mkdir -p /home/juan-manuel/Escritorio/istinge/whatsapp-integra/app/Http/Controllers/Master)",
+      "Bash(mkdir -p /home/juan-manuel/Escritorio/istinge/whatsapp-integra/resources/js/pages/Master/Logs)",
+      "Read(//usr/bin/**)",
+      "Bash(update-alternatives --list php)",
+      "Bash(php8.4 -v)",
+      "Bash(composer reinstall *)",
+      "Bash(composer install *)"
     ]
   }
 }

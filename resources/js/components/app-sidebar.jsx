@@ -13,7 +13,8 @@ import {
     Zap,
     Bot,
     Megaphone,
-    BarChart3
+    BarChart3,
+    FileText
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -39,6 +40,7 @@ export function AppSidebar() {
             { title: 'Panel Master', href: route('master.index'), icon: LayoutGrid },
             { title: 'Empresas', href: route('master.index', { tab: 'companies' }), icon: Briefcase },
             { title: 'Planes', href: route('master.index', { tab: 'plans' }), icon: Package },
+            { title: 'Logs', href: route('master.logs.index'), icon: FileText },
         ];
     } else {
         const permissions = usePage().props.auth.user.permissions || [];

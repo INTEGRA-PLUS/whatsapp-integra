@@ -209,6 +209,16 @@ Route::middleware('auth')->group(function () {
         Route::post('/companies', [App\Http\Controllers\MasterController::class, 'store'])->name('companies.store');
         Route::put('/companies/{company}', [App\Http\Controllers\MasterController::class, 'update'])->name('companies.update');
         Route::post('/impersonate/{company}', [App\Http\Controllers\MasterController::class, 'impersonate'])->name('impersonate');
+
+        Route::prefix('logs')->name('logs.')->group(function () {
+            Route::get('/', [App\Http\Controllers\Master\LogsController::class, 'index'])->name('index');
+            Route::get('/{file}', [App\Http\Controllers\Master\LogsController::class, 'show'])
+                ->where('file', '[A-Za-z0-9_.\-]+')->name('show');
+            Route::delete('/{file}', [App\Http\Controllers\Master\LogsController::class, 'destroy'])
+                ->where('file', '[A-Za-z0-9_.\-]+')->name('destroy');
+            Route::post('/{file}/clear', [App\Http\Controllers\Master\LogsController::class, 'clear'])
+                ->where('file', '[A-Za-z0-9_.\-]+')->name('clear');
+        });
     });
     
     Route::post('/stop-impersonating', [App\Http\Controllers\MasterController::class, 'stopImpersonating'])->name('stop-impersonating');
