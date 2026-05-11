@@ -8,13 +8,13 @@ export default function InstancesIndex({ instances }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
 
-    const [createForm, setCreateForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '' });
-    const [editForm, setEditForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', active: false });
+    const [createForm, setCreateForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '' });
+    const [editForm, setEditForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '', active: false });
 
     function handleCreate(e) {
         e.preventDefault();
         router.post(route('instances.store'), createForm, {
-            onSuccess: () => { setShowCreate(false); setCreateForm({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '' }); },
+            onSuccess: () => { setShowCreate(false); setCreateForm({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '' }); },
         });
     }
 
@@ -31,7 +31,7 @@ export default function InstancesIndex({ instances }) {
     }
 
     function openEdit(instance) {
-        setEditForm({ name: instance.name ?? '', phone_number_id: instance.phone_number_id ?? '', waba_id: instance.waba_id ?? '', display_phone_number: instance.display_phone_number ?? '', active: !!instance.active });
+        setEditForm({ name: instance.name ?? '', phone_number_id: instance.phone_number_id ?? '', waba_id: instance.waba_id ?? '', display_phone_number: instance.display_phone_number ?? '', access_token: instance.access_token ?? '', active: !!instance.active });
         setEditingInstance(instance);
     }
 
@@ -102,6 +102,7 @@ export default function InstancesIndex({ instances }) {
                         <Field label="Phone Number ID" value={createForm.phone_number_id} onChange={v => setCreateForm(f => ({ ...f, phone_number_id: v }))} required />
                         <Field label="WABA ID" value={createForm.waba_id} onChange={v => setCreateForm(f => ({ ...f, waba_id: v }))} required />
                         <Field label="Número de Teléfono" value={createForm.display_phone_number} onChange={v => setCreateForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
+                        <Field label="Access Token" value={createForm.access_token} onChange={v => setCreateForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
                         <div className="flex gap-2 pt-2">
                             <Button type="submit" className="flex-1">Crear Instancia</Button>
                             <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancelar</Button>
@@ -117,6 +118,7 @@ export default function InstancesIndex({ instances }) {
                         <Field label="Phone Number ID" value={editForm.phone_number_id} onChange={v => setEditForm(f => ({ ...f, phone_number_id: v }))} required />
                         <Field label="WABA ID" value={editForm.waba_id} onChange={v => setEditForm(f => ({ ...f, waba_id: v }))} required />
                         <Field label="Número de Teléfono" value={editForm.display_phone_number} onChange={v => setEditForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
+                        <Field label="Access Token" value={editForm.access_token} onChange={v => setEditForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-green-600" />
                             <span className="text-sm text-foreground">Instancia Activa</span>

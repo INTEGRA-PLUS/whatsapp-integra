@@ -171,7 +171,7 @@ class WhatsAppWebhookController extends Controller
                 $messageData['media_mime_type'] = $message['image']['mime_type'];
                 $messageData['content'] = $message['image']['caption'] ?? '';
 
-                $mediaInfo = $this->metaService->downloadMedia($message['image']['id']);
+                $mediaInfo = $this->metaService->downloadMedia($message['image']['id'], $instance->access_token);
                 if ($mediaInfo) {
                     $messageData['media_url'] = $mediaInfo['url'];
                     $messageData['filename'] = $mediaInfo['filename'];
@@ -184,7 +184,7 @@ class WhatsAppWebhookController extends Controller
                 $messageData['media_mime_type'] = $message['document']['mime_type'];
                 $messageData['filename'] = $message['document']['filename'] ?? 'document';
 
-                $mediaInfo = $this->metaService->downloadMedia($message['document']['id']);
+                $mediaInfo = $this->metaService->downloadMedia($message['document']['id'], $instance->access_token);
                 if ($mediaInfo) {
                     $messageData['media_url'] = $mediaInfo['url'];
                 }
@@ -195,7 +195,7 @@ class WhatsAppWebhookController extends Controller
                 $messageData['media_id'] = $message['audio']['id'];
                 $messageData['media_mime_type'] = $message['audio']['mime_type'];
 
-                $mediaInfo = $this->metaService->downloadMedia($message['audio']['id']);
+                $mediaInfo = $this->metaService->downloadMedia($message['audio']['id'], $instance->access_token);
                 if ($mediaInfo) {
                     $messageData['media_url'] = $mediaInfo['url'];
                     $messageData['filename'] = $mediaInfo['filename'];
@@ -208,7 +208,7 @@ class WhatsAppWebhookController extends Controller
                 $messageData['media_mime_type'] = $message['video']['mime_type'];
                 $messageData['content'] = $message['video']['caption'] ?? '';
 
-                $mediaInfo = $this->metaService->downloadMedia($message['video']['id']);
+                $mediaInfo = $this->metaService->downloadMedia($message['video']['id'], $instance->access_token);
                 if ($mediaInfo) {
                     $messageData['media_url'] = $mediaInfo['url'];
                     $messageData['filename'] = $mediaInfo['filename'];

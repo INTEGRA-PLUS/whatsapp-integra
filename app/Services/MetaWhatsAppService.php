@@ -16,7 +16,6 @@ class MetaWhatsAppService
     {
         $this->apiVersion = config('services.meta.api_version', 'v21.0');
         $this->baseUri = "https://graph.facebook.com/{$this->apiVersion}";
-        $this->accessToken = config('services.meta.access_token');
     }
 
     public function sendMessage(string $phoneNumberId, string $to, string $message)
@@ -84,11 +83,11 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function downloadMedia(string $mediaId)
+    public function downloadMedia(string $mediaId, string $accessToken)
     {
         try {
             $url = "{$this->baseUri}/{$mediaId}";
-            $response = Http::withToken($this->accessToken)->get($url);
+            $response = Http::withToken($accessToken)->get($url);
 
             if (!$response->successful()) {
                 Log::error('Error getting media URL', [
@@ -102,7 +101,7 @@ class MetaWhatsAppService
             $mediaUrl = $mediaData['url'];
             $mimeType = $mediaData['mime_type'];
 
-            $mediaResponse = Http::withToken($this->accessToken)->get($mediaUrl);
+            $mediaResponse = Http::withToken($accessToken)->get($mediaUrl);
 
             if (!$mediaResponse->successful()) {
                 return null;
@@ -158,9 +157,17 @@ class MetaWhatsAppService
     protected function sendRequest(string $phoneNumberId, array $data)
     {
         try {
+            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $accessToken = $instance ? $instance->access_token : null;
+            
+            if (!$accessToken) {
+                Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
+                return ['success' => false, 'error' => 'Access token not found'];
+            }
+
             $url = "{$this->baseUri}/{$phoneNumberId}/messages";
 
-            $response = Http::withToken($this->accessToken)
+            $response = Http::withToken($accessToken)
                 ->timeout(30)
                 ->post($url, $data);
 

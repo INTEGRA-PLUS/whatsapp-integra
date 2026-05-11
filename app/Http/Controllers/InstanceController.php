@@ -37,7 +37,8 @@ class InstanceController extends Controller
             'name' => 'required|string|max:255',
             'phone_number_id' => 'required|string',
             'waba_id' => 'required|string',
-            'display_phone_number' => 'nullable|string'
+            'display_phone_number' => 'nullable|string',
+            'access_token' => 'nullable|string'
         ]);
 
         $user = auth()->user();
@@ -49,6 +50,7 @@ class InstanceController extends Controller
             'phone_number_id' => $request->phone_number_id,
             'waba_id' => $request->waba_id,
             'display_phone_number' => $request->display_phone_number,
+            'access_token' => $request->access_token,
             'type' => 'meta',
             'status' => 'active',
             'active' => true
@@ -71,6 +73,7 @@ class InstanceController extends Controller
             'phone_number_id' => 'required|string',
             'waba_id' => 'required|string',
             'display_phone_number' => 'nullable|string',
+            'access_token' => 'nullable|string',
             'active' => 'boolean'
         ]);
 
@@ -79,6 +82,7 @@ class InstanceController extends Controller
             'phone_number_id' => $request->phone_number_id,
             'waba_id' => $request->waba_id,
             'display_phone_number' => $request->display_phone_number,
+            'access_token' => $request->access_token,
             'active' => $request->has('active') ? $request->active : 0
         ]);
 
