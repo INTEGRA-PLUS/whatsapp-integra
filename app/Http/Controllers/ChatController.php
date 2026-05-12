@@ -311,6 +311,66 @@ class ChatController extends Controller
         ], 500);
     }
 
+    public function sendAudio(Request $request, $conversationId)
+    {
+        $validator = Validator::make($request->all(), [
+            'audio' => 'required|file|mimes:ogg,m4a,mp3,wav,aac|max:16384',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $instance = $conversation->instance;
+
+        $path = $request->file('audio')->storePublicly('whatsapp/media', 's3_media');
+        $audioUrl = Storage::disk('s3_media')->url($path);
+
+        $result = $this->metaService->sendAudio(
+            $instance->phone_number_id,
+            $conversation->phone_number,
+            $audioUrl
+        );
+
+        if ($result['success']) {
+            $message = WhatsAppMessage::create([
+                'conversation_id' => $conversation->id,
+                'wamid' => $result['data']['messages'][0]['id'],
+                'type' => 'audio',
+                'media_url' => $audioUrl,
+                'direction' => 'outbound',
+                'status' => 'sent',
+                'sent_by' => $user->id,
+                'sent_at' => now()
+            ]);
+
+            $conversation->update([
+                'last_message' => 'Audio',
+                'last_message_at' => now()
+            ]);
+
+            return response()->json($this->sanitizeUtf8([
+                'success' => true,
+                'message' => 'Audio enviado',
+                'data' => $message->load('sender')
+            ]));
+        }
+
+        return response()->json([
+            'success' => false,
+            'error' => 'Error al enviar audio'
+        ], 500);
+    }
+
     public function close($conversationId)
     {
         $user = auth()->user();

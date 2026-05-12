@@ -238,6 +238,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
+        Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);

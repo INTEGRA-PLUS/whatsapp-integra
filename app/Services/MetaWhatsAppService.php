@@ -45,6 +45,18 @@ class MetaWhatsAppService
         ]);
     }
 
+    public function sendAudio(string $phoneNumberId, string $to, string $audioUrl)
+    {
+        return $this->sendRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'to' => $to,
+            'type' => 'audio',
+            'audio' => [
+                'link' => $audioUrl
+            ]
+        ]);
+    }
+
     public function sendTemplate(string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
     {
         return $this->sendRequest($phoneNumberId, [

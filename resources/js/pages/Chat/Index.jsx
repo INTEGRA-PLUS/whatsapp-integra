@@ -26,7 +26,10 @@ import {
     PlusCircle,
     X as XIcon,
     UserPlus,
-    Zap
+    Zap,
+    Square,
+    Trash2,
+    X
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -271,6 +274,13 @@ export default function ChatIndex({ instances }) {
     const [newTagColor, setNewTagColor] = useState('#0d9488');
     const [taggingConversationId, setTaggingConversationId] = useState(null);
     const [companyUsers, setCompanyUsers] = useState([]);
+
+    // Recording States
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const recordingIntervalRef = useRef(null);
 
     const [quickReplies, setQuickReplies] = useState([]);
     const [qrOpen, setQrOpen] = useState(false);
@@ -700,6 +710,75 @@ export default function ChatIndex({ instances }) {
         }
     }
 
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    audioChunksRef.current.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/ogg; codecs=opus' });
+                if (audioChunksRef.current.length > 0) {
+                    await sendAudioMessage(audioBlob);
+                }
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingDuration(0);
+            recordingIntervalRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+        } catch (err) {
+            console.error('Error al acceder al micrófono:', err);
+            alert('No se pudo acceder al micrófono. Por favor verifica los permisos.');
+        }
+    }
+
+    function stopRecording() {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            clearInterval(recordingIntervalRef.current);
+        }
+    }
+
+    function cancelRecording() {
+        if (mediaRecorderRef.current && isRecording) {
+            audioChunksRef.current = [];
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            clearInterval(recordingIntervalRef.current);
+        }
+    }
+
+    async function sendAudioMessage(blob) {
+        const formData = new FormData();
+        formData.append('audio', blob, 'recording.ogg');
+        setSending(true);
+        try {
+            const res = await axios.post(
+                `/api/chat/conversations/${selectedConversation.id}/send-audio`,
+                formData,
+            );
+            if (res.data.success) {
+                setMessages(prev => [...prev, res.data.data]);
+            }
+        } catch (err) {
+            console.error('Error enviando audio:', err);
+        } finally {
+            setSending(false);
+        }
+    }
+
     const formatTime = useCallback((ts) => {
         if (!ts) return '';
         const date = new Date(ts);
@@ -729,10 +808,15 @@ export default function ChatIndex({ instances }) {
 
         if (date.toDateString() === today.toDateString()) return 'HOY';
         if (date.toDateString() === yesterday.toDateString()) return 'AYER';
-        
+
         return date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
     }
 
+    function formatDuration(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
     function handleInstanceChange(e) {
         stopPolling();
         setConversations([]);
@@ -1221,45 +1305,83 @@ export default function ChatIndex({ instances }) {
                                     </div>
 
                                     {/* Input Area - WhatsApp Web Style */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 flex items-end gap-2 z-10 text-foreground">
-                                        <div className="flex items-center pb-0.5">
-                                            <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
-                                            <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-                                                <Paperclip className="size-6" />
-                                                <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
-                                            </label>
-                                        </div>
+                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 flex items-end gap-2 z-10 text-foreground min-h-[62px]">
+                                        {!isRecording ? (
+                                            <>
+                                                <div className="flex items-center pb-0.5">
+                                                    <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
+                                                    <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                                                        <Paperclip className="size-6" />
+                                                        <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
+                                                    </label>
+                                                    <button 
+                                                        onClick={startRecording}
+                                                        className="p-2 text-muted-foreground hover:text-teal-600 transition-colors"
+                                                        title="Grabar audio"
+                                                    >
+                                                        <Mic className="size-6" />
+                                                    </button>
+                                                </div>
 
-                                        <div className="flex-1 relative">
-                                            {qrOpen && (
-                                                <QuickReplyPicker
-                                                    matches={qrMatches}
-                                                    activeIndex={qrIndex}
-                                                    onSelect={applyQuickReply}
-                                                    query={qrQuery}
-                                                />
-                                            )}
-                                            <textarea
-                                                ref={messageInputRef}
-                                                rows={1}
-                                                placeholder="Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"
-                                                value={newMessage}
-                                                onChange={handleComposerChange}
-                                                onKeyDown={handleComposerKeyDown}
-                                                disabled={sending}
-                                                className="block w-full bg-white dark:bg-[#2a3942] border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words"
-                                                style={{ maxHeight: '160px' }}
-                                            />
-                                        </div>
-                                        
-                                        <button
-                                            onClick={sendMessage}
-                                            disabled={!newMessage.trim() || sending}
-                                            className="p-2 text-[#54656f] dark:text-[#8696a0] hover:text-teal-600 transition-colors"
-                                        >
-                                            <Send className={`size-6 ${sending ? 'animate-pulse' : ''}`} />
-                                        </button>
+                                                <div className="flex-1 relative">
+                                                    {qrOpen && (
+                                                        <QuickReplyPicker
+                                                            matches={qrMatches}
+                                                            activeIndex={qrIndex}
+                                                            onSelect={applyQuickReply}
+                                                            query={qrQuery}
+                                                        />
+                                                    )}
+                                                    <textarea
+                                                        ref={messageInputRef}
+                                                        rows={1}
+                                                        placeholder="Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"
+                                                        value={newMessage}
+                                                        onChange={handleComposerChange}
+                                                        onKeyDown={handleComposerKeyDown}
+                                                        disabled={sending}
+                                                        className="block w-full bg-white dark:bg-[#2a3942] border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words"
+                                                        style={{ maxHeight: '160px' }}
+                                                    />
+                                                </div>
+
+                                                <button
+                                                    onClick={sendMessage}
+                                                    disabled={!newMessage.trim() || sending}
+                                                    className="p-2 text-[#54656f] dark:text-[#8696a0] hover:text-teal-600 transition-colors"
+                                                >
+                                                    <Send className={`size-6 ${sending ? 'animate-pulse' : ''}`} />
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <div className="flex-1 flex items-center justify-between bg-white dark:bg-[#2a3942] rounded-lg px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="size-2.5 bg-red-500 rounded-full animate-pulse" />
+                                                        <span className="text-sm font-bold tabular-nums">{formatDuration(recordingDuration)}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        onClick={cancelRecording}
+                                                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
+                                                        title="Cancelar grabación"
+                                                    >
+                                                        <Trash2 className="size-5" />
+                                                    </button>
+                                                    <button 
+                                                        onClick={stopRecording}
+                                                        className="p-2 bg-teal-600 text-white rounded-full hover:bg-teal-700 transition-colors shadow-sm"
+                                                        title="Enviar grabación"
+                                                    >
+                                                        <Send className="size-5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
+
                                 </>
                             )}
                         </div>
