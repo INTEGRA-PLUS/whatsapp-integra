@@ -215,6 +215,90 @@ class MetaWhatsAppService
         }
     }
 
+    public function listTemplates(string $wabaId, string $accessToken, array $params = [])
+    {
+        $defaults = [
+            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason',
+            'limit' => 100,
+        ];
+        $query = array_merge($defaults, $params);
+
+        return $this->graphGet("/{$wabaId}/message_templates", $accessToken, $query);
+    }
+
+    public function createTemplate(string $wabaId, string $accessToken, array $payload)
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}/message_templates";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post($url, $payload);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Template Create Error', [
+                'url' => $url,
+                'payload' => $payload,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Template Create Exception', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getTemplate(string $templateId, string $accessToken, array $params = [])
+    {
+        $defaults = [
+            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason,library_template_name',
+        ];
+        $query = array_merge($defaults, $params);
+
+        return $this->graphGet("/{$templateId}", $accessToken, $query);
+    }
+
+    protected function graphGet(string $path, string $accessToken, array $query = [])
+    {
+        try {
+            $url = "{$this->baseUri}{$path}";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->get($url, $query);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Graph GET Error', [
+                'url' => $url,
+                'query' => $query,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Graph GET Exception', [
+                'path' => $path,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     public function validateWebhookSignature(string $payload, string $signature): bool
     {
         $appSecret = config('services.meta.app_secret');

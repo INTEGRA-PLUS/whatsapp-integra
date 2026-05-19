@@ -14,7 +14,17 @@
       "Bash(update-alternatives --list php)",
       "Bash(php8.4 -v)",
       "Bash(composer reinstall *)",
-      "Bash(composer install *)"
+      "Bash(composer install *)",
+      "WebFetch(domain:developers.facebook.com)",
+      "WebSearch",
+      "Bash(command -v php8.4 php8.3 php8.2)",
+      "Read(//opt/homebrew/**)",
+      "Read(//usr/local/Cellar/**)",
+      "Read(//Applications/MAMP/bin/**)",
+      "Read(//Applications/XAMPP/xamppfiles/**)",
+      "Bash(/usr/local/Cellar/php@8.4/8.4.18/bin/php -v)",
+      "Bash(/usr/local/Cellar/php@8.4/8.4.18/bin/php artisan *)",
+      "Bash(npm run *)"
     ]
   }
 }

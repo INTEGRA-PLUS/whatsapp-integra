@@ -14,7 +14,8 @@ import {
     Bot,
     Megaphone,
     BarChart3,
-    FileText
+    FileText,
+    FileType
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -52,6 +53,7 @@ export function AppSidebar() {
             { title: 'Respuestas Rápidas', href: route('quick-replies.index'), icon: Zap, show: hasPermission('quick_replies.view') },
             { title: 'Respuestas Automáticas', href: route('auto-responses.index'), icon: Bot, show: hasPermission('auto_responses.view') },
             { title: 'Campañas', href: route('campaigns.index'), icon: Megaphone, show: hasPermission('campaigns.view') },
+            { title: 'Plantillas', href: route('templates.index'), icon: FileType, show: hasPermission('templates.view') },
             { title: 'Reportes', href: route('reports.index'), icon: BarChart3, show: hasPermission('reports.view') },
             { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
             { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },

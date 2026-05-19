@@ -184,6 +184,24 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:campaigns.delete')->name('destroy');
     });
 
+    Route::prefix('templates')->name('templates.')->group(function () {
+        Route::get('/', [App\Http\Controllers\TemplateController::class, 'index'])
+            ->middleware('permission:templates.view')->name('index');
+    });
+
+    Route::prefix('api/templates')->group(function () {
+        Route::get('/', [App\Http\Controllers\TemplateController::class, 'list'])
+            ->middleware('permission:templates.view');
+        Route::get('/family/{name}', [App\Http\Controllers\TemplateController::class, 'family'])
+            ->where('name', '[A-Za-z0-9_\-\.]+')
+            ->middleware('permission:templates.view');
+        Route::get('/{templateId}', [App\Http\Controllers\TemplateController::class, 'show'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.view');
+        Route::post('/', [App\Http\Controllers\TemplateController::class, 'store'])
+            ->middleware('permission:templates.create');
+    });
+
     Route::prefix('auto-responses')->name('auto-responses.')->group(function () {
         Route::get('/', [App\Http\Controllers\AutoResponseController::class, 'index'])
             ->middleware('permission:auto_responses.view')->name('index');
