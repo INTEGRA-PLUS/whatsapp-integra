@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { useAppearance } from '@/hooks/use-appearance';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,10 @@ import {
     User, Lock, ShieldCheck, Monitor, Moon, Sun, SunMoon,
     Smartphone, Globe, LogOut, CheckCircle2, Clock, Palette,
     KeyRound, Eye, EyeOff, Save, Mail, UserCircle,
+    MessageSquare, AlertTriangle, XCircle, ExternalLink,
+    Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
+    Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
+    Camera, ListChecks,
 } from 'lucide-react';
 
 const TABS = [
@@ -15,6 +20,7 @@ const TABS = [
     { id: 'dos-pasos',   label: 'Autenticación 2FA',        Icon: ShieldCheck },
     { id: 'sesiones',    label: 'Sesiones del navegador',    Icon: Monitor },
     { id: 'apariencia',  label: 'Apariencia',               Icon: Palette },
+    { id: 'whatsapp',    label: 'WhatsApp',                 Icon: MessageSquare },
 ];
 
 /* ─── Utilidades visuales ───────────────────────────────── */
@@ -546,6 +552,731 @@ function TabApariencia() {
     );
 }
 
+/* ───────────────────────── Tab WhatsApp (Estado y activaciones) ───────────────────────── */
+
+const STATE_META = {
+    ok:      { color: 'emerald', icon: CheckCircle2, label: 'OK' },
+    pending: { color: 'amber',   icon: Clock,        label: 'Pendiente' },
+    action:  { color: 'sky',     icon: AlertTriangle,label: 'Acción requerida' },
+    manual:  { color: 'rose',    icon: XCircle,      label: 'Bloqueado / manual' },
+    unknown: { color: 'zinc',    icon: AlertTriangle,label: 'Desconocido' },
+};
+
+function stateClasses(color) {
+    return {
+        emerald: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
+        amber:   'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/30',
+        sky:     'bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30',
+        rose:    'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-1 ring-inset ring-rose-500/30',
+        zinc:    'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-1 ring-inset ring-zinc-500/30',
+    }[color];
+}
+
+const WA_SUBTABS = [
+    { id: 'readiness', label: 'Estado y activaciones', Icon: ListChecks },
+    { id: 'profile',   label: 'Perfil del negocio',    Icon: Building2 },
+    { id: 'numbers',   label: 'Números',               Icon: PhoneIcon },
+];
+
+function TabWhatsApp() {
+    const [subTab, setSubTab] = useState('readiness');
+    const [instances, setInstances] = useState([]);
+    const [instanceId, setInstanceId] = useState(null);
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [busy, setBusy] = useState({});
+    const [toast, setToast] = useState(null);
+    const [pinModal, setPinModal] = useState(false);
+
+    useEffect(() => {
+        axios.get('/api/settings/whatsapp/instances')
+            .then(r => {
+                setInstances(r.data ?? []);
+                if (r.data?.length) setInstanceId(r.data[0].id);
+            })
+            .catch(() => setInstances([]));
+    }, []);
+
+    useEffect(() => {
+        if (instanceId) load();
+    }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+            const { data: res } = await axios.get('/api/settings/whatsapp/readiness', {
+                params: { instance_id: instanceId },
+            });
+            setData(res);
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudo verificar el estado en Meta.');
+            setData(null);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function showToast(text, kind = 'success') {
+        setToast({ text, kind });
+        setTimeout(() => setToast(null), 4000);
+    }
+
+    async function doAction(checkId, payload = {}) {
+        setBusy(prev => ({ ...prev, [checkId]: true }));
+        try {
+            let url;
+            if (checkId === 'subscribe_webhook') url = '/api/settings/whatsapp/subscribe-webhook';
+            else if (checkId === 'register_number') url = '/api/settings/whatsapp/register-number';
+            else if (checkId === 'enable_insights') url = '/api/settings/whatsapp/enable-insights';
+            else throw new Error('Acción no soportada');
+
+            await axios.post(url, { instance_id: instanceId, ...payload });
+            showToast('Activación completada correctamente.');
+            await load();
+            return true;
+        } catch (err) {
+            const meta = err?.response?.data?.error?.error;
+            const msg = meta?.error_user_msg || meta?.message || err?.response?.data?.message || 'No se pudo completar la activación.';
+            showToast(msg, 'error');
+            return false;
+        } finally {
+            setBusy(prev => ({ ...prev, [checkId]: false }));
+        }
+    }
+
+    const checks = data ? Object.values(data.checks) : [];
+    const okCount = checks.filter(c => c.state === 'ok').length;
+    const total = checks.length;
+    const progress = total ? Math.round((okCount / total) * 100) : 0;
+
+    return (
+        <div className="flex flex-col gap-6">
+            <SectionHeader
+                title="WhatsApp Business"
+                description="Estado de la cuenta, perfil público y números conectados."
+                icon={MessageSquare}
+            />
+
+            {/* Instance picker */}
+            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                <select
+                    value={instanceId ?? ''}
+                    onChange={e => setInstanceId(Number(e.target.value) || null)}
+                    disabled={!instances.length}
+                    className="flex-1 rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                >
+                    {!instances.length && <option>No hay instancias con WABA configurado</option>}
+                    {instances.map(i => (
+                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                    ))}
+                </select>
+            </div>
+
+            {/* Sub-tabs */}
+            <div className="flex gap-1 border-b">
+                {WA_SUBTABS.map(t => {
+                    const active = subTab === t.id;
+                    return (
+                        <button
+                            key={t.id}
+                            onClick={() => setSubTab(t.id)}
+                            className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                                active ? 'text-teal-600 dark:text-teal-400' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            <t.Icon className="size-4" />
+                            {t.label}
+                            {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-500 rounded-t" />}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {subTab === 'profile' && <BusinessProfilePanel instanceId={instanceId} setToast={setToast} />}
+            {subTab === 'numbers' && <PhoneNumbersPanel instanceId={instanceId} />}
+            {subTab !== 'readiness' ? null : (
+            <>
+            <div className="flex items-center gap-2">
+                <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2">
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                    Verificar de nuevo
+                </Button>
+            </div>
+
+            {error && (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                    <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                    <span>{error}</span>
+                </div>
+            )}
+
+            {toast && (
+                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+                    toast.kind === 'error'
+                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
+                    <span>{toast.text}</span>
+                </div>
+            )}
+
+            {/* Progress card */}
+            {data && (
+                <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-teal-500/5 via-card to-card p-5">
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <p className="text-sm font-semibold text-foreground">Preparación de la cuenta</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                                {okCount} de {total} chequeos completos · {progress}%
+                            </p>
+                        </div>
+                        <BadgeCheck className={`size-7 ${progress === 100 ? 'text-emerald-500' : 'text-muted-foreground/50'}`} />
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                            className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Checks list */}
+            {loading && !data ? (
+                <div className="space-y-3">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="rounded-2xl border border-border/60 bg-card/50 p-5 animate-pulse">
+                            <div className="h-4 w-1/3 bg-muted rounded mb-2" />
+                            <div className="h-3 w-2/3 bg-muted/60 rounded" />
+                        </div>
+                    ))}
+                </div>
+            ) : data ? (
+                <div className="space-y-3">
+                    {checks.map(check => (
+                        <CheckRow
+                            key={check.id}
+                            check={check}
+                            busy={busy}
+                            onAction={doAction}
+                            onRequestPin={() => setPinModal(true)}
+                        />
+                    ))}
+                </div>
+            ) : null}
+            </>
+            )}
+
+            {pinModal && (
+                <PinModal
+                    busy={!!busy.register_number}
+                    onClose={() => setPinModal(false)}
+                    onSubmit={async (pin) => {
+                        const ok = await doAction('register_number', { pin });
+                        if (ok) setPinModal(false);
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+function CheckRow({ check, busy, onAction, onRequestPin }) {
+    const meta = STATE_META[check.state] ?? STATE_META.unknown;
+    const Icon = meta.icon;
+
+    return (
+        <div className="rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between hover:shadow-sm transition-shadow">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${stateClasses(meta.color)}`}>
+                    <Icon className="size-5" />
+                </div>
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-foreground">{check.title}</h3>
+                        <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${stateClasses(meta.color)}`}>
+                            {meta.label}
+                        </span>
+                        {check.raw_status && (
+                            <span className="text-[10px] text-muted-foreground font-mono">{check.raw_status}</span>
+                        )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{check.description}</p>
+                    {check.extra?.verified_name && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                            Nombre actual: <span className="font-medium text-foreground">{check.extra.verified_name}</span>
+                        </p>
+                    )}
+                    {check.id === 'phone_registration' && check.extra?.quality_rating && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                            Calidad: <span className="font-medium text-foreground">{check.extra.quality_rating}</span>
+                            {check.extra.messaging_limit_tier && <> · Tier: <span className="font-medium text-foreground">{check.extra.messaging_limit_tier}</span></>}
+                        </p>
+                    )}
+                    {check.id === 'webhook_subscription' && check.extra?.apps?.length > 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                            App suscrita: <span className="font-medium text-foreground">{check.extra.apps[0].name ?? check.extra.apps[0].id}</span>
+                        </p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+                <CheckAction check={check} busy={busy} onAction={onAction} onRequestPin={onRequestPin} />
+            </div>
+        </div>
+    );
+}
+
+function CheckAction({ check, busy, onAction, onRequestPin }) {
+    if (check.state === 'ok') {
+        return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Activado</span>;
+    }
+
+    const action = check.action_type;
+
+    if (action === 'subscribe_webhook') {
+        return (
+            <Button onClick={() => onAction('subscribe_webhook')} disabled={!!busy.subscribe_webhook} className="gap-2">
+                {busy.subscribe_webhook ? <Loader2 className="size-4 animate-spin" /> : <Webhook className="size-4" />}
+                Suscribir webhook
+            </Button>
+        );
+    }
+    if (action === 'enable_insights') {
+        return (
+            <Button onClick={() => onAction('enable_insights')} disabled={!!busy.enable_insights} className="gap-2">
+                {busy.enable_insights ? <Loader2 className="size-4 animate-spin" /> : <BarChart3 className="size-4" />}
+                Activar analítica
+            </Button>
+        );
+    }
+    if (action === 'register_number') {
+        return (
+            <Button onClick={onRequestPin} disabled={!!busy.register_number} className="gap-2">
+                {busy.register_number ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                Registrar número
+            </Button>
+        );
+    }
+
+    // manual
+    if (check.manual_url) {
+        return (
+            <a
+                href={check.manual_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background hover:bg-muted px-3 py-1.5 text-xs font-medium text-foreground transition-colors"
+            >
+                <ExternalLink className="size-3.5" />
+                Gestionar en Meta
+            </a>
+        );
+    }
+    return <span className="text-xs text-muted-foreground italic">Manual</span>;
+}
+
+function PinModal({ onClose, onSubmit, busy }) {
+    const [pin, setPin] = useState('');
+    const [confirmPin, setConfirmPin] = useState('');
+    const [error, setError] = useState(null);
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        setError(null);
+        if (!/^\d{6}$/.test(pin)) { setError('El PIN debe ser de exactamente 6 dígitos.'); return; }
+        if (pin !== confirmPin) { setError('Los PINs no coinciden.'); return; }
+        onSubmit(pin);
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="w-full max-w-md rounded-2xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+                <div className="mb-5 flex items-start gap-3">
+                    <div className="size-10 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <KeyRound className="size-5" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-foreground">Registrar número con PIN</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Define un PIN de 6 dígitos. Meta lo usará como verificación de 2 pasos del número.
+                            <strong> Guárdalo en un lugar seguro</strong> — lo necesitarás si tienes que volver a registrar el número en el futuro.
+                        </p>
+                    </div>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    <div>
+                        <label className="text-xs font-medium text-foreground">PIN (6 dígitos)</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="\d{6}"
+                            maxLength={6}
+                            value={pin}
+                            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder="123456"
+                            autoFocus
+                            className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-mono tracking-widest text-center"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-foreground">Confirmar PIN</label>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="\d{6}"
+                            maxLength={6}
+                            value={confirmPin}
+                            onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder="123456"
+                            className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-mono tracking-widest text-center"
+                        />
+                    </div>
+                    {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+                    <div className="flex gap-2 pt-2">
+                        <Button type="submit" disabled={busy} className="flex-1 gap-2">
+                            {busy && <Loader2 className="size-4 animate-spin" />}
+                            Registrar
+                        </Button>
+                        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancelar</Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+/* ───────────────────────── Sub-paneles WhatsApp ───────────────────────── */
+
+const VERTICAL_OPTIONS = [
+    { value: '', label: 'Sin definir' },
+    { value: 'OTHER', label: 'Otro' },
+    { value: 'AUTO', label: 'Automotor' },
+    { value: 'BEAUTY', label: 'Belleza, spa y peluquería' },
+    { value: 'APPAREL', label: 'Ropa y moda' },
+    { value: 'EDU', label: 'Educación' },
+    { value: 'ENTERTAIN', label: 'Entretenimiento' },
+    { value: 'EVENT_PLAN', label: 'Eventos' },
+    { value: 'FINANCE', label: 'Finanzas y banca' },
+    { value: 'GROCERY', label: 'Supermercado' },
+    { value: 'GOVT', label: 'Servicios públicos' },
+    { value: 'HOTEL', label: 'Hotelería' },
+    { value: 'HEALTH', label: 'Salud' },
+    { value: 'NONPROFIT', label: 'Sin ánimo de lucro' },
+    { value: 'PROF_SERVICES', label: 'Servicios profesionales' },
+    { value: 'RETAIL', label: 'Retail' },
+    { value: 'TRAVEL', label: 'Viajes' },
+    { value: 'RESTAURANT', label: 'Restaurantes' },
+];
+
+function BusinessProfilePanel({ instanceId, setToast }) {
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [errors, setErrors] = useState({});
+
+    useEffect(() => { if (instanceId) load(); }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+            const { data } = await axios.get('/api/settings/whatsapp/profile', { params: { instance_id: instanceId } });
+            const p = data.profile ?? {};
+            setProfile({
+                about: p.about ?? '',
+                address: p.address ?? '',
+                description: p.description ?? '',
+                email: p.email ?? '',
+                websites: p.websites?.length ? p.websites : [''],
+                vertical: p.vertical ?? '',
+                profile_picture_url: p.profile_picture_url ?? null,
+            });
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudo cargar el perfil.');
+            setProfile(null);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function save(e) {
+        e.preventDefault();
+        setErrors({});
+        setSaving(true);
+        try {
+            await axios.post('/api/settings/whatsapp/profile', {
+                instance_id: instanceId,
+                about: profile.about,
+                address: profile.address,
+                description: profile.description,
+                email: profile.email,
+                websites: profile.websites.filter(Boolean),
+                vertical: profile.vertical || null,
+            });
+            setToast?.({ text: 'Perfil actualizado correctamente.', kind: 'success' });
+            await load();
+        } catch (err) {
+            if (err?.response?.status === 422) {
+                setErrors(err.response.data?.errors ?? {});
+                setToast?.({ text: 'Revisa los campos del formulario.', kind: 'error' });
+            } else {
+                const meta = err?.response?.data?.error?.error;
+                setToast?.({ text: meta?.error_user_msg || meta?.message || 'No se pudo guardar.', kind: 'error' });
+            }
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function uploadPhoto(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            setToast?.({ text: 'La imagen no puede pesar más de 5 MB.', kind: 'error' });
+            return;
+        }
+        setSaving(true);
+        try {
+            const fd = new FormData();
+            fd.append('instance_id', instanceId);
+            fd.append('photo', file);
+            await axios.post('/api/settings/whatsapp/profile/photo', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setToast?.({ text: 'Foto de perfil actualizada.', kind: 'success' });
+            await load();
+        } catch (err) {
+            const meta = err?.response?.data?.error?.error;
+            setToast?.({ text: meta?.error_user_msg || meta?.message || 'No se pudo subir la foto.', kind: 'error' });
+        } finally {
+            setSaving(false);
+            e.target.value = '';
+        }
+    }
+
+    if (!instanceId) {
+        return <p className="text-sm text-muted-foreground">Selecciona una instancia.</p>;
+    }
+    if (loading && !profile) {
+        return <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center"><Loader2 className="size-4 animate-spin" /> Cargando perfil...</div>;
+    }
+    if (error) {
+        return <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">{error}</div>;
+    }
+    if (!profile) return null;
+
+    return (
+        <form onSubmit={save} className="space-y-6">
+            {/* Photo */}
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5">
+                <div className="flex items-center gap-5">
+                    <div className="relative">
+                        <div className="size-24 rounded-2xl bg-muted overflow-hidden ring-2 ring-border/40 flex items-center justify-center">
+                            {profile.profile_picture_url
+                                ? <img src={profile.profile_picture_url} alt="" className="w-full h-full object-cover" />
+                                : <ImageIcon className="size-8 text-muted-foreground/40" />}
+                        </div>
+                    </div>
+                    <div className="flex-1">
+                        <h3 className="font-semibold text-foreground">Foto de perfil</h3>
+                        <p className="text-xs text-muted-foreground mt-1">Cuadrada · mínimo 192×192 px · hasta 5 MB · JPG, PNG o WebP.</p>
+                        <label className="inline-flex items-center gap-2 mt-3 rounded-lg border border-border/70 bg-background hover:bg-muted px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors">
+                            <Camera className="size-3.5" />
+                            Cambiar foto
+                            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadPhoto} disabled={saving} />
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5 space-y-4">
+                <h3 className="font-semibold text-foreground">Información pública</h3>
+
+                <Field label="Acerca de" icon={MessageSquare} error={errors.about?.[0]}>
+                    <Input
+                        value={profile.about}
+                        onChange={e => setProfile(p => ({ ...p, about: e.target.value }))}
+                        placeholder="Atención al cliente de lunes a viernes"
+                        maxLength={139}
+                    />
+                    <div className="text-[10px] text-muted-foreground text-right">{profile.about.length}/139</div>
+                </Field>
+
+                <Field label="Descripción del negocio" icon={FileText} error={errors.description?.[0]}>
+                    <textarea
+                        value={profile.description}
+                        onChange={e => setProfile(p => ({ ...p, description: e.target.value }))}
+                        placeholder="Describe brevemente a qué se dedica tu empresa..."
+                        maxLength={512}
+                        rows={3}
+                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-teal-500/30 resize-y"
+                    />
+                    <div className="text-[10px] text-muted-foreground text-right">{profile.description.length}/512</div>
+                </Field>
+
+                <Field label="Dirección" icon={MapPin} error={errors.address?.[0]}>
+                    <Input
+                        value={profile.address}
+                        onChange={e => setProfile(p => ({ ...p, address: e.target.value }))}
+                        placeholder="Calle 123 #45-67, Bogotá"
+                        maxLength={256}
+                    />
+                </Field>
+
+                <Field label="Email" icon={Mail} error={errors.email?.[0]}>
+                    <Input
+                        type="email"
+                        value={profile.email}
+                        onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
+                        placeholder="contacto@empresa.com"
+                        maxLength={128}
+                    />
+                </Field>
+
+                <Field label="Sitios web (hasta 2)" icon={Globe} error={errors['websites.0']?.[0] ?? errors['websites.1']?.[0]}>
+                    {[0, 1].map(i => (
+                        <Input
+                            key={i}
+                            value={profile.websites[i] ?? ''}
+                            onChange={e => setProfile(p => {
+                                const w = [...p.websites];
+                                w[i] = e.target.value;
+                                return { ...p, websites: w };
+                            })}
+                            placeholder={i === 0 ? 'https://www.empresa.com' : 'https://shop.empresa.com (opcional)'}
+                            className="mb-2"
+                        />
+                    ))}
+                </Field>
+
+                <Field label="Categoría" icon={Building2} error={errors.vertical?.[0]}>
+                    <select
+                        value={profile.vertical}
+                        onChange={e => setProfile(p => ({ ...p, vertical: e.target.value }))}
+                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                    >
+                        {VERTICAL_OPTIONS.map(v => (
+                            <option key={v.value} value={v.value}>{v.label}</option>
+                        ))}
+                    </select>
+                </Field>
+            </div>
+
+            <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={load} disabled={loading || saving}>
+                    <RefreshCw className="size-4" />
+                </Button>
+                <Button type="submit" disabled={saving} className="gap-2">
+                    {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                    Guardar cambios
+                </Button>
+            </div>
+        </form>
+    );
+}
+
+function PhoneNumbersPanel({ instanceId }) {
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => { if (instanceId) load(); }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+            const { data } = await axios.get('/api/settings/whatsapp/phone-numbers', { params: { instance_id: instanceId } });
+            setData(data);
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudieron cargar los números.');
+            setData(null);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    if (!instanceId) return <p className="text-sm text-muted-foreground">Selecciona una instancia.</p>;
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">Todos los números de la WhatsApp Business Account.</p>
+                <Button onClick={load} disabled={loading} variant="outline" size="sm" className="gap-2">
+                    {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                    Refrescar
+                </Button>
+            </div>
+
+            {error && (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">{error}</div>
+            )}
+
+            {data && (
+                <div className="space-y-2">
+                    {(data.phone_numbers ?? []).map(p => {
+                        const isCurrent = String(p.id) === String(data.current_phone_number_id);
+                        return (
+                            <div key={p.id} className={`rounded-2xl border p-4 ${isCurrent ? 'border-teal-500/40 bg-teal-500/5' : 'border-border/60 bg-card/50'}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-mono font-semibold text-foreground">{p.display_phone_number}</span>
+                                            {isCurrent && (
+                                                <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-teal-500/30">
+                                                    <CheckCircle2 className="size-3" /> Actual
+                                                </span>
+                                            )}
+                                            {p.quality_rating && (
+                                                <QualityPill rating={p.quality_rating} />
+                                            )}
+                                        </div>
+                                        {p.verified_name && (
+                                            <div className="text-xs text-foreground mt-0.5 font-medium">{p.verified_name}</div>
+                                        )}
+                                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground flex-wrap">
+                                            <span>ID: <span className="font-mono">{p.id}</span></span>
+                                            {p.status && <span>Estado: <span className="font-medium text-foreground">{p.status}</span></span>}
+                                            {p.code_verification_status && <span>Verificación: <span className="font-medium text-foreground">{p.code_verification_status}</span></span>}
+                                            {p.platform_type && <span>Plataforma: <span className="font-medium text-foreground">{p.platform_type}</span></span>}
+                                            {p.messaging_limit_tier && <span>Tier: <span className="font-medium text-foreground">{p.messaging_limit_tier}</span></span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {data.phone_numbers?.length === 0 && (
+                        <div className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">
+                            No hay números registrados en esta WABA.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function QualityPill({ rating }) {
+    const map = {
+        GREEN: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30',
+        YELLOW: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-amber-500/30',
+        RED: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30',
+        UNKNOWN: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30',
+    };
+    return (
+        <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${map[rating] ?? map.UNKNOWN}`}>
+            Calidad: {rating}
+        </span>
+    );
+}
+
 /* ───────────────────────── Página principal ───────────────────────── */
 export default function SettingsIndex({ sessions = [] }) {
     const [activeTab, setActiveTab] = useState('perfil');
@@ -590,12 +1321,13 @@ export default function SettingsIndex({ sessions = [] }) {
                     </nav>
 
                     {/* Content */}
-                    <div className="flex-1 min-w-0 max-w-3xl">
+                    <div className={`flex-1 min-w-0 ${activeTab === 'whatsapp' ? 'max-w-5xl' : 'max-w-3xl'}`}>
                         {activeTab === 'perfil'     && <TabPerfil />}
                         {activeTab === 'contrasena' && <TabContrasena />}
                         {activeTab === 'dos-pasos'  && <TabDosPasos />}
                         {activeTab === 'sesiones'   && <TabSesiones sessions={sessions} />}
                         {activeTab === 'apariencia' && <TabApariencia />}
+                        {activeTab === 'whatsapp'   && <TabWhatsApp />}
                     </div>
                 </div>
             </div>

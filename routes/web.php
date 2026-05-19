@@ -187,10 +187,18 @@ Route::middleware('auth')->group(function () {
     Route::prefix('templates')->name('templates.')->group(function () {
         Route::get('/', [App\Http\Controllers\TemplateController::class, 'index'])
             ->middleware('permission:templates.view')->name('index');
+        Route::get('/analytics', [App\Http\Controllers\TemplateController::class, 'analyticsIndex'])
+            ->middleware('permission:templates.view')->name('analytics');
     });
 
     Route::prefix('api/templates')->group(function () {
         Route::get('/', [App\Http\Controllers\TemplateController::class, 'list'])
+            ->middleware('permission:templates.view');
+        Route::get('/analytics', [App\Http\Controllers\TemplateController::class, 'analytics'])
+            ->middleware('permission:templates.view');
+        Route::get('/analytics/conversations', [App\Http\Controllers\TemplateController::class, 'conversationAnalytics'])
+            ->middleware('permission:templates.view');
+        Route::post('/analytics/enable', [App\Http\Controllers\TemplateController::class, 'enableInsights'])
             ->middleware('permission:templates.view');
         Route::get('/family/{name}', [App\Http\Controllers\TemplateController::class, 'family'])
             ->where('name', '[A-Za-z0-9_\-\.]+')
@@ -247,6 +255,24 @@ Route::middleware('auth')->group(function () {
         Route::put('/profile', [App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('profile');
         Route::put('/password', [App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('password');
         Route::delete('/sessions', [App\Http\Controllers\SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
+    });
+
+    // WhatsApp settings API (readiness checklist + activations + profile)
+    Route::prefix('api/settings/whatsapp')->group(function () {
+        Route::get('/instances', [App\Http\Controllers\WhatsAppSettingsController::class, 'instances']);
+        Route::get('/readiness', [App\Http\Controllers\WhatsAppSettingsController::class, 'readiness']);
+        Route::get('/phone-numbers', [App\Http\Controllers\WhatsAppSettingsController::class, 'phoneNumbers']);
+        Route::get('/profile', [App\Http\Controllers\WhatsAppSettingsController::class, 'getProfile']);
+        Route::post('/subscribe-webhook', [App\Http\Controllers\WhatsAppSettingsController::class, 'subscribeWebhook'])
+            ->middleware('permission:instances.update');
+        Route::post('/register-number', [App\Http\Controllers\WhatsAppSettingsController::class, 'registerNumber'])
+            ->middleware('permission:instances.update');
+        Route::post('/enable-insights', [App\Http\Controllers\WhatsAppSettingsController::class, 'enableInsights'])
+            ->middleware('permission:instances.update');
+        Route::post('/profile', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfile'])
+            ->middleware('permission:instances.update');
+        Route::post('/profile/photo', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfilePhoto'])
+            ->middleware('permission:instances.update');
     });
 
     // API routes for Chat (moved from api.php to share session)

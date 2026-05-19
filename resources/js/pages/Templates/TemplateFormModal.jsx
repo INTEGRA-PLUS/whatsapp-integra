@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
-import { X, Plus, Trash2, Loader2 } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Pencil, Smartphone } from 'lucide-react';
+import { TabButton, WhatsAppPreview, formStateToModel } from './preview';
 
 const LANGUAGES = [
     { code: 'es', label: 'Español' },
@@ -71,6 +72,7 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [apiError, setApiError] = useState(null);
+    const [tab, setTab] = useState('edit');
 
     const usedLanguages = useMemo(
         () => new Set((family?.variants ?? []).map(v => v.language)),
@@ -223,12 +225,32 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                     </Button>
                 </div>
 
+                {/* Tab strip */}
+                <div className="sticky top-[73px] z-10 bg-card border-b px-6 flex gap-1">
+                    <TabButton active={tab === 'edit'} onClick={() => setTab('edit')} icon={Pencil}>
+                        Editar
+                    </TabButton>
+                    <TabButton active={tab === 'preview'} onClick={() => setTab('preview')} icon={Smartphone}>
+                        Vista previa
+                    </TabButton>
+                </div>
+
                 <form onSubmit={handleSubmit} className="px-6 py-5 space-y-5">
                     {apiError && (
                         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                             {apiError}
                         </div>
                     )}
+
+                    {tab === 'preview' && (
+                        <WhatsAppPreview
+                            model={formStateToModel(comps, headerExamples, bodyExamples)}
+                            verifiedName={family?.variants?.[0]?.verified_name}
+                            empty="Completa al menos el cuerpo del mensaje en la pestaña Editar para ver la vista previa."
+                        />
+                    )}
+
+                    <div className={tab === 'edit' ? 'space-y-5' : 'hidden'}>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="sm:col-span-2 space-y-1.5">
@@ -446,6 +468,8 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                         ))}
                     </div>
 
+                    </div>
+
                     <div className="flex gap-2 pt-2">
                         <Button type="submit" className="flex-1 gap-2" disabled={submitting}>
                             {submitting && <Loader2 className="size-4 animate-spin" />}
@@ -460,3 +484,4 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
         </div>
     );
 }
+

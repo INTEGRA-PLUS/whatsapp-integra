@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import TemplateFormModal from './TemplateFormModal';
+import { TabButton, WhatsAppPreview, templateToModel } from './preview';
 import {
     FileText,
     Search,
@@ -15,6 +16,7 @@ import {
     Loader2,
     Inbox,
     Plus,
+    BarChart3,
     CheckCircle2,
     Clock,
     XCircle,
@@ -23,6 +25,8 @@ import {
     KeyRound,
     Eye,
     Sparkles,
+    FileSearch,
+    Smartphone,
 } from 'lucide-react';
 
 const STATUS_STYLES = {
@@ -184,6 +188,11 @@ export default function TemplatesIndex({ instances = [] }) {
                                 {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                                 Actualizar
                             </Button>
+                            <Link href={route('templates.analytics')}>
+                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                                    <BarChart3 className="size-4" /> Analítica
+                                </Button>
+                            </Link>
                             {can('templates.create') && instanceId && (
                                 <Button onClick={() => setCreateMode({ mode: 'new' })} className="gap-2 h-9 shadow-md">
                                     <Sparkles className="size-4" /> Nueva plantilla
@@ -467,6 +476,11 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
     const [siblings, setSiblings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [tab, setTab] = useState('detail');
+
+    useEffect(() => {
+        setTab('detail');
+    }, [templateId]);
 
     useEffect(() => {
         let cancelled = false;
@@ -502,11 +516,29 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                     </Button>
                 </div>
 
+                {/* Tab strip */}
+                <div className="sticky top-[73px] z-10 bg-card border-b px-6 flex gap-1">
+                    <TabButton active={tab === 'detail'} onClick={() => setTab('detail')} icon={FileSearch}>
+                        Detalle
+                    </TabButton>
+                    <TabButton active={tab === 'preview'} onClick={() => setTab('preview')} icon={Smartphone}>
+                        Vista previa
+                    </TabButton>
+                </div>
+
                 <div className="px-6 py-5 space-y-5">
                     {loading && (
                         <div className="flex items-center justify-center py-10 text-muted-foreground">
                             <Loader2 className="size-5 animate-spin mr-2" /> Cargando detalle...
                         </div>
+                    )}
+
+                    {!loading && template && tab === 'preview' && (
+                        <WhatsAppPreview
+                            model={templateToModel(template)}
+                            verifiedName={templateName}
+                            empty="Esta plantilla no tiene componentes para previsualizar."
+                        />
                     )}
 
                     {error && (
@@ -515,7 +547,7 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                         </div>
                     )}
 
-                    {!loading && template && (
+                    {!loading && template && tab === 'detail' && (
                         <>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                                 <Field label="ID" value={template.id} mono />

@@ -226,6 +226,247 @@ class MetaWhatsAppService
         return $this->graphGet("/{$wabaId}/message_templates", $accessToken, $query);
     }
 
+    public function enableInsights(string $wabaId, string $accessToken)
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}";
+
+            $response = Http::withToken($accessToken)
+                ->asForm()
+                ->timeout(30)
+                ->post($url, ['is_enabled_for_insights' => 'true']);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Enable Insights Error', [
+                'waba_id' => $wabaId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Enable Insights Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getWaba(string $wabaId, string $accessToken)
+    {
+        return $this->graphGet("/{$wabaId}", $accessToken, [
+            'fields' => 'id,name,currency,timezone_id,is_enabled_for_insights,account_review_status,business_verification_status,message_template_namespace',
+        ]);
+    }
+
+    public function getPhoneNumber(string $phoneNumberId, string $accessToken)
+    {
+        return $this->graphGet("/{$phoneNumberId}", $accessToken, [
+            'fields' => 'id,display_phone_number,verified_name,name_status,code_verification_status,status,quality_rating,platform_type,throughput,messaging_limit_tier',
+        ]);
+    }
+
+    public function listSubscribedApps(string $wabaId, string $accessToken)
+    {
+        return $this->graphGet("/{$wabaId}/subscribed_apps", $accessToken, []);
+    }
+
+    public function subscribeApp(string $wabaId, string $accessToken)
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}/subscribed_apps";
+            $response = Http::withToken($accessToken)->timeout(30)->post($url);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Subscribe App Error', [
+                'waba_id' => $wabaId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Subscribe App Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function getBusinessProfile(string $phoneNumberId, string $accessToken)
+    {
+        return $this->graphGet("/{$phoneNumberId}/whatsapp_business_profile", $accessToken, [
+            'fields' => 'about,address,description,email,profile_picture_url,websites,vertical',
+        ]);
+    }
+
+    public function updateBusinessProfile(string $phoneNumberId, string $accessToken, array $payload)
+    {
+        try {
+            $url = "{$this->baseUri}/{$phoneNumberId}/whatsapp_business_profile";
+            $payload['messaging_product'] = 'whatsapp';
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post($url, $payload);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Update Profile Error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Update Profile Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function uploadProfilePhoto(string $appId, string $accessToken, string $filePath, string $mimeType): array
+    {
+        try {
+            $fileSize = filesize($filePath);
+
+            $initUrl = "{$this->baseUri}/{$appId}/uploads";
+            $init = Http::withToken($accessToken)->timeout(30)->post($initUrl, [
+                'file_length' => $fileSize,
+                'file_type' => $mimeType,
+                'access_token' => $accessToken,
+            ]);
+
+            if (!$init->successful()) {
+                return ['success' => false, 'stage' => 'init', 'error' => $init->json()];
+            }
+            $uploadId = $init->json('id');
+            if (!$uploadId) {
+                return ['success' => false, 'stage' => 'init', 'error' => 'No upload id returned'];
+            }
+
+            $uploadUrl = "{$this->baseUri}/{$uploadId}";
+            $upload = Http::withHeaders([
+                'Authorization' => "OAuth {$accessToken}",
+                'file_offset' => '0',
+                'Content-Type' => $mimeType,
+            ])
+                ->withBody(file_get_contents($filePath), $mimeType)
+                ->timeout(60)
+                ->post($uploadUrl);
+
+            if (!$upload->successful()) {
+                return ['success' => false, 'stage' => 'upload', 'error' => $upload->json()];
+            }
+
+            $handle = $upload->json('h');
+            if (!$handle) {
+                return ['success' => false, 'stage' => 'upload', 'error' => 'No handle returned'];
+            }
+
+            return ['success' => true, 'handle' => $handle];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Profile Photo Upload Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function debugToken(string $accessToken): array
+    {
+        try {
+            $response = Http::get("{$this->baseUri}/debug_token", [
+                'input_token' => $accessToken,
+                'access_token' => $accessToken,
+            ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json('data')];
+            }
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function listWabaPhoneNumbers(string $wabaId, string $accessToken)
+    {
+        return $this->graphGet("/{$wabaId}/phone_numbers", $accessToken, [
+            'fields' => 'id,display_phone_number,verified_name,name_status,code_verification_status,quality_rating,platform_type,throughput,messaging_limit_tier,status',
+        ]);
+    }
+
+    public function conversationAnalytics(string $wabaId, string $accessToken, array $params)
+    {
+        $query = [
+            'start' => $params['start'],
+            'end' => $params['end'],
+            'granularity' => $params['granularity'] ?? 'DAILY',
+        ];
+        if (!empty($params['dimensions'])) {
+            $query['dimensions'] = json_encode($params['dimensions']);
+        }
+        if (!empty($params['phone_numbers'])) {
+            $query['phone_numbers'] = json_encode($params['phone_numbers']);
+        }
+
+        return $this->graphGet("/{$wabaId}", $accessToken, [
+            'fields' => 'conversation_analytics.start(' . $params['start'] . ').end(' . $params['end']
+                . ').granularity(' . ($params['granularity'] ?? 'DAILY') . ')'
+                . (!empty($params['dimensions']) ? '.dimensions([' . implode(',', array_map(fn($d) => '"' . $d . '"', $params['dimensions'])) . '])' : '')
+                . '',
+        ]);
+    }
+
+    public function registerPhoneNumber(string $phoneNumberId, string $accessToken, string $pin)
+    {
+        try {
+            $url = "{$this->baseUri}/{$phoneNumberId}/register";
+            $response = Http::withToken($accessToken)
+                ->asForm()
+                ->timeout(30)
+                ->post($url, [
+                    'messaging_product' => 'whatsapp',
+                    'pin' => $pin,
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Register Phone Error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Register Phone Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function templateAnalytics(string $wabaId, string $accessToken, array $params)
+    {
+        $query = [
+            'start' => $params['start'],
+            'end' => $params['end'],
+            'granularity' => $params['granularity'] ?? 'DAILY',
+            'metric_types' => json_encode($params['metric_types'] ?? ['SENT', 'DELIVERED', 'READ', 'CLICKED']),
+            'template_ids' => json_encode(array_values(array_map('strval', $params['template_ids'] ?? []))),
+        ];
+
+        if (!empty($params['product_type'])) {
+            $query['product_type'] = $params['product_type'];
+        }
+
+        return $this->graphGet("/{$wabaId}/template_analytics", $accessToken, $query);
+    }
+
     public function createTemplate(string $wabaId, string $accessToken, array $payload)
     {
         try {
