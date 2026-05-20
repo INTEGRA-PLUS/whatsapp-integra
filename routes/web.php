@@ -88,7 +88,7 @@ Route::get('/debug-path-test', function () {
         
         if ($success) {
             // Check explicit path
-            $correctPath = '/home/intesoga/whatsapp.integracolombia.com/whatsapp/media/test_debug.txt';
+            $correctPath = '/home/intesoga/whatsapp.integracolombia.online/whatsapp/media/test_debug.txt';
             $info['write_status'] = "✅ Éxito al escribir archivo";
             $info['file_check_correct_path'] = file_exists($correctPath) ? "✅ EXITOSO: Archivo encontrado en: $correctPath" : "❌ FALLÓ: Archivo NO encontrado en: $correctPath";
             
