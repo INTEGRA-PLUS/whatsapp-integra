@@ -11,7 +11,7 @@ import {
     MessageSquare, AlertTriangle, XCircle, ExternalLink,
     Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
     Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
-    Camera, ListChecks,
+    Camera, ListChecks, CalendarClock, Plus, Trash2, Pencil,
 } from 'lucide-react';
 
 const TABS = [
@@ -21,6 +21,7 @@ const TABS = [
     { id: 'sesiones',    label: 'Sesiones del navegador',    Icon: Monitor },
     { id: 'apariencia',  label: 'Apariencia',               Icon: Palette },
     { id: 'whatsapp',    label: 'WhatsApp',                 Icon: MessageSquare },
+    { id: 'horarios',    label: 'Horarios',                 Icon: CalendarClock },
 ];
 
 /* ─── Utilidades visuales ───────────────────────────────── */
@@ -1277,6 +1278,345 @@ function QualityPill({ rating }) {
     );
 }
 
+/* ───────────────────────── Horarios ───────────────────────── */
+
+const DAY_OPTIONS = [
+    { value: 1, label: 'Lun' },
+    { value: 2, label: 'Mar' },
+    { value: 3, label: 'Mié' },
+    { value: 4, label: 'Jue' },
+    { value: 5, label: 'Vie' },
+    { value: 6, label: 'Sáb' },
+    { value: 0, label: 'Dom' },
+];
+
+const EMPTY_HOUR = {
+    id: null,
+    name: 'Horario laboral',
+    instance_id: '',
+    active: true,
+    timezone: 'America/Bogota',
+    start_time: '08:00',
+    end_time: '20:00',
+    days_of_week: [1, 2, 3, 4, 5],
+    out_of_hours_message: 'Hola {name}, gracias por escribirnos. Nuestro horario de atención es de {start} a {end}. Te responderemos lo antes posible.',
+    cooldown_minutes: 60,
+};
+
+function TabHorarios() {
+    const [items, setItems] = useState([]);
+    const [instances, setInstances] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [editing, setEditing] = useState(null);
+    const [errors, setErrors] = useState({});
+    const [toast, setToast] = useState(null);
+
+    function showToast(text, kind = 'success') {
+        setToast({ text, kind });
+        setTimeout(() => setToast(null), 4000);
+    }
+
+    async function load() {
+        setLoading(true);
+        setError(null);
+        try {
+            const { data } = await axios.get('/api/business-hours');
+            setItems(data.business_hours ?? []);
+            setInstances(data.instances ?? []);
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudieron cargar los horarios.');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => { load(); }, []);
+
+    function openCreate() {
+        setEditing({ ...EMPTY_HOUR });
+        setErrors({});
+    }
+
+    function openEdit(item) {
+        setEditing({
+            id: item.id,
+            name: item.name ?? '',
+            instance_id: item.instance_id ?? '',
+            active: !!item.active,
+            timezone: item.timezone ?? 'America/Bogota',
+            start_time: (item.start_time ?? '08:00:00').slice(0, 5),
+            end_time: (item.end_time ?? '20:00:00').slice(0, 5),
+            days_of_week: Array.isArray(item.days_of_week) ? item.days_of_week : [1, 2, 3, 4, 5],
+            out_of_hours_message: item.out_of_hours_message ?? '',
+            cooldown_minutes: item.cooldown_minutes ?? 60,
+        });
+        setErrors({});
+    }
+
+    async function save() {
+        setSaving(true);
+        setErrors({});
+        const payload = {
+            ...editing,
+            instance_id: editing.instance_id || null,
+        };
+        try {
+            if (editing.id) {
+                await axios.put(`/api/business-hours/${editing.id}`, payload);
+                showToast('Horario actualizado.');
+            } else {
+                await axios.post('/api/business-hours', payload);
+                showToast('Horario creado.');
+            }
+            setEditing(null);
+            await load();
+        } catch (err) {
+            if (err?.response?.status === 422) {
+                setErrors(err.response.data?.errors ?? {});
+                showToast('Revisa los campos del formulario.', 'error');
+            } else {
+                showToast(err?.response?.data?.message ?? 'No se pudo guardar.', 'error');
+            }
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function remove(id) {
+        if (!confirm('¿Eliminar este horario?')) return;
+        try {
+            await axios.delete(`/api/business-hours/${id}`);
+            showToast('Horario eliminado.');
+            await load();
+        } catch (err) {
+            showToast(err?.response?.data?.message ?? 'No se pudo eliminar.', 'error');
+        }
+    }
+
+    function toggleDay(day) {
+        const set = new Set(editing.days_of_week ?? []);
+        if (set.has(day)) set.delete(day); else set.add(day);
+        setEditing(e => ({ ...e, days_of_week: Array.from(set).sort() }));
+    }
+
+    return (
+        <div className="space-y-6">
+            <SectionHeader
+                icon={CalendarClock}
+                title="Horarios de atención"
+                description="Configura el horario en el que respondes. Fuera de este rango se enviará automáticamente el mensaje que definas."
+            />
+
+            {toast && (
+                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+                    toast.kind === 'error'
+                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
+                    <span>{toast.text}</span>
+                </div>
+            )}
+
+            <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                    {items.length === 0 ? 'Aún no tienes horarios configurados.' : `${items.length} horario(s) configurado(s).`}
+                </p>
+                <Button onClick={openCreate} className="bg-teal-600 hover:bg-teal-500 text-white rounded-xl gap-2">
+                    <Plus className="size-4" />
+                    Nuevo horario
+                </Button>
+            </div>
+
+            {error && (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                    {error}
+                </div>
+            )}
+
+            {loading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+                    <Loader2 className="size-4 animate-spin" /> Cargando horarios...
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {items.map(item => {
+                        const days = Array.isArray(item.days_of_week) && item.days_of_week.length
+                            ? item.days_of_week.map(d => DAY_OPTIONS.find(o => o.value === d)?.label).filter(Boolean).join(', ')
+                            : 'Todos los días';
+                        return (
+                            <div key={item.id} className="rounded-2xl border border-border/60 bg-card/50 p-5 flex flex-col sm:flex-row gap-4 sm:items-center">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="font-semibold text-foreground">{item.name}</h3>
+                                        {item.active ? (
+                                            <span className="inline-flex items-center rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Activo</span>
+                                        ) : (
+                                            <span className="inline-flex items-center rounded-md bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-1 ring-inset ring-zinc-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Pausado</span>
+                                        )}
+                                        {item.instance ? (
+                                            <span className="inline-flex items-center rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30 px-1.5 py-0.5 text-[10px] font-semibold">{item.instance.name}</span>
+                                        ) : (
+                                            <span className="inline-flex items-center rounded-md bg-muted text-muted-foreground ring-1 ring-inset ring-border/50 px-1.5 py-0.5 text-[10px] font-semibold">Todas las instancias</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1.5">
+                                        {(item.start_time ?? '').slice(0,5)} – {(item.end_time ?? '').slice(0,5)} · {days} · {item.timezone}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground/80 mt-1 line-clamp-2">{item.out_of_hours_message}</p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Button onClick={() => openEdit(item)} variant="outline" size="sm" className="gap-1.5 rounded-lg">
+                                        <Pencil className="size-3.5" />
+                                        Editar
+                                    </Button>
+                                    <Button onClick={() => remove(item.id)} variant="outline" size="sm" className="gap-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-700">
+                                        <Trash2 className="size-3.5" />
+                                    </Button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {editing && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !saving && setEditing(null)}>
+                    <div className="w-full max-w-xl rounded-2xl border bg-card shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="size-10 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                <CalendarClock className="size-5" />
+                            </div>
+                            <h3 className="font-semibold text-foreground text-lg">
+                                {editing.id ? 'Editar horario' : 'Nuevo horario'}
+                            </h3>
+                        </div>
+
+                        <div className="space-y-4">
+                            <Field label="Nombre" error={errors.name?.[0]}>
+                                <Input
+                                    value={editing.name}
+                                    onChange={e => setEditing(s => ({ ...s, name: e.target.value }))}
+                                    placeholder="Horario laboral"
+                                />
+                            </Field>
+
+                            <Field label="Instancia" icon={MessageSquare} error={errors.instance_id?.[0]}>
+                                <select
+                                    value={editing.instance_id ?? ''}
+                                    onChange={e => setEditing(s => ({ ...s, instance_id: e.target.value }))}
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                >
+                                    <option value="">Todas las instancias</option>
+                                    {instances.map(i => (
+                                        <option key={i.id} value={i.id}>{i.name}</option>
+                                    ))}
+                                </select>
+                            </Field>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Inicio" icon={Clock} error={errors.start_time?.[0]}>
+                                    <Input
+                                        type="time"
+                                        value={editing.start_time}
+                                        onChange={e => setEditing(s => ({ ...s, start_time: e.target.value }))}
+                                    />
+                                </Field>
+                                <Field label="Fin" icon={Clock} error={errors.end_time?.[0]}>
+                                    <Input
+                                        type="time"
+                                        value={editing.end_time}
+                                        onChange={e => setEditing(s => ({ ...s, end_time: e.target.value }))}
+                                    />
+                                </Field>
+                            </div>
+
+                            <Field label="Días" error={errors.days_of_week?.[0]}>
+                                <div className="flex gap-1.5 flex-wrap">
+                                    {DAY_OPTIONS.map(d => {
+                                        const isActive = editing.days_of_week?.includes(d.value);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={d.value}
+                                                onClick={() => toggleDay(d.value)}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                                                    isActive
+                                                        ? 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-300'
+                                                        : 'bg-background border-border/60 text-muted-foreground hover:border-border'
+                                                }`}
+                                            >
+                                                {d.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-1">Si no seleccionas ningún día, aplica todos los días.</p>
+                            </Field>
+
+                            <Field label="Zona horaria" icon={Globe} error={errors.timezone?.[0]}>
+                                <Input
+                                    value={editing.timezone}
+                                    onChange={e => setEditing(s => ({ ...s, timezone: e.target.value }))}
+                                    placeholder="America/Bogota"
+                                />
+                            </Field>
+
+                            <Field label="Mensaje fuera de horario" icon={MessageSquare} error={errors.out_of_hours_message?.[0]}>
+                                <textarea
+                                    value={editing.out_of_hours_message}
+                                    onChange={e => setEditing(s => ({ ...s, out_of_hours_message: e.target.value }))}
+                                    placeholder="Hola {name}, nuestro horario es de {start} a {end}..."
+                                    rows={4}
+                                    maxLength={4096}
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-teal-500/30 resize-y"
+                                />
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                    Variables: <code className="text-foreground">{'{name}'}</code>, <code className="text-foreground">{'{phone}'}</code>, <code className="text-foreground">{'{start}'}</code>, <code className="text-foreground">{'{end}'}</code>
+                                </p>
+                            </Field>
+
+                            <Field label="Cooldown (minutos)" icon={Clock} error={errors.cooldown_minutes?.[0]}>
+                                <Input
+                                    type="number"
+                                    min={0}
+                                    max={10080}
+                                    value={editing.cooldown_minutes}
+                                    onChange={e => setEditing(s => ({ ...s, cooldown_minutes: Number(e.target.value) }))}
+                                />
+                                <p className="text-[11px] text-muted-foreground mt-1">Tiempo mínimo entre dos envíos del mensaje a la misma conversación.</p>
+                            </Field>
+
+                            <label className="flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={!!editing.active}
+                                    onChange={e => setEditing(s => ({ ...s, active: e.target.checked }))}
+                                    className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                />
+                                <span className="text-foreground">Activo</span>
+                            </label>
+                        </div>
+
+                        <div className="flex gap-2 pt-5">
+                            <Button onClick={save} disabled={saving} className="flex-1 gap-2 bg-teal-600 hover:bg-teal-500 text-white">
+                                {saving && <Loader2 className="size-4 animate-spin" />}
+                                <Save className="size-4" />
+                                Guardar
+                            </Button>
+                            <Button onClick={() => setEditing(null)} variant="outline" disabled={saving}>
+                                Cancelar
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 /* ───────────────────────── Página principal ───────────────────────── */
 export default function SettingsIndex({ sessions = [] }) {
     const [activeTab, setActiveTab] = useState('perfil');
@@ -1328,6 +1668,7 @@ export default function SettingsIndex({ sessions = [] }) {
                         {activeTab === 'sesiones'   && <TabSesiones sessions={sessions} />}
                         {activeTab === 'apariencia' && <TabApariencia />}
                         {activeTab === 'whatsapp'   && <TabWhatsApp />}
+                        {activeTab === 'horarios'   && <TabHorarios />}
                     </div>
                 </div>
             </div>

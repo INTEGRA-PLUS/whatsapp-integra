@@ -9,16 +9,22 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
+use App\Services\BusinessHoursService;
 
 class WhatsAppWebhookController extends Controller
 {
     private $metaService;
     private $autoResponseService;
+    private $businessHoursService;
 
-    public function __construct(MetaWhatsAppService $metaService, AutoResponseService $autoResponseService)
-    {
+    public function __construct(
+        MetaWhatsAppService $metaService,
+        AutoResponseService $autoResponseService,
+        BusinessHoursService $businessHoursService
+    ) {
         $this->metaService = $metaService;
         $this->autoResponseService = $autoResponseService;
+        $this->businessHoursService = $businessHoursService;
     }
 
     public function verify(Request $request)
@@ -230,7 +236,11 @@ class WhatsAppWebhookController extends Controller
 
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);
 
-        $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+        $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
+
+        if (!$handledOutOfHours) {
+            $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+        }
 
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,

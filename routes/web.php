@@ -257,6 +257,17 @@ Route::middleware('auth')->group(function () {
         Route::delete('/sessions', [App\Http\Controllers\SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
     });
 
+    Route::prefix('api/business-hours')->group(function () {
+        Route::get('/', [App\Http\Controllers\BusinessHourController::class, 'index'])
+            ->middleware('permission:business_hours.view');
+        Route::post('/', [App\Http\Controllers\BusinessHourController::class, 'store'])
+            ->middleware('permission:business_hours.create');
+        Route::put('/{id}', [App\Http\Controllers\BusinessHourController::class, 'update'])
+            ->middleware('permission:business_hours.update');
+        Route::delete('/{id}', [App\Http\Controllers\BusinessHourController::class, 'destroy'])
+            ->middleware('permission:business_hours.delete');
+    });
+
     // WhatsApp settings API (readiness checklist + activations + profile)
     Route::prefix('api/settings/whatsapp')->group(function () {
         Route::get('/instances', [App\Http\Controllers\WhatsAppSettingsController::class, 'instances']);
