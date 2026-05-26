@@ -342,22 +342,35 @@ class WhatsAppSettingsController extends Controller
         $status = $phoneData['status'] ?? null;
         $platform = $phoneData['platform_type'] ?? null;
 
+        // Estados operativos del número en WhatsApp:
+        // - CONNECTED: registrado y operativo
+        // - PENDING: registro en curso (aún no se puede usar)
+        // - DISCONNECTED / MIGRATED / BANNED / RESTRICTED / FLAGGED / RATE_LIMITED: requiere acción
         $state = 'unknown';
         if ($reachable) {
-            $state = ($code === 'VERIFIED' && in_array($status, ['CONNECTED', 'PENDING'], true))
-                ? 'ok'
-                : 'action';
+            if ($code === 'VERIFIED' && $status === 'CONNECTED') {
+                $state = 'ok';
+            } elseif ($status === 'PENDING' || $code === 'CODE_REQUESTED') {
+                $state = 'pending';
+            } elseif ($code === 'VERIFIED' && $status === null) {
+                // Verificado pero sin status reportado (caso raro de Meta) — lo dejamos en pending
+                $state = 'pending';
+            } else {
+                $state = 'action';
+            }
         }
 
         return [
             'id' => 'phone_registration',
             'title' => 'Registro del número en Cloud API',
-            'description' => 'Para enviar mensajes desde Cloud API el número debe estar registrado con un PIN de 6 dígitos.',
+            'description' => 'Para enviar mensajes desde Cloud API el número debe estar registrado con un PIN de 6 dígitos y conectado.',
             'state' => $state,
-            'raw_status' => $code,
+            // raw_status muestra el estado operativo real (status), no solo si tuvo PIN verificado
+            'raw_status' => $status ?? $code,
             'action_type' => 'register_number',
             'extra' => [
                 'status' => $status,
+                'code_verification_status' => $code,
                 'platform_type' => $platform,
                 'quality_rating' => $phoneData['quality_rating'] ?? null,
                 'throughput' => $phoneData['throughput']['level'] ?? null,
