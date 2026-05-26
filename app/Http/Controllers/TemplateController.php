@@ -84,6 +84,16 @@ class TemplateController extends Controller
                 'limit' => 500,
             ]);
             if (!$listResult['success']) {
+                if ($this->isTemplatesUnavailableError($listResult['error'] ?? null)) {
+                    return response()->json([
+                        'data' => [],
+                        'templates' => [],
+                        'totals' => $this->emptyTotals(),
+                        'series' => [],
+                        'message' => 'Esta cuenta no tiene plantillas disponibles.',
+                    ]);
+                }
+
                 return response()->json([
                     'message' => 'No se pudo obtener la lista de plantillas para la analítica.',
                     'error' => $listResult['error'] ?? null,
@@ -101,6 +111,7 @@ class TemplateController extends Controller
                 'templates' => [],
                 'totals' => $this->emptyTotals(),
                 'series' => [],
+                'message' => 'Esta cuenta no tiene plantillas disponibles.',
             ]);
         }
 
@@ -162,6 +173,20 @@ class TemplateController extends Controller
             'success' => true,
             'data' => $result['data'],
         ]);
+    }
+
+    protected function isTemplatesUnavailableError($error): bool
+    {
+        if (!is_array($error)) return false;
+
+        $inner = $error['error'] ?? $error;
+        $code = $inner['code'] ?? null;
+        $subcode = $inner['error_subcode'] ?? null;
+
+        // Meta code 100 / subcode 33: object does not exist, missing permissions,
+        // or unsupported operation. Tratamos esto como "sin plantillas disponibles"
+        // para no exponer el error crudo al usuario final.
+        return ((int) $code === 100 && (int) $subcode === 33);
     }
 
     protected function isInsightsDisabledError($error): bool
@@ -360,6 +385,15 @@ class TemplateController extends Controller
         $result = $this->meta->listTemplates($instance->waba_id, $instance->access_token, $params);
 
         if (!$result['success']) {
+            if ($this->isTemplatesUnavailableError($result['error'] ?? null)) {
+                return response()->json([
+                    'data' => [],
+                    'paging' => null,
+                    'summary' => null,
+                    'message' => 'Esta cuenta no tiene plantillas disponibles.',
+                ]);
+            }
+
             return response()->json([
                 'message' => 'Error consultando plantillas en Meta.',
                 'error' => $result['error'] ?? null,
@@ -388,6 +422,14 @@ class TemplateController extends Controller
         ]);
 
         if (!$result['success']) {
+            if ($this->isTemplatesUnavailableError($result['error'] ?? null)) {
+                return response()->json([
+                    'name' => $name,
+                    'data' => [],
+                    'message' => 'Esta cuenta no tiene plantillas disponibles.',
+                ]);
+            }
+
             return response()->json([
                 'message' => 'Error consultando la familia de plantillas.',
                 'error' => $result['error'] ?? null,
