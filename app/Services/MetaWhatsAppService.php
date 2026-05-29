@@ -474,14 +474,22 @@ class MetaWhatsAppService
 
             $response = Http::withToken($accessToken)
                 ->timeout(30)
+                ->asJson()
                 ->post($url, $payload);
 
             if ($response->successful()) {
+                Log::info('WhatsApp Template Created', [
+                    'waba_id' => $wabaId,
+                    'template_name' => $payload['name'] ?? null,
+                    'template_language' => $payload['language'] ?? null,
+                    'meta_response' => $response->json(),
+                ]);
                 return ['success' => true, 'data' => $response->json()];
             }
 
             Log::error('WhatsApp Template Create Error', [
                 'url' => $url,
+                'waba_id' => $wabaId,
                 'payload' => $payload,
                 'status' => $response->status(),
                 'response' => $response->json(),
@@ -491,6 +499,7 @@ class MetaWhatsAppService
 
         } catch (\Exception $e) {
             Log::error('WhatsApp Template Create Exception', [
+                'waba_id' => $wabaId,
                 'message' => $e->getMessage(),
             ]);
 

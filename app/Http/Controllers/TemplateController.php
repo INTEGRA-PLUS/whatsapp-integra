@@ -445,7 +445,23 @@ class TemplateController extends Controller
             ], 502);
         }
 
-        return response()->json(['data' => $result['data']], 201);
+        $metaTemplateId = $result['data']['id'] ?? null;
+        $verified = false;
+        if ($metaTemplateId) {
+            $check = $this->meta->getTemplate((string) $metaTemplateId, $instance->access_token, ['fields' => 'id,name,language,status']);
+            $verified = !empty($check['success']);
+        }
+
+        return response()->json([
+            'data' => $result['data'],
+            'waba_id' => $instance->waba_id,
+            'instance' => [
+                'id' => $instance->id,
+                'name' => $instance->name,
+                'display_phone_number' => $instance->display_phone_number,
+            ],
+            'verified_in_meta' => $verified,
+        ], 201);
     }
 
     protected function sanitizeComponents(array $components): array

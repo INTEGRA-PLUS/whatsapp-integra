@@ -208,6 +208,27 @@ export default function TemplatesIndex({ instances = [] }) {
                     </div>
                 )}
 
+                {instanceId && (() => {
+                    const active = instances.find(i => i.id === instanceId);
+                    if (!active?.waba_id) return null;
+                    return (
+                        <div className="rounded-xl border bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-foreground">Trabajando sobre WABA:</span>
+                            <code className="font-mono text-foreground bg-background border px-2 py-0.5 rounded">{active.waba_id}</code>
+                            <span className="opacity-60">·</span>
+                            <span>Verifica que coincide con el WABA que ves en tu Meta Business Manager.</span>
+                            <a
+                                href={`https://business.facebook.com/wa/manage/message-templates/?waba_id=${active.waba_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ml-auto underline hover:text-foreground"
+                            >
+                                Abrir en Meta
+                            </a>
+                        </div>
+                    );
+                })()}
+
                 {/* STATS */}
                 {instances.length > 0 && templates.length > 0 && (
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

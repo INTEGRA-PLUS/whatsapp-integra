@@ -73,6 +73,7 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     const [submitting, setSubmitting] = useState(false);
     const [apiError, setApiError] = useState(null);
     const [tab, setTab] = useState('edit');
+    const [created, setCreated] = useState(null);
 
     const usedLanguages = useMemo(
         () => new Set((family?.variants ?? []).map(v => v.language)),
@@ -176,7 +177,12 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
         setSubmitting(true);
         try {
             const res = await axios.post('/api/templates', buildPayload());
-            onCreated(res.data.data);
+            setCreated({
+                template: res.data.data,
+                waba_id: res.data.waba_id,
+                instance: res.data.instance,
+                verified_in_meta: res.data.verified_in_meta,
+            });
         } catch (err) {
             if (err?.response?.status === 422) {
                 setApiError('Datos inválidos. Revisa los campos.');
@@ -204,6 +210,73 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     }
     function removeButton(i) {
         setComps(p => ({ ...p, buttons: p.buttons.filter((_, idx) => idx !== i) }));
+    }
+
+    if (created) {
+        const tpl = created.template ?? {};
+        const wabaId = created.waba_id;
+        const metaUrl = wabaId
+            ? `https://business.facebook.com/wa/manage/message-templates/?waba_id=${wabaId}`
+            : null;
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => onCreated(tpl)}>
+                <div className="w-full max-w-md rounded-xl border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="px-6 py-5 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <div className="size-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-5"><polyline points="20 6 9 17 4 12"/></svg>
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-foreground">Plantilla enviada a Meta</h2>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Meta la recibió en estado <span className="font-medium text-foreground">{tpl.status ?? 'PENDING'}</span>. La aprobación suele tardar unos minutos.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
+                            <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">Template ID</span>
+                                <code className="font-mono text-foreground break-all text-right">{tpl.id ?? '—'}</code>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">WABA ID</span>
+                                <code className="font-mono text-foreground break-all text-right">{wabaId ?? '—'}</code>
+                            </div>
+                            {created.instance?.name && (
+                                <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground">Instancia</span>
+                                    <span className="text-foreground text-right">{created.instance.name}{created.instance.display_phone_number ? ` · ${created.instance.display_phone_number}` : ''}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between gap-3">
+                                <span className="text-muted-foreground">Verificada en Meta</span>
+                                <span className={created.verified_in_meta ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-amber-600 dark:text-amber-400 font-medium'}>
+                                    {created.verified_in_meta ? 'Sí' : 'No respondió aún'}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                            Si no la ves en tu Meta Business Manager, abre el botón de abajo y verifica que el WABA ID coincide con el que estás viendo en Meta. Si no coincide, la instancia conectada apunta a otra WABA.
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                            {metaUrl && (
+                                <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
+                                    <Button type="button" variant="outline" className="w-full">
+                                        Abrir en Meta
+                                    </Button>
+                                </a>
+                            )}
+                            <Button type="button" onClick={() => onCreated(tpl)} className="flex-1">
+                                Cerrar
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return (

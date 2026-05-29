@@ -125,6 +125,11 @@ Route::get('/debug-db-columns', function () {
     }
 });
 
+// CSRF token refresh endpoint (used by axios interceptor to recover from 419)
+Route::get('/csrf-token', function () {
+    return response()->json(['token' => csrf_token()]);
+})->name('csrf-token');
+
 // Auth routes
 Route::get('/login', function () {
     return Inertia::render('Auth/Login');
