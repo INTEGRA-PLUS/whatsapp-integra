@@ -811,11 +811,21 @@ function CheckRow({ check, busy, onAction, onRequestPin }) {
                             Nombre actual: <span className="font-medium text-foreground">{check.extra.verified_name}</span>
                         </p>
                     )}
-                    {check.id === 'phone_registration' && check.extra?.quality_rating && (
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                            Calidad: <span className="font-medium text-foreground">{check.extra.quality_rating}</span>
-                            {check.extra.messaging_limit_tier && <> · Tier: <span className="font-medium text-foreground">{check.extra.messaging_limit_tier}</span></>}
-                        </p>
+                    {check.id === 'phone_registration' && (
+                        <>
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                                Estado en WhatsApp: <span className="font-medium text-foreground">{check.extra?.status ?? 'Desconocido'}</span>
+                                {check.extra?.code_verification_status && (
+                                    <> · PIN: <span className="font-medium text-foreground">{check.extra.code_verification_status}</span></>
+                                )}
+                            </p>
+                            {check.extra?.quality_rating && (
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                    Calidad: <span className="font-medium text-foreground">{check.extra.quality_rating}</span>
+                                    {check.extra.messaging_limit_tier && <> · Tier: <span className="font-medium text-foreground">{check.extra.messaging_limit_tier}</span></>}
+                                </p>
+                            )}
+                        </>
                     )}
                     {check.id === 'webhook_subscription' && check.extra?.apps?.length > 0 && (
                         <p className="text-[11px] text-muted-foreground mt-1">
@@ -835,6 +845,10 @@ function CheckRow({ check, busy, onAction, onRequestPin }) {
 function CheckAction({ check, busy, onAction, onRequestPin }) {
     if (check.state === 'ok') {
         return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Activado</span>;
+    }
+
+    if (check.state === 'pending' && check.id === 'phone_registration') {
+        return <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Esperando a WhatsApp</span>;
     }
 
     const action = check.action_type;

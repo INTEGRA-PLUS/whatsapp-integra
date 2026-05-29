@@ -159,7 +159,17 @@ class MasterController extends Controller
         // Explicitly set team ID for spatie permissions
         setPermissionsTeamId($company->id);
 
-        User::create([
+        $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'admin',
+            'company_id' => $company->id,
+            'guard_name' => 'web',
+        ]);
+
+        // El admin de una empresa siempre debe tener TODOS los permisos disponibles,
+        // incluyendo cualquier permiso nuevo agregado por migraciones futuras.
+        $adminRole->syncPermissions(\Spatie\Permission\Models\Permission::all());
+
+        $adminUser = User::create([
             'company_id' => $company->id,
             'name' => $request->admin_name,
             'email' => $request->admin_email,
@@ -167,6 +177,10 @@ class MasterController extends Controller
             'role' => 'admin',
             'active' => true,
         ]);
+
+        if (!$adminUser->hasRole('admin')) {
+            $adminUser->assignRole($adminRole);
+        }
 
         return redirect()->route('master.index')->with('success', 'Empresa creada exitosamente con administrador configurado.');
     }
