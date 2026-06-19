@@ -57,6 +57,19 @@ function detectVariables(text) {
     return Array.from(nums).sort((a, b) => a - b);
 }
 
+function isSequentialFromOne(nums) {
+    if (!nums.length) return true;
+    return nums.every((n, i) => n === i + 1);
+}
+
+const MAX_BUTTONS = 10;
+const BUTTON_LIMITS = {
+    PHONE_NUMBER: 1,
+    URL: 2,
+    COPY_CODE: 1,
+    OTP: 1,
+};
+
 export default function TemplateFormModal({ mode, instanceId, family, sourceTemplate, onClose, onCreated }) {
     const isTranslation = mode === 'translation';
 
@@ -94,12 +107,21 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     function validate() {
         const e = {};
         if (!NAME_PATTERN.test(name)) e.name = 'Solo minúsculas, números y guiones bajos.';
+        if (name.length > 512) e.name = 'Máximo 512 caracteres.';
         if (!language) e.language = 'Selecciona un idioma.';
         if (isTranslation && usedLanguages.has(language)) e.language = 'Esa traducción ya existe.';
         if (!comps.body.text.trim()) e.body = 'El cuerpo es obligatorio.';
         if (comps.body.text.length > 1024) e.body = 'Máximo 1024 caracteres.';
-        if (comps.header.enabled && comps.header.text.length > 60) e.header = 'Máximo 60 caracteres.';
-        if (comps.footer.enabled && comps.footer.text.length > 60) e.footer = 'Máximo 60 caracteres.';
+        if (!isSequentialFromOne(bodyVars)) e.body = 'Las variables deben ser {{1}}, {{2}}, {{3}}... sin saltos.';
+        if (comps.header.enabled) {
+            if (comps.header.text.length > 60) e.header = 'Máximo 60 caracteres.';
+            if (headerVars.length > 1) e.header = 'El encabezado admite máximo una variable {{1}}.';
+            if (!isSequentialFromOne(headerVars)) e.header = 'La variable del encabezado debe ser {{1}}.';
+        }
+        if (comps.footer.enabled) {
+            if (comps.footer.text.length > 60) e.footer = 'Máximo 60 caracteres.';
+            if (comps.footer.text.includes('{{')) e.footer = 'El pie no admite variables.';
+        }
         for (const v of bodyVars) {
             if (!bodyExamples[v]) {
                 e.body_example = `Falta el ejemplo para {{${v}}}.`;
@@ -114,11 +136,32 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                 }
             }
         }
+
+        const counts = { PHONE_NUMBER: 0, URL: 0, COPY_CODE: 0, OTP: 0, QUICK_REPLY: 0 };
         comps.buttons.forEach((b, i) => {
-            if (!b.text.trim()) e[`btn_${i}_text`] = 'Texto requerido.';
-            if (b.type === 'URL' && !b.url.trim()) e[`btn_${i}_url`] = 'URL requerida.';
+            counts[b.type] = (counts[b.type] ?? 0) + 1;
+            if (b.type !== 'OTP' && !b.text.trim()) e[`btn_${i}_text`] = 'Texto requerido.';
+            if (b.type === 'URL') {
+                if (!b.url.trim()) e[`btn_${i}_url`] = 'URL requerida.';
+                const urlVars = detectVariables(b.url);
+                if (urlVars.length > 1) e[`btn_${i}_url`] = 'La URL admite máximo una variable {{1}} al final.';
+                if (urlVars.length === 1 && !b.url_example?.trim()) {
+                    e[`btn_${i}_url_example`] = 'Provee un ejemplo de URL completa.';
+                }
+            }
             if (b.type === 'PHONE_NUMBER' && !b.phone_number.trim()) e[`btn_${i}_phone`] = 'Teléfono requerido.';
+            if (b.type === 'COPY_CODE' && !b.example?.trim()) e[`btn_${i}_example`] = 'Provee un código de ejemplo.';
         });
+        Object.entries(BUTTON_LIMITS).forEach(([type, max]) => {
+            if (counts[type] > max) {
+                e._buttons = `Meta solo permite ${max} botón${max > 1 ? 'es' : ''} de tipo ${type}.`;
+            }
+        });
+
+        if (category === 'AUTHENTICATION' && counts.OTP === 0) {
+            e._buttons = 'Las plantillas AUTHENTICATION requieren un botón OTP.';
+        }
+
         return e;
     }
 
@@ -147,9 +190,26 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
             components.push({
                 type: 'BUTTONS',
                 buttons: comps.buttons.map(btn => {
-                    const out = { type: btn.type, text: btn.text };
-                    if (btn.type === 'URL') out.url = btn.url;
+                    const out = { type: btn.type };
+                    if (btn.type !== 'OTP') out.text = btn.text;
+                    if (btn.type === 'URL') {
+                        out.url = btn.url;
+                        const urlVars = detectVariables(btn.url);
+                        if (urlVars.length && btn.url_example?.trim()) {
+                            out.example = [btn.url_example.trim()];
+                        }
+                    }
                     if (btn.type === 'PHONE_NUMBER') out.phone_number = btn.phone_number;
+                    if (btn.type === 'COPY_CODE' && btn.example?.trim()) {
+                        out.example = [btn.example.trim()];
+                    }
+                    if (btn.type === 'OTP') {
+                        out.otp_type = btn.otp_type || 'COPY_CODE';
+                        if (btn.text?.trim()) out.text = btn.text;
+                        if (btn.autofill_text?.trim()) out.autofill_text = btn.autofill_text;
+                        if (btn.package_name?.trim()) out.package_name = btn.package_name;
+                        if (btn.signature_hash?.trim()) out.signature_hash = btn.signature_hash;
+                    }
                     return out;
                 }),
             });
@@ -184,11 +244,25 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                 verified_in_meta: res.data.verified_in_meta,
             });
         } catch (err) {
+            const resp = err?.response?.data;
             if (err?.response?.status === 422) {
-                setApiError('Datos inválidos. Revisa los campos.');
+                const list = resp?.errors;
+                if (Array.isArray(list) && list.length) {
+                    setApiError(list.join(' · '));
+                } else if (list && typeof list === 'object') {
+                    setApiError(Object.values(list).flat().join(' · '));
+                } else {
+                    setApiError(resp?.message || 'Datos inválidos. Revisa los campos.');
+                }
             } else {
-                const meta = err?.response?.data?.error?.error;
-                setApiError(meta?.error_user_msg || meta?.message || err?.response?.data?.message || 'No se pudo crear la plantilla.');
+                const meta = resp?.error?.error ?? resp?.error;
+                setApiError(
+                    meta?.error_user_msg
+                    || meta?.error_user_title
+                    || meta?.message
+                    || resp?.message
+                    || 'No se pudo crear la plantilla.'
+                );
             }
         } finally {
             setSubmitting(false);
@@ -196,10 +270,21 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     }
 
     function addButton() {
-        if (comps.buttons.length >= 3) return;
+        if (comps.buttons.length >= MAX_BUTTONS) return;
         setComps(p => ({
             ...p,
-            buttons: [...p.buttons, { type: 'QUICK_REPLY', text: '', url: '', phone_number: '' }],
+            buttons: [...p.buttons, {
+                type: 'QUICK_REPLY',
+                text: '',
+                url: '',
+                url_example: '',
+                phone_number: '',
+                example: '',
+                otp_type: 'COPY_CODE',
+                autofill_text: '',
+                package_name: '',
+                signature_hash: '',
+            }],
         }));
     }
     function updateButton(i, patch) {
@@ -483,12 +568,18 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                     {/* BUTTONS */}
                     <div className="rounded-md border bg-background p-3 space-y-3">
                         <div className="flex items-center justify-between">
-                            <label className="text-sm font-medium text-foreground">Botones (hasta 3)</label>
-                            <Button type="button" variant="outline" size="sm" onClick={addButton} disabled={comps.buttons.length >= 3} className="gap-1">
+                            <label className="text-sm font-medium text-foreground">Botones (hasta {MAX_BUTTONS})</label>
+                            <Button type="button" variant="outline" size="sm" onClick={addButton} disabled={comps.buttons.length >= MAX_BUTTONS} className="gap-1">
                                 <Plus className="size-3.5" /> Añadir
                             </Button>
                         </div>
-                        {comps.buttons.map((btn, i) => (
+                        {errors._buttons && <p className="text-xs text-destructive">{errors._buttons}</p>}
+                        <p className="text-[11px] text-muted-foreground">
+                            Meta: máx. 1 teléfono · 2 URL · 1 COPY_CODE · 1 OTP. AUTHENTICATION requiere OTP.
+                        </p>
+                        {comps.buttons.map((btn, i) => {
+                            const urlVarCount = btn.type === 'URL' ? detectVariables(btn.url).length : 0;
+                            return (
                             <div key={i} className="rounded-md border bg-muted/30 p-2 space-y-2">
                                 <div className="flex gap-2">
                                     <select
@@ -499,32 +590,61 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                                         <option value="QUICK_REPLY">Respuesta rápida</option>
                                         <option value="URL">URL</option>
                                         <option value="PHONE_NUMBER">Teléfono</option>
+                                        <option value="COPY_CODE">Copiar código</option>
+                                        <option value="OTP">OTP (AUTHENTICATION)</option>
                                     </select>
-                                    <input
-                                        type="text"
-                                        value={btn.text}
-                                        onChange={e => updateButton(i, { text: e.target.value })}
-                                        placeholder="Texto del botón"
-                                        maxLength={25}
-                                        className="flex-1 h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-                                    />
+                                    {btn.type !== 'OTP' && (
+                                        <input
+                                            type="text"
+                                            value={btn.text}
+                                            onChange={e => updateButton(i, { text: e.target.value })}
+                                            placeholder="Texto del botón"
+                                            maxLength={25}
+                                            className="flex-1 h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                                        />
+                                    )}
+                                    {btn.type === 'OTP' && (
+                                        <select
+                                            value={btn.otp_type || 'COPY_CODE'}
+                                            onChange={e => updateButton(i, { otp_type: e.target.value })}
+                                            className="flex-1 h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                                        >
+                                            <option value="COPY_CODE">COPY_CODE</option>
+                                            <option value="ONE_TAP">ONE_TAP</option>
+                                            <option value="ZERO_TAP">ZERO_TAP</option>
+                                        </select>
+                                    )}
                                     <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)} className="text-destructive hover:bg-destructive/10">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
                                 {errors[`btn_${i}_text`] && <p className="text-xs text-destructive">{errors[`btn_${i}_text`]}</p>}
+
                                 {btn.type === 'URL' && (
                                     <>
                                         <input
                                             type="url"
                                             value={btn.url}
                                             onChange={e => updateButton(i, { url: e.target.value })}
-                                            placeholder="https://..."
+                                            placeholder="https://midominio.com/ruta/{{1}}"
                                             className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
                                         />
                                         {errors[`btn_${i}_url`] && <p className="text-xs text-destructive">{errors[`btn_${i}_url`]}</p>}
+                                        {urlVarCount > 0 && (
+                                            <>
+                                                <input
+                                                    type="url"
+                                                    value={btn.url_example || ''}
+                                                    onChange={e => updateButton(i, { url_example: e.target.value })}
+                                                    placeholder="Ejemplo de URL completa: https://midominio.com/ruta/abc123"
+                                                    className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
+                                                />
+                                                {errors[`btn_${i}_url_example`] && <p className="text-xs text-destructive">{errors[`btn_${i}_url_example`]}</p>}
+                                            </>
+                                        )}
                                     </>
                                 )}
+
                                 {btn.type === 'PHONE_NUMBER' && (
                                     <>
                                         <input
@@ -537,8 +657,50 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                                         {errors[`btn_${i}_phone`] && <p className="text-xs text-destructive">{errors[`btn_${i}_phone`]}</p>}
                                     </>
                                 )}
+
+                                {btn.type === 'COPY_CODE' && (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={btn.example || ''}
+                                            onChange={e => updateButton(i, { example: e.target.value })}
+                                            placeholder="Código de ejemplo (ej. 250FF)"
+                                            maxLength={15}
+                                            className="flex h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
+                                        />
+                                        {errors[`btn_${i}_example`] && <p className="text-xs text-destructive">{errors[`btn_${i}_example`]}</p>}
+                                    </>
+                                )}
+
+                                {btn.type === 'OTP' && (btn.otp_type === 'ONE_TAP' || btn.otp_type === 'ZERO_TAP') && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <input
+                                            type="text"
+                                            value={btn.package_name || ''}
+                                            onChange={e => updateButton(i, { package_name: e.target.value })}
+                                            placeholder="package_name (com.tu.app)"
+                                            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={btn.signature_hash || ''}
+                                            onChange={e => updateButton(i, { signature_hash: e.target.value })}
+                                            placeholder="signature_hash"
+                                            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={btn.autofill_text || ''}
+                                            onChange={e => updateButton(i, { autofill_text: e.target.value })}
+                                            placeholder="autofill_text (opcional)"
+                                            maxLength={25}
+                                            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs sm:col-span-2"
+                                        />
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     </div>

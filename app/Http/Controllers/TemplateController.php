@@ -450,17 +450,33 @@ class TemplateController extends Controller
             'language' => 'required|string|max:10',
             'category' => 'required|in:MARKETING,UTILITY,AUTHENTICATION',
             'allow_category_change' => 'nullable|boolean',
+            'parameter_format' => 'nullable|in:POSITIONAL,NAMED',
             'components' => 'required|array|min:1',
             'components.*.type' => 'required|in:HEADER,BODY,FOOTER,BUTTONS',
-            'components.*.format' => 'nullable|in:TEXT,IMAGE,VIDEO,DOCUMENT',
+            'components.*.format' => 'nullable|in:TEXT,IMAGE,VIDEO,DOCUMENT,LOCATION',
             'components.*.text' => 'nullable|string|max:1024',
             'components.*.example' => 'nullable|array',
+            'components.*.add_security_recommendation' => 'nullable|boolean',
+            'components.*.code_expiration_minutes' => 'nullable|integer|min:1|max:90',
             'components.*.buttons' => 'nullable|array|max:10',
-            'components.*.buttons.*.type' => 'nullable|in:QUICK_REPLY,URL,PHONE_NUMBER',
+            'components.*.buttons.*.type' => 'nullable|in:QUICK_REPLY,URL,PHONE_NUMBER,COPY_CODE,OTP',
             'components.*.buttons.*.text' => 'nullable|string|max:25',
             'components.*.buttons.*.url' => 'nullable|string|max:2000',
             'components.*.buttons.*.phone_number' => 'nullable|string|max:20',
+            'components.*.buttons.*.example' => 'nullable|array',
+            'components.*.buttons.*.otp_type' => 'nullable|in:COPY_CODE,ONE_TAP,ZERO_TAP',
+            'components.*.buttons.*.autofill_text' => 'nullable|string|max:25',
+            'components.*.buttons.*.package_name' => 'nullable|string|max:200',
+            'components.*.buttons.*.signature_hash' => 'nullable|string|max:50',
         ]);
+
+        $semanticErrors = $this->validateComponentsRules($data['components'], $data['category']);
+        if (!empty($semanticErrors)) {
+            return response()->json([
+                'message' => 'Componentes inválidos.',
+                'errors' => $semanticErrors,
+            ], 422);
+        }
 
         $instance = $this->resolveInstance($request);
         if (!$instance instanceof Instance) {
@@ -478,11 +494,15 @@ class TemplateController extends Controller
             $payload['allow_category_change'] = (bool) $data['allow_category_change'];
         }
 
+        if (!empty($data['parameter_format'])) {
+            $payload['parameter_format'] = $data['parameter_format'];
+        }
+
         $result = $this->meta->createTemplate($instance->waba_id, $instance->access_token, $payload);
 
         if (!$result['success']) {
             return response()->json([
-                'message' => 'Error creando la plantilla en Meta.',
+                'message' => $this->extractMetaErrorMessage($result['error']) ?? 'Error creando la plantilla en Meta.',
                 'error' => $result['error'] ?? null,
             ], 502);
         }
@@ -506,6 +526,169 @@ class TemplateController extends Controller
         ], 201);
     }
 
+    /**
+     * Reglas semánticas de Meta no cubiertas por validación estándar:
+     * - Variables {{1}},{{2}},... deben ser secuenciales sin saltos.
+     * - body.example.body_text debe tener el mismo número de valores que variables.
+     * - header.example.header_text idem para HEADER TEXT.
+     * - URL con {{1}} debe traer example: ["url_completa"].
+     * - Conteo de botones por tipo (Meta: 1 PHONE_NUMBER, 2 URL, 1 COPY_CODE, 1 OTP, 1 VOICE_CALL).
+     * - AUTHENTICATION exige botón OTP.
+     */
+    protected function validateComponentsRules(array $components, string $category): array
+    {
+        $errors = [];
+        $typesSeen = [];
+        $hasOtp = false;
+        $btnCount = ['PHONE_NUMBER' => 0, 'URL' => 0, 'COPY_CODE' => 0, 'OTP' => 0, 'QUICK_REPLY' => 0];
+
+        foreach ($components as $i => $c) {
+            $type = $c['type'] ?? null;
+            if ($type && in_array($type, $typesSeen, true) && $type !== 'BUTTONS') {
+                $errors[] = "Componente {$type} duplicado.";
+            }
+            $typesSeen[] = $type;
+
+            if ($type === 'HEADER') {
+                $format = $c['format'] ?? 'TEXT';
+                if ($format === 'TEXT') {
+                    $text = $c['text'] ?? '';
+                    if (mb_strlen($text) > 60) {
+                        $errors[] = 'El encabezado de texto no puede superar 60 caracteres.';
+                    }
+                    $vars = $this->extractVariables($text);
+                    if (count($vars) > 1) {
+                        $errors[] = 'El encabezado de texto admite máximo una variable {{1}}.';
+                    }
+                    if (!$this->isSequential($vars)) {
+                        $errors[] = 'Las variables del encabezado deben ser secuenciales desde {{1}}.';
+                    }
+                    $examples = $c['example']['header_text'] ?? [];
+                    if (count($vars) !== count($examples)) {
+                        $errors[] = 'Debes proveer un ejemplo por cada variable del encabezado.';
+                    }
+                } elseif (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+                    $handle = $c['example']['header_handle'] ?? null;
+                    if (empty($handle) || !is_array($handle) || empty($handle[0])) {
+                        $errors[] = "El encabezado {$format} requiere un media handle de Meta en example.header_handle.";
+                    }
+                }
+            }
+
+            if ($type === 'BODY') {
+                $text = $c['text'] ?? '';
+                if ($text === '' && $category !== 'AUTHENTICATION') {
+                    $errors[] = 'El cuerpo es obligatorio.';
+                }
+                if (mb_strlen($text) > 1024) {
+                    $errors[] = 'El cuerpo no puede superar 1024 caracteres.';
+                }
+                $vars = $this->extractVariables($text);
+                if (!$this->isSequential($vars)) {
+                    $errors[] = 'Las variables del cuerpo deben ser secuenciales desde {{1}} sin saltos.';
+                }
+                $examples = $c['example']['body_text'][0] ?? [];
+                if (count($vars) !== count($examples)) {
+                    $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo.';
+                }
+            }
+
+            if ($type === 'FOOTER') {
+                $text = $c['text'] ?? '';
+                if (mb_strlen($text) > 60) {
+                    $errors[] = 'El pie no puede superar 60 caracteres.';
+                }
+                if (str_contains($text, '{{')) {
+                    $errors[] = 'El pie no admite variables.';
+                }
+            }
+
+            if ($type === 'BUTTONS') {
+                foreach (($c['buttons'] ?? []) as $j => $b) {
+                    $btType = $b['type'] ?? null;
+                    if (!$btType) continue;
+
+                    if (!isset($btnCount[$btType])) $btnCount[$btType] = 0;
+                    $btnCount[$btType]++;
+
+                    if ($btType === 'OTP') $hasOtp = true;
+
+                    if ($btType === 'URL') {
+                        $url = $b['url'] ?? '';
+                        if ($url === '') {
+                            $errors[] = "Botón URL #" . ($j + 1) . ": URL requerida.";
+                        }
+                        $urlVars = $this->extractVariables($url);
+                        if (count($urlVars) > 0) {
+                            $example = $b['example'] ?? [];
+                            if (empty($example) || empty($example[0])) {
+                                $errors[] = "Botón URL #" . ($j + 1) . ": al usar {{1}} debes proveer example con la URL completa.";
+                            }
+                        }
+                    }
+
+                    if ($btType === 'PHONE_NUMBER' && empty($b['phone_number'])) {
+                        $errors[] = "Botón teléfono #" . ($j + 1) . ": número requerido.";
+                    }
+
+                    if ($btType === 'OTP') {
+                        $otpType = $b['otp_type'] ?? 'COPY_CODE';
+                        if (!in_array($otpType, ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'], true)) {
+                            $errors[] = "Botón OTP #" . ($j + 1) . ": otp_type inválido.";
+                        }
+                        if (in_array($otpType, ['ONE_TAP', 'ZERO_TAP'], true) && empty($b['package_name'])) {
+                            $errors[] = "Botón OTP {$otpType} #" . ($j + 1) . ": package_name requerido.";
+                        }
+                    }
+
+                    if (in_array($btType, ['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'], true)) {
+                        if ($btType !== 'OTP' && empty($b['text'])) {
+                            $errors[] = "Botón #" . ($j + 1) . ": texto requerido.";
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($btnCount['PHONE_NUMBER'] > 1) $errors[] = 'Meta solo permite 1 botón de teléfono.';
+        if ($btnCount['URL'] > 2) $errors[] = 'Meta solo permite hasta 2 botones URL.';
+        if ($btnCount['COPY_CODE'] > 1) $errors[] = 'Meta solo permite 1 botón COPY_CODE.';
+        if ($btnCount['OTP'] > 1) $errors[] = 'Meta solo permite 1 botón OTP.';
+
+        if ($category === 'AUTHENTICATION' && !$hasOtp) {
+            $errors[] = 'Las plantillas AUTHENTICATION requieren un botón OTP.';
+        }
+
+        return $errors;
+    }
+
+    protected function extractVariables(string $text): array
+    {
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $text, $matches);
+        $nums = array_unique(array_map('intval', $matches[1] ?? []));
+        sort($nums);
+        return $nums;
+    }
+
+    protected function isSequential(array $nums): bool
+    {
+        if (empty($nums)) return true;
+        for ($i = 0; $i < count($nums); $i++) {
+            if ($nums[$i] !== $i + 1) return false;
+        }
+        return true;
+    }
+
+    protected function extractMetaErrorMessage($error): ?string
+    {
+        if (!is_array($error)) return null;
+        $inner = $error['error'] ?? $error;
+        return $inner['error_user_msg']
+            ?? $inner['message']
+            ?? $inner['error_user_title']
+            ?? null;
+    }
+
     protected function sanitizeComponents(array $components): array
     {
         $clean = [];
@@ -519,13 +702,37 @@ class TemplateController extends Controller
             } elseif ($c['type'] === 'BODY') {
                 if (!empty($c['text'])) $component['text'] = $c['text'];
                 if (!empty($c['example'])) $component['example'] = $c['example'];
+                if (!empty($c['add_security_recommendation'])) {
+                    $component['add_security_recommendation'] = true;
+                }
             } elseif ($c['type'] === 'FOOTER') {
                 if (!empty($c['text'])) $component['text'] = $c['text'];
+                if (!empty($c['code_expiration_minutes'])) {
+                    $component['code_expiration_minutes'] = (int) $c['code_expiration_minutes'];
+                }
             } elseif ($c['type'] === 'BUTTONS') {
                 $component['buttons'] = array_map(function ($b) {
-                    $btn = ['type' => $b['type'], 'text' => $b['text']];
-                    if ($b['type'] === 'URL' && !empty($b['url'])) $btn['url'] = $b['url'];
-                    if ($b['type'] === 'PHONE_NUMBER' && !empty($b['phone_number'])) $btn['phone_number'] = $b['phone_number'];
+                    $btn = ['type' => $b['type']];
+                    if ($b['type'] !== 'OTP' && !empty($b['text'])) {
+                        $btn['text'] = $b['text'];
+                    }
+                    if ($b['type'] === 'URL') {
+                        if (!empty($b['url'])) $btn['url'] = $b['url'];
+                        if (!empty($b['example'])) $btn['example'] = array_values($b['example']);
+                    }
+                    if ($b['type'] === 'PHONE_NUMBER' && !empty($b['phone_number'])) {
+                        $btn['phone_number'] = $b['phone_number'];
+                    }
+                    if ($b['type'] === 'COPY_CODE' && !empty($b['example'])) {
+                        $btn['example'] = array_values($b['example']);
+                    }
+                    if ($b['type'] === 'OTP') {
+                        $btn['otp_type'] = $b['otp_type'] ?? 'COPY_CODE';
+                        if (!empty($b['text'])) $btn['text'] = $b['text'];
+                        if (!empty($b['autofill_text'])) $btn['autofill_text'] = $b['autofill_text'];
+                        if (!empty($b['package_name'])) $btn['package_name'] = $b['package_name'];
+                        if (!empty($b['signature_hash'])) $btn['signature_hash'] = $b['signature_hash'];
+                    }
                     return $btn;
                 }, $c['buttons'] ?? []);
             }

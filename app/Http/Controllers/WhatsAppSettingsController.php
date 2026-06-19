@@ -124,7 +124,7 @@ class WhatsAppSettingsController extends Controller
     {
         $data = $request->validate([
             'instance_id' => 'nullable|integer',
-            'pin' => 'required|string|regex:/^\d{6}$/',
+            'pin' => 'nullable|string|regex:/^\d{6}$/',
         ]);
 
         $instance = $this->resolveInstance($request);
@@ -136,8 +136,61 @@ class WhatsAppSettingsController extends Controller
             return response()->json(['message' => 'La instancia no tiene phone_number_id configurado.'], 422);
         }
 
-        $result = $this->meta->registerPhoneNumber($instance->phone_number_id, $instance->access_token, $data['pin']);
+        // PIN de verificación de 2 pasos. Por defecto siempre 123456 (igual que
+        // el flujo de integra2.0); el cliente no necesita enviarlo.
+        $pin = $data['pin'] ?? '123456';
+
+        $result = $this->meta->registerPhoneNumber($instance->phone_number_id, $instance->access_token, $pin);
         return $this->wrap($result, 'No se pudo registrar el número en Cloud API.');
+    }
+
+    public function requestCode(Request $request)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'code_method' => 'required|in:SMS,VOICE',
+            'language' => 'nullable|string|max:10',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        if (!$instance->phone_number_id) {
+            return response()->json(['message' => 'La instancia no tiene phone_number_id configurado.'], 422);
+        }
+
+        $result = $this->meta->requestCode(
+            $instance->phone_number_id,
+            $instance->access_token,
+            $data['code_method'],
+            $data['language'] ?? 'es'
+        );
+        return $this->wrap($result, 'No se pudo solicitar el código de verificación.');
+    }
+
+    public function verifyCode(Request $request)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'code' => 'required|string|regex:/^\d{3}-?\d{3}$/',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        if (!$instance->phone_number_id) {
+            return response()->json(['message' => 'La instancia no tiene phone_number_id configurado.'], 422);
+        }
+
+        // Meta acepta el código con o sin guion; normalizamos a 6 dígitos puros.
+        $code = preg_replace('/\D/', '', $data['code']);
+
+        $result = $this->meta->verifyCode($instance->phone_number_id, $instance->access_token, $code);
+        return $this->wrap($result, 'No se pudo verificar el código.');
     }
 
     public function enableInsights(Request $request)
@@ -342,32 +395,58 @@ class WhatsAppSettingsController extends Controller
         $status = $phoneData['status'] ?? null;
         $platform = $phoneData['platform_type'] ?? null;
 
-        // Estados operativos del número en WhatsApp:
-        // - CONNECTED: registrado y operativo
-        // - PENDING: registro en curso (aún no se puede usar)
-        // - DISCONNECTED / MIGRATED / BANNED / RESTRICTED / FLAGGED / RATE_LIMITED: requiere acción
+        // Flujo Meta para registrar un número en Cloud API:
+        // 1. NOT_VERIFIED       → pedir código por SMS/VOICE (request_code)
+        // 2. CODE_REQUESTED     → ingresar el código recibido (verify_code)
+        // 3. VERIFIED + ≠CONNECTED → registrar con PIN 2FA de 6 dígitos (/register)
+        // 4. status=PENDING     → Meta está procesando; se puede reintentar /register
+        // 5. status=CONNECTED   → operativo
         $state = 'unknown';
+        $actionType = null;
+        $description = 'Para enviar mensajes desde Cloud API el número debe estar registrado con un PIN de 6 dígitos y conectado.';
+
         if ($reachable) {
             if ($code === 'VERIFIED' && $status === 'CONNECTED') {
                 $state = 'ok';
-            } elseif ($status === 'PENDING' || $code === 'CODE_REQUESTED') {
+                $actionType = null;
+            } elseif ($status === 'PENDING') {
                 $state = 'pending';
-            } elseif ($code === 'VERIFIED' && $status === null) {
-                // Verificado pero sin status reportado (caso raro de Meta) — lo dejamos en pending
-                $state = 'pending';
-            } else {
+                $actionType = 'register_number'; // permite reintentar si quedó atascado
+                $description = 'WhatsApp está procesando el registro. Si tarda demasiado puedes reintentar el registro con el mismo PIN.';
+            } elseif ($code === 'CODE_REQUESTED' || $code === 'EXPIRED_CODE') {
+                $state = $code === 'EXPIRED_CODE' ? 'action' : 'pending';
+                $actionType = 'verify_code';
+                $description = $code === 'EXPIRED_CODE'
+                    ? 'El código de verificación expiró. Solicita uno nuevo o ingresa el último que recibiste.'
+                    : 'Ingresa el código de 6 dígitos que recibiste por SMS o llamada.';
+            } elseif ($code === 'NOT_VERIFIED') {
                 $state = 'action';
+                $actionType = 'request_code';
+                $description = 'Primero debes verificar el número: solicita un código por SMS o llamada.';
+            } elseif ($code === 'VERIFIED') {
+                $state = 'action';
+                $actionType = 'register_number';
+                $description = 'El número está verificado. Regístralo en Cloud API con un PIN de 6 dígitos.';
+            } else {
+                // status=DISCONNECTED/MIGRATED/BANNED/RESTRICTED/FLAGGED/RATE_LIMITED
+                $state = 'action';
+                $actionType = 'register_number';
+                if (in_array($status, ['BANNED', 'RESTRICTED', 'FLAGGED'], true)) {
+                    $description = 'WhatsApp aplicó restricciones a este número. Revisa el estado en Business Manager.';
+                    $actionType = null; // mejor mandar a Meta
+                }
             }
         }
 
         return [
             'id' => 'phone_registration',
             'title' => 'Registro del número en Cloud API',
-            'description' => 'Para enviar mensajes desde Cloud API el número debe estar registrado con un PIN de 6 dígitos y conectado.',
+            'description' => $description,
             'state' => $state,
             // raw_status muestra el estado operativo real (status), no solo si tuvo PIN verificado
             'raw_status' => $status ?? $code,
-            'action_type' => 'register_number',
+            'action_type' => $actionType,
+            'manual_url' => 'https://business.facebook.com/wa/manage/phone-numbers',
             'extra' => [
                 'status' => $status,
                 'code_verification_status' => $code,

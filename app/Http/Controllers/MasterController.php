@@ -272,16 +272,24 @@ class MasterController extends Controller
 
         $originalUserId = session()->pull('impersonated_by');
         session()->forget('from_master');
-        session()->forget('company_id');
         session()->forget('company_name');
-        
+
         $originalUser = User::find($originalUserId);
 
-        if ($originalUser && $originalUser->isMaster()) {
-            Auth::login($originalUser);
-            return redirect()->route('master.index')->with('success', 'Bienvenido de vuelta, Master.');
+        if ($originalUser) {
+            // El rol "master" está scoped a la empresa del usuario master.
+            // Forzamos el team scope antes de validar para que hasRole('master')
+            // resuelva correctamente y no se cierre la sesión.
+            setPermissionsTeamId($originalUser->company_id);
+
+            if ($originalUser->isMaster()) {
+                Auth::login($originalUser);
+                session()->put('company_id', $originalUser->company_id);
+                return redirect()->route('master.index')->with('success', 'Bienvenido de vuelta, Master.');
+            }
         }
 
+        session()->forget('company_id');
         Auth::logout();
         return redirect()->route('login');
     }

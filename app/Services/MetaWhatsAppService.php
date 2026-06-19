@@ -276,7 +276,14 @@ class MetaWhatsAppService
     {
         try {
             $url = "{$this->baseUri}/{$wabaId}/subscribed_apps";
-            $response = Http::withToken($accessToken)->timeout(30)->post($url);
+            // Meta exige Content-Type: application/json en este endpoint aunque
+            // el body vaya vacío; sin esto devuelve "Unsupported post request".
+            $response = Http::withHeaders([
+                    'Authorization' => "Bearer {$accessToken}",
+                    'Content-Type' => 'application/json',
+                ])
+                ->timeout(30)
+                ->post($url);
 
             if ($response->successful()) {
                 return ['success' => true, 'data' => $response->json()];
@@ -425,8 +432,10 @@ class MetaWhatsAppService
     {
         try {
             $url = "{$this->baseUri}/{$phoneNumberId}/register";
+            // Meta requiere JSON en /register; con form-urlencoded falla con
+            // "(#100) Param messaging_product is not part of the spec".
             $response = Http::withToken($accessToken)
-                ->asForm()
+                ->asJson()
                 ->timeout(30)
                 ->post($url, [
                     'messaging_product' => 'whatsapp',
@@ -446,6 +455,64 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Register Phone Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function requestCode(string $phoneNumberId, string $accessToken, string $codeMethod, string $language = 'es')
+    {
+        try {
+            $url = "{$this->baseUri}/{$phoneNumberId}/request_code";
+            $response = Http::withToken($accessToken)
+                ->asForm()
+                ->timeout(30)
+                ->post($url, [
+                    'code_method' => $codeMethod,
+                    'language' => $language,
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Request Code Error', [
+                'phone_number_id' => $phoneNumberId,
+                'code_method' => $codeMethod,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Request Code Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    public function verifyCode(string $phoneNumberId, string $accessToken, string $code)
+    {
+        try {
+            $url = "{$this->baseUri}/{$phoneNumberId}/verify_code";
+            $response = Http::withToken($accessToken)
+                ->asForm()
+                ->timeout(30)
+                ->post($url, [
+                    'code' => $code,
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Verify Code Error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Verify Code Exception', ['message' => $e->getMessage()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }

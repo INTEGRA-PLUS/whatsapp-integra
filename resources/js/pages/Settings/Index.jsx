@@ -12,6 +12,7 @@ import {
     Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
     Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
     Camera, ListChecks, CalendarClock, Plus, Trash2, Pencil,
+    PhoneCall, MessageCircle,
 } from 'lucide-react';
 
 const TABS = [
@@ -588,7 +589,8 @@ function TabWhatsApp() {
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState({});
     const [toast, setToast] = useState(null);
-    const [pinModal, setPinModal] = useState(false);
+    const [requestCodeModal, setRequestCodeModal] = useState(false);
+    const [verifyCodeModal, setVerifyCodeModal] = useState(false);
 
     useEffect(() => {
         axios.get('/api/settings/whatsapp/instances')
@@ -631,6 +633,8 @@ function TabWhatsApp() {
             if (checkId === 'subscribe_webhook') url = '/api/settings/whatsapp/subscribe-webhook';
             else if (checkId === 'register_number') url = '/api/settings/whatsapp/register-number';
             else if (checkId === 'enable_insights') url = '/api/settings/whatsapp/enable-insights';
+            else if (checkId === 'request_code') url = '/api/settings/whatsapp/request-code';
+            else if (checkId === 'verify_code') url = '/api/settings/whatsapp/verify-code';
             else throw new Error('Acción no soportada');
 
             await axios.post(url, { instance_id: instanceId, ...payload });
@@ -763,7 +767,9 @@ function TabWhatsApp() {
                             check={check}
                             busy={busy}
                             onAction={doAction}
-                            onRequestPin={() => setPinModal(true)}
+                            onRequestPin={() => doAction('register_number')}
+                            onRequestCode={() => setRequestCodeModal(true)}
+                            onVerifyCode={() => setVerifyCodeModal(true)}
                         />
                     ))}
                 </div>
@@ -771,13 +777,31 @@ function TabWhatsApp() {
             </>
             )}
 
-            {pinModal && (
-                <PinModal
-                    busy={!!busy.register_number}
-                    onClose={() => setPinModal(false)}
-                    onSubmit={async (pin) => {
-                        const ok = await doAction('register_number', { pin });
-                        if (ok) setPinModal(false);
+            {requestCodeModal && (
+                <RequestCodeModal
+                    busy={!!busy.request_code}
+                    onClose={() => setRequestCodeModal(false)}
+                    onSubmit={async (payload) => {
+                        const ok = await doAction('request_code', payload);
+                        if (ok) {
+                            setRequestCodeModal(false);
+                            setVerifyCodeModal(true);
+                        }
+                    }}
+                />
+            )}
+
+            {verifyCodeModal && (
+                <VerifyCodeModal
+                    busy={!!busy.verify_code}
+                    onClose={() => setVerifyCodeModal(false)}
+                    onResend={() => {
+                        setVerifyCodeModal(false);
+                        setRequestCodeModal(true);
+                    }}
+                    onSubmit={async (code) => {
+                        const ok = await doAction('verify_code', { code });
+                        if (ok) setVerifyCodeModal(false);
                     }}
                 />
             )}
@@ -785,7 +809,7 @@ function TabWhatsApp() {
     );
 }
 
-function CheckRow({ check, busy, onAction, onRequestPin }) {
+function CheckRow({ check, busy, onAction, onRequestPin, onRequestCode, onVerifyCode }) {
     const meta = STATE_META[check.state] ?? STATE_META.unknown;
     const Icon = meta.icon;
 
@@ -836,22 +860,46 @@ function CheckRow({ check, busy, onAction, onRequestPin }) {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-                <CheckAction check={check} busy={busy} onAction={onAction} onRequestPin={onRequestPin} />
+                <CheckAction
+                    check={check}
+                    busy={busy}
+                    onAction={onAction}
+                    onRequestPin={onRequestPin}
+                    onRequestCode={onRequestCode}
+                    onVerifyCode={onVerifyCode}
+                />
             </div>
         </div>
     );
 }
 
-function CheckAction({ check, busy, onAction, onRequestPin }) {
+function CheckAction({ check, busy, onAction, onRequestPin, onRequestCode, onVerifyCode }) {
     if (check.state === 'ok') {
         return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Activado</span>;
     }
 
-    if (check.state === 'pending' && check.id === 'phone_registration') {
-        return <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Esperando a WhatsApp</span>;
-    }
-
     const action = check.action_type;
+
+    // Estado PENDING del número: mostramos "Esperando..." + acción secundaria de reintento
+    if (check.state === 'pending' && check.id === 'phone_registration') {
+        return (
+            <div className="flex items-center gap-2">
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Esperando a WhatsApp</span>
+                {action === 'register_number' && (
+                    <Button size="sm" variant="outline" onClick={onRequestPin} disabled={!!busy.register_number} className="gap-1.5 h-7 text-xs">
+                        {busy.register_number ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                        Reintentar
+                    </Button>
+                )}
+                {action === 'verify_code' && (
+                    <Button size="sm" variant="outline" onClick={onVerifyCode} disabled={!!busy.verify_code} className="gap-1.5 h-7 text-xs">
+                        {busy.verify_code ? <Loader2 className="size-3 animate-spin" /> : <BadgeCheck className="size-3" />}
+                        Ingresar código
+                    </Button>
+                )}
+            </div>
+        );
+    }
 
     if (action === 'subscribe_webhook') {
         return (
@@ -877,6 +925,22 @@ function CheckAction({ check, busy, onAction, onRequestPin }) {
             </Button>
         );
     }
+    if (action === 'request_code') {
+        return (
+            <Button onClick={onRequestCode} disabled={!!busy.request_code} className="gap-2">
+                {busy.request_code ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
+                Verificar número
+            </Button>
+        );
+    }
+    if (action === 'verify_code') {
+        return (
+            <Button onClick={onVerifyCode} disabled={!!busy.verify_code} className="gap-2">
+                {busy.verify_code ? <Loader2 className="size-4 animate-spin" /> : <BadgeCheck className="size-4" />}
+                Ingresar código
+            </Button>
+        );
+    }
 
     // manual
     if (check.manual_url) {
@@ -895,67 +959,138 @@ function CheckAction({ check, busy, onAction, onRequestPin }) {
     return <span className="text-xs text-muted-foreground italic">Manual</span>;
 }
 
-function PinModal({ onClose, onSubmit, busy }) {
-    const [pin, setPin] = useState('');
-    const [confirmPin, setConfirmPin] = useState('');
-    const [error, setError] = useState(null);
+function RequestCodeModal({ onClose, onSubmit, busy }) {
+    const [codeMethod, setCodeMethod] = useState('SMS');
+    const [language, setLanguage] = useState('es');
 
     function handleSubmit(e) {
         e.preventDefault();
-        setError(null);
-        if (!/^\d{6}$/.test(pin)) { setError('El PIN debe ser de exactamente 6 dígitos.'); return; }
-        if (pin !== confirmPin) { setError('Los PINs no coinciden.'); return; }
-        onSubmit(pin);
+        onSubmit({ code_method: codeMethod, language });
     }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
             <div className="w-full max-w-md rounded-2xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
                 <div className="mb-5 flex items-start gap-3">
-                    <div className="size-10 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                        <KeyRound className="size-5" />
+                    <div className="size-10 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                        <MessageCircle className="size-5" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-foreground">Registrar número con PIN</h3>
+                        <h3 className="font-semibold text-foreground">Verificar número (paso 1 de 2)</h3>
                         <p className="text-xs text-muted-foreground mt-1">
-                            Define un PIN de 6 dígitos. Meta lo usará como verificación de 2 pasos del número.
-                            <strong> Guárdalo en un lugar seguro</strong> — lo necesitarás si tienes que volver a registrar el número en el futuro.
+                            Meta enviará un código de 6 dígitos al número para confirmar que tienes acceso.
+                            Si el número estaba usándose en la app WhatsApp Business, debes <strong>cerrar sesión en esa app</strong> antes de continuar.
+                        </p>
+                    </div>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="text-xs font-medium text-foreground mb-2 block">Cómo enviar el código</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setCodeMethod('SMS')}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                                    codeMethod === 'SMS'
+                                        ? 'border-sky-500 bg-sky-500/10 text-foreground'
+                                        : 'border-border/70 bg-background text-muted-foreground hover:bg-muted'
+                                }`}
+                            >
+                                <MessageCircle className="size-4" />
+                                SMS
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCodeMethod('VOICE')}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                                    codeMethod === 'VOICE'
+                                        ? 'border-sky-500 bg-sky-500/10 text-foreground'
+                                        : 'border-border/70 bg-background text-muted-foreground hover:bg-muted'
+                                }`}
+                            >
+                                <PhoneCall className="size-4" />
+                                Llamada de voz
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-xs font-medium text-foreground">Idioma del código</label>
+                        <select
+                            value={language}
+                            onChange={e => setLanguage(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm"
+                        >
+                            <option value="es">Español</option>
+                            <option value="en">Inglés</option>
+                            <option value="pt_BR">Portugués (Brasil)</option>
+                        </select>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                        <Button type="submit" disabled={busy} className="flex-1 gap-2">
+                            {busy && <Loader2 className="size-4 animate-spin" />}
+                            Enviar código
+                        </Button>
+                        <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancelar</Button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+function VerifyCodeModal({ onClose, onSubmit, onResend, busy }) {
+    const [code, setCode] = useState('');
+    const [error, setError] = useState(null);
+
+    function handleSubmit(e) {
+        e.preventDefault();
+        setError(null);
+        const clean = code.replace(/\D/g, '');
+        if (clean.length !== 6) {
+            setError('El código debe tener 6 dígitos.');
+            return;
+        }
+        onSubmit(clean);
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="w-full max-w-md rounded-2xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+                <div className="mb-5 flex items-start gap-3">
+                    <div className="size-10 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                        <BadgeCheck className="size-5" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-foreground">Ingresar código (paso 2 de 2)</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Escribe el código de 6 dígitos que WhatsApp envió al número. Una vez verificado podrás registrarlo con tu PIN.
                         </p>
                     </div>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <div>
-                        <label className="text-xs font-medium text-foreground">PIN (6 dígitos)</label>
+                        <label className="text-xs font-medium text-foreground">Código recibido</label>
                         <input
                             type="text"
                             inputMode="numeric"
-                            pattern="\d{6}"
-                            maxLength={6}
-                            value={pin}
-                            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                            placeholder="123456"
+                            maxLength={7}
+                            value={code}
+                            onChange={e => setCode(e.target.value.replace(/[^\d-]/g, '').slice(0, 7))}
+                            placeholder="123-456"
                             autoFocus
                             className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-mono tracking-widest text-center"
                         />
                     </div>
-                    <div>
-                        <label className="text-xs font-medium text-foreground">Confirmar PIN</label>
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="\d{6}"
-                            maxLength={6}
-                            value={confirmPin}
-                            onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                            placeholder="123456"
-                            className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-mono tracking-widest text-center"
-                        />
-                    </div>
                     {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+                    <div className="flex items-center justify-between text-xs">
+                        <button type="button" onClick={onResend} disabled={busy} className="text-sky-600 dark:text-sky-400 hover:underline disabled:opacity-50">
+                            Reenviar código
+                        </button>
+                    </div>
                     <div className="flex gap-2 pt-2">
                         <Button type="submit" disabled={busy} className="flex-1 gap-2">
                             {busy && <Loader2 className="size-4 animate-spin" />}
-                            Registrar
+                            Verificar
                         </Button>
                         <Button type="button" variant="outline" onClick={onClose} disabled={busy}>Cancelar</Button>
                     </div>

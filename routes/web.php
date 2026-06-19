@@ -283,6 +283,10 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:instances.update');
         Route::post('/register-number', [App\Http\Controllers\WhatsAppSettingsController::class, 'registerNumber'])
             ->middleware('permission:instances.update');
+        Route::post('/request-code', [App\Http\Controllers\WhatsAppSettingsController::class, 'requestCode'])
+            ->middleware('permission:instances.update');
+        Route::post('/verify-code', [App\Http\Controllers\WhatsAppSettingsController::class, 'verifyCode'])
+            ->middleware('permission:instances.update');
         Route::post('/enable-insights', [App\Http\Controllers\WhatsAppSettingsController::class, 'enableInsights'])
             ->middleware('permission:instances.update');
         Route::post('/profile', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfile'])

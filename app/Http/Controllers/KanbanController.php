@@ -132,22 +132,25 @@ class KanbanController extends Controller
     {
         $user = auth()->user();
         $validated = $request->validate([
-            'name'     => 'required|string|max:100',
+            'name'     => 'required|string|max:50',
             'color'    => 'nullable|string|max:50',
             'icon'     => 'nullable|string|max:50',
             'subtitle' => 'nullable|string|max:100',
         ]);
 
-        $maxPos = KanbanColumn::where('company_id', $user->company_id)->max('position') ?? -1;
-
-        $column = KanbanColumn::create([
+        // Columns are backed by tags: creating a tag fires the TagObserver, which
+        // creates the matching kanban column. Creating a bare (tag-less) column
+        // here would be hidden by columns()/columnCounts() (both filter on tag_id)
+        // and would vanish on reload.
+        $tag = \App\Models\Tag::create([
             'company_id' => $user->company_id,
             'name'       => $validated['name'],
-            'color'      => $validated['color']    ?? 'bg-slate-500',
-            'icon'       => $validated['icon']     ?? 'Zap',
-            'subtitle'   => $validated['subtitle'] ?? 'Personalizado',
-            'position'   => $maxPos + 1,
+            'color'      => '#64748b', // slate-500
         ]);
+
+        $column = KanbanColumn::where('company_id', $user->company_id)
+            ->where('tag_id', $tag->id)
+            ->first();
 
         return response()->json($column, 201);
     }
@@ -158,12 +161,18 @@ class KanbanController extends Controller
         $column = KanbanColumn::where('company_id', auth()->user()->company_id)->findOrFail($id);
 
         $validated = $request->validate([
-            'name'     => 'sometimes|string|max:100',
+            'name'     => 'sometimes|string|max:50',
             'color'    => 'sometimes|string|max:50',
             'icon'     => 'sometimes|string|max:50',
             'subtitle' => 'sometimes|string|max:100',
             'position' => 'sometimes|integer|min:0',
         ]);
+
+        // Keep the backing tag's name in sync so it doesn't get reverted later
+        // (the TagObserver pushes the tag name back onto the column on tag updates).
+        if (array_key_exists('name', $validated) && $column->tag_id) {
+            \App\Models\Tag::where('id', $column->tag_id)->update(['name' => $validated['name']]);
+        }
 
         $column->update($validated);
 
@@ -185,7 +194,20 @@ class KanbanController extends Controller
         WhatsAppConversation::where('kanban_column_id', $id)
             ->update(['kanban_column_id' => $fallback?->id]);
 
-        $column->delete();
+        // The column is backed by a tag. Remove the tag too (and its pivot rows)
+        // so we don't leave an orphan tag with no column. Deleting the tag fires
+        // the TagObserver, which removes this column.
+        if ($column->tag_id) {
+            $tag = \App\Models\Tag::find($column->tag_id);
+            if ($tag) {
+                $tag->conversations()->detach();
+                $tag->delete(); // TagObserver::deleted removes the column
+            } else {
+                $column->delete();
+            }
+        } else {
+            $column->delete();
+        }
 
         return response()->json(['success' => true]);
     }
@@ -207,13 +229,21 @@ class KanbanController extends Controller
         $column = KanbanColumn::where('company_id', $user->company_id)
             ->findOrFail($validated['column_id']);
 
-        $conversation->update([
-            'kanban_column_id' => $column->id,
-            'last_message_at'  => now(),
-        ]);
+        // Note: we intentionally do NOT touch last_message_at here. That field
+        // drives chat ordering across the whole inbox, so bumping it on a board
+        // move would reorder conversations everywhere, not just on the kanban.
+        $conversation->update(['kanban_column_id' => $column->id]);
 
-        // If the destination column is linked to a tag, ensure the conversation has it
+        // Keep tags in sync with the board position: the card now "is" the
+        // destination column, so detach every other column-linked (status) tag
+        // and attach the destination one. Non-column tags are left untouched.
         if ($column->tag_id) {
+            $statusTagIds = KanbanColumn::where('company_id', $user->company_id)
+                ->whereNotNull('tag_id')
+                ->where('tag_id', '!=', $column->tag_id)
+                ->pluck('tag_id');
+
+            $conversation->tags()->detach($statusTagIds);
             $conversation->tags()->syncWithoutDetaching([$column->tag_id]);
         }
 

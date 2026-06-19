@@ -100,6 +100,24 @@ class TagController extends Controller
 
         $conversation->tags()->detach($validated['tag_id']);
 
+        // If the kanban card was sitting in the column linked to this tag, move it out.
+        // Fall back to another tag the conversation still has (its column), otherwise
+        // leave it without a column so it returns to the first/"unassigned" column.
+        $companyId = auth()->user()->company_id;
+        $column = KanbanColumn::where('company_id', $companyId)
+            ->where('tag_id', $validated['tag_id'])
+            ->first();
+
+        if ($column && (int) $conversation->kanban_column_id === (int) $column->id) {
+            $remainingTagIds = $conversation->tags()->pluck('tags.id');
+            $fallback = KanbanColumn::where('company_id', $companyId)
+                ->whereIn('tag_id', $remainingTagIds)
+                ->orderBy('position')
+                ->first();
+
+            $conversation->update(['kanban_column_id' => $fallback?->id]);
+        }
+
         return response()->json(['success' => true, 'tags' => $conversation->tags()->get()]);
     }
 }
