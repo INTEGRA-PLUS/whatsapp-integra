@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
 use App\Models\Instance;
+use App\Services\WebhookDispatcher;
 
 class KanbanController extends Controller
 {
@@ -229,6 +230,10 @@ class KanbanController extends Controller
         $column = KanbanColumn::where('company_id', $user->company_id)
             ->findOrFail($validated['column_id']);
 
+        $fromColumn = $conversation->kanban_column_id
+            ? KanbanColumn::where('company_id', $user->company_id)->find($conversation->kanban_column_id)
+            : null;
+
         // Note: we intentionally do NOT touch last_message_at here. That field
         // drives chat ordering across the whole inbox, so bumping it on a board
         // move would reorder conversations everywhere, not just on the kanban.
@@ -246,6 +251,15 @@ class KanbanController extends Controller
             $conversation->tags()->detach($statusTagIds);
             $conversation->tags()->syncWithoutDetaching([$column->tag_id]);
         }
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.column_changed',
+            WebhookDispatcher::conversationPayload($conversation, [
+                'from_column' => $fromColumn ? ['id' => $fromColumn->id, 'name' => $fromColumn->name] : null,
+                'to_column'   => ['id' => $column->id, 'name' => $column->name],
+            ])
+        );
 
         return response()->json(['success' => true]);
     }

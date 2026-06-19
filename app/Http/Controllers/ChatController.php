@@ -11,6 +11,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Models\User;
 use App\Services\MetaWhatsAppService;
+use App\Services\WebhookDispatcher;
 use App\Http\Controllers\KanbanController;
 use Inertia\Inertia;
 
@@ -235,6 +236,20 @@ class ChatController extends Controller
                 'last_message_at' => now()
             ]);
 
+            WebhookDispatcher::emit(
+                $user->company_id,
+                'message.sent',
+                WebhookDispatcher::conversationPayload($conversation, [
+                    'message' => [
+                        'id'      => $message->id,
+                        'wamid'   => $message->wamid,
+                        'type'    => 'text',
+                        'content' => $message->content,
+                        'sent_by' => $user->id,
+                    ],
+                ])
+            );
+
             return response()->json($this->sanitizeUtf8([
                 'success' => true,
                 'message' => 'Mensaje enviado',
@@ -298,6 +313,21 @@ class ChatController extends Controller
                 'last_message_at' => now()
             ]);
 
+            WebhookDispatcher::emit(
+                $user->company_id,
+                'message.sent',
+                WebhookDispatcher::conversationPayload($conversation, [
+                    'message' => [
+                        'id'      => $message->id,
+                        'wamid'   => $message->wamid,
+                        'type'    => 'image',
+                        'content' => $message->content,
+                        'media_url' => $message->media_url,
+                        'sent_by' => $user->id,
+                    ],
+                ])
+            );
+
             return response()->json($this->sanitizeUtf8([
                 'success' => true,
                 'message' => 'Imagen enviada',
@@ -358,6 +388,20 @@ class ChatController extends Controller
                 'last_message_at' => now()
             ]);
 
+            WebhookDispatcher::emit(
+                $user->company_id,
+                'message.sent',
+                WebhookDispatcher::conversationPayload($conversation, [
+                    'message' => [
+                        'id'      => $message->id,
+                        'wamid'   => $message->wamid,
+                        'type'    => 'audio',
+                        'media_url' => $message->media_url,
+                        'sent_by' => $user->id,
+                    ],
+                ])
+            );
+
             return response()->json($this->sanitizeUtf8([
                 'success' => true,
                 'message' => 'Audio enviado',
@@ -383,6 +427,12 @@ class ChatController extends Controller
         }
 
         $conversation->update(['status' => 'closed']);
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.closed',
+            WebhookDispatcher::conversationPayload($conversation, ['closed_by' => $user->id])
+        );
 
         return response()->json([
             'success' => true,
@@ -413,11 +463,87 @@ class ChatController extends Controller
             'assigned_to' => $validated['user_id'],
         ]);
 
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.assigned',
+            WebhookDispatcher::conversationPayload($conversation, ['assigned_to' => $validated['user_id']])
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Conversación asignada',
             'assigned_agent' => $conversation->assignedAgent()->select('id', 'name')->first()
         ]);
+    }
+
+    /**
+     * Store an internal note on a conversation. Notes are never sent to the
+     * customer (no Meta call) and can @-mention other agents, who get an in-app
+     * notification.
+     */
+    public function storeNote(Request $request, $conversationId)
+    {
+        $validator = Validator::make($request->all(), [
+            'content'    => 'required|string|max:4096',
+            'mentions'   => 'nullable|array',
+            'mentions.*' => 'integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        // Keep only mentioned users that belong to the same company.
+        $mentionIds = [];
+        if (!empty($request->mentions)) {
+            $mentionIds = User::whereIn('id', $request->mentions)
+                ->where('company_id', $user->company_id)
+                ->pluck('id')
+                ->all();
+        }
+
+        $note = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'type'            => 'note',
+            'content'         => $request->content,
+            'direction'       => 'internal',
+            'is_internal'     => true,
+            'mentions'        => $mentionIds ?: null,
+            'status'          => 'sent',
+            'sent_by'         => $user->id,
+            'sent_at'         => now(),
+        ]);
+
+        // Surface the conversation in the updates() poll without polluting the
+        // customer-facing last message preview.
+        $conversation->touch();
+
+        if ($mentionIds) {
+            $recipients = User::whereIn('id', $mentionIds)
+                ->where('id', '!=', $user->id)
+                ->get();
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new \App\Notifications\MentionNotification(
+                    $note,
+                    $conversation,
+                    $user->name
+                ));
+            }
+        }
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'data'    => $note->load('sender:id,name'),
+        ]));
     }
 
     /**

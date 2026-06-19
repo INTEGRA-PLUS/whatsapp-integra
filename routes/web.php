@@ -301,6 +301,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
+        Route::post('/conversations/{conversationId}/note', [ChatController::class, 'storeNote']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
@@ -336,5 +337,40 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{tag}', [App\Http\Controllers\TagController::class, 'destroy']);
         Route::post('/conversations/{id}/attach', [App\Http\Controllers\TagController::class, 'attachToConversation']);
         Route::post('/conversations/{id}/detach', [App\Http\Controllers\TagController::class, 'detachFromConversation']);
+    });
+
+    // In-app notifications (mentions + system announcements bell)
+    Route::prefix('api/notifications')->group(function () {
+        Route::get('/', [App\Http\Controllers\NotificationController::class, 'index']);
+        Route::post('/{id}/read', [App\Http\Controllers\NotificationController::class, 'markRead']);
+        Route::post('/read-all', [App\Http\Controllers\NotificationController::class, 'markAllRead']);
+        Route::delete('/{id}', [App\Http\Controllers\NotificationController::class, 'destroy']);
+        Route::delete('/', [App\Http\Controllers\NotificationController::class, 'destroyAll']);
+    });
+
+    // System announcements (admin-emitted notifications)
+    Route::get('/announcements', [App\Http\Controllers\SystemNotificationController::class, 'index'])
+        ->middleware('permission:notifications.send')->name('announcements.index');
+    Route::prefix('api/announcements')->middleware('permission:notifications.send')->group(function () {
+        Route::get('/', [App\Http\Controllers\SystemNotificationController::class, 'history']);
+        Route::post('/', [App\Http\Controllers\SystemNotificationController::class, 'store']);
+    });
+
+    // Integraciones — Webhooks salientes (parametrizables por empresa)
+    Route::get('/integrations', [App\Http\Controllers\WebhookEndpointController::class, 'index'])
+        ->middleware('permission:integrations.view')->name('integrations.index');
+    Route::prefix('api/webhooks')->group(function () {
+        Route::get('/', [App\Http\Controllers\WebhookEndpointController::class, 'list'])
+            ->middleware('permission:integrations.view');
+        Route::post('/', [App\Http\Controllers\WebhookEndpointController::class, 'store'])
+            ->middleware('permission:integrations.create');
+        Route::put('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'update'])
+            ->middleware('permission:integrations.update');
+        Route::delete('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'destroy'])
+            ->middleware('permission:integrations.delete');
+        Route::post('/{webhook}/test', [App\Http\Controllers\WebhookEndpointController::class, 'test'])
+            ->middleware('permission:integrations.update');
+        Route::get('/{webhook}/deliveries', [App\Http\Controllers\WebhookEndpointController::class, 'deliveries'])
+            ->middleware('permission:integrations.view');
     });
 });

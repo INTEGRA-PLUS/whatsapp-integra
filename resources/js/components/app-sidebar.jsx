@@ -15,7 +15,9 @@ import {
     Megaphone,
     BarChart3,
     FileText,
-    FileType
+    FileType,
+    Webhook,
+    BellRing
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -58,6 +60,8 @@ export function AppSidebar() {
             { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
             { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
             { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
+            { title: 'Integraciones', href: route('integrations.index'), icon: Webhook, show: hasPermission('integrations.view') },
+            { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },
         ].filter(item => item.show !== false);
     }
 

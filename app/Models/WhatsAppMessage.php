@@ -21,6 +21,8 @@ class WhatsAppMessage extends Model
         'media_mime_type',
         'filename',
         'direction',
+        'is_internal',
+        'mentions',
         'status',
         'sent_by',
         'sent_at',
@@ -40,6 +42,8 @@ class WhatsAppMessage extends Model
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
         'metadata' => 'array',
+        'mentions' => 'array',
+        'is_internal' => 'boolean',
     ];
 
     public function conversation()

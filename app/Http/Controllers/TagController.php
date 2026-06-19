@@ -7,6 +7,7 @@ use App\Models\WhatsAppConversation;
 use Illuminate\Http\Request;
 
 use App\Models\KanbanColumn;
+use App\Services\WebhookDispatcher;
 
 class TagController extends Controller
 {
@@ -83,6 +84,14 @@ class TagController extends Controller
 
         $conversation->tags()->syncWithoutDetaching([$tag->id]);
 
+        WebhookDispatcher::emit(
+            auth()->user()->company_id,
+            'conversation.tag_added',
+            WebhookDispatcher::conversationPayload($conversation, [
+                'tag' => ['id' => $tag->id, 'name' => $tag->name],
+            ])
+        );
+
         return response()->json(['success' => true, 'tags' => $conversation->tags()->get()]);
     }
 
@@ -99,6 +108,15 @@ class TagController extends Controller
         ]);
 
         $conversation->tags()->detach($validated['tag_id']);
+
+        $detachedTag = Tag::where('company_id', auth()->user()->company_id)->find($validated['tag_id']);
+        WebhookDispatcher::emit(
+            auth()->user()->company_id,
+            'conversation.tag_removed',
+            WebhookDispatcher::conversationPayload($conversation, [
+                'tag' => $detachedTag ? ['id' => $detachedTag->id, 'name' => $detachedTag->name] : ['id' => (int) $validated['tag_id']],
+            ])
+        );
 
         // If the kanban card was sitting in the column linked to this tag, move it out.
         // Fall back to another tag the conversation still has (its column), otherwise

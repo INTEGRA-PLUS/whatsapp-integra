@@ -22,6 +22,7 @@ class AgentReportService
         $conversationIds = WhatsAppConversation::whereIn('instance_id', $instanceIds)->pluck('id');
 
         $messages = WhatsAppMessage::whereIn('conversation_id', $conversationIds)
+            ->where('is_internal', false)
             ->whereBetween('created_at', [$from, $to])
             ->orderBy('conversation_id')
             ->orderBy('id')
@@ -142,6 +143,7 @@ class AgentReportService
         $conversationIds = WhatsAppConversation::whereIn('instance_id', $instanceIds)->pluck('id');
 
         $messages = WhatsAppMessage::whereIn('conversation_id', $conversationIds)
+            ->where('is_internal', false)
             ->whereBetween('created_at', [$from, $to])
             ->orderBy('conversation_id')
             ->orderBy('id')
@@ -279,6 +281,7 @@ class AgentReportService
 
         $rows = WhatsAppMessage::selectRaw('conversation_id, direction, id')
             ->whereIn('conversation_id', $conversationIds)
+            ->where('is_internal', false)
             ->orderBy('conversation_id')
             ->orderByDesc('id')
             ->get();

@@ -29,7 +29,9 @@ import {
     Zap,
     Square,
     Trash2,
-    X
+    X,
+    StickyNote,
+    AtSign
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -46,6 +48,15 @@ const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
 function detectQuickReplyToken(value, cursor) {
     const before = value.slice(0, cursor);
     const match = before.match(QUICK_REPLY_TOKEN);
+    if (!match) return null;
+    return { query: match[1], tokenStart: cursor - match[1].length - 1 };
+}
+
+const MENTION_TOKEN = /(?:^|\s)@([a-zA-Z0-9_.À-ſ-]*)$/;
+
+function detectMentionToken(value, cursor) {
+    const before = value.slice(0, cursor);
+    const match = before.match(MENTION_TOKEN);
     if (!match) return null;
     return { query: match[1], tokenStart: cursor - match[1].length - 1 };
 }
@@ -288,6 +299,14 @@ export default function ChatIndex({ instances }) {
     const [qrTokenStart, setQrTokenStart] = useState(0);
     const [qrIndex, setQrIndex] = useState(0);
 
+    // Internal notes + @mentions
+    const [composerMode, setComposerMode] = useState('reply'); // 'reply' | 'note'
+    const [noteMentions, setNoteMentions] = useState([]); // [{id, name}]
+    const [mentionOpen, setMentionOpen] = useState(false);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionTokenStart, setMentionTokenStart] = useState(0);
+    const [mentionIndex, setMentionIndex] = useState(0);
+
     const messagesContainerRef = useRef(null);
     const pollingIntervalRef = useRef(null);
     const messageInputRef = useRef(null);
@@ -375,13 +394,80 @@ export default function ChatIndex({ instances }) {
         });
     }, [newMessage, qrTokenStart, closeQuickReplies]);
 
+    const mentionMatches = useMemo(() => {
+        if (!mentionOpen) return [];
+        const q = mentionQuery.toLowerCase();
+        const list = q
+            ? companyUsers.filter(u => u.name.toLowerCase().includes(q))
+            : companyUsers;
+        return list.slice(0, 8);
+    }, [mentionOpen, mentionQuery, companyUsers]);
+
+    useEffect(() => {
+        if (mentionIndex >= mentionMatches.length) setMentionIndex(0);
+    }, [mentionMatches.length, mentionIndex]);
+
+    const closeMentions = useCallback(() => {
+        setMentionOpen(false);
+        setMentionQuery('');
+        setMentionIndex(0);
+    }, []);
+
+    const applyMention = useCallback((user) => {
+        const input = messageInputRef.current;
+        const cursor = input ? input.selectionStart ?? newMessage.length : newMessage.length;
+        const before = newMessage.slice(0, mentionTokenStart);
+        const after = newMessage.slice(cursor);
+        const insert = `@${user.name} `;
+        const next = `${before}${insert}${after}`;
+        setNewMessage(next);
+        setNoteMentions(prev => (prev.some(m => m.id === user.id) ? prev : [...prev, { id: user.id, name: user.name }]));
+        closeMentions();
+        requestAnimationFrame(() => {
+            const el = messageInputRef.current;
+            if (!el) return;
+            el.focus();
+            const pos = before.length + insert.length;
+            try { el.setSelectionRange(pos, pos); } catch (_) {}
+        });
+    }, [newMessage, mentionTokenStart, closeMentions]);
+
+    const updateMentionState = useCallback((value, cursor) => {
+        const detected = detectMentionToken(value, cursor);
+        if (!detected) {
+            if (mentionOpen) closeMentions();
+            return;
+        }
+        setMentionOpen(true);
+        setMentionQuery(detected.query);
+        setMentionTokenStart(detected.tokenStart);
+        setMentionIndex(0);
+    }, [mentionOpen, closeMentions]);
+
     const handleComposerChange = useCallback((e) => {
         const value = e.target.value;
         setNewMessage(value);
-        updateQuickReplyState(value, e.target.selectionStart ?? value.length);
-    }, [updateQuickReplyState]);
+        const cursor = e.target.selectionStart ?? value.length;
+        if (composerMode === 'note') {
+            updateMentionState(value, cursor);
+            // Drop tracked mentions whose @Name no longer appears in the text.
+            setNoteMentions(prev => prev.filter(m => value.includes(`@${m.name}`)));
+        } else {
+            updateQuickReplyState(value, cursor);
+        }
+    }, [composerMode, updateQuickReplyState, updateMentionState]);
 
     const handleComposerKeyDown = useCallback((e) => {
+        if (mentionOpen && mentionMatches.length > 0) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => (i + 1) % mentionMatches.length); return; }
+            if (e.key === 'ArrowUp')   { e.preventDefault(); setMentionIndex(i => (i - 1 + mentionMatches.length) % mentionMatches.length); return; }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                applyMention(mentionMatches[mentionIndex]);
+                return;
+            }
+            if (e.key === 'Escape') { e.preventDefault(); closeMentions(); return; }
+        }
         if (qrOpen && qrMatches.length > 0) {
             if (e.key === 'ArrowDown') { e.preventDefault(); setQrIndex(i => (i + 1) % qrMatches.length); return; }
             if (e.key === 'ArrowUp')   { e.preventDefault(); setQrIndex(i => (i - 1 + qrMatches.length) % qrMatches.length); return; }
@@ -396,11 +482,11 @@ export default function ChatIndex({ instances }) {
             closeQuickReplies();
             return;
         }
-        if (e.key === 'Enter' && !qrOpen && !e.shiftKey) {
+        if (e.key === 'Enter' && !qrOpen && !mentionOpen && !e.shiftKey) {
             e.preventDefault();
-            sendMessage();
+            if (composerMode === 'note') sendNote(); else sendMessage();
         }
-    }, [qrOpen, qrMatches, qrIndex, applyQuickReply, closeQuickReplies]);
+    }, [qrOpen, qrMatches, qrIndex, applyQuickReply, closeQuickReplies, mentionOpen, mentionMatches, mentionIndex, applyMention, closeMentions, composerMode]);
 
     useEffect(() => {
         const el = messageInputRef.current;
@@ -482,6 +568,32 @@ export default function ChatIndex({ instances }) {
         } catch (err) {
             console.error('Error cargando mensajes:', err);
         }
+    }, []);
+
+    const openConversationById = useCallback(async (id) => {
+        try {
+            const res = await axios.get(`/api/chat/conversations/${id}/messages`);
+            if (res.data.conversation) {
+                setSelectedConversation(res.data.conversation);
+                setMessages(res.data.messages);
+                setLastUpdateTimestamp(res.data.timestamp);
+            }
+        } catch (err) {
+            console.error('Error abriendo conversación:', err);
+        }
+    }, []);
+
+    // Deep-link from the notification bell: /chat?conversation=ID&instance=ID
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const convId = params.get('conversation');
+        const inst = params.get('instance');
+        if (inst) setSelectedInstanceId(inst);
+        if (convId) openConversationById(convId);
+        if (convId || inst) {
+            window.history.replaceState({}, '', '/chat');
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ── Logic ──────────────────────────────────────────────────────────────
@@ -683,6 +795,31 @@ export default function ChatIndex({ instances }) {
         } catch (err) {
             console.error('Error enviando:', err);
             setNewMessage(msg);
+        } finally {
+            setSending(false);
+        }
+    }
+
+    async function sendNote() {
+        if (!newMessage.trim() || sending) return;
+        const content = newMessage;
+        const mentions = noteMentions
+            .filter(m => content.includes(`@${m.name}`))
+            .map(m => m.id);
+        setNewMessage('');
+        setNoteMentions([]);
+        setSending(true);
+        try {
+            const res = await axios.post(
+                `/api/chat/conversations/${selectedConversation.id}/note`,
+                { content, mentions },
+            );
+            if (res.data.success) {
+                setMessages(prev => [...prev, res.data.data]);
+            }
+        } catch (err) {
+            console.error('Error guardando nota:', err);
+            setNewMessage(content);
         } finally {
             setSending(false);
         }
@@ -1229,10 +1366,24 @@ export default function ChatIndex({ instances }) {
                                                         </div>
                                                     )}
                                                     
+                                                    {msg.is_internal ? (
+                                                        <div className="flex justify-center my-2 px-2">
+                                                            <div className="w-full max-w-[90%] lg:max-w-[75%] bg-amber-50 dark:bg-amber-900/20 border border-amber-300/60 dark:border-amber-700/40 rounded-lg px-3 py-2 shadow-sm">
+                                                                <div className="flex items-center gap-1.5 mb-1">
+                                                                    <StickyNote className="size-3.5 text-amber-600 dark:text-amber-400" />
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                                                        Nota interna · {msg.sender?.name || 'Agente'}
+                                                                    </span>
+                                                                    <span className="ml-auto text-[9px] font-semibold text-amber-700/60 dark:text-amber-300/50 uppercase">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                </div>
+                                                                <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
                                                     <div
                                                         className={`flex mb-2 sm:mb-3 ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
                                                     >
-                                                        <div 
+                                                        <div
                                                             className={`relative px-3 py-1.5 shadow-sm min-w-[110px] max-w-[85%] lg:max-w-[70%] group ${
                                                                 isOut 
                                                                     ? 'bg-[#dcf8c6] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none' 
@@ -1299,32 +1450,78 @@ export default function ChatIndex({ instances }) {
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    )}
                                                 </Fragment>
                                             );
                                         })}
                                     </div>
 
+                                    {/* Composer mode strip: Responder / Nota interna */}
+                                    {!isRecording && (
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-1.5 flex items-center gap-1 z-10">
+                                            <button
+                                                onClick={() => { setComposerMode('reply'); closeMentions(); }}
+                                                className={clsx(
+                                                    "px-3 py-1 rounded-t-md text-[11px] font-bold uppercase tracking-wide transition-colors flex items-center gap-1.5",
+                                                    composerMode === 'reply'
+                                                        ? "bg-white dark:bg-[#2a3942] text-teal-600 dark:text-teal-400"
+                                                        : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                <MessageSquare className="size-3.5" /> Responder
+                                            </button>
+                                            <button
+                                                onClick={() => { setComposerMode('note'); closeQuickReplies(); }}
+                                                className={clsx(
+                                                    "px-3 py-1 rounded-t-md text-[11px] font-bold uppercase tracking-wide transition-colors flex items-center gap-1.5",
+                                                    composerMode === 'note'
+                                                        ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300"
+                                                        : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                <StickyNote className="size-3.5" /> Nota interna
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* Input Area - WhatsApp Web Style */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 flex items-end gap-2 z-10 text-foreground min-h-[62px]">
+                                    <div className={clsx(
+                                        "px-3 py-2 flex items-end gap-2 z-10 text-foreground min-h-[62px] transition-colors",
+                                        composerMode === 'note' && !isRecording
+                                            ? "bg-amber-50 dark:bg-amber-900/20"
+                                            : "bg-[#f0f2f5] dark:bg-[#202c33]"
+                                    )}>
                                         {!isRecording ? (
                                             <>
                                                 <div className="flex items-center pb-0.5">
-                                                    <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
-                                                    <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-                                                        <Paperclip className="size-6" />
-                                                        <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
-                                                    </label>
-                                                    <button 
-                                                        onClick={startRecording}
-                                                        className="p-2 text-muted-foreground hover:text-teal-600 transition-colors"
-                                                        title="Grabar audio"
-                                                    >
-                                                        <Mic className="size-6" />
-                                                    </button>
+                                                    {composerMode === 'reply' ? (
+                                                        <>
+                                                            <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
+                                                            <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                                                                <Paperclip className="size-6" />
+                                                                <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
+                                                            </label>
+                                                            <button
+                                                                onClick={startRecording}
+                                                                className="p-2 text-muted-foreground hover:text-teal-600 transition-colors"
+                                                                title="Grabar audio"
+                                                            >
+                                                                <Mic className="size-6" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <button
+                                                            disabled
+                                                            title="Programar nota (próximamente)"
+                                                            className="p-2 text-amber-400/70 cursor-not-allowed"
+                                                        >
+                                                            <Clock className="size-6" />
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 <div className="flex-1 relative">
-                                                    {qrOpen && (
+                                                    {composerMode === 'reply' && qrOpen && (
                                                         <QuickReplyPicker
                                                             matches={qrMatches}
                                                             activeIndex={qrIndex}
@@ -1332,23 +1529,53 @@ export default function ChatIndex({ instances }) {
                                                             query={qrQuery}
                                                         />
                                                     )}
+                                                    {composerMode === 'note' && mentionOpen && mentionMatches.length > 0 && (
+                                                        <div className="absolute bottom-full mb-2 left-0 w-72 max-h-56 overflow-y-auto bg-white dark:bg-[#2a3942] border border-border rounded-lg shadow-lg z-50">
+                                                            {mentionMatches.map((u, idx) => (
+                                                                <button
+                                                                    key={u.id}
+                                                                    onMouseDown={(e) => { e.preventDefault(); applyMention(u); }}
+                                                                    className={clsx(
+                                                                        "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
+                                                                        idx === mentionIndex ? "bg-amber-50 dark:bg-amber-900/20" : "hover:bg-muted"
+                                                                    )}
+                                                                >
+                                                                    <AtSign className="size-3.5 text-amber-600" />
+                                                                    <span className="text-sm font-semibold">{u.name}</span>
+                                                                    <span className="text-[10px] text-muted-foreground ml-auto truncate">{u.email}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                     <textarea
                                                         ref={messageInputRef}
                                                         rows={1}
-                                                        placeholder="Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"
+                                                        placeholder={composerMode === 'note'
+                                                            ? "Nota privada para el equipo (escribe @ para mencionar a un agente) — el cliente no la verá"
+                                                            : "Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"}
                                                         value={newMessage}
                                                         onChange={handleComposerChange}
                                                         onKeyDown={handleComposerKeyDown}
                                                         disabled={sending}
-                                                        className="block w-full bg-white dark:bg-[#2a3942] border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words"
+                                                        className={clsx(
+                                                            "block w-full border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
+                                                            composerMode === 'note'
+                                                                ? "bg-white dark:bg-[#2a3942] ring-1 ring-amber-300/70 dark:ring-amber-700/50"
+                                                                : "bg-white dark:bg-[#2a3942]"
+                                                        )}
                                                         style={{ maxHeight: '160px' }}
                                                     />
                                                 </div>
 
                                                 <button
-                                                    onClick={sendMessage}
+                                                    onClick={composerMode === 'note' ? sendNote : sendMessage}
                                                     disabled={!newMessage.trim() || sending}
-                                                    className="p-2 text-[#54656f] dark:text-[#8696a0] hover:text-teal-600 transition-colors"
+                                                    className={clsx(
+                                                        "p-2 transition-colors",
+                                                        composerMode === 'note'
+                                                            ? "text-amber-600 hover:text-amber-700"
+                                                            : "text-[#54656f] dark:text-[#8696a0] hover:text-teal-600"
+                                                    )}
                                                 >
                                                     <Send className={`size-6 ${sending ? 'animate-pulse' : ''}`} />
                                                 </button>

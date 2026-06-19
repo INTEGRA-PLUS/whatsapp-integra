@@ -13,7 +13,7 @@ class InitPermissionsSeeder extends Seeder
     public function run(): void
     {
         // 1. Crear permisos base para módulos fijos
-        $modules = ['users', 'roles', 'instances', 'chat', 'crm', 'quick_replies', 'auto_responses', 'campaigns', 'reports', 'templates'];
+        $modules = ['users', 'roles', 'instances', 'chat', 'crm', 'quick_replies', 'auto_responses', 'campaigns', 'reports', 'templates', 'integrations'];
         $actions = ['view', 'create', 'update', 'delete'];
 
         foreach ($modules as $mod) {
@@ -24,6 +24,9 @@ class InitPermissionsSeeder extends Seeder
                 ]);
             }
         }
+
+        // Permisos sueltos que no siguen el patrón módulo.acción
+        Permission::firstOrCreate(['name' => 'notifications.send', 'guard_name' => 'web']);
 
         $allPermissions = Permission::all();
 

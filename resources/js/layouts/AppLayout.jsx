@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import { AppSidebar } from '@/components/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import NotificationBell from '@/components/notification-bell';
 
 function getDefaultOpen() {
     if (typeof document === 'undefined') return true;
@@ -47,11 +48,10 @@ export default function AppLayout({ children, breadcrumb }) {
                                 ))}
                             </nav>
                         )}
-                        {auth?.isImpersonating && (
-                            <div className="ml-auto">
-                                <ImpersonatingBadge />
-                            </div>
-                        )}
+                        <div className="ml-auto flex items-center gap-2">
+                            {auth?.isImpersonating && <ImpersonatingBadge />}
+                            {auth?.user?.role !== 'master' && <NotificationBell />}
+                        </div>
                     </div>
                 </header>
 
