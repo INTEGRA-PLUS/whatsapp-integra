@@ -24,7 +24,19 @@
       "Read(//Applications/XAMPP/xamppfiles/**)",
       "Bash(/usr/local/Cellar/php@8.4/8.4.18/bin/php -v)",
       "Bash(/usr/local/Cellar/php@8.4/8.4.18/bin/php artisan *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(GIT_EDITOR=true git rebase --continue)",
+      "Bash(git --version)",
+      "Bash(git grep *)",
+      "Bash(git update-index *)",
+      "Bash(git -c core.editor=true rebase --continue)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git commit *)",
+      "Bash(git rebase *)",
+      "Bash(git rm *)",
+      "Bash(awk '{print $1}')"
     ]
   }
 }
