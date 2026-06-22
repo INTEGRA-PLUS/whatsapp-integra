@@ -41,4 +41,8 @@ return [
         'api_version' => env('META_API_VERSION', 'v21.0'),
     ],
 
+    // Software Integra (integración "Pagos a facturas").
+    // Integra es multi-tenant: cada empresa indica la URL de SU entorno al conectar
+    // (se guarda en company_integrations.base_url), por eso NO se configura aquí.
+
 ];

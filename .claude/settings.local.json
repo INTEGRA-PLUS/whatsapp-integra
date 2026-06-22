@@ -36,7 +36,9 @@
       "Bash(git commit *)",
       "Bash(git rebase *)",
       "Bash(git rm *)",
-      "Bash(awk '{print $1}')"
+      "Bash(awk '{print $1}')",
+      "Bash(mysql *)",
+      "Bash(grep -E \"\\\\.\\(php|vue|jsx\\)$\")"
     ]
   }
 }

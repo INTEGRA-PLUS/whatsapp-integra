@@ -39,8 +39,29 @@ class ChatController extends Controller
             ->get();
 
         return Inertia::render('Chat/Index', [
-            'instances' => $instances,
+            'instances'    => $instances,
+            'integrations' => $this->activeChatIntegrations($user->company_id),
         ]);
+    }
+
+    /**
+     * Integraciones habilitadas que exponen un disparador en el composer del chat.
+     */
+    private function activeChatIntegrations(int $companyId): array
+    {
+        return \App\Models\CompanyIntegration::where('company_id', $companyId)
+            ->where('enabled', true)
+            ->where('status', 'connected')
+            ->whereNotNull('trigger_command')
+            ->get()
+            ->map(fn ($i) => [
+                'key'          => $i->key,
+                'name'         => $i->key === \App\Models\CompanyIntegration::KEY_INVOICE_PAYMENTS ? 'Pagos a facturas' : $i->key,
+                'trigger_type' => $i->trigger_type,
+                'trigger'      => $i->triggerToken(),
+            ])
+            ->values()
+            ->all();
     }
 
     public function kanban()
@@ -94,10 +115,13 @@ class ChatController extends Controller
             ->when($request->status, function ($query, $status) {
                 $query->where('status', $status);
             })
-            ->when($request->tag_id, function ($query, $tagId) {
-                $query->whereHas('tags', function ($q) use ($tagId) {
-                    $q->where('tags.id', $tagId);
-                });
+            ->when($request->tag_ids ?? $request->tag_id, function ($query, $tags) {
+                $ids = collect(is_array($tags) ? $tags : explode(',', (string) $tags))
+                    ->map(fn ($v) => (int) $v)->filter()->values()->all();
+                if (!empty($ids)) {
+                    // OR: conversaciones que tengan al menos una de las etiquetas seleccionadas.
+                    $query->whereHas('tags', fn ($q) => $q->whereIn('tags.id', $ids));
+                }
             })
             ->when($request->assigned_to, function ($query, $assignedTo) {
                 if ($assignedTo === 'unassigned') {
@@ -106,10 +130,284 @@ class ChatController extends Controller
                     $query->where('assigned_to', $assignedTo);
                 }
             })
+            ->when($request->filter, function ($query, $filter) use ($user) {
+                $this->applyFolderFilter($query, $filter, $user);
+            })
             ->orderByDesc('last_message_at')
             ->paginate(50);
 
         return response()->json($this->sanitizeUtf8($conversations->toArray()));
+    }
+
+    /**
+     * Carpetas contextuales del panel izquierdo del chat (estilo Chatwoot):
+     *   - mentions:   conversaciones donde se mencionó al usuario en una nota interna.
+     *   - unattended: conversaciones abiertas cuyo último mensaje (no interno) es del cliente,
+     *                 es decir, esperan respuesta de un agente.
+     */
+    private function applyFolderFilter($query, string $filter, $user): void
+    {
+        if ($filter === 'mentions') {
+            $query->whereHas('messages', function ($q) use ($user) {
+                $q->where('is_internal', true)
+                  ->whereJsonContains('mentions', (int) $user->id);
+            });
+        } elseif ($filter === 'unattended') {
+            $query->where('status', 'open')
+                ->whereExists(function ($sub) {
+                    $sub->selectRaw('1')
+                        ->from('whatsapp_messages as m')
+                        ->whereColumn('m.conversation_id', 'whatsapp_conversations.id')
+                        ->where('m.direction', 'inbound')
+                        ->where('m.is_internal', false)
+                        ->whereRaw('m.created_at = (
+                            select max(created_at) from whatsapp_messages
+                            where conversation_id = whatsapp_conversations.id and is_internal = 0
+                        )');
+                });
+        }
+    }
+
+    /**
+     * Conteos para el panel izquierdo del chat: todas, menciones y desatendidas
+     * de la instancia seleccionada.
+     */
+    public function folders(Request $request)
+    {
+        $user = auth()->user();
+        $instanceId = $request->instance_id;
+
+        if (!$instanceId) {
+            return response()->json(['error' => 'instance_id es requerido'], 400);
+        }
+
+        Instance::where('id', $instanceId)
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        $base = fn () => WhatsAppConversation::forInstance($instanceId);
+
+        $all = $base()->count();
+
+        $mentions = $base();
+        $this->applyFolderFilter($mentions, 'mentions', $user);
+
+        $unattended = $base();
+        $this->applyFolderFilter($unattended, 'unattended', $user);
+
+        // Conteo de conversaciones por etiqueta dentro de la instancia.
+        $tagCounts = \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag as ct')
+            ->join('whatsapp_conversations as c', 'c.id', '=', 'ct.whatsapp_conversation_id')
+            ->where('c.instance_id', $instanceId)
+            ->groupBy('ct.tag_id')
+            ->selectRaw('ct.tag_id, count(*) as total')
+            ->pluck('total', 'tag_id');
+
+        return response()->json([
+            'all'        => $all,
+            'mentions'   => $mentions->count(),
+            'unattended' => $unattended->count(),
+            'tags'       => $tagCounts,
+        ]);
+    }
+
+    /**
+     * Inicia (o reutiliza) una conversación hacia un número arbitrario para poder
+     * escribirle directamente. Devuelve la conversación, sus mensajes y si la
+     * ventana de servicio de 24h está abierta (último mensaje entrante reciente),
+     * que determina si se puede enviar texto libre o hace falta una plantilla.
+     */
+    public function startConversation(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'instance_id'  => 'required',
+            'phone_number' => 'required|string|max:30',
+            'name'         => 'nullable|string|max:120',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $request->instance_id)
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        if (!$instance->isMetaConfigured()) {
+            return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
+        }
+
+        // Normaliza: solo dígitos (sin +, espacios ni guiones).
+        $phone = preg_replace('/\D/', '', $request->phone_number);
+        if (strlen($phone) < 8) {
+            return response()->json(['success' => false, 'error' => 'Número de teléfono inválido. Incluye el código de país.'], 422);
+        }
+
+        $conversation = WhatsAppConversation::firstOrCreate(
+            ['instance_id' => $instance->id, 'wa_id' => $phone],
+            [
+                'phone_number'    => $phone,
+                'name'            => $request->name ?: $phone,
+                'status'          => 'open',
+                'last_message_at' => now(),
+            ]
+        );
+
+        // Si se reabrió una conversación cerrada, vuelve a marcarla abierta.
+        if ($conversation->status !== 'open') {
+            $conversation->update(['status' => 'open']);
+        }
+
+        $sessionOpen = $conversation->messages()
+            ->where('direction', 'inbound')
+            ->where('created_at', '>=', now()->subDay())
+            ->exists();
+
+        $messages = $conversation->messages()
+            ->with('sender:id,name')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $conversation->markAsRead();
+
+        return response()->json($this->sanitizeUtf8([
+            'success'      => true,
+            'conversation' => $conversation->load(['assignedAgent:id,name', 'tags']),
+            'messages'     => $messages,
+            'session_open' => $sessionOpen,
+            'timestamp'    => now()->toIso8601String(),
+        ]));
+    }
+
+    /**
+     * Plantillas aprobadas de la instancia, para que un agente pueda abrir un
+     * chat nuevo. Endpoint propio del chat (solo sesión) para no exigir el
+     * permiso de gestión de plantillas.
+     */
+    public function templates(Request $request)
+    {
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $request->instance_id)
+            ->where('company_id', $user->company_id)
+            ->whereNotNull('waba_id')
+            ->whereNotNull('access_token')
+            ->first();
+
+        if (!$instance) {
+            return response()->json(['data' => []]);
+        }
+
+        $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, [
+            'status' => 'APPROVED',
+            'limit'  => 200,
+        ]);
+
+        if (!($result['success'] ?? false)) {
+            return response()->json(['data' => []]);
+        }
+
+        return response()->json([
+            'data' => $result['data']['data'] ?? [],
+        ]);
+    }
+
+    /**
+     * Envía una plantilla aprobada de Meta a una conversación. Es la vía válida
+     * para abrir una conversación fuera de la ventana de 24h.
+     */
+    public function sendTemplate(Request $request, $conversationId)
+    {
+        $validator = Validator::make($request->all(), [
+            'template_name' => 'required|string',
+            'language_code' => 'nullable|string',
+            'components'    => 'nullable|array',
+            'preview'       => 'nullable|string',
+            'template_id'   => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $instance = $conversation->instance;
+
+        if (!$instance->isMetaConfigured()) {
+            return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
+        }
+
+        $templateName = $request->template_name;
+        $languageCode = $request->language_code ?: 'es';
+        $components   = $request->components ?? [];
+
+        $result = $this->metaService->sendTemplate(
+            $instance->phone_number_id,
+            $conversation->phone_number,
+            $templateName,
+            $languageCode,
+            $components
+        );
+
+        if (!($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'error'   => $result['error']['error']['message'] ?? 'Error al enviar la plantilla',
+            ], 500);
+        }
+
+        $preview = $request->preview ?: "[Plantilla: {$templateName}]";
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'wamid'           => $result['data']['messages'][0]['id'] ?? null,
+            'type'            => 'template',
+            'content'         => $preview,
+            'direction'       => 'outbound',
+            'status'          => 'sent',
+            'sent_by'         => $user->id,
+            'sent_at'         => now(),
+            'metadata'        => [
+                'template'   => $templateName,
+                'language'   => $languageCode,
+                'components' => $components,
+            ],
+            'template_id'     => $request->template_id,
+        ]);
+
+        $conversation->update([
+            'last_message'    => $preview,
+            'last_message_at' => now(),
+        ]);
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'message.sent',
+            WebhookDispatcher::conversationPayload($conversation, [
+                'message' => [
+                    'id'      => $message->id,
+                    'wamid'   => $message->wamid,
+                    'type'    => 'template',
+                    'content' => $message->content,
+                    'sent_by' => $user->id,
+                ],
+            ])
+        );
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'data'    => $message->load('sender:id,name'),
+        ]));
     }
 
     public function updates(Request $request)
@@ -130,6 +428,9 @@ class ChatController extends Controller
             ->with(['assignedAgent:id,name', 'tags'])
             ->when($since, function ($query, $since) {
                 $query->where('updated_at', '>', $since);
+            })
+            ->when($request->filter, function ($query, $filter) use ($user) {
+                $this->applyFolderFilter($query, $filter, $user);
             })
             ->orderByDesc('last_message_at')
             ->get();

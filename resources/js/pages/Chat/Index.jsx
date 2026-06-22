@@ -31,7 +31,16 @@ import {
     Trash2,
     X,
     StickyNote,
-    AtSign
+    Pencil as PencilIcon,
+    PenSquare,
+    FileText,
+    AtSign,
+    Wallet,
+    CreditCard,
+    Loader2,
+    CheckCircle2,
+    AlertTriangle,
+    DollarSign
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -44,6 +53,41 @@ import {
 import QuickReplyPicker from '@/components/quick-reply-picker';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ── Helpers de plantillas de WhatsApp ────────────────────────────────────────
+function templateBodyComponent(t) {
+    return (t?.components || []).find(c => c.type === 'BODY');
+}
+
+// Número de variables distintas {{n}} en el cuerpo de la plantilla.
+function countTemplateVars(text) {
+    const matches = (text || '').match(/{{\s*\d+\s*}}/g);
+    if (!matches) return 0;
+    return new Set(matches.map(x => x.replace(/\D/g, ''))).size;
+}
+
+// Reemplaza {{n}} por los valores escritos para construir la vista previa.
+function fillTemplate(text, vars) {
+    return (text || '').replace(/{{\s*(\d+)\s*}}/g, (_, n) => vars[Number(n) - 1] || `{{${n}}}`);
+}
+
+// Detecta si el agente terminó de escribir el disparador de una integración
+// (ej. "/pagos" o "@pagos") al final del texto antes del cursor.
+function detectIntegrationTrigger(value, cursor, integrations) {
+    const before = value.slice(0, cursor);
+    for (const integration of integrations) {
+        if (!integration.trigger) continue;
+        const re = new RegExp(`(?:^|\\s)${escapeRegExp(integration.trigger)}$`);
+        if (before.match(re)) {
+            return { integration, tokenStart: cursor - integration.trigger.length };
+        }
+    }
+    return null;
+}
 
 function detectQuickReplyToken(value, cursor) {
     const before = value.slice(0, cursor);
@@ -253,7 +297,200 @@ const ConversationItem = memo(({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function ChatIndex({ instances }) {
+// ─── PaymentModal: formulario de pago a facturas (integración Integra) ───────
+function PaymentModal({ integration, conversation, onClose }) {
+    const [cliente, setCliente] = useState(conversation?.name ?? '');
+    const [clienteId, setClienteId] = useState(null);
+    const [valor, setValor] = useState('');
+    const [pagoTotal, setPagoTotal] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [searching, setSearching] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
+    const searchTimer = useRef(null);
+
+    // Autocompletado de clientes contra Integra (con debounce).
+    useEffect(() => {
+        if (clienteId) return; // ya se eligió un cliente concreto
+        const q = cliente.trim();
+        if (q.length < 2) { setSuggestions([]); return; }
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        searchTimer.current = setTimeout(async () => {
+            setSearching(true);
+            try {
+                const { data } = await axios.get('/api/integrations/invoice-payments/clients', { params: { search: q } });
+                setSuggestions(data.data ?? []);
+                setShowSuggestions(true);
+            } catch (_) {
+                setSuggestions([]);
+            } finally {
+                setSearching(false);
+            }
+        }, 350);
+        return () => searchTimer.current && clearTimeout(searchTimer.current);
+    }, [cliente, clienteId]);
+
+    function pickClient(c) {
+        setCliente(c.nombre ?? '');
+        setClienteId(c.id ?? null);
+        if (pagoTotal && c.saldo != null) setValor(String(c.saldo));
+        setShowSuggestions(false);
+    }
+
+    async function submit(e) {
+        e.preventDefault();
+        setError(null);
+        if (!cliente.trim()) { setError('Indica el cliente.'); return; }
+        if (!pagoTotal && (!valor || Number(valor) <= 0)) { setError('Ingresa un valor mayor a 0.'); return; }
+        setSaving(true);
+        try {
+            const { data } = await axios.post('/api/integrations/invoice-payments/pay', {
+                cliente_id: clienteId,
+                cliente_nombre: cliente.trim(),
+                valor: pagoTotal && !valor ? 0 : Number(valor || 0),
+                pago_total: pagoTotal,
+            });
+            setSuccess(data.result ?? { ok: true });
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudo registrar el pago.');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white">
+                    <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
+                        <XIcon className="size-4" />
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                            <Wallet className="size-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg leading-tight">{integration?.name ?? 'Pagos a facturas'}</h3>
+                            <p className="text-xs text-white/80">Registra un pago para el cliente</p>
+                        </div>
+                    </div>
+                </div>
+
+                {success ? (
+                    <div className="px-6 py-8 text-center space-y-4">
+                        <div className="mx-auto size-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                            <CheckCircle2 className="size-8 text-emerald-600 dark:text-emerald-400" />
+                        </div>
+                        <div>
+                            <p className="font-semibold text-foreground">Pago registrado</p>
+                            {success.recibo && <p className="text-sm text-muted-foreground mt-1">Recibo: <span className="font-mono font-medium text-foreground">{success.recibo}</span></p>}
+                            {success.saldo_restante != null && (
+                                <p className="text-sm text-muted-foreground">Saldo restante: <span className="font-medium text-foreground">${Number(success.saldo_restante).toLocaleString('es-CO')}</span></p>
+                            )}
+                        </div>
+                        <button onClick={onClose} className="w-full rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium py-2.5 transition-colors">
+                            Listo
+                        </button>
+                    </div>
+                ) : (
+                    <form onSubmit={submit} className="px-6 py-5 space-y-4">
+                        {/* Cliente */}
+                        <div className="relative">
+                            <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
+                                <User className="size-3.5 text-muted-foreground" /> Cliente
+                            </label>
+                            <div className="relative">
+                                <input
+                                    value={cliente}
+                                    onChange={e => { setCliente(e.target.value); setClienteId(null); }}
+                                    onFocus={() => suggestions.length && setShowSuggestions(true)}
+                                    placeholder="Nombre o documento del cliente"
+                                    autoFocus
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                />
+                                {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />}
+                            </div>
+                            {showSuggestions && suggestions.length > 0 && (
+                                <div className="absolute z-10 mt-1 w-full rounded-xl border border-border/60 bg-popover shadow-lg max-h-48 overflow-y-auto">
+                                    {suggestions.map(c => (
+                                        <button
+                                            type="button"
+                                            key={c.id}
+                                            onClick={() => pickClient(c)}
+                                            className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors flex items-center justify-between gap-2"
+                                        >
+                                            <span className="text-sm text-foreground truncate">
+                                                {c.nombre}
+                                                {c.documento && <span className="text-muted-foreground"> · {c.documento}</span>}
+                                            </span>
+                                            {c.saldo != null && (
+                                                <span className="text-xs text-muted-foreground shrink-0">${Number(c.saldo).toLocaleString('es-CO')}</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Valor */}
+                        <div>
+                            <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
+                                <DollarSign className="size-3.5 text-muted-foreground" /> Valor
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                inputMode="decimal"
+                                value={valor}
+                                onChange={e => setValor(e.target.value)}
+                                disabled={pagoTotal}
+                                placeholder={pagoTotal ? 'Pago total de la deuda' : '0'}
+                                className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 disabled:opacity-60"
+                            />
+                        </div>
+
+                        {/* Pago total */}
+                        <label className="flex items-center gap-3 rounded-xl border border-border/60 p-3.5 cursor-pointer hover:bg-muted/30 transition-colors">
+                            <input
+                                type="checkbox"
+                                checked={pagoTotal}
+                                onChange={e => { setPagoTotal(e.target.checked); if (e.target.checked) setValor(''); }}
+                                className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                            />
+                            <div>
+                                <p className="text-sm font-medium text-foreground">Pago total</p>
+                                <p className="text-xs text-muted-foreground">Cancela el saldo completo del cliente.</p>
+                            </div>
+                        </label>
+
+                        {error && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                Cancelar
+                            </button>
+                            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                                {saving ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                                Registrar pago
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function ChatIndex({ instances, integrations = [] }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -276,8 +513,25 @@ export default function ChatIndex({ instances }) {
     const [isPolling, setIsPolling] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
+    const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
+    const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
+    const [folderCounts, setFolderCounts] = useState({ all: 0, mentions: 0, unattended: 0, tags: {} });
+
+    // Nuevo chat hacia un número directo
+    const [newChatOpen, setNewChatOpen] = useState(false);
+    const [newChatStep, setNewChatStep] = useState('phone'); // 'phone' | 'template'
+    const [newChatPhone, setNewChatPhone] = useState('');
+    const [newChatName, setNewChatName] = useState('');
+    const [newChatLoading, setNewChatLoading] = useState(false);
+    const [newChatError, setNewChatError] = useState(null);
+    const [newChatConv, setNewChatConv] = useState(null);
+    const [chatTemplates, setChatTemplates] = useState([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+    const [selectedTemplate, setSelectedTemplate] = useState(null);
+    const [templateVars, setTemplateVars] = useState([]);
     const [tags, setTags] = useState([]);
-    const [selectedTagId, setSelectedTagId] = useState('');
+    const [selectedTagIds, setSelectedTagIds] = useState([]); // ids (string) de etiquetas filtradas (OR)
+    const [editingTag, setEditingTag] = useState(null); // {id, name, color} cuando se edita una etiqueta
     const [selectedAgentId, setSelectedAgentId] = useState('');
     const [agentFilterQuery, setAgentFilterQuery] = useState('');
     const [isCreatingTag, setIsCreatingTag] = useState(false);
@@ -301,6 +555,7 @@ export default function ChatIndex({ instances }) {
 
     // Internal notes + @mentions
     const [composerMode, setComposerMode] = useState('reply'); // 'reply' | 'note'
+    const [paymentModal, setPaymentModal] = useState(null);
     const [noteMentions, setNoteMentions] = useState([]); // [{id, name}]
     const [mentionOpen, setMentionOpen] = useState(false);
     const [mentionQuery, setMentionQuery] = useState('');
@@ -339,6 +594,134 @@ export default function ChatIndex({ instances }) {
             console.error('Error cargando respuestas rápidas:', err);
         }
     }, []);
+
+    const loadFolderCounts = useCallback(async () => {
+        if (!selectedInstanceId) return;
+        try {
+            const res = await axios.get('/api/chat/folders', { params: { instance_id: selectedInstanceId } });
+            setFolderCounts(res.data);
+        } catch (err) {
+            console.error('Error cargando contadores:', err);
+        }
+    }, [selectedInstanceId]);
+
+    // ── Nuevo chat hacia un número directo ──────────────────────────────────
+    const openNewChat = useCallback(() => {
+        setNewChatStep('phone');
+        setNewChatPhone('');
+        setNewChatName('');
+        setNewChatError(null);
+        setNewChatConv(null);
+        setSelectedTemplate(null);
+        setTemplateVars([]);
+        setNewChatOpen(true);
+    }, []);
+
+    const closeNewChat = useCallback(() => {
+        setNewChatOpen(false);
+        setNewChatLoading(false);
+    }, []);
+
+    // Inserta/abre una conversación ya cargada (con sus mensajes) en la vista.
+    const openConversationLocal = useCallback((conv, msgs) => {
+        setSelectedConversation(conv);
+        setMessages(msgs || []);
+        setLastUpdateTimestamp(new Date().toISOString());
+        setConversations(prev => (
+            prev.some(c => c.id === conv.id)
+                ? prev.map(c => (c.id === conv.id ? { ...c, ...conv } : c))
+                : [conv, ...prev]
+        ));
+    }, []);
+
+    const loadChatTemplates = useCallback(async () => {
+        if (!selectedInstanceId) return;
+        setTemplatesLoading(true);
+        try {
+            const res = await axios.get('/api/chat/templates', { params: { instance_id: selectedInstanceId } });
+            const approved = (res.data.data || []).filter(t => (t.status || '').toUpperCase() === 'APPROVED');
+            setChatTemplates(approved);
+        } catch (err) {
+            console.error('Error cargando plantillas:', err);
+            setChatTemplates([]);
+        } finally {
+            setTemplatesLoading(false);
+        }
+    }, [selectedInstanceId]);
+
+    const startNewChat = useCallback(async () => {
+        if (!selectedInstanceId) { setNewChatError('Selecciona primero una instancia.'); return; }
+        const digits = newChatPhone.replace(/\D/g, '');
+        if (digits.length < 8) { setNewChatError('Número inválido. Incluye el código de país (ej: 57300...).'); return; }
+        setNewChatError(null);
+        setNewChatLoading(true);
+        try {
+            const res = await axios.post('/api/chat/conversations/start', {
+                instance_id: selectedInstanceId,
+                phone_number: digits,
+                name: newChatName.trim() || null,
+            });
+            const { conversation, messages: msgs, session_open } = res.data;
+            // Abre la conversación detrás del modal en cualquier caso.
+            openConversationLocal(conversation, msgs);
+            loadFolderCounts();
+            if (session_open) {
+                closeNewChat();
+                requestAnimationFrame(() => messageInputRef.current?.focus());
+            } else {
+                // Fuera de la ventana de 24h: hay que abrir con una plantilla.
+                setNewChatConv(conversation);
+                setNewChatStep('template');
+                loadChatTemplates();
+            }
+        } catch (err) {
+            setNewChatError(err?.response?.data?.error || 'No se pudo iniciar la conversación.');
+        } finally {
+            setNewChatLoading(false);
+        }
+    }, [selectedInstanceId, newChatPhone, newChatName, openConversationLocal, loadFolderCounts, closeNewChat, loadChatTemplates]);
+
+    const pickTemplate = useCallback((t) => {
+        setSelectedTemplate(t);
+        const body = templateBodyComponent(t);
+        const n = countTemplateVars(body?.text);
+        setTemplateVars(Array.from({ length: n }, () => ''));
+    }, []);
+
+    const sendNewChatTemplate = useCallback(async () => {
+        if (!selectedTemplate || !newChatConv) return;
+        const body = templateBodyComponent(selectedTemplate);
+        const n = countTemplateVars(body?.text);
+        if (templateVars.some((v, i) => i < n && !v.trim())) {
+            setNewChatError('Completa todas las variables de la plantilla.');
+            return;
+        }
+        setNewChatError(null);
+        setNewChatLoading(true);
+        const components = [];
+        if (n > 0) {
+            components.push({ type: 'body', parameters: templateVars.slice(0, n).map(v => ({ type: 'text', text: v })) });
+        }
+        const preview = fillTemplate(body?.text, templateVars);
+        try {
+            const res = await axios.post(`/api/chat/conversations/${newChatConv.id}/send-template`, {
+                template_name: selectedTemplate.name,
+                language_code: selectedTemplate.language,
+                components,
+                preview,
+            });
+            if (res.data.success) {
+                setMessages(prev => [...prev, res.data.data]);
+                setConversations(prev => prev.map(c => c.id === newChatConv.id ? { ...c, last_message: preview, last_message_at: new Date().toISOString() } : c));
+                closeNewChat();
+                requestAnimationFrame(() => messageInputRef.current?.focus());
+            }
+        } catch (err) {
+            setNewChatError(err?.response?.data?.error || 'No se pudo enviar la plantilla.');
+        } finally {
+            setNewChatLoading(false);
+        }
+    }, [selectedTemplate, newChatConv, templateVars, closeNewChat]);
 
     useEffect(() => {
         loadTags();
@@ -446,16 +829,26 @@ export default function ChatIndex({ instances }) {
 
     const handleComposerChange = useCallback((e) => {
         const value = e.target.value;
-        setNewMessage(value);
         const cursor = e.target.selectionStart ?? value.length;
         if (composerMode === 'note') {
+            setNewMessage(value);
             updateMentionState(value, cursor);
             // Drop tracked mentions whose @Name no longer appears in the text.
             setNoteMentions(prev => prev.filter(m => value.includes(`@${m.name}`)));
-        } else {
-            updateQuickReplyState(value, cursor);
+            return;
         }
-    }, [composerMode, updateQuickReplyState, updateMentionState]);
+        // ¿Terminó de escribir el disparador de una integración? Abre su modal
+        // y quita el comando del texto del mensaje.
+        const hit = detectIntegrationTrigger(value, cursor, integrations);
+        if (hit) {
+            setNewMessage(value.slice(0, hit.tokenStart) + value.slice(cursor));
+            closeQuickReplies();
+            setPaymentModal({ integration: hit.integration });
+            return;
+        }
+        setNewMessage(value);
+        updateQuickReplyState(value, cursor);
+    }, [composerMode, updateQuickReplyState, updateMentionState, integrations, closeQuickReplies]);
 
     const handleComposerKeyDown = useCallback((e) => {
         if (mentionOpen && mentionMatches.length > 0) {
@@ -514,11 +907,12 @@ export default function ChatIndex({ instances }) {
             if (res.data.success) {
                 setConversations(prev => prev.map(c => c.id === convId ? { ...c, tags: res.data.tags } : c));
                 setSelectedConversation(prev => (prev?.id === convId ? { ...prev, tags: res.data.tags } : prev));
+                loadFolderCounts();
             }
         } catch (err) {
             console.error('Error adjuntando etiqueta:', err);
         }
-    }, []);
+    }, [loadFolderCounts]);
 
     const detachTag = useCallback(async (convId, tagId) => {
         try {
@@ -526,11 +920,12 @@ export default function ChatIndex({ instances }) {
             if (res.data.success) {
                 setConversations(prev => prev.map(c => c.id === convId ? { ...c, tags: res.data.tags } : c));
                 setSelectedConversation(prev => (prev?.id === convId ? { ...prev, tags: res.data.tags } : prev));
+                loadFolderCounts();
             }
         } catch (err) {
             console.error('Error quitando etiqueta:', err);
         }
-    }, []);
+    }, [loadFolderCounts]);
 
     const createTag = useCallback(async () => {
         if (!newTagName.trim()) return;
@@ -553,7 +948,67 @@ export default function ChatIndex({ instances }) {
 
     const handleNewTag = useCallback((convId) => {
         setTaggingConversationId(convId);
+        setEditingTag(null);
+        setNewTagName('');
+        setNewTagColor('#0d9488');
         setIsCreatingTag(true);
+    }, []);
+
+    // Abre el modal en modo edición con los datos de la etiqueta.
+    const openEditTag = useCallback((tag) => {
+        setEditingTag(tag);
+        setNewTagName(tag.name);
+        setNewTagColor(tag.color || '#0d9488');
+        setTaggingConversationId(null);
+        setIsCreatingTag(true);
+    }, []);
+
+    const updateTag = useCallback(async () => {
+        if (!editingTag || !newTagName.trim()) return;
+        try {
+            const res = await axios.put(`/api/tags/${editingTag.id}`, { name: newTagName, color: newTagColor });
+            const updated = res.data;
+            setTags(prev => prev.map(t => (t.id === updated.id ? updated : t)));
+            // Refleja el nuevo nombre/color en las conversaciones ya cargadas.
+            setConversations(prev => prev.map(c => ({
+                ...c,
+                tags: (c.tags || []).map(t => (t.id === updated.id ? { ...t, ...updated } : t)),
+            })));
+            setIsCreatingTag(false);
+            setEditingTag(null);
+            setNewTagName('');
+        } catch (err) {
+            console.error('Error actualizando etiqueta:', err);
+        }
+    }, [editingTag, newTagName, newTagColor]);
+
+    const deleteTag = useCallback(async (tag) => {
+        if (!window.confirm(`¿Eliminar la etiqueta "${tag.name}"? Se quitará de todas las conversaciones.`)) return;
+        try {
+            await axios.delete(`/api/tags/${tag.id}`);
+            setTags(prev => prev.filter(t => t.id !== tag.id));
+            setSelectedTagIds(prev => prev.filter(id => String(id) !== String(tag.id)));
+            setConversations(prev => prev.map(c => ({
+                ...c,
+                tags: (c.tags || []).filter(t => t.id !== tag.id),
+            })));
+            if (editingTag?.id === tag.id) { setIsCreatingTag(false); setEditingTag(null); }
+        } catch (err) {
+            console.error('Error eliminando etiqueta:', err);
+        }
+    }, [editingTag]);
+
+    // Activa/desactiva una etiqueta en el filtro multi-selección.
+    const toggleTag = useCallback((tagId) => {
+        const id = String(tagId);
+        setSelectedTagIds(prev => (prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]));
+    }, []);
+
+    const closeTagModal = useCallback(() => {
+        setIsCreatingTag(false);
+        setEditingTag(null);
+        setTaggingConversationId(null);
+        setNewTagName('');
     }, []);
 
     const selectConversation = useCallback(async (conv) => {
@@ -599,24 +1054,27 @@ export default function ChatIndex({ instances }) {
     // ── Logic ──────────────────────────────────────────────────────────────
 
     const hasActiveFilters = Boolean(
-        filterMyAssignments || selectedTagId || selectedAgentId || searchQuery.trim()
+        filterMyAssignments || selectedTagIds.length || selectedAgentId || searchQuery.trim()
     );
 
     const activeFilterCount =
         (filterMyAssignments ? 1 : 0) +
-        (selectedTagId ? 1 : 0) +
+        selectedTagIds.length +
         (selectedAgentId ? 1 : 0) +
         (searchQuery.trim() ? 1 : 0);
 
     const resetFilters = useCallback(() => {
         setFilterMyAssignments(false);
-        setSelectedTagId('');
+        setSelectedTagIds([]);
         setSelectedAgentId('');
         setAgentFilterQuery('');
         setSearchQuery('');
     }, []);
 
-    const filteredConversations = useMemo(() => {
+    // Base list: todos los filtros (búsqueda, etiqueta, agente, "mis asignaciones")
+    // EXCEPTO la pestaña de asignación. Sirve para que los contadores de las
+    // pestañas reflejen lo que el usuario realmente está viendo.
+    const baseConversations = useMemo(() => {
         let items = conversations;
         if (filterMyAssignments) {
             items = items.filter(c => Number(c.assigned_to) === Number(auth.user.id));
@@ -628,15 +1086,32 @@ export default function ChatIndex({ instances }) {
                 items = items.filter(c => Number(c.assigned_to) === Number(selectedAgentId));
             }
         }
-        if (selectedTagId) {
-            items = items.filter(c => (c.tags || []).some(t => String(t.id) === String(selectedTagId)));
+        if (selectedTagIds.length) {
+            items = items.filter(c => (c.tags || []).some(t => selectedTagIds.includes(String(t.id))));
         }
         if (!searchQuery) return items;
         const q = searchQuery.toLowerCase();
         return items.filter(
             c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q) || (c.last_message || '').toLowerCase().includes(q),
         );
-    }, [conversations, searchQuery, filterMyAssignments, selectedTagId, selectedAgentId, auth.user.id]);
+    }, [conversations, searchQuery, filterMyAssignments, selectedTagIds, selectedAgentId, auth.user.id]);
+
+    // Contadores de cada pestaña sobre la base ya filtrada.
+    const tabCounts = useMemo(() => ({
+        all: baseConversations.length,
+        mine: baseConversations.filter(c => Number(c.assigned_to) === Number(auth.user.id)).length,
+        unassigned: baseConversations.filter(c => !c.assigned_to).length,
+    }), [baseConversations, auth.user.id]);
+
+    const filteredConversations = useMemo(() => {
+        if (assignmentTab === 'mine') {
+            return baseConversations.filter(c => Number(c.assigned_to) === Number(auth.user.id));
+        }
+        if (assignmentTab === 'unassigned') {
+            return baseConversations.filter(c => !c.assigned_to);
+        }
+        return baseConversations;
+    }, [baseConversations, assignmentTab, auth.user.id]);
 
     const scrollToBottom = useCallback(() => {
         const el = messagesContainerRef.current;
@@ -661,25 +1136,26 @@ export default function ChatIndex({ instances }) {
         setPage(1);
         setConversations([]);
         setHasMore(true);
-    }, [debouncedSearch, selectedInstanceId, selectedTagId, selectedAgentId, filterMyAssignments]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder]);
 
     const loadConversations = useCallback(async (pageNum = 1) => {
         if (!selectedInstanceId || loadingMore) return;
-        
+
         try {
             setLoadingMore(true);
-            const params = { 
+            const params = {
                 instance_id: selectedInstanceId,
                 page: pageNum,
                 search: debouncedSearch,
-                tag_id: selectedTagId,
+                tag_ids: selectedTagIds.join(','),
                 assigned_to: selectedAgentId === 'unassigned' ? 'unassigned' : selectedAgentId,
             };
-            
+
             if (filterMyAssignments) params.assigned_to = auth.user.id;
+            if (folder !== 'all') params.filter = folder;
 
             const res = await axios.get('/api/chat/conversations', { params });
-            
+
             const newItems = res.data.data;
             setConversations(prev => pageNum === 1 ? newItems : [...prev, ...newItems]);
             setHasMore(res.data.next_page_url !== null);
@@ -689,11 +1165,15 @@ export default function ChatIndex({ instances }) {
         } finally {
             setLoadingMore(false);
         }
-    }, [selectedInstanceId, debouncedSearch, selectedTagId, selectedAgentId, filterMyAssignments, auth.user.id]);
+    }, [selectedInstanceId, debouncedSearch, selectedTagIds, selectedAgentId, filterMyAssignments, folder, auth.user.id]);
+
+    useEffect(() => {
+        loadFolderCounts();
+    }, [loadFolderCounts]);
 
     useEffect(() => {
         loadConversations(1);
-    }, [debouncedSearch, selectedInstanceId, selectedTagId, selectedAgentId, filterMyAssignments, loadConversations]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, loadConversations]);
 
     const sidebarScrollRef = useRef(null);
     const observerTarget = useRef(null);
@@ -738,6 +1218,7 @@ export default function ChatIndex({ instances }) {
             setIsPolling(true);
             const params = { instance_id: selectedInstanceId, since: lastUpdateTimestamp };
             if (selectedConversation) params.conversation_id = selectedConversation.id;
+            if (folder !== 'all') params.filter = folder;
 
             const res = await axios.get('/api/chat/updates', { params });
             setLastUpdateTimestamp(res.data.timestamp);
@@ -745,6 +1226,7 @@ export default function ChatIndex({ instances }) {
 
             if (res.data.conversations?.length > 0) {
                 mergeConversations(res.data.conversations);
+                loadFolderCounts();
             }
             if (res.data.new_messages?.length > 0) {
                 setMessages(prev => {
@@ -999,7 +1481,7 @@ export default function ChatIndex({ instances }) {
                             <DropdownMenuTrigger asChild>
                                 <button className={clsx(
                                     "p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center",
-                                    (filterMyAssignments || selectedTagId || selectedAgentId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
+                                    (filterMyAssignments || selectedTagIds.length || selectedAgentId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
                                 )}>
                                     <MoreHorizontal className="size-5" />
                                 </button>
@@ -1095,8 +1577,8 @@ export default function ChatIndex({ instances }) {
                                 )}
 
                                 <DropdownMenuSeparator className="bg-border/5" />
-                                <DropdownMenuItem 
-                                    onClick={() => setIsCreatingTag(true)}
+                                <DropdownMenuItem
+                                    onClick={() => handleNewTag(null)}
                                     className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
                                 >
                                     <div className="size-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
@@ -1116,12 +1598,12 @@ export default function ChatIndex({ instances }) {
                                             {tags.map(tag => (
                                                 <DropdownMenuItem 
                                                     key={tag.id}
-                                                    onClick={() => setSelectedTagId(selectedTagId === String(tag.id) ? '' : String(tag.id))}
+                                                    onClick={() => toggleTag(tag.id)}
                                                     className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
                                                 >
                                                     <div className="size-3 rounded-full shadow-sm" style={{ backgroundColor: tag.color }} />
                                                     <span className="text-xs font-bold flex-1">{tag.name}</span>
-                                                    {selectedTagId === String(tag.id) && <Check className="size-3.5 text-teal-600" />}
+                                                    {selectedTagIds.includes(String(tag.id)) && <Check className="size-3.5 text-teal-600" />}
                                                 </DropdownMenuItem>
                                             ))}
                                         </div>
@@ -1158,28 +1640,186 @@ export default function ChatIndex({ instances }) {
                     </div>
                 ) : (
                     <div className="flex-1 flex overflow-hidden">
+                        {/* Navegación contextual (Conversaciones / Canales / Etiquetas) */}
+                        <div className="hidden lg:flex w-60 shrink-0 flex-col bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10 overflow-y-auto custom-scrollbar">
+                            {/* Carpetas de conversaciones */}
+                            <div className="px-3 pt-4 pb-2">
+                                <p className="px-2 mb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Conversaciones</p>
+                                {[
+                                    { key: 'all', label: 'Todas las conversaciones', icon: MessageSquare, count: folderCounts.all },
+                                    { key: 'mentions', label: 'Menciones', icon: AtSign, count: folderCounts.mentions },
+                                    { key: 'unattended', label: 'Desatendido', icon: Clock, count: folderCounts.unattended },
+                                ].map(item => {
+                                    const active = folder === item.key;
+                                    const Icon = item.icon;
+                                    return (
+                                        <button
+                                            key={item.key}
+                                            type="button"
+                                            onClick={() => setFolder(item.key)}
+                                            className={clsx(
+                                                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors group/nav",
+                                                active
+                                                    ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
+                                                    : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                            )}
+                                        >
+                                            <Icon className={clsx("size-4 shrink-0", active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground/60")} />
+                                            <span className="flex-1 text-left truncate">{item.label}</span>
+                                            {item.count > 0 && (
+                                                <span className={clsx(
+                                                    "min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none",
+                                                    active ? "bg-teal-600 text-white" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                )}>
+                                                    {item.count}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Canales (instancias) */}
+                            {instances.length > 0 && (
+                                <div className="px-3 py-2 border-t border-border/5">
+                                    <p className="px-2 mb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Canales</p>
+                                    {instances.map(inst => {
+                                        const active = String(selectedInstanceId) === String(inst.id);
+                                        return (
+                                            <button
+                                                key={inst.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (active) return;
+                                                    stopPolling();
+                                                    setConversations([]);
+                                                    setMessages([]);
+                                                    setSelectedConversation(null);
+                                                    setSelectedInstanceId(String(inst.id));
+                                                }}
+                                                className={clsx(
+                                                    "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
+                                                    active
+                                                        ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
+                                                        : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                                )}
+                                            >
+                                                <span className={clsx("size-2 rounded-full shrink-0", inst.active === false ? "bg-slate-300 dark:bg-slate-600" : "bg-[#25d366]")} />
+                                                <span className="flex-1 text-left truncate">{inst.name || 'Sin nombre'}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Etiquetas */}
+                            <div className="px-3 py-2 border-t border-border/5">
+                                <div className="flex items-center justify-between px-2 mb-1">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Etiquetas</p>
+                                    <div className="flex items-center gap-1">
+                                        {selectedTagIds.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTagIds([])}
+                                                title="Quitar filtro de etiquetas"
+                                                className="text-[9px] font-bold uppercase tracking-wide text-teal-600 hover:text-teal-500"
+                                            >
+                                                Limpiar
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleNewTag(null)}
+                                            title="Nueva etiqueta"
+                                            className="p-0.5 rounded-md text-muted-foreground/60 hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                        >
+                                            <PlusCircle className="size-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                                {tags.length === 0 && (
+                                    <p className="px-2 py-1 text-[11px] italic text-muted-foreground/50">Sin etiquetas todavía</p>
+                                )}
+                                {tags.map(tag => {
+                                    const active = selectedTagIds.includes(String(tag.id));
+                                    const count = folderCounts.tags?.[tag.id] ?? folderCounts.tags?.[String(tag.id)] ?? 0;
+                                    return (
+                                        <div
+                                            key={tag.id}
+                                            className={clsx(
+                                                "group/tag w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer",
+                                                active
+                                                    ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
+                                                    : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                            )}
+                                            onClick={() => toggleTag(tag.id)}
+                                        >
+                                            <span className="size-2.5 rounded-sm shrink-0" style={{ backgroundColor: tag.color }} />
+                                            <span className="flex-1 text-left truncate">{tag.name}</span>
+                                            {active && <Check className="size-3.5 text-teal-600 shrink-0" />}
+                                            {/* Acciones de gestión (aparecen al hover) */}
+                                            <span className="hidden group-hover/tag:flex items-center gap-0.5 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); openEditTag(tag); }}
+                                                    title="Editar etiqueta"
+                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-teal-600"
+                                                >
+                                                    <PencilIcon className="size-3" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); deleteTag(tag); }}
+                                                    title="Eliminar etiqueta"
+                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-rose-600"
+                                                >
+                                                    <Trash2 className="size-3" />
+                                                </button>
+                                            </span>
+                                            {/* Contador (se oculta en hover para dar espacio a las acciones) */}
+                                            {!active && count > 0 && (
+                                                <span className="group-hover/tag:hidden min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80">
+                                                    {count}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         {/* Sidebar - WhatsApp Web Style */}
                         <div className="w-full sm:w-80 lg:w-96 bg-white dark:bg-[#111b21] flex flex-col border-r border-border/10">
                             <div className="p-3">
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <Search className="size-4 text-muted-foreground/60" />
+                                <div className="flex items-center gap-2">
+                                    <div className="relative flex-1">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <Search className="size-4 text-muted-foreground/60" />
+                                        </div>
+                                        <input
+                                            type="text"
+                                            placeholder="Busca o empieza un chat nuevo"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            className="w-full pl-10 pr-10 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
+                                        />
+                                        {searchQuery && (
+                                            <button
+                                                onClick={() => setSearchQuery('')}
+                                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                            >
+                                                <XIcon className="size-4 text-muted-foreground/60 hover:text-foreground transition-colors" />
+                                            </button>
+                                        )}
                                     </div>
-                                    <input
-                                        type="text"
-                                        placeholder="Busca o empieza un chat nuevo"
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                        className="w-full pl-10 pr-10 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
-                                    />
-                                    {searchQuery && (
-                                        <button
-                                            onClick={() => setSearchQuery('')}
-                                            className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                        >
-                                            <XIcon className="size-4 text-muted-foreground/60 hover:text-foreground transition-colors" />
-                                        </button>
-                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={openNewChat}
+                                        title="Escribir a un número nuevo"
+                                        className="shrink-0 size-9 flex items-center justify-center rounded-lg bg-teal-600 text-white hover:bg-teal-500 shadow-sm shadow-teal-600/20 transition-colors"
+                                    >
+                                        <PenSquare className="size-4" />
+                                    </button>
                                 </div>
 
                                 {hasActiveFilters && (
@@ -1198,6 +1838,43 @@ export default function ChatIndex({ instances }) {
                                         </span>
                                     </button>
                                 )}
+                            </div>
+
+                            {/* Pestañas de asignación: Mías / Sin asignar / Todos */}
+                            <div className="px-3 pb-1 border-b border-border/10">
+                                <div className="flex items-center gap-5">
+                                    {[
+                                        { key: 'mine', label: 'Mías', count: tabCounts.mine },
+                                        { key: 'unassigned', label: 'Sin asignar', count: tabCounts.unassigned },
+                                        { key: 'all', label: 'Todos', count: tabCounts.all },
+                                    ].map(tab => {
+                                        const active = assignmentTab === tab.key;
+                                        return (
+                                            <button
+                                                key={tab.key}
+                                                type="button"
+                                                onClick={() => setAssignmentTab(tab.key)}
+                                                className={clsx(
+                                                    "relative flex items-center gap-1.5 pb-2 pt-1 text-[13px] font-semibold transition-colors",
+                                                    active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                <span>{tab.label}</span>
+                                                <span className={clsx(
+                                                    "min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none transition-colors",
+                                                    active
+                                                        ? "bg-teal-600 text-white"
+                                                        : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                )}>
+                                                    {tab.count}
+                                                </span>
+                                                {active && (
+                                                    <span className="absolute -bottom-px left-0 right-0 h-[2px] rounded-full bg-teal-600 dark:bg-teal-400" />
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
@@ -1232,7 +1909,13 @@ export default function ChatIndex({ instances }) {
 
                                 {filteredConversations.length === 0 && !loadingMore && (
                                     <div className="p-8 text-center">
-                                        <p className="text-xs text-muted-foreground font-medium italic opacity-60">No se encontraron chats</p>
+                                        <p className="text-xs text-muted-foreground font-medium italic opacity-60">
+                                            {assignmentTab === 'mine'
+                                                ? 'No tienes chats asignados'
+                                                : assignmentTab === 'unassigned'
+                                                    ? 'No hay chats sin asignar'
+                                                    : 'No se encontraron chats'}
+                                        </p>
                                     </div>
                                 )}
                             </div>
@@ -1615,6 +2298,14 @@ export default function ChatIndex({ instances }) {
                     </div>
                 )}
 
+                {paymentModal && (
+                    <PaymentModal
+                        integration={paymentModal.integration}
+                        conversation={selectedConversation}
+                        onClose={() => setPaymentModal(null)}
+                    />
+                )}
+
                 {/* Lightbox / Image Zoom */}
                 {selectedImage && (
                     <div
@@ -1638,12 +2329,172 @@ export default function ChatIndex({ instances }) {
                 )}
 
                 {/* Create Tag Modal */}
+                {/* Modal: Nuevo chat hacia un número */}
+                {newChatOpen && (
+                    <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={closeNewChat}>
+                        <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                            {/* Header */}
+                            <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white">
+                                <button onClick={closeNewChat} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
+                                    <XIcon className="size-4" />
+                                </button>
+                                <div className="flex items-center gap-3">
+                                    <div className="size-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                                        <PenSquare className="size-6" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-lg leading-tight">Nuevo chat</h3>
+                                        <p className="text-xs text-white/80">
+                                            {newChatStep === 'phone' ? 'Escribe a un número directamente' : 'Abre la conversación con una plantilla'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {newChatStep === 'phone' ? (
+                                <div className="px-6 py-5 space-y-4">
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
+                                            <Phone className="size-3.5 text-muted-foreground" /> Número de WhatsApp
+                                        </label>
+                                        <input
+                                            value={newChatPhone}
+                                            onChange={e => setNewChatPhone(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !newChatLoading) startNewChat(); }}
+                                            placeholder="Ej: 57 300 123 4567"
+                                            autoFocus
+                                            inputMode="tel"
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                        />
+                                        <p className="mt-1.5 text-[11px] text-muted-foreground">Incluye el código de país (Colombia = 57), sin signos ni espacios obligatorios.</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
+                                            <User className="size-3.5 text-muted-foreground" /> Nombre <span className="text-muted-foreground font-normal">(opcional)</span>
+                                        </label>
+                                        <input
+                                            value={newChatName}
+                                            onChange={e => setNewChatName(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !newChatLoading) startNewChat(); }}
+                                            placeholder="Nombre del contacto"
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                        />
+                                    </div>
+
+                                    {newChatError && (
+                                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                            <span>{newChatError}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2 pt-1">
+                                        <button type="button" onClick={closeNewChat} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                            Cancelar
+                                        </button>
+                                        <button type="button" onClick={startNewChat} disabled={newChatLoading} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                                            {newChatLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                                            Continuar
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="px-6 py-5 space-y-4">
+                                    <div className="rounded-xl border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2.5 text-[12px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                                        <Clock className="size-4 mt-0.5 shrink-0" />
+                                        <span>Este número no tiene una conversación abierta (ventana de 24h). Para iniciar debes enviar una <b>plantilla aprobada</b>.</span>
+                                    </div>
+
+                                    {templatesLoading ? (
+                                        <div className="py-8 flex items-center justify-center text-muted-foreground">
+                                            <Loader2 className="size-5 animate-spin" />
+                                        </div>
+                                    ) : chatTemplates.length === 0 ? (
+                                        <div className="py-6 text-center">
+                                            <FileText className="size-8 mx-auto text-muted-foreground/30 mb-2" />
+                                            <p className="text-sm text-muted-foreground">No hay plantillas aprobadas en esta instancia.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Plantilla</label>
+                                                <div className="max-h-44 overflow-y-auto custom-scrollbar rounded-xl border border-border/60 divide-y divide-border/40">
+                                                    {chatTemplates.map(t => {
+                                                        const active = selectedTemplate?.name === t.name && selectedTemplate?.language === t.language;
+                                                        const body = templateBodyComponent(t);
+                                                        return (
+                                                            <button
+                                                                key={`${t.name}-${t.language}`}
+                                                                type="button"
+                                                                onClick={() => pickTemplate(t)}
+                                                                className={clsx(
+                                                                    "w-full text-left px-3 py-2.5 transition-colors",
+                                                                    active ? "bg-teal-600/10" : "hover:bg-muted/40"
+                                                                )}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[13px] font-semibold text-foreground truncate">{t.name}</span>
+                                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5 shrink-0">{t.language}</span>
+                                                                    {active && <Check className="size-3.5 text-teal-600 ml-auto shrink-0" />}
+                                                                </div>
+                                                                {body?.text && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{body.text}</p>}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {selectedTemplate && templateVars.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
+                                                    {templateVars.map((v, i) => (
+                                                        <input
+                                                            key={i}
+                                                            value={v}
+                                                            onChange={e => setTemplateVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                                                            placeholder={`Variable {{${i + 1}}}`}
+                                                            className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {selectedTemplate && (
+                                                <div className="rounded-xl bg-[#dcf8c6] dark:bg-[#005c4b] px-3 py-2 text-[13px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                                                    {fillTemplate(templateBodyComponent(selectedTemplate)?.text, templateVars) || '(Plantilla sin cuerpo de texto)'}
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {newChatError && (
+                                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                            <span>{newChatError}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-2 pt-1">
+                                        <button type="button" onClick={closeNewChat} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                            Cerrar
+                                        </button>
+                                        <button type="button" onClick={sendNewChatTemplate} disabled={newChatLoading || !selectedTemplate} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                                            {newChatLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                                            Enviar y abrir
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {isCreatingTag && (
                     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
                         <div className="bg-white dark:bg-[#1c272e] rounded-3xl shadow-2xl w-full max-w-sm mx-4 p-6 border border-border/10">
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-black text-foreground">Nueva Etiqueta</h3>
-                                <button onClick={() => { setIsCreatingTag(false); setTaggingConversationId(null); }} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
+                                <h3 className="text-lg font-black text-foreground">{editingTag ? 'Editar Etiqueta' : 'Nueva Etiqueta'}</h3>
+                                <button onClick={closeTagModal} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full">
                                     <XIcon className="size-4 text-muted-foreground" />
                                 </button>
                             </div>
@@ -1679,18 +2530,28 @@ export default function ChatIndex({ instances }) {
                                 </div>
                                 
                                 <div className="pt-4 flex gap-3">
-                                    <button 
-                                        onClick={() => { setIsCreatingTag(false); setTaggingConversationId(null); }}
-                                        className="flex-1 py-3 text-sm font-bold text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-colors"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button 
-                                        onClick={createTag}
+                                    {editingTag ? (
+                                        <button
+                                            onClick={() => deleteTag(editingTag)}
+                                            title="Eliminar etiqueta"
+                                            className="py-3 px-4 text-sm font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-2xl transition-colors flex items-center justify-center"
+                                        >
+                                            <Trash2 className="size-4" />
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={closeTagModal}
+                                            className="flex-1 py-3 text-sm font-bold text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-2xl transition-colors"
+                                        >
+                                            Cancelar
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={editingTag ? updateTag : createTag}
                                         disabled={!newTagName.trim()}
                                         className="flex-1 py-3 bg-teal-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-teal-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all"
                                     >
-                                        Crear Etiqueta
+                                        {editingTag ? 'Guardar Cambios' : 'Crear Etiqueta'}
                                     </button>
                                 </div>
                             </div>

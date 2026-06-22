@@ -298,9 +298,13 @@ Route::middleware('auth')->group(function () {
     // API routes for Chat (moved from api.php to share session)
     Route::prefix('api/chat')->group(function () {
         Route::get('/conversations', [ChatController::class, 'conversations']);
+        Route::get('/folders', [ChatController::class, 'folders']);
+        Route::post('/conversations/start', [ChatController::class, 'startConversation']);
+        Route::get('/templates', [ChatController::class, 'templates']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
+        Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);
         Route::post('/conversations/{conversationId}/note', [ChatController::class, 'storeNote']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);
@@ -372,5 +376,27 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:integrations.update');
         Route::get('/{webhook}/deliveries', [App\Http\Controllers\WebhookEndpointController::class, 'deliveries'])
             ->middleware('permission:integrations.view');
+    });
+
+    // Integraciones — Pagos a facturas (software Integra)
+    // Flujo OAuth (navegador): inicia la autorización y recibe el callback con el code.
+    Route::get('/integrations/invoice-payments/connect', [App\Http\Controllers\IntegrationController::class, 'oauthStart'])
+        ->middleware('permission:integrations.update')->name('integrations.invoice-payments.connect');
+    Route::get('/integrations/invoice-payments/callback', [App\Http\Controllers\IntegrationController::class, 'oauthCallback'])
+        ->middleware('permission:integrations.update')->name('integrations.invoice-payments.callback');
+
+    Route::prefix('api/integrations')->group(function () {
+        Route::get('/', [App\Http\Controllers\IntegrationController::class, 'index'])
+            ->middleware('permission:integrations.view');
+        Route::get('/{key}/status', [App\Http\Controllers\IntegrationController::class, 'status'])
+            ->middleware('permission:integrations.view');
+        Route::post('/{key}/activate', [App\Http\Controllers\IntegrationController::class, 'activate'])
+            ->middleware('permission:integrations.update');
+        Route::post('/{key}/disconnect', [App\Http\Controllers\IntegrationController::class, 'disconnect'])
+            ->middleware('permission:integrations.update');
+
+        // Acciones usadas desde el chat por los agentes (solo requieren sesión).
+        Route::get('/invoice-payments/clients', [App\Http\Controllers\IntegrationController::class, 'searchClients']);
+        Route::post('/invoice-payments/pay', [App\Http\Controllers\IntegrationController::class, 'pay']);
     });
 });

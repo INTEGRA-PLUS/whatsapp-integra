@@ -1,14 +1,88 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle, Power, Copy, X } from 'lucide-react';
+import {
+    Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
+    Power, Copy, X, Plug, Wallet, Link2, ShieldCheck, ArrowRight, ArrowLeft,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard,
+} from 'lucide-react';
 
-export default function IntegrationsIndex({ webhooks: initialWebhooks, eventCatalog }) {
-    const { auth } = usePage().props;
+const SECTIONS = [
+    { id: 'webhooks', label: 'Webhooks',          Icon: Webhook },
+    { id: 'payments', label: 'Pagos a facturas',  Icon: Wallet },
+];
+
+export default function IntegrationsIndex({ webhooks, eventCatalog }) {
+    const { auth, flash } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
+    // Al volver del flujo OAuth de Integra (?integra=connected|error) abrimos la
+    // pestaña de pagos y mostramos el resultado de la conexión.
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const integraResult = params?.get('integra');
+    const [section, setSection] = useState(integraResult ? 'payments' : 'webhooks');
+    const initialToast = integraResult
+        ? (flash?.error
+            ? { text: flash.error, kind: 'error' }
+            : { text: flash?.success ?? 'Conexión establecida con Integra.', kind: 'success' })
+        : null;
+
+    // Limpia el query param para que el toast no reaparezca al recargar.
+    useEffect(() => {
+        if (integraResult && typeof window !== 'undefined') {
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, []);
+
+    return (
+        <>
+            <Head title="Integraciones" />
+            <div className="flex flex-col gap-6 p-6 lg:p-8">
+                {/* Header */}
+                <div className="flex items-center gap-3">
+                    <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                        <Plug className="size-6" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-semibold text-foreground">Integraciones</h1>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                            Conecta tu WhatsApp con sistemas externos y úsalos desde el chat.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Sub-nav */}
+                <div className="flex gap-1 border-b">
+                    {SECTIONS.map(s => {
+                        const active = section === s.id;
+                        return (
+                            <button
+                                key={s.id}
+                                onClick={() => setSection(s.id)}
+                                className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                                    active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                <s.Icon className="size-4" />
+                                {s.label}
+                                {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t" />}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {section === 'webhooks' && <WebhooksSection webhooks={webhooks} eventCatalog={eventCatalog} can={can} />}
+                {section === 'payments' && <PaymentsSection can={can} initialToast={initialToast} />}
+            </div>
+        </>
+    );
+}
+
+/* ───────────────────────── Webhooks ───────────────────────── */
+
+function WebhooksSection({ webhooks: initialWebhooks, eventCatalog, can }) {
     const [webhooks, setWebhooks] = useState(initialWebhooks ?? []);
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState(null);
@@ -53,101 +127,90 @@ export default function IntegrationsIndex({ webhooks: initialWebhooks, eventCata
     }
 
     return (
-        <>
-            <Head title="Integraciones" />
-            <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Webhook className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Integraciones · Webhooks</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Notifica a sistemas externos (CRM, ERP, Zapier, n8n) cuando ocurren eventos en tus conversaciones.
-                            </p>
-                        </div>
-                    </div>
+        <div className="flex flex-col gap-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <p className="text-sm text-muted-foreground max-w-2xl">
+                    Notifica a sistemas externos (CRM, ERP, Zapier, n8n) cuando ocurren eventos en tus conversaciones.
+                </p>
+                {can('integrations.create') && (
+                    <Button onClick={() => setShowForm(true)} className="gap-2 shrink-0">
+                        <Plus className="size-4" /> Nuevo Webhook
+                    </Button>
+                )}
+            </div>
+
+            {webhooks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+                    <Webhook className="size-12 text-muted-foreground/40 mb-4" />
+                    <p className="text-lg font-medium text-foreground">Aún no tienes webhooks configurados</p>
+                    <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                        Crea un endpoint, elige a qué eventos suscribirlo y empezaremos a notificar a tu sistema en tiempo real.
+                    </p>
                     {can('integrations.create') && (
-                        <Button onClick={() => setShowForm(true)} className="gap-2">
-                            <Plus className="size-4" /> Nuevo Webhook
+                        <Button onClick={() => setShowForm(true)} className="gap-2 mt-6">
+                            <Plus className="size-4" /> Crear mi primer webhook
                         </Button>
                     )}
                 </div>
-
-                {webhooks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-                        <Webhook className="size-12 text-muted-foreground/40 mb-4" />
-                        <p className="text-lg font-medium text-foreground">Aún no tienes webhooks configurados</p>
-                        <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                            Crea un endpoint, elige a qué eventos suscribirlo y empezaremos a notificar a tu sistema en tiempo real.
-                        </p>
-                        {can('integrations.create') && (
-                            <Button onClick={() => setShowForm(true)} className="gap-2 mt-6">
-                                <Plus className="size-4" /> Crear mi primer webhook
-                            </Button>
-                        )}
-                    </div>
-                ) : (
-                    <div className="grid gap-4">
-                        {webhooks.map(wh => (
-                            <div key={wh.id} className="rounded-xl border bg-card p-5">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="font-semibold text-foreground truncate">{wh.name}</h3>
-                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${wh.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
-                                                {wh.active ? 'Activo' : 'Inactivo'}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs font-mono text-muted-foreground mt-1 truncate">{wh.url}</p>
-                                        <div className="flex flex-wrap gap-1.5 mt-3">
-                                            {(wh.events ?? []).map(ev => (
-                                                <span key={ev} className="text-[10px] font-medium px-2 py-0.5 rounded bg-primary/10 text-primary">
-                                                    {eventCatalog?.[ev] ?? ev}
-                                                </span>
-                                            ))}
-                                        </div>
+            ) : (
+                <div className="grid gap-4">
+                    {webhooks.map(wh => (
+                        <div key={wh.id} className="rounded-xl border bg-card p-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-semibold text-foreground truncate">{wh.name}</h3>
+                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${wh.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                                            {wh.active ? 'Activo' : 'Inactivo'}
+                                        </span>
                                     </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                        {can('integrations.update') && (
-                                            <Button variant="ghost" size="icon" title={wh.active ? 'Desactivar' : 'Activar'} onClick={() => toggleActive(wh)}>
-                                                <Power className={`size-4 ${wh.active ? 'text-green-600' : 'text-muted-foreground'}`} />
-                                            </Button>
-                                        )}
-                                        {can('integrations.update') && (
-                                            <Button variant="ghost" size="icon" title="Enviar prueba" onClick={() => handleTest(wh)}>
-                                                <Send className="size-4" />
-                                            </Button>
-                                        )}
-                                        <Button variant="ghost" size="icon" title="Historial de entregas" onClick={() => setDeliveriesFor(wh)}>
-                                            <History className="size-4" />
-                                        </Button>
-                                        {can('integrations.update') && (
-                                            <Button variant="ghost" size="icon" title="Editar" onClick={() => setEditing(wh)}>
-                                                <Pencil className="size-4" />
-                                            </Button>
-                                        )}
-                                        {can('integrations.delete') && (
-                                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(wh)}>
-                                                <Trash2 className="size-4" />
-                                            </Button>
-                                        )}
+                                    <p className="text-xs font-mono text-muted-foreground mt-1 truncate">{wh.url}</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-3">
+                                        {(wh.events ?? []).map(ev => (
+                                            <span key={ev} className="text-[10px] font-medium px-2 py-0.5 rounded bg-primary/10 text-primary">
+                                                {eventCatalog?.[ev] ?? ev}
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    {can('integrations.update') && (
+                                        <Button variant="ghost" size="icon" title={wh.active ? 'Desactivar' : 'Activar'} onClick={() => toggleActive(wh)}>
+                                            <Power className={`size-4 ${wh.active ? 'text-green-600' : 'text-muted-foreground'}`} />
+                                        </Button>
+                                    )}
+                                    {can('integrations.update') && (
+                                        <Button variant="ghost" size="icon" title="Enviar prueba" onClick={() => handleTest(wh)}>
+                                            <Send className="size-4" />
+                                        </Button>
+                                    )}
+                                    <Button variant="ghost" size="icon" title="Historial de entregas" onClick={() => setDeliveriesFor(wh)}>
+                                        <History className="size-4" />
+                                    </Button>
+                                    {can('integrations.update') && (
+                                        <Button variant="ghost" size="icon" title="Editar" onClick={() => setEditing(wh)}>
+                                            <Pencil className="size-4" />
+                                        </Button>
+                                    )}
+                                    {can('integrations.delete') && (
+                                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" onClick={() => handleDelete(wh)}>
+                                            <Trash2 className="size-4" />
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
-                        ))}
-                    </div>
-                )}
-
-                <div className="flex items-start gap-3 p-4 bg-muted/40 rounded-xl border text-xs text-muted-foreground max-w-3xl">
-                    <Info className="size-4 text-primary shrink-0 mt-0.5" />
-                    <p>
-                        Cada solicitud se envía por <code className="font-mono">POST</code> en formato JSON e incluye la cabecera
-                        {' '}<code className="font-mono">X-Webhook-Signature</code> (HMAC-SHA256 del cuerpo usando el secreto del webhook),
-                        para que tu sistema pueda verificar la autenticidad. Las entregas fallidas se reintentan automáticamente.
-                    </p>
+                        </div>
+                    ))}
                 </div>
+            )}
+
+            <div className="flex items-start gap-3 p-4 bg-muted/40 rounded-xl border text-xs text-muted-foreground max-w-3xl">
+                <Info className="size-4 text-primary shrink-0 mt-0.5" />
+                <p>
+                    Cada solicitud se envía por <code className="font-mono">POST</code> en formato JSON e incluye la cabecera
+                    {' '}<code className="font-mono">X-Webhook-Signature</code> (HMAC-SHA256 del cuerpo usando el secreto del webhook),
+                    para que tu sistema pueda verificar la autenticidad. Las entregas fallidas se reintentan automáticamente.
+                </p>
             </div>
 
             {(showForm || editing) && (
@@ -166,7 +229,7 @@ export default function IntegrationsIndex({ webhooks: initialWebhooks, eventCata
                     onClose={() => setDeliveriesFor(null)}
                 />
             )}
-        </>
+        </div>
     );
 }
 
@@ -350,6 +413,358 @@ function DeliveriesModal({ webhook, eventCatalog, onClose }) {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+/* ───────────────────────── Pagos a facturas (software Integra) ───────────────────────── */
+
+function PaymentsSection({ can, initialToast }) {
+    const [integration, setIntegration] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => { load(); }, []);
+
+    async function load() {
+        try {
+            const { data } = await axios.get('/api/integrations');
+            setIntegration((data ?? []).find(i => i.key === 'invoice_payments') ?? null);
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudieron cargar las integraciones.');
+        }
+    }
+
+    if (error) {
+        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
+    }
+    if (!integration) {
+        return (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+                <Loader2 className="size-4 animate-spin" /> Cargando…
+            </div>
+        );
+    }
+
+    return <PaymentsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} initialToast={initialToast} />;
+}
+
+const WIZARD_STEPS = [
+    { n: 1, label: 'Conectar', Icon: Link2 },
+    { n: 2, label: 'Estado',   Icon: ShieldCheck },
+    { n: 3, label: 'Activar',  Icon: Power },
+];
+
+function PaymentsWizard({ integration, onUpdated, canManage, initialToast }) {
+    const [step, setStep] = useState(integration.connected ? (integration.enabled ? 3 : 2) : 1);
+    const [toast, setToast] = useState(null);
+
+    function showToast(text, kind = 'success') {
+        setToast({ text, kind });
+        setTimeout(() => setToast(null), 4000);
+    }
+
+    // Resultado del flujo OAuth tras volver del navegador de Integra.
+    useEffect(() => {
+        if (initialToast) showToast(initialToast.text, initialToast.kind);
+    }, []);
+
+    return (
+        <div className="flex flex-col gap-6 max-w-2xl">
+            <div className="flex items-start gap-3">
+                <div className="size-11 rounded-xl bg-teal-500/10 dark:bg-teal-500/15 flex items-center justify-center shrink-0">
+                    <Wallet className="size-6 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div>
+                    <h2 className="text-lg font-semibold text-foreground">{integration.name}</h2>
+                    <p className="text-sm text-muted-foreground">{integration.description}</p>
+                </div>
+            </div>
+
+            {/* Stepper */}
+            <div className="flex items-center gap-2">
+                {WIZARD_STEPS.map((s, idx) => {
+                    const done = step > s.n;
+                    const current = step === s.n;
+                    return (
+                        <div key={s.n} className="flex items-center gap-2 flex-1">
+                            <button
+                                onClick={() => setStep(s.n)}
+                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                                    current ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300'
+                                    : done ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-muted-foreground'
+                                }`}
+                            >
+                                <span className={`flex items-center justify-center size-6 rounded-full text-[11px] font-bold ${
+                                    current ? 'bg-teal-500 text-white'
+                                    : done ? 'bg-emerald-500 text-white'
+                                    : 'bg-muted text-muted-foreground'
+                                }`}>
+                                    {done ? <CheckCircle2 className="size-3.5" /> : s.n}
+                                </span>
+                                <span className="hidden sm:inline">{s.label}</span>
+                            </button>
+                            {idx < WIZARD_STEPS.length - 1 && <div className="flex-1 h-px bg-border/60" />}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {toast && (
+                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+                    toast.kind === 'error'
+                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
+                    <span>{toast.text}</span>
+                </div>
+            )}
+
+            {!canManage && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                    No tienes permisos para modificar esta integración. Pide a un administrador que la configure.
+                </div>
+            )}
+
+            <fieldset disabled={!canManage} className="contents">
+                {step === 1 && <StepConnect integration={integration} onUpdated={onUpdated} onDone={() => setStep(2)} showToast={showToast} />}
+                {step === 2 && <StepStatus integration={integration} onUpdated={onUpdated} onNext={() => setStep(3)} showToast={showToast} />}
+                {step === 3 && <StepActivate integration={integration} onUpdated={onUpdated} showToast={showToast} />}
+            </fieldset>
+        </div>
+    );
+}
+
+function WField({ label, icon: Icon, error, children }) {
+    return (
+        <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                {Icon && <Icon className="size-3.5 text-muted-foreground" />}{label}
+            </label>
+            {children}
+            {error && <p className="text-xs text-destructive font-medium">{error}</p>}
+        </div>
+    );
+}
+
+const wInput = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
+
+function StepConnect({ integration, onUpdated, onDone, showToast }) {
+    const [redirecting, setRedirecting] = useState(false);
+    const [baseUrl, setBaseUrl] = useState(integration.base_url ?? '');
+    const [error, setError] = useState(null);
+
+    function connect() {
+        const url = baseUrl.trim().replace(/\/+$/, '');
+        // Integra es multi-tenant: cada empresa entra a la URL de su propio entorno.
+        if (!/^https?:\/\/.+\..+/i.test(url)) {
+            setError('Ingresa la URL completa de tu entorno Integra (ej. https://miempresa.integra.com).');
+            return;
+        }
+        setError(null);
+        // Salimos al flujo OAuth de Integra en el mismo navegador. Al volver, el callback
+        // redirige a /integrations?integra=connected y el wizard avanza solo al paso 2.
+        setRedirecting(true);
+        window.location.href = `/integrations/invoice-payments/connect?base_url=${encodeURIComponent(url)}`;
+    }
+
+    return (
+        <div className="rounded-xl border bg-card p-5">
+            <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                    Indica la dirección de tu entorno Integra. Te llevaremos a iniciar sesión allí para autorizar la conexión y al terminar volverás aquí automáticamente. Solo guardamos el token de acceso, nunca tu contraseña.
+                </p>
+
+                <WField label="URL de tu entorno Integra" icon={Link2} error={error}>
+                    <input
+                        type="url"
+                        value={baseUrl}
+                        onChange={e => { setBaseUrl(e.target.value); if (error) setError(null); }}
+                        onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+                        placeholder="https://miempresa.integra.com"
+                        className={`${wInput} font-mono`}
+                        autoFocus
+                    />
+                </WField>
+
+                <div className="flex items-start gap-3 rounded-xl bg-muted/40 border p-4 text-xs text-muted-foreground">
+                    <ShieldCheck className="size-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                    <p>
+                        La autorización se hace en la propia página de Integra. Tu contraseña nunca pasa por esta aplicación; solo recibimos un token de acceso de un solo uso.
+                    </p>
+                </div>
+                <Button onClick={connect} disabled={redirecting} className="gap-2">
+                    {redirecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function StepStatus({ integration, onUpdated, onNext, showToast }) {
+    const [checking, setChecking] = useState(false);
+
+    async function verify() {
+        setChecking(true);
+        try {
+            const { data } = await axios.get(`/api/integrations/${integration.key}/status`);
+            onUpdated(data);
+            showToast(data.connected ? 'Conexión verificada.' : (data.last_error ?? 'La conexión no está activa.'), data.connected ? 'success' : 'error');
+        } catch (err) {
+            showToast(err?.response?.data?.message ?? 'No se pudo verificar.', 'error');
+        } finally {
+            setChecking(false);
+        }
+    }
+
+    async function disconnect() {
+        if (!confirm('¿Desconectar la integración? Tendrás que volver a conectar para usarla.')) return;
+        try {
+            const { data } = await axios.post(`/api/integrations/${integration.key}/disconnect`);
+            onUpdated(data);
+            showToast('Integración desconectada.');
+        } catch (err) {
+            showToast(err?.response?.data?.message ?? 'No se pudo desconectar.', 'error');
+        }
+    }
+
+    const ok = integration.connected;
+    const acc = integration.account ?? {};
+
+    return (
+        <div className="rounded-xl border bg-card p-5 space-y-5">
+            <div className={`flex items-start gap-3 rounded-xl p-4 ${ok ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-rose-500/10 border border-rose-500/30'}`}>
+                {ok ? <CheckCircle2 className="size-6 text-emerald-600 dark:text-emerald-400 shrink-0" /> : <XCircle className="size-6 text-rose-600 dark:text-rose-400 shrink-0" />}
+                <div className="min-w-0">
+                    <p className={`font-semibold ${ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                        {ok ? 'Conectado a Integra' : 'Sin conexión'}
+                    </p>
+                    {ok ? (
+                        <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                            {(acc.name || acc.email) && <p>Usuario: <span className="font-medium text-foreground">{acc.name ?? acc.email}</span></p>}
+                            {acc.company && <p>Empresa: <span className="font-medium text-foreground">{acc.company}</span></p>}
+                            {integration.base_url && <p className="font-mono">{integration.base_url}</p>}
+                            {integration.token_expired && <p className="text-amber-600 dark:text-amber-400">El token expiró, vuelve a conectar.</p>}
+                        </div>
+                    ) : (
+                        <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conéctate en el paso 1.'}</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+                <Button onClick={verify} disabled={checking} variant="outline" className="gap-2">
+                    {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Verificar conexión
+                </Button>
+                {ok && (
+                    <Button onClick={onNext} className="gap-2">Continuar <ArrowRight className="size-4" /></Button>
+                )}
+                {integration.status !== 'disconnected' && (
+                    <Button onClick={disconnect} variant="outline" className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/10">
+                        <Power className="size-4" /> Desconectar
+                    </Button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function StepActivate({ integration, onUpdated, showToast }) {
+    const [form, setForm] = useState({
+        enabled: integration.enabled ?? false,
+        trigger_type: integration.trigger_type ?? 'slash',
+        trigger_command: integration.trigger_command ?? 'pagos',
+    });
+    const [errors, setErrors] = useState({});
+    const [saving, setSaving] = useState(false);
+
+    const prefix = form.trigger_type === 'at' ? '@' : '/';
+
+    async function submit(e) {
+        e.preventDefault();
+        setErrors({});
+        setSaving(true);
+        try {
+            const { data } = await axios.post(`/api/integrations/${integration.key}/activate`, form);
+            onUpdated(data);
+            showToast(data.enabled ? 'Integración activada en el chat.' : 'Integración desactivada.');
+        } catch (err) {
+            if (err?.response?.status === 422 && err.response.data?.errors) {
+                setErrors(err.response.data.errors);
+            } else {
+                showToast(err?.response?.data?.message ?? 'No se pudo guardar.', 'error');
+            }
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="rounded-xl border bg-card p-5">
+            <form onSubmit={submit} className="space-y-6">
+                <label className="flex items-center gap-3 rounded-xl border border-border/60 p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                    <input
+                        type="checkbox"
+                        checked={form.enabled}
+                        onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))}
+                        className="size-4 rounded border-input accent-primary"
+                    />
+                    <div>
+                        <p className="text-sm font-medium text-foreground">Habilitar en el chat</p>
+                        <p className="text-xs text-muted-foreground">Permite a los agentes registrar pagos desde una conversación.</p>
+                    </div>
+                </label>
+
+                <div>
+                    <p className="text-sm font-medium text-foreground mb-2">¿Cómo se llama la integración en el chat?</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        {[
+                            { value: 'slash', symbol: '/', label: 'Comando', desc: 'Estilo /comando' },
+                            { value: 'at',    symbol: '@', label: 'Mención',  desc: 'Estilo @mención' },
+                        ].map(opt => {
+                            const isActive = form.trigger_type === opt.value;
+                            return (
+                                <button
+                                    type="button"
+                                    key={opt.value}
+                                    onClick={() => setForm(f => ({ ...f, trigger_type: opt.value }))}
+                                    className={`flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
+                                        isActive ? 'border-teal-500 bg-teal-500/5' : 'border-border/60 hover:border-border'
+                                    }`}
+                                >
+                                    <span className={`flex items-center justify-center size-9 rounded-lg font-mono text-lg font-bold ${
+                                        isActive ? 'bg-teal-500 text-white' : 'bg-muted text-muted-foreground'
+                                    }`}>{opt.symbol}</span>
+                                    <div>
+                                        <p className={`text-sm font-semibold ${isActive ? 'text-teal-600 dark:text-teal-400' : 'text-foreground'}`}>{opt.label}</p>
+                                        <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <WField label="Palabra del disparador" icon={CreditCard} error={errors.trigger_command?.[0]}>
+                    <div className="flex items-center gap-2">
+                        <span className="font-mono text-lg font-bold text-muted-foreground">{prefix}</span>
+                        <input
+                            className={wInput}
+                            value={form.trigger_command}
+                            onChange={e => setForm(f => ({ ...f, trigger_command: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '') }))}
+                            placeholder="pagos"
+                        />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                        Los agentes escribirán <code className="font-mono font-semibold text-teal-600 dark:text-teal-400">{prefix}{form.trigger_command || 'pagos'}</code> en el chat para abrir el formulario de pago.
+                    </p>
+                </WField>
+
+                <Button type="submit" disabled={saving} className="gap-2">
+                    {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Guardar
+                </Button>
+            </form>
         </div>
     );
 }
