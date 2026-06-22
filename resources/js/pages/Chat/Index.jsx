@@ -34,6 +34,7 @@ import {
     Pencil as PencilIcon,
     PenSquare,
     FileText,
+    RotateCcw,
     AtSign,
     Wallet,
     CreditCard,
@@ -150,7 +151,15 @@ const ConversationItem = memo(({
             <div className="flex-1 min-w-0 border-b border-border/5 pb-0.5">
                 <div className="flex items-center justify-between gap-2 mb-0.5">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <p className="text-sm font-bold text-foreground truncate">
+                        {conv.status === 'closed' && (
+                            <span title="Conversación cerrada" className="shrink-0 text-slate-400 dark:text-slate-500">
+                                <CheckCircle2 className="size-3.5" />
+                            </span>
+                        )}
+                        <p className={clsx(
+                            "text-sm font-bold truncate",
+                            conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
+                        )}>
                             {conv.name || conv.phone_number}
                         </p>
                         {conv.assigned_agent && (
@@ -900,6 +909,37 @@ export default function ChatIndex({ instances, integrations = [] }) {
             console.error('Error asignando conversación:', err);
         }
     }, []);
+
+    // Cierra o reabre una conversación.
+    const setConversationStatus = useCallback(async (convId, action) => {
+        try {
+            const res = await axios.post(`/api/chat/conversations/${convId}/${action}`);
+            if (res.data.success) {
+                const status = res.data.status || (action === 'close' ? 'closed' : 'open');
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, status } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, status } : prev));
+                loadFolderCounts();
+            }
+        } catch (err) {
+            console.error('Error cambiando estado de la conversación:', err);
+        }
+    }, [loadFolderCounts]);
+
+    // Elimina por completo una conversación (acción destructiva).
+    const deleteConversation = useCallback(async (convId) => {
+        try {
+            const res = await axios.delete(`/api/chat/conversations/${convId}`);
+            if (res.data.success) {
+                setConversations(prev => prev.filter(c => c.id !== convId));
+                setSelectedConversation(prev => (prev?.id === convId ? null : prev));
+                setMessages(prev => (selectedConversation?.id === convId ? [] : prev));
+                loadFolderCounts();
+            }
+        } catch (err) {
+            console.error('Error eliminando conversación:', err);
+            alert('No se pudo eliminar la conversación.');
+        }
+    }, [loadFolderCounts, selectedConversation]);
 
     const attachTag = useCallback(async (convId, tagId) => {
         try {
@@ -1954,6 +1994,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             @{selectedConversation.assigned_agent.name}
                                                         </span>
                                                     )}
+                                                    {selectedConversation.status === 'closed' && (
+                                                        <span className="text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">
+                                                            Cerrada
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -2020,8 +2065,74 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </DropdownMenu>
                                             )}
 
+                                            {/* Cerrar / Reabrir conversación */}
+                                            {selectedConversation.status === 'closed' ? (
+                                                <button
+                                                    onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
+                                                    title="Reabrir conversación"
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 text-[11px] font-black uppercase bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                                                >
+                                                    <RotateCcw className="size-3.5" />
+                                                    <span className="hidden sm:inline">Reabrir</span>
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
+                                                            setConversationStatus(selectedConversation.id, 'close');
+                                                        }
+                                                    }}
+                                                    title="Cerrar conversación"
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/10 text-[11px] font-black uppercase bg-white dark:bg-black/20 text-muted-foreground hover:text-emerald-600 hover:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors"
+                                                >
+                                                    <CheckCircle2 className="size-3.5" />
+                                                    <span className="hidden sm:inline">Cerrar</span>
+                                                </button>
+                                            )}
+
                                             <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><Search className="size-5" /></button>
-                                            <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><MoreVertical className="size-5" /></button>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><MoreVertical className="size-5" /></button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
+                                                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones</DropdownMenuLabel>
+                                                    <DropdownMenuSeparator className="bg-border/5" />
+                                                    {selectedConversation.status === 'closed' ? (
+                                                        <DropdownMenuItem
+                                                            onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
+                                                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                        >
+                                                            <RotateCcw className="size-4 text-amber-600" />
+                                                            <span className="text-xs font-bold">Reabrir conversación</span>
+                                                        </DropdownMenuItem>
+                                                    ) : (
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
+                                                                    setConversationStatus(selectedConversation.id, 'close');
+                                                                }
+                                                            }}
+                                                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                        >
+                                                            <CheckCircle2 className="size-4 text-emerald-600" />
+                                                            <span className="text-xs font-bold">Cerrar conversación</span>
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    <DropdownMenuSeparator className="bg-border/5" />
+                                                    <DropdownMenuItem
+                                                        onClick={() => {
+                                                            if (window.confirm('¿Eliminar esta conversación y TODOS sus mensajes? Esta acción es irreversible.')) {
+                                                                deleteConversation(selectedConversation.id);
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-rose-600 focus:text-rose-600"
+                                                    >
+                                                        <Trash2 className="size-4" />
+                                                        <span className="text-xs font-bold">Eliminar conversación</span>
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </div>
                                     </div>
 

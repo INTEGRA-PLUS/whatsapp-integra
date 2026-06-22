@@ -309,6 +309,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
+        Route::post('/conversations/{conversationId}/reopen', [ChatController::class, 'reopen']);
+        Route::delete('/conversations/{conversationId}', [ChatController::class, 'destroy']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);
     });

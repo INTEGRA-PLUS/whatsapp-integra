@@ -737,7 +737,65 @@ class ChatController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Conversación cerrada'
+            'message' => 'Conversación cerrada',
+            'status'  => 'closed',
+        ]);
+    }
+
+    /**
+     * Elimina por completo una conversación y sus mensajes (cascade) de la
+     * empresa del usuario. Acción destructiva e irreversible.
+     */
+    public function destroy($conversationId)
+    {
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.deleted',
+            WebhookDispatcher::conversationPayload($conversation, ['deleted_by' => $user->id])
+        );
+
+        // Quita relaciones de etiquetas; los mensajes caen por FK onDelete cascade.
+        $conversation->tags()->detach();
+        $conversation->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Conversación eliminada',
+        ]);
+    }
+
+    public function reopen($conversationId)
+    {
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $conversation->update(['status' => 'open']);
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.reopened',
+            WebhookDispatcher::conversationPayload($conversation, ['reopened_by' => $user->id])
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Conversación reabierta',
+            'status'  => 'open',
         ]);
     }
 
