@@ -515,10 +515,15 @@ class ChatController extends Controller
             ], 400);
         }
 
+        // El cliente ve quién le escribe: anteponemos el nombre del agente en
+        // negrita. En el CRM se guarda el texto limpio (la etiqueta del agente
+        // se muestra aparte, sin duplicar).
+        $outgoing = '*' . $user->name . ':*' . "\n" . $request->message;
+
         $result = $this->metaService->sendMessage(
             $instance->phone_number_id,
             $conversation->phone_number,
-            $request->message
+            $outgoing
         );
 
         if ($result['success']) {
@@ -743,6 +748,55 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Conversación cerrada',
             'status'  => 'closed',
+        ]);
+    }
+
+    /**
+     * Cierra en lote: o las conversaciones indicadas por `ids`, o TODAS las
+     * abiertas (`scope=all`), opcionalmente acotadas a una instancia.
+     */
+    public function closeBulk(Request $request)
+    {
+        $user = auth()->user();
+
+        $validated = $request->validate([
+            'ids'         => 'nullable|array',
+            'ids.*'       => 'integer',
+            'scope'       => 'nullable|in:all',
+            'instance_id' => 'nullable|integer',
+        ]);
+
+        $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
+
+        $query = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->where('status', '!=', 'closed');
+
+        if (!empty($validated['ids'])) {
+            $query->whereIn('id', $validated['ids']);
+        } elseif (($validated['scope'] ?? null) === 'all') {
+            if (!empty($validated['instance_id'])) {
+                $query->where('instance_id', $validated['instance_id']);
+            }
+        } else {
+            return response()->json(['success' => false, 'error' => 'No se indicó qué cerrar'], 422);
+        }
+
+        $ids = $query->pluck('id');
+
+        if ($ids->isNotEmpty()) {
+            WhatsAppConversation::whereIn('id', $ids)->update(['status' => 'closed']);
+
+            WebhookDispatcher::emit(
+                $user->company_id,
+                'conversations.bulk_closed',
+                ['closed_by' => $user->id, 'ids' => $ids->all(), 'count' => $ids->count()]
+            );
+        }
+
+        return response()->json([
+            'success'      => true,
+            'closed_count' => $ids->count(),
+            'ids'          => $ids->values(),
         ]);
     }
 

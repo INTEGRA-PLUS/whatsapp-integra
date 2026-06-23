@@ -49,7 +49,10 @@
       "Bash(git stash *)",
       "Bash(git merge *)",
       "Bash(git -C .claude/worktrees/agent-a5bc3f27300047548 status --short)",
-      "Bash(awk 'NR>=120 && NR<=310 && /^}\\\\\\)\\\\;/ {print NR\": \"$0}' resources/js/pages/Chat/Index.jsx)"
+      "Bash(awk 'NR>=120 && NR<=310 && /^}\\\\\\)\\\\;/ {print NR\": \"$0}' resources/js/pages/Chat/Index.jsx)",
+      "Bash(sed -n '/function formatFriendlyDate/,/^    }/p' resources/js/pages/Chat/Index.jsx)",
+      "Bash(sed -n '/formatFriendlyDate =/,/};/p' resources/js/pages/Chat/Index.jsx)",
+      "Bash(awk '/public function sendImage\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)"
     ]
   }
 }

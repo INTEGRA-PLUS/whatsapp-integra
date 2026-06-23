@@ -305,6 +305,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/conversations', [ChatController::class, 'conversations']);
         Route::get('/folders', [ChatController::class, 'folders']);
         Route::post('/conversations/start', [ChatController::class, 'startConversation']);
+        Route::post('/conversations/close-bulk', [ChatController::class, 'closeBulk'])->middleware('permission:chat.update');
         Route::get('/templates', [ChatController::class, 'templates']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/updates', [ChatController::class, 'updates']);

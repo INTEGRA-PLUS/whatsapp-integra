@@ -41,6 +41,7 @@ import {
     CreditCard,
     Loader2,
     CheckCircle2,
+    CheckSquare,
     AlertTriangle,
     DollarSign
 } from 'lucide-react';
@@ -148,19 +149,30 @@ const ConversationItem = memo(({
     onDetachTag, 
     onNewTag, 
     onAssign,
-    tags, 
+    tags,
     companyUsers,
     isAdmin,
-    formatTime
+    formatTime,
+    selectionMode,
+    selected,
+    onToggleSelect,
 }) => {
     return (
         <div
-            onClick={() => onSelect(conv)}
+            onClick={() => selectionMode ? onToggleSelect(conv.id) : onSelect(conv)}
             className={clsx(
                 "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-b border-border/5 group/conv",
-                isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
+                selected ? 'bg-teal-50 dark:bg-teal-950/30' : isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
             )}
         >
+            {selectionMode && (
+                <div className={clsx(
+                    "size-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors",
+                    selected ? "bg-teal-600 border-teal-600 text-white" : "border-muted-foreground/40"
+                )}>
+                    {selected && <Check className="size-3.5" />}
+                </div>
+            )}
             <div className="relative flex-shrink-0">
                 <div className="size-12 rounded-full bg-[#dfe5e7] dark:bg-[#4f5659] flex items-center justify-center text-white font-bold text-lg overflow-hidden uppercase">
                     {conv.initials}
@@ -355,6 +367,9 @@ const ConversationList = memo(function ConversationList({
     companyUsers,
     isAdmin,
     formatTime,
+    selectionMode,
+    selectedIds,
+    onToggleSelect,
 }) {
     return conversations.map(conv => (
         <div key={conv.id} style={LIST_ITEM_STYLE}>
@@ -371,6 +386,9 @@ const ConversationList = memo(function ConversationList({
                 isAdmin={isAdmin}
                 formatTime={formatTime}
                 StatusIcons={StatusIcons}
+                selectionMode={selectionMode}
+                selected={selectionMode && selectedIds.has(conv.id)}
+                onToggleSelect={onToggleSelect}
             />
         </div>
     ));
@@ -591,6 +609,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
     const [showLinkContact, setShowLinkContact] = useState(false);
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(() => new Set());
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
     const [lastUpdate, setLastUpdate] = useState('Nunca');
     const [isPolling, setIsPolling] = useState(false);
@@ -1277,6 +1297,54 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         return openItems;
     }, [baseConversations, assignmentTab, auth.user.id]);
+
+    // ── Selección múltiple / cierre en lote ──────────────────────────────────
+    const toggleSelect = useCallback((id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    }, []);
+
+    const exitSelection = useCallback(() => {
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+    }, []);
+
+    const selectAllVisible = useCallback(() => {
+        setSelectedIds(new Set(filteredConversations.map(c => c.id)));
+    }, [filteredConversations]);
+
+    const runCloseBulk = useCallback(async (payload) => {
+        try {
+            const res = await axios.post('/api/chat/conversations/close-bulk', payload);
+            if (res.data.success) {
+                const closed = new Set(res.data.ids);
+                setConversations(prev => prev.map(c => closed.has(c.id) ? { ...c, status: 'closed' } : c));
+                setSelectedConversation(prev => (prev && closed.has(prev.id) ? { ...prev, status: 'closed' } : prev));
+                loadFolderCounts();
+                exitSelection();
+                return res.data.closed_count;
+            }
+        } catch (err) {
+            console.error('Error cerrando en lote:', err);
+            alert(err?.response?.data?.error || 'No se pudieron cerrar los chats.');
+        }
+        return 0;
+    }, [exitSelection, loadFolderCounts]);
+
+    const closeSelected = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        if (!window.confirm(`¿Cerrar ${selectedIds.size} conversación(es) seleccionada(s)?`)) return;
+        await runCloseBulk({ ids: Array.from(selectedIds) });
+    }, [selectedIds, runCloseBulk]);
+
+    const closeAllOpen = useCallback(async () => {
+        if (!window.confirm('¿Cerrar TODAS las conversaciones abiertas de esta instancia? Podrás reabrirlas luego.')) return;
+        const n = await runCloseBulk({ scope: 'all', instance_id: selectedInstanceId });
+        if (n === 0) alert('No había conversaciones abiertas para cerrar.');
+    }, [runCloseBulk, selectedInstanceId]);
 
     const scrollToBottom = useCallback(() => {
         const el = messagesContainerRef.current;
@@ -2114,6 +2182,48 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 </div>
                             </div>
 
+                            {/* Barra de acciones masivas (cerrar varios / todos) */}
+                            {isAdmin && (
+                                <div className="px-3 py-1.5 flex items-center justify-between gap-2 border-b border-border/10 bg-[#f8f9fa] dark:bg-[#161f25]">
+                                    {!selectionMode ? (
+                                        <>
+                                            <button
+                                                onClick={() => setSelectionMode(true)}
+                                                className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors"
+                                            >
+                                                <CheckSquare className="size-3.5" /> Seleccionar
+                                            </button>
+                                            {assignmentTab !== 'closed' && (
+                                                <button
+                                                    onClick={closeAllOpen}
+                                                    className="flex items-center gap-1.5 text-[11px] font-bold text-rose-600/80 hover:text-rose-600 transition-colors"
+                                                    title="Cerrar todas las conversaciones abiertas de esta instancia"
+                                                >
+                                                    <CheckCircle2 className="size-3.5" /> Cerrar todos
+                                                </button>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-3">
+                                                <button onClick={selectAllVisible} className="text-[11px] font-bold text-teal-600 hover:underline">Todos</button>
+                                                <span className="text-[11px] font-semibold text-muted-foreground">{selectedIds.size} sel.</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={exitSelection} className="text-[11px] font-bold text-muted-foreground hover:text-foreground">Cancelar</button>
+                                                <button
+                                                    onClick={closeSelected}
+                                                    disabled={selectedIds.size === 0}
+                                                    className="flex items-center gap-1 text-[11px] font-black text-white bg-teal-600 px-2.5 py-1 rounded-md hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                                >
+                                                    <CheckCircle2 className="size-3.5" /> Cerrar ({selectedIds.size})
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
                                 <ConversationList
                                     conversations={filteredConversations}
@@ -2127,6 +2237,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     companyUsers={companyUsers}
                                     isAdmin={isAdmin}
                                     formatTime={formatTime}
+                                    selectionMode={selectionMode}
+                                    selectedIds={selectedIds}
+                                    onToggleSelect={toggleSelect}
                                 />
 
                                 {/* Sentinel for Infinite Scroll */}
@@ -2425,7 +2538,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             return (
                                                 <Fragment key={msg.id}>
                                                     {showDateSeparator && (
-                                                        <div className="flex justify-center my-4 sticky top-2 z-30">
+                                                        <div className="flex justify-center my-4">
                                                             <div className="bg-white/80 dark:bg-[#202c33]/80 backdrop-blur-sm px-3 py-1.5 rounded-lg text-[10.5px] font-bold text-muted-foreground/80 dark:text-white/40 shadow-sm uppercase tracking-widest pointer-events-none">
                                                                 {formatFriendlyDate(msg.created_at)}
                                                             </div>
