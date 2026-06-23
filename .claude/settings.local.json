@@ -52,7 +52,10 @@
       "Bash(awk 'NR>=120 && NR<=310 && /^}\\\\\\)\\\\;/ {print NR\": \"$0}' resources/js/pages/Chat/Index.jsx)",
       "Bash(sed -n '/function formatFriendlyDate/,/^    }/p' resources/js/pages/Chat/Index.jsx)",
       "Bash(sed -n '/formatFriendlyDate =/,/};/p' resources/js/pages/Chat/Index.jsx)",
-      "Bash(awk '/public function sendImage\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)"
+      "Bash(awk '/public function sendImage\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)",
+      "Bash(awk '/public function sendAudio\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)",
+      "Bash(ffmpeg -version)",
+      "Bash(awk '/function sendAudio/,/^    \\\\}/' app/Services/MetaWhatsAppService.php)"
     ]
   }
 }

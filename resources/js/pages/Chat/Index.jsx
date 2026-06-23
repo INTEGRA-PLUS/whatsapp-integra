@@ -646,6 +646,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // Recording States
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
+    const [recordedAudio, setRecordedAudio] = useState(null); // { blob, url, type } — preview antes de enviar
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
     const recordingIntervalRef = useRef(null);
@@ -1635,10 +1636,27 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }
 
+    // Elige el mejor formato que el navegador pueda grabar. WhatsApp prefiere
+    // OGG/Opus (Firefox lo graba nativo); Chrome solo graba WebM/Opus (el
+    // backend lo transcodifica a OGG con ffmpeg).
+    function pickAudioMime() {
+        const candidates = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'];
+        if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+        return candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
+    }
+
+    function extForType(type = '') {
+        if (type.includes('ogg')) return 'ogg';
+        if (type.includes('mp4')) return 'm4a';
+        if (type.includes('mpeg')) return 'mp3';
+        return 'webm';
+    }
+
     async function startRecording() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream);
+            const mimeType = pickAudioMime();
+            const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
 
@@ -1648,12 +1666,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 }
             };
 
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/ogg; codecs=opus' });
-                if (audioChunksRef.current.length > 0) {
-                    await sendAudioMessage(audioBlob);
-                }
+            mediaRecorder.onstop = () => {
                 stream.getTracks().forEach(track => track.stop());
+                clearInterval(recordingIntervalRef.current);
+                if (audioChunksRef.current.length === 0) return; // grabación cancelada
+                const type = mediaRecorder.mimeType || mimeType || 'audio/webm';
+                const blob = new Blob(audioChunksRef.current, { type });
+                // En vez de enviar, mostramos la preview para escuchar antes.
+                setRecordedAudio({ blob, url: URL.createObjectURL(blob), type });
             };
 
             mediaRecorder.start();
@@ -1685,9 +1705,22 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }
 
-    async function sendAudioMessage(blob) {
+    function discardRecordedAudio() {
+        if (recordedAudio?.url) URL.revokeObjectURL(recordedAudio.url);
+        setRecordedAudio(null);
+    }
+
+    async function sendRecordedAudio() {
+        if (!recordedAudio) return;
+        const { blob, url, type } = recordedAudio;
+        setRecordedAudio(null);
+        await sendAudioMessage(blob, type);
+        if (url) URL.revokeObjectURL(url);
+    }
+
+    async function sendAudioMessage(blob, type = '') {
         const formData = new FormData();
-        formData.append('audio', blob, 'recording.ogg');
+        formData.append('audio', blob, `recording.${extForType(type)}`);
         setSending(true);
         try {
             const res = await axios.post(
@@ -1696,9 +1729,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
             );
             if (res.data.success) {
                 setMessages(prev => [...prev, res.data.data]);
+            } else {
+                alert(res.data.error || 'No se pudo enviar el audio.');
             }
         } catch (err) {
             console.error('Error enviando audio:', err);
+            alert(err?.response?.data?.error || err?.response?.data?.errors?.audio?.[0] || 'No se pudo enviar el audio.');
         } finally {
             setSending(false);
         }
@@ -2689,7 +2725,27 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             ? "bg-amber-50 dark:bg-amber-900/20"
                                             : "bg-[#f0f2f5] dark:bg-[#202c33]"
                                     )}>
-                                        {!isRecording ? (
+                                        {recordedAudio ? (
+                                            <div className="flex-1 flex items-center gap-2 bg-white dark:bg-[#2a3942] rounded-lg px-3 py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                                <button
+                                                    onClick={discardRecordedAudio}
+                                                    disabled={sending}
+                                                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors shrink-0 disabled:opacity-40"
+                                                    title="Descartar grabación"
+                                                >
+                                                    <Trash2 className="size-5" />
+                                                </button>
+                                                <audio controls src={recordedAudio.url} className="flex-1 h-9 min-w-0" />
+                                                <button
+                                                    onClick={sendRecordedAudio}
+                                                    disabled={sending}
+                                                    className="p-2 bg-teal-600 text-white rounded-full hover:bg-teal-700 transition-colors shadow-sm shrink-0 disabled:opacity-50"
+                                                    title="Enviar audio"
+                                                >
+                                                    <Send className={`size-5 ${sending ? 'animate-pulse' : ''}`} />
+                                                </button>
+                                            </div>
+                                        ) : !isRecording ? (
                                             <>
                                                 <div className="flex items-center pb-0.5">
                                                     {composerMode === 'reply' ? (

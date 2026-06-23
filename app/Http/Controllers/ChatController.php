@@ -653,7 +653,9 @@ class ChatController extends Controller
     public function sendAudio(Request $request, $conversationId)
     {
         $validator = Validator::make($request->all(), [
-            'audio' => 'required|file|mimes:ogg,m4a,mp3,wav,aac|max:16384',
+            // El navegador puede grabar webm (Chrome) u ogg (Firefox); aceptamos
+            // ambos y los formatos que admite WhatsApp.
+            'audio' => 'required|file|mimes:ogg,oga,webm,m4a,mp4,mp3,wav,aac|max:16384',
         ]);
 
         if ($validator->fails()) {
@@ -671,8 +673,7 @@ class ChatController extends Controller
 
         $instance = $conversation->instance;
 
-        $path = $request->file('audio')->storePublicly('whatsapp/media', 's3_media');
-        $audioUrl = Storage::disk('s3_media')->url($path);
+        $audioUrl = $this->storeAudioForMeta($request->file('audio'));
 
         $result = $this->metaService->sendAudio(
             $instance->phone_number_id,
@@ -990,6 +991,49 @@ class ChatController extends Controller
      * @param mixed $input
      * @return mixed
      */
+    /**
+     * Guarda el audio para enviarlo a WhatsApp. WhatsApp solo acepta OGG/Opus
+     * (entre otros), así que si el navegador grabó otra cosa (p. ej. WebM de
+     * Chrome) y hay ffmpeg disponible, lo transcodificamos a OGG. Si no hay
+     * ffmpeg, se sube tal cual (Firefox ya graba OGG nativo).
+     */
+    private function storeAudioForMeta($file): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'webm');
+
+        if ($ext !== 'ogg' && ($ffmpeg = $this->ffmpegPath())) {
+            $src = $file->getRealPath();
+            $out = tempnam(sys_get_temp_dir(), 'wa_aud_') . '.ogg';
+            $cmd = escapeshellarg($ffmpeg) . ' -y -i ' . escapeshellarg($src)
+                . ' -vn -c:a libopus -b:a 32k -ar 48000 ' . escapeshellarg($out) . ' 2>/dev/null';
+            @exec($cmd, $output, $code);
+
+            if ($code === 0 && is_file($out) && filesize($out) > 0) {
+                $path = 'whatsapp/media/' . uniqid('aud_') . '.ogg';
+                Storage::disk('s3_media')->put($path, file_get_contents($out), 'public');
+                @unlink($out);
+                return Storage::disk('s3_media')->url($path);
+            }
+
+            if (is_file($out)) {
+                @unlink($out);
+            }
+        }
+
+        $path = $file->storePublicly('whatsapp/media', 's3_media');
+        return Storage::disk('s3_media')->url($path);
+    }
+
+    /** Ruta a ffmpeg si está instalado y exec disponible; null en caso contrario. */
+    private function ffmpegPath(): ?string
+    {
+        if (!function_exists('shell_exec') || !function_exists('exec')) {
+            return null;
+        }
+        $path = trim((string) @shell_exec('command -v ffmpeg 2>/dev/null'));
+        return $path !== '' ? $path : null;
+    }
+
     private function sanitizeUtf8($input)
     {
         if (is_string($input)) {

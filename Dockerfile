@@ -75,6 +75,9 @@ RUN apk add --no-cache \
         curl \
         tini \
         tzdata \
+        # ffmpeg: transcodifica las notas de voz del navegador (WebM/Opus en
+        # Chrome) a OGG/Opus, el formato que acepta la API de WhatsApp.
+        ffmpeg \
         icu-data-full \
         ca-certificates \
         fcgi \
