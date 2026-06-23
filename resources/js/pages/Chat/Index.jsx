@@ -577,6 +577,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [mentionIndex, setMentionIndex] = useState(0);
 
     const messagesContainerRef = useRef(null);
+    // Cuando abrimos una conversación, forzamos el scroll al último mensaje en el
+    // render en que llegan los mensajes (independiente de dónde esté el scroll).
+    const forceScrollRef = useRef(false);
+    // Si el usuario está pegado al fondo (para seguir mensajes/medios nuevos sin
+    // arrancarlo cuando lee el historial más arriba).
+    const atBottomRef = useRef(true);
     const pollingIntervalRef = useRef(null);
     const messageInputRef = useRef(null);
     const tempMsgCounter = useRef(0);
@@ -639,6 +645,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     // Inserta/abre una conversación ya cargada (con sus mensajes) en la vista.
     const openConversationLocal = useCallback((conv, msgs) => {
+        forceScrollRef.current = true;
         setSelectedConversation(conv);
         setMessages(msgs || []);
         setLastUpdateTimestamp(new Date().toISOString());
@@ -1093,6 +1100,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setSelectedConversation(conv);
         try {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
+            forceScrollRef.current = true;
             setMessages(res.data.messages);
             setLastUpdateTimestamp(res.data.timestamp);
             setConversations(prev =>
@@ -1107,6 +1115,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         try {
             const res = await axios.get(`/api/chat/conversations/${id}/messages`);
             if (res.data.conversation) {
+                forceScrollRef.current = true;
                 setSelectedConversation(res.data.conversation);
                 setMessages(res.data.messages);
                 setLastUpdateTimestamp(res.data.timestamp);
@@ -1174,21 +1183,30 @@ export default function ChatIndex({ instances, integrations = [] }) {
         );
     }, [conversations, searchQuery, filterMyAssignments, selectedTagIds, selectedAgentId, auth.user.id]);
 
-    // Contadores de cada pestaña sobre la base ya filtrada.
-    const tabCounts = useMemo(() => ({
-        all: baseConversations.length,
-        mine: baseConversations.filter(c => Number(c.assigned_to) === Number(auth.user.id)).length,
-        unassigned: baseConversations.filter(c => !c.assigned_to).length,
-    }), [baseConversations, auth.user.id]);
+    // Contadores de cada pestaña sobre la base ya filtrada. Las conversaciones
+    // cerradas se excluyen de Mías/Sin asignar/Todos y solo viven en "Cerrados".
+    const tabCounts = useMemo(() => {
+        const openItems = baseConversations.filter(c => c.status !== 'closed');
+        return {
+            all: openItems.length,
+            mine: openItems.filter(c => Number(c.assigned_to) === Number(auth.user.id)).length,
+            unassigned: openItems.filter(c => !c.assigned_to).length,
+            closed: baseConversations.filter(c => c.status === 'closed').length,
+        };
+    }, [baseConversations, auth.user.id]);
 
     const filteredConversations = useMemo(() => {
+        if (assignmentTab === 'closed') {
+            return baseConversations.filter(c => c.status === 'closed');
+        }
+        const openItems = baseConversations.filter(c => c.status !== 'closed');
         if (assignmentTab === 'mine') {
-            return baseConversations.filter(c => Number(c.assigned_to) === Number(auth.user.id));
+            return openItems.filter(c => Number(c.assigned_to) === Number(auth.user.id));
         }
         if (assignmentTab === 'unassigned') {
-            return baseConversations.filter(c => !c.assigned_to);
+            return openItems.filter(c => !c.assigned_to);
         }
-        return baseConversations;
+        return openItems;
     }, [baseConversations, assignmentTab, auth.user.id]);
 
     const scrollToBottom = useCallback(() => {
@@ -1196,9 +1214,34 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (el) el.scrollTop = el.scrollHeight;
     }, []);
 
-    // Keep the conversation pinned to the latest message as the list grows.
+    // Registra si el scroll está cerca del fondo cada vez que el usuario se mueve.
+    const handleMessagesScroll = useCallback(() => {
+        const el = messagesContainerRef.current;
+        if (!el) return;
+        atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    }, []);
+
+    // Cuando una imagen termina de cargar crece el contenido; si seguíamos
+    // pegados al fondo, re-anclamos al último mensaje.
+    const handleMediaLoad = useCallback(() => {
+        if (forceScrollRef.current || atBottomRef.current) scrollToBottom();
+    }, [scrollToBottom]);
+
+    // Al abrir una conversación cae al último mensaje (varios intentos para
+    // contemplar plantillas/imágenes que maquetan tarde). Con mensajes nuevos
+    // solo baja si el usuario ya estaba cerca del fondo (no lo arranca de la
+    // lectura del historial).
     useEffect(() => {
-        scrollToBottom();
+        const el = messagesContainerRef.current;
+        if (!el) return;
+        if (forceScrollRef.current) {
+            forceScrollRef.current = false;
+            scrollToBottom();
+            requestAnimationFrame(scrollToBottom);
+            const t = setTimeout(scrollToBottom, 80);
+            return () => clearTimeout(t);
+        }
+        if (atBottomRef.current) scrollToBottom();
     }, [messages, scrollToBottom]);
 
     useEffect(() => {
@@ -1971,6 +2014,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         { key: 'mine', label: 'Mías', count: tabCounts.mine },
                                         { key: 'unassigned', label: 'Sin asignar', count: tabCounts.unassigned },
                                         { key: 'all', label: 'Todos', count: tabCounts.all },
+                                        { key: 'closed', label: 'Cerrados', count: tabCounts.closed },
                                     ].map(tab => {
                                         const active = assignmentTab === tab.key;
                                         return (
@@ -2038,7 +2082,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 ? 'No tienes chats asignados'
                                                 : assignmentTab === 'unassigned'
                                                     ? 'No hay chats sin asignar'
-                                                    : 'No se encontraron chats'}
+                                                    : assignmentTab === 'closed'
+                                                        ? 'No hay chats cerrados'
+                                                        : 'No se encontraron chats'}
                                         </p>
                                     </div>
                                 )}
@@ -2166,6 +2212,66 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </DropdownMenu>
                                             )}
 
+                                            {/* Etiquetas de la conversación */}
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button
+                                                        title="Etiquetas"
+                                                        className={clsx(
+                                                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-black uppercase transition-colors",
+                                                            selectedConversation.tags?.length
+                                                                ? "bg-teal-600 text-white border-teal-600"
+                                                                : "bg-white dark:bg-black/20 text-muted-foreground border-border/10 hover:bg-black/5 dark:hover:bg-white/5"
+                                                        )}
+                                                    >
+                                                        <TagIcon className="size-3.5" />
+                                                        <span className="hidden sm:inline">
+                                                            {selectedConversation.tags?.length
+                                                                ? `${selectedConversation.tags.length} etiqueta${selectedConversation.tags.length > 1 ? 's' : ''}`
+                                                                : 'Etiquetas'}
+                                                        </span>
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar etiquetas</DropdownMenuLabel>
+                                                    <DropdownMenuSeparator className="bg-border/5" />
+                                                    <div className="max-h-60 overflow-y-auto px-1 py-1">
+                                                        {tags.length === 0 ? (
+                                                            <p className="px-3 py-3 text-xs text-muted-foreground text-center">No hay etiquetas aún.</p>
+                                                        ) : tags.map(tag => {
+                                                            const active = (selectedConversation.tags || []).some(t => Number(t.id) === Number(tag.id));
+                                                            return (
+                                                                <DropdownMenuItem
+                                                                    key={tag.id}
+                                                                    onSelect={(e) => {
+                                                                        e.preventDefault();
+                                                                        if (active) detachTag(selectedConversation.id, tag.id);
+                                                                        else attachTag(selectedConversation.id, tag.id);
+                                                                    }}
+                                                                    className="flex items-center gap-3 py-2 px-3 cursor-pointer"
+                                                                >
+                                                                    <span className="size-3 rounded-full shrink-0 ring-1 ring-black/5" style={{ backgroundColor: tag.color }} />
+                                                                    <span className="text-xs font-bold leading-none flex-1 truncate">{tag.name}</span>
+                                                                    {active && <Check className="size-4 text-teal-600 ml-auto shrink-0" />}
+                                                                </DropdownMenuItem>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <DropdownMenuSeparator className="bg-border/5" />
+                                                    <DropdownMenuItem
+                                                        onSelect={(e) => {
+                                                            e.preventDefault();
+                                                            setTaggingConversationId(selectedConversation.id);
+                                                            setIsCreatingTag(true);
+                                                        }}
+                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-teal-600"
+                                                    >
+                                                        <PlusCircle className="size-4" />
+                                                        <span className="text-xs font-bold">Crear etiqueta</span>
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+
                                             {/* Cerrar / Reabrir conversación */}
                                             {selectedConversation.status === 'closed' ? (
                                                 <button
@@ -2240,6 +2346,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {/* Messages Area */}
                                     <div
                                         ref={messagesContainerRef}
+                                        onScroll={handleMessagesScroll}
                                         className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-2 custom-scrollbar relative z-10 flex flex-col"
                                     >
                                         {messages.map((msg, i) => {
@@ -2303,10 +2410,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                         <div className="relative group overflow-hidden rounded-md bg-black/5 mb-2">
                                                                             <img
                                                                                 src={msg.media_url}
+                                                                                onLoad={handleMediaLoad}
                                                                                 className="max-h-[300px] w-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                                                                onClick={(e) => { 
+                                                                                onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    setSelectedImage(msg.media_url); 
+                                                                                    setSelectedImage(msg.media_url);
                                                                                 }}
                                                                                 alt="media"
                                                                             />
