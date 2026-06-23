@@ -55,7 +55,10 @@
       "Bash(awk '/public function sendImage\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)",
       "Bash(awk '/public function sendAudio\\\\\\(/,/^    \\\\}/' app/Http/Controllers/ChatController.php)",
       "Bash(ffmpeg -version)",
-      "Bash(awk '/function sendAudio/,/^    \\\\}/' app/Services/MetaWhatsAppService.php)"
+      "Bash(awk '/function sendAudio/,/^    \\\\}/' app/Services/MetaWhatsAppService.php)",
+      "Bash(brew install *)",
+      "Bash(ffmpeg -hide_banner -encoders)",
+      "Bash(command -v ffmpeg)"
     ]
   }
 }

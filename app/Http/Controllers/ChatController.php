@@ -1004,8 +1004,10 @@ class ChatController extends Controller
         if ($ext !== 'ogg' && ($ffmpeg = $this->ffmpegPath())) {
             $src = $file->getRealPath();
             $out = tempnam(sys_get_temp_dir(), 'wa_aud_') . '.ogg';
+            // OGG/Opus mono 48kHz: el formato de nota de voz que espera WhatsApp.
             $cmd = escapeshellarg($ffmpeg) . ' -y -i ' . escapeshellarg($src)
-                . ' -vn -c:a libopus -b:a 32k -ar 48000 ' . escapeshellarg($out) . ' 2>/dev/null';
+                . ' -vn -ac 1 -ar 48000 -c:a libopus -b:a 24k -application voip '
+                . escapeshellarg($out) . ' 2>/dev/null';
             @exec($cmd, $output, $code);
 
             if ($code === 0 && is_file($out) && filesize($out) > 0) {
@@ -1027,11 +1029,31 @@ class ChatController extends Controller
     /** Ruta a ffmpeg si está instalado y exec disponible; null en caso contrario. */
     private function ffmpegPath(): ?string
     {
-        if (!function_exists('shell_exec') || !function_exists('exec')) {
+        if (!function_exists('exec')) {
             return null;
         }
-        $path = trim((string) @shell_exec('command -v ffmpeg 2>/dev/null'));
-        return $path !== '' ? $path : null;
+
+        // Permite forzar la ruta por config/env (FFMPEG_PATH).
+        $configured = env('FFMPEG_PATH');
+        if ($configured && is_executable($configured)) {
+            return $configured;
+        }
+
+        if (function_exists('shell_exec')) {
+            $path = trim((string) @shell_exec('command -v ffmpeg 2>/dev/null'));
+            if ($path !== '' && is_executable($path)) {
+                return $path;
+            }
+        }
+
+        // Rutas comunes (por si el PATH del proceso PHP no las incluye).
+        foreach (['/usr/local/bin/ffmpeg', '/opt/homebrew/bin/ffmpeg', '/usr/bin/ffmpeg'] as $candidate) {
+            if (is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     private function sanitizeUtf8($input)

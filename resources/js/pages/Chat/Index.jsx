@@ -2323,61 +2323,60 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             ) : (
                                 <>
                                     {/* Chat Header */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-2 flex items-center justify-between z-10 shadow-sm">
-                                        <div className="flex items-center gap-3">
-                                            <div className="size-10 rounded-full bg-[#dfe5e7] dark:bg-[#4f5659] flex items-center justify-center text-white font-bold text-lg overflow-hidden uppercase">
+                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-2.5 flex items-center justify-between gap-3 z-10 shadow-sm">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="size-10 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm">
                                                 {selectedConversation.initials}
                                             </div>
                                             <div className="min-w-0">
-                                                <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.name}</h3>
                                                 <div className="flex items-center gap-2">
-                                                    <p className="text-[10px] text-muted-foreground leading-tight">{selectedConversation.phone_number}</p>
-                                                    {selectedConversation.assigned_agent && (
-                                                        <span className="text-[9px] bg-teal-600/10 text-teal-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">
-                                                            @{selectedConversation.assigned_agent.name}
-                                                        </span>
-                                                    )}
+                                                    <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.name}</h3>
                                                     {selectedConversation.status === 'closed' && (
-                                                        <span className="text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">
-                                                            Cerrada
-                                                        </span>
+                                                        <span className="shrink-0 text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
                                                     )}
+                                                </div>
+                                                <div className="flex items-center gap-2.5 mt-0.5 min-w-0">
+                                                    <span className="text-[11px] text-muted-foreground leading-tight shrink-0">{selectedConversation.phone_number}</span>
                                                     {selectedConversation.contact ? (
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
-                                                            title="Ver / cambiar contacto vinculado"
-                                                            className="inline-flex items-center gap-1 text-[9px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter hover:bg-indigo-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                                                            title="Contacto vinculado — clic para cambiar"
+                                                            className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline min-w-0 max-w-[150px]"
                                                         >
-                                                            <Contact className="size-2.5" /> {selectedConversation.contact.name}
+                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{selectedConversation.contact.name}</span>
                                                         </button>
                                                     ) : (
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
                                                             title="Vincular este número a un contacto"
-                                                            className="inline-flex items-center gap-1 text-[9px] border border-dashed border-indigo-400/40 text-indigo-500 dark:text-indigo-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter hover:bg-indigo-500/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0"
                                                         >
-                                                            <UserPlus className="size-2.5" /> Vincular contacto
+                                                            <UserPlus className="size-3" /> Vincular
                                                         </button>
+                                                    )}
+                                                    {selectedConversation.assigned_agent && (
+                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 min-w-0 max-w-[130px]">
+                                                            <span className="size-1.5 rounded-full bg-teal-500 shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
+                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1 shrink-0">
                                             {/* Admin Assignment Button */}
                                             {isAdmin && (
                                                 <DropdownMenu>
                                                     <DropdownMenuTrigger asChild>
-                                                        <button 
+                                                        <button
+                                                            title={selectedConversation.assigned_agent ? `Asignado a ${selectedConversation.assigned_agent.name}` : 'Asignar agente'}
                                                             className={clsx(
-                                                                "flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/10 text-[11px] font-black uppercase transition-all",
-                                                                selectedConversation.assigned_to ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-black/20 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                                "size-9 flex items-center justify-center rounded-lg transition-colors",
+                                                                selectedConversation.assigned_to
+                                                                    ? "text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20"
+                                                                    : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                             )}
-                                                            title="Asignar agente"
                                                         >
-                                                            <UserPlus className="size-3.5" />
-                                                            <span className="hidden sm:inline">
-                                                                {selectedConversation.assigned_agent?.name || 'Asignar'}
-                                                            </span>
+                                                            <UserPlus className="size-[18px]" />
                                                         </button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
@@ -2429,20 +2428,20 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button
-                                                        title="Etiquetas"
+                                                        title={selectedConversation.tags?.length ? `${selectedConversation.tags.length} etiqueta(s)` : 'Etiquetas'}
                                                         className={clsx(
-                                                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-black uppercase transition-colors",
+                                                            "relative size-9 flex items-center justify-center rounded-lg transition-colors",
                                                             selectedConversation.tags?.length
-                                                                ? "bg-teal-600 text-white border-teal-600"
-                                                                : "bg-white dark:bg-black/20 text-muted-foreground border-border/10 hover:bg-black/5 dark:hover:bg-white/5"
+                                                                ? "text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20"
+                                                                : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                         )}
                                                     >
-                                                        <TagIcon className="size-3.5" />
-                                                        <span className="hidden sm:inline">
-                                                            {selectedConversation.tags?.length
-                                                                ? `${selectedConversation.tags.length} etiqueta${selectedConversation.tags.length > 1 ? 's' : ''}`
-                                                                : 'Etiquetas'}
-                                                        </span>
+                                                        <TagIcon className="size-[18px]" />
+                                                        {selectedConversation.tags?.length > 0 && (
+                                                            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-teal-600 text-white text-[9px] font-black leading-none ring-2 ring-[#f0f2f5] dark:ring-[#202c33]">
+                                                                {selectedConversation.tags.length}
+                                                            </span>
+                                                        )}
                                                     </button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
@@ -2485,15 +2484,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
 
+                                            {/* Separador sutil entre indicadores y acciones */}
+                                            <span className="w-px h-5 bg-border/40 mx-0.5" />
+
                                             {/* Cerrar / Reabrir conversación */}
                                             {selectedConversation.status === 'closed' ? (
                                                 <button
                                                     onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
                                                     title="Reabrir conversación"
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/30 text-[11px] font-black uppercase bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                                                    className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
                                                 >
-                                                    <RotateCcw className="size-3.5" />
-                                                    <span className="hidden sm:inline">Reabrir</span>
+                                                    <RotateCcw className="size-4" />
+                                                    <span className="hidden md:inline">Reabrir</span>
                                                 </button>
                                             ) : (
                                                 <button
@@ -2503,17 +2505,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         }
                                                     }}
                                                     title="Cerrar conversación"
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/10 text-[11px] font-black uppercase bg-white dark:bg-black/20 text-muted-foreground hover:text-emerald-600 hover:border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors"
+                                                    className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
                                                 >
-                                                    <CheckCircle2 className="size-3.5" />
-                                                    <span className="hidden sm:inline">Cerrar</span>
+                                                    <CheckCircle2 className="size-4" />
+                                                    <span className="hidden md:inline">Cerrar</span>
                                                 </button>
                                             )}
 
-                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-5" /></button>
+                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-[18px]" /></button>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><MoreVertical className="size-5" /></button>
+                                                    <button title="Más opciones" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="size-[18px]" /></button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
                                                     <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones</DropdownMenuLabel>
