@@ -108,7 +108,7 @@ class ChatController extends Controller
             ->firstOrFail();
 
         $conversations = WhatsAppConversation::forInstance($instanceId)
-            ->with(['assignedAgent:id,name', 'tags'])
+            ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email'])
             ->when($request->search, function ($query, $search) {
                 $query->search($search);
             })

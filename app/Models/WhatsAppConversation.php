@@ -13,6 +13,7 @@ class WhatsAppConversation extends Model
 
     protected $fillable = [
         'instance_id',
+        'contact_id',
         'wa_id',
         'phone_number',
         'name',
@@ -46,6 +47,11 @@ class WhatsAppConversation extends Model
     public function assignedAgent()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function contact()
+    {
+        return $this->belongsTo(Contact::class, 'contact_id');
     }
 
     public function kanbanColumn()

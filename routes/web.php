@@ -234,6 +234,11 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:quick_replies.view')
         ->name('quick-replies.index');
 
+    // Contactos — admin page
+    Route::get('/contactos', [App\Http\Controllers\ContactController::class, 'index'])
+        ->middleware('permission:contacts.view')
+        ->name('contacts.index');
+
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {
         Route::get('/', [App\Http\Controllers\MasterController::class, 'index'])->name('index');
@@ -312,7 +317,16 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/reopen', [ChatController::class, 'reopen']);
         Route::delete('/conversations/{conversationId}', [ChatController::class, 'destroy']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
+        Route::post('/conversations/{conversationId}/attach-contact', [App\Http\Controllers\ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);
+    });
+
+    // Contacts API routes
+    Route::prefix('api/contacts')->group(function () {
+        Route::get('/list', [App\Http\Controllers\ContactController::class, 'list'])->middleware('permission:contacts.view');
+        Route::post('/', [App\Http\Controllers\ContactController::class, 'store'])->middleware('permission:contacts.create');
+        Route::put('/{contact}', [App\Http\Controllers\ContactController::class, 'update'])->middleware('permission:contacts.update');
+        Route::delete('/{contact}', [App\Http\Controllers\ContactController::class, 'destroy'])->middleware('permission:contacts.delete');
     });
 
     // Kanban API routes

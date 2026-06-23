@@ -17,7 +17,8 @@ import {
     FileText,
     FileType,
     Webhook,
-    BellRing
+    BellRing,
+    Contact
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -52,6 +53,7 @@ export function AppSidebar() {
         mainNavItems = [
             { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
             { title: 'CRM', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
+            { title: 'Contactos', href: route('contacts.index'), icon: Contact, show: hasPermission('contacts.view') },
             { title: 'Respuestas Rápidas', href: route('quick-replies.index'), icon: Zap, show: hasPermission('quick_replies.view') },
             { title: 'Respuestas Automáticas', href: route('auto-responses.index'), icon: Bot, show: hasPermission('auto_responses.view') },
             { title: 'Campañas', href: route('campaigns.index'), icon: Megaphone, show: hasPermission('campaigns.view') },

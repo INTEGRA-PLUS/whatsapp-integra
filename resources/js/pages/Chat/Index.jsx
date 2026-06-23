@@ -26,6 +26,7 @@ import {
     PlusCircle,
     X as XIcon,
     UserPlus,
+    Contact,
     Zap,
     Square,
     Trash2,
@@ -109,6 +110,8 @@ function detectMentionToken(value, cursor) {
 // ─── StatusIcons Sub-component ───────────────────────────────────────────────
 
 const StatusIcons = memo(({ status }) => {
+    if (status === 'sending') return <Loader2 className="size-3 text-muted-foreground/40 animate-spin" />;
+    if (status === 'failed') return <AlertTriangle className="size-3 text-red-500" />;
     if (status === 'sent') return <Check className="size-3 text-muted-foreground/40" />;
     if (status === 'delivered') return <CheckCheck className="size-3 text-muted-foreground/40" />;
     if (status === 'read') return <CheckCheck className="size-3 text-sky-400" />;
@@ -518,6 +521,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
+    const [showLinkContact, setShowLinkContact] = useState(false);
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
     const [lastUpdate, setLastUpdate] = useState('Nunca');
     const [isPolling, setIsPolling] = useState(false);
@@ -575,6 +579,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const messagesContainerRef = useRef(null);
     const pollingIntervalRef = useRef(null);
     const messageInputRef = useRef(null);
+    const tempMsgCounter = useRef(0);
 
     // ── Callbacks for Performance ──────────────────────────────────────────
 
@@ -894,9 +899,41 @@ export default function ChatIndex({ instances, integrations = [] }) {
     useEffect(() => {
         const el = messageInputRef.current;
         if (!el) return;
-        el.style.height = 'auto';
-        el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+        if (newMessage === '') {
+            // Reset to a single row when the composer is cleared (e.g. after send).
+            el.style.height = '';
+        } else {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+        }
     }, [newMessage]);
+
+    // Re-focus the composer after a send finishes (sending: true → false) so the
+    // user can keep typing without clicking back into the textarea.
+    const prevSendingRef = useRef(false);
+    useEffect(() => {
+        if (prevSendingRef.current && !sending) {
+            messageInputRef.current?.focus();
+        }
+        prevSendingRef.current = sending;
+    }, [sending]);
+
+    // ESC deselecciona la conversación (vuelve al panel vacío), estilo WhatsApp.
+    // Si hay un overlay abierto (modal, lightbox o picker), ESC no deselecciona:
+    // esos cierran lo suyo primero / con su propia interacción.
+    useEffect(() => {
+        function handleEscape(e) {
+            if (e.key !== 'Escape') return;
+            const overlayOpen = selectedImage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
+            if (overlayOpen) return;
+            if (selectedConversation) {
+                e.preventDefault();
+                setSelectedConversation(null);
+            }
+        }
+        document.addEventListener('keydown', handleEscape);
+        return () => document.removeEventListener('keydown', handleEscape);
+    }, [selectedConversation, selectedImage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -1159,6 +1196,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (el) el.scrollTop = el.scrollHeight;
     }, []);
 
+    // Keep the conversation pinned to the latest message as the list grows.
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, scrollToBottom]);
+
     useEffect(() => {
         if (instances.length > 0 && !selectedInstanceId) {
             const first = instances[0];
@@ -1308,16 +1350,36 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setNewMessage('');
         setSendError(null);
         setSending(true);
+
+        // Optimistic UI: show the message instantly with a "sending" state so the
+        // agent doesn't wait for the Meta round-trip before seeing it.
+        const tempId = `temp-${++tempMsgCounter.current}`;
+        const optimistic = {
+            id: tempId,
+            conversation_id: selectedConversation.id,
+            type: 'text',
+            content: msg,
+            direction: 'outbound',
+            status: 'sending',
+            created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, optimistic]);
+
         try {
             const res = await axios.post(
                 `/api/chat/conversations/${selectedConversation.id}/send`,
                 { message: msg },
             );
             if (res.data.success) {
-                setMessages(prev => [...prev, res.data.data]);
+                // Replace the temp message with the real one from the server.
+                setMessages(prev => prev.map(m => (m.id === tempId ? res.data.data : m)));
+            } else {
+                setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
+                setNewMessage(msg);
             }
         } catch (err) {
             console.error('Error enviando:', err);
+            setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
             setNewMessage(msg);
             setSendError(err?.response?.data?.error || 'No se pudo enviar el mensaje.');
         } finally {
@@ -1334,16 +1396,35 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setNewMessage('');
         setNoteMentions([]);
         setSending(true);
+
+        // Optimistic UI for internal notes too.
+        const tempId = `temp-${++tempMsgCounter.current}`;
+        const optimistic = {
+            id: tempId,
+            conversation_id: selectedConversation.id,
+            type: 'text',
+            content,
+            direction: 'outbound',
+            is_internal: true,
+            status: 'sending',
+            created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, optimistic]);
+
         try {
             const res = await axios.post(
                 `/api/chat/conversations/${selectedConversation.id}/note`,
                 { content, mentions },
             );
             if (res.data.success) {
-                setMessages(prev => [...prev, res.data.data]);
+                setMessages(prev => prev.map(m => (m.id === tempId ? res.data.data : m)));
+            } else {
+                setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
+                setNewMessage(content);
             }
         } catch (err) {
             console.error('Error guardando nota:', err);
+            setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
             setNewMessage(content);
         } finally {
             setSending(false);
@@ -1967,7 +2048,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         {/* Chat Area - WhatsApp Web Theme */}
                         <div className="flex-1 flex flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative">
                             {/* Theme Pattern Overlay */}
-                            <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.4] pointer-events-none bg-[url('https://p6.zdusercontent.com/attachment/1000679/W3605hFvY6TzF5rVv5vVv5?token=')] bg-repeat" />
+                            <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.4] pointer-events-none" />
 
                             {!selectedConversation ? (
                                 <div className="flex-1 flex items-center justify-center relative z-10">
@@ -2001,6 +2082,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         <span className="text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter">
                                                             Cerrada
                                                         </span>
+                                                    )}
+                                                    {selectedConversation.contact ? (
+                                                        <button
+                                                            onClick={() => setShowLinkContact(true)}
+                                                            title="Ver / cambiar contacto vinculado"
+                                                            className="inline-flex items-center gap-1 text-[9px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter hover:bg-indigo-500/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                                                        >
+                                                            <Contact className="size-2.5" /> {selectedConversation.contact.name}
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => setShowLinkContact(true)}
+                                                            title="Vincular este número a un contacto"
+                                                            className="inline-flex items-center gap-1 text-[9px] border border-dashed border-indigo-400/40 text-indigo-500 dark:text-indigo-400 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter hover:bg-indigo-500/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                                                        >
+                                                            <UserPlus className="size-2.5" /> Vincular contacto
+                                                        </button>
                                                     )}
                                                 </div>
                                             </div>
@@ -2093,7 +2191,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </button>
                                             )}
 
-                                            <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><Search className="size-5" /></button>
+                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-5" /></button>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button className="p-2 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"><MoreVertical className="size-5" /></button>
@@ -2306,15 +2404,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <div className="flex items-center pb-0.5">
                                                     {composerMode === 'reply' ? (
                                                         <>
-                                                            <button className="p-2 text-muted-foreground hover:text-foreground transition-colors"><Smile className="size-6" /></button>
-                                                            <label className="p-2 text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+                                                            <button title="Insertar emoji" aria-label="Insertar emoji" className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Smile className="size-6" /></button>
+                                                            <label title="Adjuntar imagen" aria-label="Adjuntar imagen" className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
                                                                 <Paperclip className="size-6" />
                                                                 <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
                                                             </label>
                                                             <button
                                                                 onClick={startRecording}
-                                                                className="p-2 text-muted-foreground hover:text-teal-600 transition-colors"
+                                                                className="p-2 rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                                                                 title="Grabar audio"
+                                                                aria-label="Grabar audio"
                                                             >
                                                                 <Mic className="size-6" />
                                                             </button>
@@ -2366,7 +2465,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         value={newMessage}
                                                         onChange={handleComposerChange}
                                                         onKeyDown={handleComposerKeyDown}
-                                                        disabled={sending}
                                                         className={clsx(
                                                             "block w-full border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
                                                             composerMode === 'note'
@@ -2380,11 +2478,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={composerMode === 'note' ? sendNote : sendMessage}
                                                     disabled={!newMessage.trim() || sending}
+                                                    title={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
+                                                    aria-label={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
                                                     className={clsx(
-                                                        "p-2 transition-colors",
+                                                        "p-2 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed",
                                                         composerMode === 'note'
-                                                            ? "text-amber-600 hover:text-amber-700"
-                                                            : "text-[#54656f] dark:text-[#8696a0] hover:text-teal-600"
+                                                            ? "text-amber-600 hover:text-amber-700 hover:bg-amber-100/50 dark:hover:bg-amber-900/20"
+                                                            : "text-[#54656f] dark:text-[#8696a0] hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5"
                                                     )}
                                                 >
                                                     <Send className={`size-6 ${sending ? 'animate-pulse' : ''}`} />
@@ -2453,6 +2553,22 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             alt="full view"
                         />
                     </div>
+                )}
+
+                {/* Link / associate contact modal */}
+                {showLinkContact && selectedConversation && (
+                    <LinkContactModal
+                        conversationId={selectedConversation.id}
+                        defaultPhone={selectedConversation.phone_number}
+                        defaultName={selectedConversation.name}
+                        currentContact={selectedConversation.contact}
+                        onClose={() => setShowLinkContact(false)}
+                        onLinked={(contact) => {
+                            setSelectedConversation(prev => prev ? { ...prev, contact } : prev);
+                            setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact } : c));
+                            setShowLinkContact(false);
+                        }}
+                    />
                 )}
 
                 {/* Create Tag Modal */}
@@ -2703,6 +2819,152 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 }
             `}} />
         </>
+    );
+}
+
+function LinkContactModal({ conversationId, defaultPhone, defaultName, currentContact, onClose, onLinked }) {
+    const [tab, setTab] = useState('existing');
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(null);
+
+    // New-contact form
+    const [name, setName] = useState(defaultName ?? '');
+    const [phone, setPhone] = useState(defaultPhone ?? '');
+    const [email, setEmail] = useState('');
+
+    useEffect(() => {
+        if (tab !== 'existing') return;
+        let active = true;
+        setLoading(true);
+        const t = setTimeout(async () => {
+            try {
+                const res = await axios.get('/api/contacts/list', { params: { search: query } });
+                if (active) setResults(res.data ?? []);
+            } catch {
+                if (active) setResults([]);
+            } finally {
+                if (active) setLoading(false);
+            }
+        }, 250);
+        return () => { active = false; clearTimeout(t); };
+    }, [query, tab]);
+
+    async function attach(payload) {
+        setSubmitting(true);
+        setError(null);
+        try {
+            const res = await axios.post(`/api/chat/conversations/${conversationId}/attach-contact`, payload);
+            onLinked(res.data.contact);
+        } catch (err) {
+            setError(err?.response?.data?.message || 'No se pudo vincular el contacto.');
+            setSubmitting(false);
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                <div className="relative bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-5 text-white">
+                    <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
+                        <XIcon className="size-4" />
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                            <Contact className="size-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg leading-tight">Vincular contacto</h3>
+                            <p className="text-xs text-white/80">
+                                {currentContact ? `Vinculado a ${currentContact.name}` : `Asocia ${defaultPhone} a un contacto`}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-1 px-4 pt-4">
+                    <button
+                        onClick={() => setTab('existing')}
+                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'existing' ? "bg-indigo-600 text-white" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                        Existente
+                    </button>
+                    <button
+                        onClick={() => setTab('new')}
+                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'new' ? "bg-indigo-600 text-white" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                        Nuevo
+                    </button>
+                </div>
+
+                <div className="p-4">
+                    {error && <p className="mb-3 text-xs font-medium text-rose-600">{error}</p>}
+
+                    {tab === 'existing' ? (
+                        <>
+                            <div className="relative mb-3">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                                <input
+                                    type="text"
+                                    value={query}
+                                    onChange={e => setQuery(e.target.value)}
+                                    placeholder="Buscar contacto por nombre o teléfono..."
+                                    autoFocus
+                                    className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl pl-9 pr-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none"
+                                />
+                            </div>
+                            <div className="max-h-64 overflow-y-auto custom-scrollbar -mx-1 px-1">
+                                {loading ? (
+                                    <div className="flex items-center justify-center py-8 text-muted-foreground"><Loader2 className="size-5 animate-spin" /></div>
+                                ) : results.length === 0 ? (
+                                    <p className="text-center text-sm text-muted-foreground py-8">Sin contactos. Crea uno en la pestaña «Nuevo».</p>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {results.map(c => (
+                                            <button
+                                                key={c.id}
+                                                disabled={submitting}
+                                                onClick={() => attach({ contact_id: c.id })}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors disabled:opacity-50"
+                                            >
+                                                <div className="size-9 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold uppercase shrink-0">
+                                                    {(c.name ?? '?').slice(0, 2)}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">{c.phone_number}</p>
+                                                </div>
+                                                {currentContact?.id === c.id && <Check className="size-4 text-indigo-600 ml-auto shrink-0" />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <form onSubmit={(e) => { e.preventDefault(); attach({ name: name.trim(), phone_number: phone.trim(), email: email.trim() || null }); }} className="space-y-3">
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre</label>
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Nombre del contacto" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Teléfono</label>
+                                <input type="text" value={phone} onChange={e => setPhone(e.target.value)} required className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Correo (opcional)</label>
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                            </div>
+                            <button type="submit" disabled={submitting} className="w-full py-3 bg-indigo-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
+                                {submitting ? <Loader2 className="size-4 animate-spin" /> : <UserPlus className="size-4" />} Crear y vincular
+                            </button>
+                        </form>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 }
 

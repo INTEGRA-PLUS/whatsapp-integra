@@ -39,7 +39,16 @@
       "Bash(awk '{print $1}')",
       "Bash(mysql *)",
       "Bash(grep -E \"\\\\.\\(php|vue|jsx\\)$\")",
-      "Bash(grep *)"
+      "Bash(grep *)",
+      "Bash(grep -nE '\\\\$\\\\{[A-Z_]+:?\\\\?' docker-compose.yml)",
+      "Bash(grep -hoE '\\\\$\\\\{[A-Z_]+:\\\\?[^}]*\\\\}' docker-compose.yml docker-compose.override.yml docker-compose.prod.yml)",
+      "Bash(grep -oE '^\\\\$\\\\{[A-Z_]+')",
+      "Bash(grep -nE '\\\\$\\\\{[A-Z_]+:\\\\?' docker-compose.override.yml)",
+      "Bash(git log *)",
+      "Bash(brew upgrade *)",
+      "Bash(git stash *)",
+      "Bash(git merge *)",
+      "Bash(git -C .claude/worktrees/agent-a5bc3f27300047548 status --short)"
     ]
   }
 }
