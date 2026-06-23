@@ -1404,6 +1404,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             content: msg,
             direction: 'outbound',
             status: 'sending',
+            sender: { name: auth.user.name },
             created_at: new Date().toISOString(),
         };
         setMessages(prev => [...prev, optimistic]);
@@ -1450,6 +1451,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             direction: 'outbound',
             is_internal: true,
             status: 'sending',
+            sender: { name: auth.user.name },
             created_at: new Date().toISOString(),
         };
         setMessages(prev => [...prev, optimistic]);
@@ -2007,9 +2009,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 )}
                             </div>
 
-                            {/* Pestañas de asignación: Mías / Sin asignar / Todos */}
-                            <div className="px-3 pb-1 border-b border-border/10">
-                                <div className="flex items-center gap-5">
+                            {/* Pestañas de asignación: Mías / Sin asignar / Todos / Cerrados */}
+                            <div className="px-3 py-2 border-b border-border/10">
+                                <div className="flex items-center gap-1 p-1 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33]">
                                     {[
                                         { key: 'mine', label: 'Mías', count: tabCounts.mine },
                                         { key: 'unassigned', label: 'Sin asignar', count: tabCounts.unassigned },
@@ -2022,23 +2024,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 key={tab.key}
                                                 type="button"
                                                 onClick={() => setAssignmentTab(tab.key)}
+                                                title={`${tab.label} (${tab.count})`}
                                                 className={clsx(
-                                                    "relative flex items-center gap-1.5 pb-2 pt-1 text-[13px] font-semibold transition-colors",
-                                                    active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground hover:text-foreground"
+                                                    "flex-1 min-w-0 flex items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-bold whitespace-nowrap transition-all",
+                                                    active
+                                                        ? "bg-white dark:bg-[#2a3942] text-teal-600 dark:text-teal-400 shadow-sm"
+                                                        : "text-muted-foreground hover:text-foreground"
                                                 )}
                                             >
-                                                <span>{tab.label}</span>
+                                                <span className="truncate">{tab.label}</span>
                                                 <span className={clsx(
-                                                    "min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none transition-colors",
-                                                    active
-                                                        ? "bg-teal-600 text-white"
-                                                        : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    "shrink-0 text-[10px] font-black leading-none tabular-nums",
+                                                    active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground/50"
                                                 )}>
                                                     {tab.count}
                                                 </span>
-                                                {active && (
-                                                    <span className="absolute -bottom-px left-0 right-0 h-[2px] rounded-full bg-teal-600 dark:bg-teal-400" />
-                                                )}
                                             </button>
                                         );
                                     })}
@@ -2401,6 +2401,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             )}
 
                                                             <div className="flex flex-col relative">
+                                                                {isOut && msg.sender?.name && (
+                                                                    <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
+                                                                        {msg.sender.name}
+                                                                    </span>
+                                                                )}
                                                                 {msg.type === 'text' && (
                                                                     <p className="text-[13.5px] leading-[19px] whitespace-pre-wrap break-words pr-20 pb-1 font-medium">{msg.content}</p>
                                                                 )}
