@@ -118,9 +118,29 @@ const StatusIcons = memo(({ status }) => {
     return <Clock className="size-2.5 text-muted-foreground/30" />;
 });
 
+// ─── LazyDropdown ────────────────────────────────────────────────────────────
+// Monta el menú Radix solo cuando se abre. En reposo es un botón simple, así con
+// miles de filas no se montan miles de menús (cada uno con su contexto/refs).
+const LazyDropdown = memo(function LazyDropdown({ renderTrigger, contentClassName, children }) {
+    const [open, setOpen] = useState(false);
+    if (!open) {
+        return renderTrigger((e) => { e.stopPropagation(); setOpen(true); });
+    }
+    return (
+        <DropdownMenu open onOpenChange={setOpen}>
+            <DropdownMenuTrigger asChild>
+                {renderTrigger((e) => e.stopPropagation())}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent onClick={(e) => e.stopPropagation()} align="end" className={contentClassName}>
+                {children()}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+});
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
-const ConversationItem = memo(({ 
+const ConversationItem = memo(({
     conv, 
     isActive, 
     onSelect, 
@@ -182,10 +202,11 @@ const ConversationItem = memo(({
                         
                         {/* Admin Assignment Picker */}
                         {isAdmin && (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <button 
-                                        onClick={(e) => e.stopPropagation()}
+                            <LazyDropdown
+                                contentClassName="w-56 rounded-lg border-border/10 shadow-xl"
+                                renderTrigger={(onClick) => (
+                                    <button
+                                        onClick={onClick}
                                         className={clsx(
                                             "p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all",
                                             conv.assigned_to ? "text-teal-600" : "text-muted-foreground/60 hover:text-teal-600"
@@ -194,84 +215,91 @@ const ConversationItem = memo(({
                                     >
                                         <UserPlus className="size-3" />
                                     </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent onClick={(e) => e.stopPropagation()} align="end" className="w-56 rounded-lg border-border/10 shadow-xl">
-                                    <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Asignar Responsable</DropdownMenuLabel>
-                                    <DropdownMenuSeparator className="bg-border/5" />
-                                    <DropdownMenuItem 
-                                        onClick={(e) => { e.stopPropagation(); onAssign(conv.id, null); }}
-                                        className="flex items-center gap-2 py-2 px-3 cursor-pointer"
-                                    >
-                                        <XIcon className="size-3 text-muted-foreground" />
-                                        <span className="text-[11px] font-bold flex-1">Sin Asignar</span>
-                                        {!conv.assigned_to && <Check className="size-3 text-teal-600" />}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator className="bg-border/5" />
-                                    <div className="max-h-48 overflow-y-auto">
-                                        {companyUsers.map(u => (
-                                            <DropdownMenuItem 
-                                                key={u.id}
-                                                onClick={(e) => { e.stopPropagation(); onAssign(conv.id, u.id); }}
-                                                className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/user"
-                                            >
-                                                <div className={clsx(
-                                                    "size-2.5 rounded-full",
-                                                    Number(conv.assigned_to) === Number(u.id) ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-700"
-                                                )} />
-                                                <span className="text-[11px] font-bold flex-1">{u.name}</span>
-                                                {Number(conv.assigned_to) === Number(u.id) && <Check className="size-3 text-teal-600" />}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </div>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                                )}
+                            >
+                                {() => (
+                                    <>
+                                        <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Asignar Responsable</DropdownMenuLabel>
+                                        <DropdownMenuSeparator className="bg-border/5" />
+                                        <DropdownMenuItem
+                                            onClick={(e) => { e.stopPropagation(); onAssign(conv.id, null); }}
+                                            className="flex items-center gap-2 py-2 px-3 cursor-pointer"
+                                        >
+                                            <XIcon className="size-3 text-muted-foreground" />
+                                            <span className="text-[11px] font-bold flex-1">Sin Asignar</span>
+                                            {!conv.assigned_to && <Check className="size-3 text-teal-600" />}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator className="bg-border/5" />
+                                        <div className="max-h-48 overflow-y-auto">
+                                            {companyUsers.map(u => (
+                                                <DropdownMenuItem
+                                                    key={u.id}
+                                                    onClick={(e) => { e.stopPropagation(); onAssign(conv.id, u.id); }}
+                                                    className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/user"
+                                                >
+                                                    <div className={clsx(
+                                                        "size-2.5 rounded-full",
+                                                        Number(conv.assigned_to) === Number(u.id) ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-700"
+                                                    )} />
+                                                    <span className="text-[11px] font-bold flex-1">{u.name}</span>
+                                                    {Number(conv.assigned_to) === Number(u.id) && <Check className="size-3 text-teal-600" />}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </LazyDropdown>
                         )}
 
                         {/* Tag Picker Button */}
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <button 
-                                    onClick={(e) => e.stopPropagation()}
+                        <LazyDropdown
+                            contentClassName="w-48 rounded-lg border-border/10 shadow-xl"
+                            renderTrigger={(onClick) => (
+                                <button
+                                    onClick={onClick}
                                     className="p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-teal-600"
                                 >
                                     <TagIcon className="size-3" />
                                 </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent onClick={(e) => e.stopPropagation()} align="end" className="w-48 rounded-lg border-border/10 shadow-xl">
-                                <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Etiquetas</DropdownMenuLabel>
-                                <DropdownMenuSeparator className="bg-border/5" />
-                                <div className="max-h-48 overflow-y-auto">
-                                    {tags.map(tag => {
-                                        const hasTag = (conv.tags || []).some(t => t.id === tag.id);
-                                        return (
-                                            <DropdownMenuItem 
-                                                key={tag.id}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    hasTag ? onDetachTag(conv.id, tag.id) : onAttachTag(conv.id, tag.id);
-                                                }}
-                                                className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/tag"
-                                            >
-                                                <div className="size-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                                                <span className="text-[11px] font-bold flex-1">{tag.name}</span>
-                                                {hasTag && <Check className="size-3 text-teal-600" />}
-                                            </DropdownMenuItem>
-                                        );
-                                    })}
-                                </div>
-                                <DropdownMenuSeparator className="bg-border/5" />
-                                <DropdownMenuItem 
-                                    onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        onNewTag(conv.id);
-                                    }}
-                                    className="flex items-center gap-2 py-2 px-3 cursor-pointer text-teal-600"
-                                >
-                                    <PlusCircle className="size-3" />
-                                    <span className="text-[11px] font-bold">Nueva Etiqueta</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                            )}
+                        >
+                            {() => (
+                                <>
+                                    <DropdownMenuLabel className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-1.5">Etiquetas</DropdownMenuLabel>
+                                    <DropdownMenuSeparator className="bg-border/5" />
+                                    <div className="max-h-48 overflow-y-auto">
+                                        {tags.map(tag => {
+                                            const hasTag = (conv.tags || []).some(t => t.id === tag.id);
+                                            return (
+                                                <DropdownMenuItem
+                                                    key={tag.id}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        hasTag ? onDetachTag(conv.id, tag.id) : onAttachTag(conv.id, tag.id);
+                                                    }}
+                                                    className="flex items-center gap-2.5 py-2 px-3 cursor-pointer group/tag"
+                                                >
+                                                    <div className="size-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                    <span className="text-[11px] font-bold flex-1">{tag.name}</span>
+                                                    {hasTag && <Check className="size-3 text-teal-600" />}
+                                                </DropdownMenuItem>
+                                            );
+                                        })}
+                                    </div>
+                                    <DropdownMenuSeparator className="bg-border/5" />
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onNewTag(conv.id);
+                                        }}
+                                        className="flex items-center gap-2 py-2 px-3 cursor-pointer text-teal-600"
+                                    >
+                                        <PlusCircle className="size-3" />
+                                        <span className="text-[11px] font-bold">Nueva Etiqueta</span>
+                                    </DropdownMenuItem>
+                                </>
+                            )}
+                        </LazyDropdown>
                     </div>
                 </div>
                 
@@ -305,6 +333,47 @@ const ConversationItem = memo(({
             </div>
         </div>
     );
+});
+
+// Estilo estable para el wrapper de cada fila (evita recrear el objeto en cada
+// render y permite que el navegador omita el layout/paint de filas fuera de vista).
+const LIST_ITEM_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '0 72px' };
+
+// ─── ConversationList ────────────────────────────────────────────────────────
+// Lista memoizada: con miles de conversaciones, este componente NO se vuelve a
+// renderizar mientras escribes en el compositor (sus props no cambian), evitando
+// recrear/reconciliar miles de elementos en cada pulsación.
+const ConversationList = memo(function ConversationList({
+    conversations,
+    selectedId,
+    onSelect,
+    onAttachTag,
+    onDetachTag,
+    onNewTag,
+    onAssign,
+    tags,
+    companyUsers,
+    isAdmin,
+    formatTime,
+}) {
+    return conversations.map(conv => (
+        <div key={conv.id} style={LIST_ITEM_STYLE}>
+            <ConversationItem
+                conv={conv}
+                isActive={selectedId === conv.id}
+                onSelect={onSelect}
+                onAttachTag={onAttachTag}
+                onDetachTag={onDetachTag}
+                onNewTag={onNewTag}
+                onAssign={onAssign}
+                tags={tags}
+                companyUsers={companyUsers}
+                isAdmin={isAdmin}
+                formatTime={formatTime}
+                StatusIcons={StatusIcons}
+            />
+        </div>
+    ));
 });
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -2046,24 +2115,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             </div>
 
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
-                                {filteredConversations.map(conv => (
-                                    <div key={conv.id} style={{ contentVisibility: 'auto', containIntrinsicSize: '0 72px' }}>
-                                        <ConversationItem 
-                                            conv={conv}
-                                            isActive={selectedConversation?.id === conv.id}
-                                            onSelect={selectConversation}
-                                            onAttachTag={attachTag}
-                                            onDetachTag={detachTag}
-                                            onNewTag={handleNewTag}
-                                            onAssign={assignConversation}
-                                            tags={tags}
-                                            companyUsers={companyUsers}
-                                            isAdmin={isAdmin}
-                                            formatTime={formatTime}
-                                            StatusIcons={StatusIcons}
-                                        />
-                                    </div>
-                                ))}
+                                <ConversationList
+                                    conversations={filteredConversations}
+                                    selectedId={selectedConversation?.id}
+                                    onSelect={selectConversation}
+                                    onAttachTag={attachTag}
+                                    onDetachTag={detachTag}
+                                    onNewTag={handleNewTag}
+                                    onAssign={assignConversation}
+                                    tags={tags}
+                                    companyUsers={companyUsers}
+                                    isAdmin={isAdmin}
+                                    formatTime={formatTime}
+                                />
 
                                 {/* Sentinel for Infinite Scroll */}
                                 <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
