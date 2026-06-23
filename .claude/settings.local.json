@@ -38,7 +38,8 @@
       "Bash(git rm *)",
       "Bash(awk '{print $1}')",
       "Bash(mysql *)",
-      "Bash(grep -E \"\\\\.\\(php|vue|jsx\\)$\")"
+      "Bash(grep -E \"\\\\.\\(php|vue|jsx\\)$\")",
+      "Bash(grep *)"
     ]
   }
 }

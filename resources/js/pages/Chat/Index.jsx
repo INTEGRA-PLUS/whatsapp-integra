@@ -517,6 +517,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [hasMore, setHasMore] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState(null);
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
     const [lastUpdate, setLastUpdate] = useState('Nunca');
     const [isPolling, setIsPolling] = useState(false);
@@ -1305,6 +1306,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (!newMessage.trim() || sending) return;
         const msg = newMessage;
         setNewMessage('');
+        setSendError(null);
         setSending(true);
         try {
             const res = await axios.post(
@@ -1317,6 +1319,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         } catch (err) {
             console.error('Error enviando:', err);
             setNewMessage(msg);
+            setSendError(err?.response?.data?.error || 'No se pudo enviar el mensaje.');
         } finally {
             setSending(false);
         }
@@ -2249,6 +2252,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             );
                                         })}
                                     </div>
+
+                                    {/* Banner de error de envío (Meta) */}
+                                    {sendError && (
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
+                                            <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                                <span className="flex-1 leading-snug">{sendError}</span>
+                                                <button onClick={() => setSendError(null)} className="shrink-0 hover:text-rose-900 dark:hover:text-rose-100">
+                                                    <XIcon className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Composer mode strip: Responder / Nota interna */}
                                     {!isRecording && (

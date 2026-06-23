@@ -362,7 +362,8 @@ class ChatController extends Controller
         if (!($result['success'] ?? false)) {
             return response()->json([
                 'success' => false,
-                'error'   => $result['error']['error']['message'] ?? 'Error al enviar la plantilla',
+                'error'   => $this->metaError($result, 'Error al enviar la plantilla'),
+                'meta'    => $result['error']['error'] ?? null,
             ], 500);
         }
 
@@ -560,7 +561,8 @@ class ChatController extends Controller
 
         return response()->json([
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar'
+            'error' => $this->metaError($result, 'Error al enviar'),
+            'meta'  => $result['error']['error'] ?? null,
         ], 500);
     }
 
@@ -638,7 +640,8 @@ class ChatController extends Controller
 
         return response()->json([
             'success' => false,
-            'error' => 'Error al enviar imagen'
+            'error' => $this->metaError($result, 'Error al enviar imagen'),
+            'meta'  => $result['error']['error'] ?? null,
         ], 500);
     }
 
@@ -712,7 +715,8 @@ class ChatController extends Controller
 
         return response()->json([
             'success' => false,
-            'error' => 'Error al enviar audio'
+            'error' => $this->metaError($result, 'Error al enviar audio'),
+            'meta'  => $result['error']['error'] ?? null,
         ], 500);
     }
 
@@ -903,6 +907,27 @@ class ChatController extends Controller
             'success' => true,
             'data'    => $note->load('sender:id,name'),
         ]));
+    }
+
+    /**
+     * Extrae un mensaje de error legible de la respuesta de error de Meta,
+     * incluyendo el detalle específico (error_data.details) que suele explicar
+     * la causa real detrás de un "(#100) Invalid parameter".
+     */
+    private function metaError($result, string $fallback = 'Error al enviar'): string
+    {
+        $err = $result['error']['error'] ?? null;
+        if (!is_array($err)) {
+            return is_string($result['error'] ?? null) ? $result['error'] : $fallback;
+        }
+
+        $message = $err['message'] ?? $fallback;
+        $details = $err['error_data']['details'] ?? null;
+
+        if ($details && $details !== $message) {
+            return "{$message} — {$details}";
+        }
+        return $message;
     }
 
     /**
