@@ -79,10 +79,15 @@ export function renderWhatsAppText(text) {
 
 // Build a preview model from the create-form state.
 export function formStateToModel(comps, headerExamples = {}, bodyExamples = {}) {
+    const headerType = comps.header?.type ?? 'NONE';
+    let header = null;
+    if (headerType === 'TEXT' && comps.header.text) {
+        header = { text: substituteVars(comps.header.text, headerExamples) };
+    } else if (['IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'].includes(headerType)) {
+        header = { text: '', mediaFormat: headerType };
+    }
     return {
-        header: comps.header?.enabled && comps.header.text
-            ? { text: substituteVars(comps.header.text, headerExamples) }
-            : null,
+        header,
         body: { text: substituteVars(comps.body?.text ?? '', bodyExamples) },
         footer: comps.footer?.enabled && comps.footer.text
             ? { text: comps.footer.text }

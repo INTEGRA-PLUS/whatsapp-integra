@@ -442,6 +442,56 @@ class TemplateController extends Controller
         ]);
     }
 
+    /**
+     * Sube el archivo de muestra de un encabezado multimedia (IMAGE/VIDEO/DOCUMENT)
+     * a Meta mediante subida reanudable y devuelve el header_handle resultante.
+     * El frontend lo adjunta a components[].example.header_handle al crear la plantilla.
+     */
+    public function uploadMedia(Request $request)
+    {
+        $request->validate([
+            'instance_id' => 'nullable|integer',
+            // Imagen/Video/Documento de muestra. Meta limita ~16MB video, 5MB imagen, 100MB doc.
+            'file' => 'required|file|max:102400',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        $debug = $this->meta->debugToken($instance->access_token);
+        if (!$debug['success'] || empty($debug['data']['app_id'])) {
+            return response()->json([
+                'message' => 'No se pudo identificar la app del token para subir el archivo.',
+                'error' => $debug['error'] ?? null,
+            ], 502);
+        }
+        $appId = $debug['data']['app_id'];
+
+        $file = $request->file('file');
+        $upload = $this->meta->uploadResumable(
+            $appId,
+            $instance->access_token,
+            $file->getRealPath(),
+            $file->getMimeType()
+        );
+
+        if (!$upload['success']) {
+            return response()->json([
+                'message' => 'No se pudo subir el archivo a Meta.',
+                'stage' => $upload['stage'] ?? null,
+                'error' => $upload['error'] ?? null,
+            ], 502);
+        }
+
+        return response()->json([
+            'handle' => $upload['handle'],
+            'file_name' => $file->getClientOriginalName(),
+            'mime_type' => $file->getMimeType(),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([

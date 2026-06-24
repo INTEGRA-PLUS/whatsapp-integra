@@ -21,9 +21,25 @@ const LANGUAGES = [
 
 const NAME_PATTERN = /^[a-z0-9_]+$/;
 
+// Tipos de encabezado (estilo Meta). NONE = sin encabezado.
+const HEADER_TYPES = [
+    { value: 'NONE', label: 'Ninguno' },
+    { value: 'TEXT', label: 'Texto' },
+    { value: 'IMAGE', label: 'Imagen' },
+    { value: 'VIDEO', label: 'Video' },
+    { value: 'DOCUMENT', label: 'Documento' },
+    { value: 'LOCATION', label: 'Ubicación' },
+];
+const MEDIA_HEADER_TYPES = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+const MEDIA_ACCEPT = {
+    IMAGE: 'image/jpeg,image/png',
+    VIDEO: 'video/mp4,video/3gpp',
+    DOCUMENT: 'application/pdf',
+};
+
 function emptyComponents() {
     return {
-        header: { enabled: false, text: '' },
+        header: { type: 'NONE', text: '', handle: '', fileName: '', uploading: false, mediaError: '' },
         body: { text: '' },
         footer: { enabled: false, text: '' },
         buttons: [],
@@ -34,7 +50,11 @@ function componentsFromTemplate(template) {
     const out = emptyComponents();
     for (const c of template?.components ?? []) {
         if (c.type === 'HEADER' && (c.format ?? 'TEXT') === 'TEXT') {
-            out.header = { enabled: true, text: c.text ?? '' };
+            out.header = { ...out.header, type: 'TEXT', text: c.text ?? '' };
+        } else if (c.type === 'HEADER') {
+            // Encabezado multimedia: el handle de muestra es de un solo uso, así que
+            // en traducciones/duplicados se exige volver a subir el archivo.
+            out.header = { ...out.header, type: c.format ?? 'IMAGE' };
         } else if (c.type === 'BODY') {
             out.body = { text: c.text ?? '' };
         } else if (c.type === 'FOOTER') {
@@ -113,10 +133,14 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
         if (!comps.body.text.trim()) e.body = 'El cuerpo es obligatorio.';
         if (comps.body.text.length > 1024) e.body = 'Máximo 1024 caracteres.';
         if (!isSequentialFromOne(bodyVars)) e.body = 'Las variables deben ser {{1}}, {{2}}, {{3}}... sin saltos.';
-        if (comps.header.enabled) {
+        if (comps.header.type === 'TEXT') {
+            if (!comps.header.text.trim()) e.header = 'Escribe el texto del encabezado.';
             if (comps.header.text.length > 60) e.header = 'Máximo 60 caracteres.';
             if (headerVars.length > 1) e.header = 'El encabezado admite máximo una variable {{1}}.';
             if (!isSequentialFromOne(headerVars)) e.header = 'La variable del encabezado debe ser {{1}}.';
+        }
+        if (MEDIA_HEADER_TYPES.includes(comps.header.type) && !comps.header.handle) {
+            e.header = 'Sube el archivo de muestra del encabezado.';
         }
         if (comps.footer.enabled) {
             if (comps.footer.text.length > 60) e.footer = 'Máximo 60 caracteres.';
@@ -128,7 +152,7 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                 break;
             }
         }
-        if (comps.header.enabled) {
+        if (comps.header.type === 'TEXT') {
             for (const v of headerVars) {
                 if (!headerExamples[v]) {
                     e.header_example = `Falta el ejemplo para {{${v}}}.`;
@@ -168,12 +192,20 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
     function buildPayload() {
         const components = [];
 
-        if (comps.header.enabled && comps.header.text.trim()) {
+        if (comps.header.type === 'TEXT' && comps.header.text.trim()) {
             const h = { type: 'HEADER', format: 'TEXT', text: comps.header.text };
             if (headerVars.length) {
                 h.example = { header_text: headerVars.map(n => headerExamples[n]) };
             }
             components.push(h);
+        } else if (MEDIA_HEADER_TYPES.includes(comps.header.type) && comps.header.handle) {
+            components.push({
+                type: 'HEADER',
+                format: comps.header.type,
+                example: { header_handle: [comps.header.handle] },
+            });
+        } else if (comps.header.type === 'LOCATION') {
+            components.push({ type: 'HEADER', format: 'LOCATION' });
         }
 
         const b = { type: 'BODY', text: comps.body.text };
@@ -266,6 +298,34 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
             }
         } finally {
             setSubmitting(false);
+        }
+    }
+
+    function setHeaderType(type) {
+        // Al cambiar de tipo limpiamos texto/archivo para no enviar datos cruzados.
+        setComps(p => ({
+            ...p,
+            header: { type, text: '', handle: '', fileName: '', uploading: false, mediaError: '' },
+        }));
+        setErrors(prev => ({ ...prev, header: undefined, header_example: undefined }));
+    }
+
+    async function handleHeaderFile(file) {
+        if (!file) return;
+        setComps(p => ({ ...p, header: { ...p.header, uploading: true, mediaError: '', handle: '', fileName: file.name } }));
+        try {
+            const fd = new FormData();
+            if (instanceId) fd.append('instance_id', instanceId);
+            fd.append('file', file);
+            const res = await axios.post('/api/templates/upload-media', fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setComps(p => ({ ...p, header: { ...p.header, uploading: false, handle: res.data.handle, fileName: res.data.file_name || file.name } }));
+        } catch (err) {
+            const msg = err?.response?.data?.message
+                || err?.response?.data?.error?.error?.error_user_msg
+                || 'No se pudo subir el archivo a Meta.';
+            setComps(p => ({ ...p, header: { ...p.header, uploading: false, handle: '', mediaError: msg } }));
         }
     }
 
@@ -470,16 +530,20 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
 
                     {/* HEADER */}
                     <div className="rounded-md border bg-background p-3 space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                            <input
-                                type="checkbox"
-                                checked={comps.header.enabled}
-                                onChange={e => setComps(p => ({ ...p, header: { ...p.header, enabled: e.target.checked } }))}
-                                className="size-4 rounded border-input"
-                            />
-                            Encabezado (texto, opcional)
-                        </label>
-                        {comps.header.enabled && (
+                        <div className="flex items-center justify-between gap-3">
+                            <label className="text-sm font-medium text-foreground">Encabezado <span className="text-xs text-muted-foreground">· Opcional</span></label>
+                            <select
+                                value={comps.header.type}
+                                onChange={e => setHeaderType(e.target.value)}
+                                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                            >
+                                {HEADER_TYPES.map(h => (
+                                    <option key={h.value} value={h.value}>{h.label}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {comps.header.type === 'TEXT' && (
                             <>
                                 <input
                                     type="text"
@@ -502,6 +566,40 @@ export default function TemplateFormModal({ mode, instanceId, family, sourceTemp
                                 ))}
                                 {errors.header_example && <p className="text-xs text-destructive">{errors.header_example}</p>}
                             </>
+                        )}
+
+                        {MEDIA_HEADER_TYPES.includes(comps.header.type) && (
+                            <div className="space-y-1.5">
+                                <p className="text-xs text-muted-foreground">
+                                    Sube un archivo de muestra ({comps.header.type === 'IMAGE' ? 'JPG/PNG' : comps.header.type === 'VIDEO' ? 'MP4' : 'PDF'}). Meta lo usa solo como ejemplo para aprobar la plantilla.
+                                </p>
+                                <input
+                                    type="file"
+                                    accept={MEDIA_ACCEPT[comps.header.type]}
+                                    disabled={comps.header.uploading}
+                                    onChange={e => handleHeaderFile(e.target.files?.[0])}
+                                    className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary hover:file:bg-primary/20 disabled:opacity-60"
+                                />
+                                {comps.header.uploading && (
+                                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <Loader2 className="size-3.5 animate-spin" /> Subiendo a Meta…
+                                    </p>
+                                )}
+                                {!comps.header.uploading && comps.header.handle && (
+                                    <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                                        <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                                        Archivo listo{comps.header.fileName ? `: ${comps.header.fileName}` : ''}
+                                    </p>
+                                )}
+                                {comps.header.mediaError && <p className="text-xs text-destructive">{comps.header.mediaError}</p>}
+                                {errors.header && <p className="text-xs text-destructive">{errors.header}</p>}
+                            </div>
+                        )}
+
+                        {comps.header.type === 'LOCATION' && (
+                            <p className="text-xs text-muted-foreground">
+                                La ubicación (latitud, longitud y nombre) se define al enviar el mensaje, no en la plantilla.
+                            </p>
                         )}
                     </div>
 

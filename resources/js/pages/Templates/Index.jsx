@@ -29,6 +29,20 @@ import {
     Smartphone,
 } from 'lucide-react';
 
+// Orden de familias "por número y por prioridad": las plantillas con prefijo
+// numérico (p. ej. "1_facturacion", "2_corte") van primero en orden ascendente;
+// el resto, alfabético con colación numérica natural ("2_x" antes que "10_x").
+function templatePriority(name) {
+    const m = (name ?? '').match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
+}
+function byNumberThenName(a, b) {
+    const pa = templatePriority(a.name);
+    const pb = templatePriority(b.name);
+    if (pa !== pb) return pa - pb;
+    return (a.name ?? '').localeCompare(b.name ?? '', undefined, { numeric: true, sensitivity: 'base' });
+}
+
 const STATUS_STYLES = {
     APPROVED: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30',
     PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30',
@@ -123,7 +137,7 @@ export default function TemplatesIndex({ instances = [] }) {
                 variants: variants.sort((a, b) => (a.language ?? '').localeCompare(b.language ?? '')),
                 category: variants[0]?.category,
             }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .sort(byNumberThenName);
     }, [templates, search, statusFilter, categoryFilter]);
 
     function toggle(name) {

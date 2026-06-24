@@ -86,6 +86,38 @@ function templateBodyComponent(t) {
     return (t?.components || []).find(c => c.type === 'BODY');
 }
 
+// Formato del encabezado multimedia de la plantilla (IMAGE/VIDEO/DOCUMENT/LOCATION)
+// o null si no tiene encabezado o es de texto.
+function templateHeaderFormat(t) {
+    const h = (t?.components || []).find(c => c.type === 'HEADER');
+    const f = (h?.format || '').toUpperCase();
+    return ['IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'].includes(f) ? f : null;
+}
+
+const HEADER_MEDIA_ACCEPT = {
+    IMAGE: 'image/jpeg,image/png',
+    VIDEO: 'video/mp4,video/3gpp',
+    DOCUMENT: 'application/pdf',
+};
+const HEADER_MEDIA_LABEL = { IMAGE: 'Imagen', VIDEO: 'Video', DOCUMENT: 'Documento', LOCATION: 'Ubicación' };
+
+// Construye el componente header para el envío. Para IMAGE/VIDEO/DOCUMENT se usa
+// el media_id que Meta devuelve al subir el archivo a /{phone_number_id}/media.
+function buildTemplateHeaderComponent(h) {
+    if (!h) return null;
+    if (h.format === 'LOCATION') {
+        const location = { latitude: String(h.lat ?? ''), longitude: String(h.lng ?? '') };
+        if (h.name?.trim()) location.name = h.name.trim();
+        if (h.address?.trim()) location.address = h.address.trim();
+        return { type: 'header', parameters: [{ type: 'location', location }] };
+    }
+    if (!h.mediaId) return null;
+    const kind = h.format.toLowerCase(); // image | video | document
+    const media = { id: h.mediaId };
+    if (h.format === 'DOCUMENT') media.filename = h.filename || 'documento.pdf';
+    return { type: 'header', parameters: [{ type: kind, [kind]: media }] };
+}
+
 // Número de variables distintas {{n}} en el cuerpo de la plantilla.
 function countTemplateVars(text) {
     const matches = (text || '').match(/{{\s*\d+\s*}}/g);
@@ -659,6 +691,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [templatesLoading, setTemplatesLoading] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState(null);
     const [templateVars, setTemplateVars] = useState([]);
+    // Encabezado multimedia de la plantilla seleccionada al enviar:
+    // { format, mediaId, filename, uploading, error, lat, lng, name, address }
+    const [templateHeader, setTemplateHeader] = useState(null);
     const [tags, setTags] = useState([]);
     const [selectedTagIds, setSelectedTagIds] = useState([]); // ids (string) de etiquetas filtradas (OR)
     const [editingTag, setEditingTag] = useState(null); // {id, name, color} cuando se edita una etiqueta
@@ -758,6 +793,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const closeNewChat = useCallback(() => {
         setNewChatOpen(false);
         setNewChatLoading(false);
+        setSelectedTemplate(null);
+        setTemplateVars([]);
+        setTemplateHeader(null);
     }, []);
 
     // Inserta/abre una conversación ya cargada (con sus mensajes) en la vista.
@@ -825,7 +863,26 @@ export default function ChatIndex({ instances, integrations = [] }) {
         const body = templateBodyComponent(t);
         const n = countTemplateVars(body?.text);
         setTemplateVars(Array.from({ length: n }, () => ''));
+        const fmt = templateHeaderFormat(t);
+        setTemplateHeader(fmt
+            ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
+            : null);
     }, []);
+
+    const uploadTemplateHeaderFile = useCallback(async (file) => {
+        if (!file || !newChatConv) return;
+        setTemplateHeader(h => ({ ...h, uploading: true, error: '', mediaId: '', filename: file.name }));
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await axios.post(`/api/chat/conversations/${newChatConv.id}/template-media`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setTemplateHeader(h => ({ ...h, uploading: false, mediaId: res.data.media_id, filename: res.data.filename || file.name }));
+        } catch (err) {
+            setTemplateHeader(h => ({ ...h, uploading: false, mediaId: '', error: err?.response?.data?.error || 'No se pudo subir el archivo a Meta.' }));
+        }
+    }, [newChatConv]);
 
     const sendNewChatTemplate = useCallback(async () => {
         if (!selectedTemplate || !newChatConv) return;
@@ -835,9 +892,22 @@ export default function ChatIndex({ instances, integrations = [] }) {
             setNewChatError('Completa todas las variables de la plantilla.');
             return;
         }
+        if (templateHeader) {
+            if (templateHeader.format === 'LOCATION') {
+                if (!String(templateHeader.lat).trim() || !String(templateHeader.lng).trim()) {
+                    setNewChatError('Completa la latitud y longitud del encabezado de ubicación.');
+                    return;
+                }
+            } else if (!templateHeader.mediaId) {
+                setNewChatError('Sube el archivo del encabezado de la plantilla.');
+                return;
+            }
+        }
         setNewChatError(null);
         setNewChatLoading(true);
         const components = [];
+        const headerComp = buildTemplateHeaderComponent(templateHeader);
+        if (headerComp) components.push(headerComp);
         if (n > 0) {
             components.push({ type: 'body', parameters: templateVars.slice(0, n).map(v => ({ type: 'text', text: v })) });
         }
@@ -860,7 +930,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         } finally {
             setNewChatLoading(false);
         }
-    }, [selectedTemplate, newChatConv, templateVars, closeNewChat]);
+    }, [selectedTemplate, newChatConv, templateVars, templateHeader, closeNewChat]);
 
     useEffect(() => {
         loadTags();
@@ -3147,6 +3217,63 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </div>
                                             </div>
 
+                                            {selectedTemplate && templateHeader && (
+                                                <div className="space-y-2">
+                                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">
+                                                        Encabezado · {HEADER_MEDIA_LABEL[templateHeader.format]}
+                                                    </label>
+                                                    {templateHeader.format !== 'LOCATION' ? (
+                                                        <>
+                                                            <input
+                                                                type="file"
+                                                                accept={HEADER_MEDIA_ACCEPT[templateHeader.format]}
+                                                                disabled={templateHeader.uploading}
+                                                                onChange={e => uploadTemplateHeaderFile(e.target.files?.[0])}
+                                                                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-teal-600/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-teal-600 hover:file:bg-teal-600/20 disabled:opacity-60"
+                                                            />
+                                                            {templateHeader.uploading && (
+                                                                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                                    <Loader2 className="size-3.5 animate-spin" /> Subiendo a Meta…
+                                                                </p>
+                                                            )}
+                                                            {!templateHeader.uploading && templateHeader.mediaId && (
+                                                                <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                                                                    <Check className="size-3.5" /> Archivo listo{templateHeader.filename ? `: ${templateHeader.filename}` : ''}
+                                                                </p>
+                                                            )}
+                                                            {templateHeader.error && <p className="text-xs text-rose-600 dark:text-rose-400">{templateHeader.error}</p>}
+                                                        </>
+                                                    ) : (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <input
+                                                                value={templateHeader.lat}
+                                                                onChange={e => setTemplateHeader(h => ({ ...h, lat: e.target.value }))}
+                                                                placeholder="Latitud"
+                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                            />
+                                                            <input
+                                                                value={templateHeader.lng}
+                                                                onChange={e => setTemplateHeader(h => ({ ...h, lng: e.target.value }))}
+                                                                placeholder="Longitud"
+                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                            />
+                                                            <input
+                                                                value={templateHeader.name}
+                                                                onChange={e => setTemplateHeader(h => ({ ...h, name: e.target.value }))}
+                                                                placeholder="Nombre (opcional)"
+                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                            />
+                                                            <input
+                                                                value={templateHeader.address}
+                                                                onChange={e => setTemplateHeader(h => ({ ...h, address: e.target.value }))}
+                                                                placeholder="Dirección (opcional)"
+                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {selectedTemplate && templateVars.length > 0 && (
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
@@ -3181,7 +3308,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <button type="button" onClick={closeNewChat} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                             Cerrar
                                         </button>
-                                        <button type="button" onClick={sendNewChatTemplate} disabled={newChatLoading || !selectedTemplate} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                                        <button type="button" onClick={sendNewChatTemplate} disabled={newChatLoading || !selectedTemplate || templateHeader?.uploading} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
                                             {newChatLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                                             Enviar y abrir
                                         </button>

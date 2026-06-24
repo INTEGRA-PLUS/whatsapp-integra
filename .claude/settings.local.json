@@ -58,7 +58,8 @@
       "Bash(awk '/function sendAudio/,/^    \\\\}/' app/Services/MetaWhatsAppService.php)",
       "Bash(brew install *)",
       "Bash(ffmpeg -hide_banner -encoders)",
-      "Bash(command -v ffmpeg)"
+      "Bash(command -v ffmpeg)",
+      "Bash(xargs ls -la)"
     ]
   }
 }

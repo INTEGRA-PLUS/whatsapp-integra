@@ -211,6 +211,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/{templateId}', [App\Http\Controllers\TemplateController::class, 'show'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.view');
+        Route::post('/upload-media', [App\Http\Controllers\TemplateController::class, 'uploadMedia'])
+            ->middleware('permission:templates.create');
         Route::post('/', [App\Http\Controllers\TemplateController::class, 'store'])
             ->middleware('permission:templates.create');
     });
@@ -311,6 +313,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);
+        Route::post('/conversations/{conversationId}/template-media', [ChatController::class, 'uploadTemplateMedia']);
         Route::post('/conversations/{conversationId}/note', [ChatController::class, 'storeNote']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
         Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);

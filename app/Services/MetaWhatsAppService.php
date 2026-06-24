@@ -86,6 +86,48 @@ class MetaWhatsAppService
         ]);
     }
 
+    /**
+     * Sube un archivo a Meta (POST /{phone_number_id}/media) y devuelve el media_id.
+     * Ese id se referencia en header.parameters[].{image|video|document}.id al enviar
+     * una plantilla con encabezado multimedia. Meta aloja el archivo (~30 días).
+     */
+    public function uploadMedia(string $phoneNumberId, string $filePath, string $mimeType): array
+    {
+        try {
+            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $accessToken = $instance ? $instance->access_token : null;
+
+            if (!$accessToken) {
+                return ['success' => false, 'error' => 'Access token not found'];
+            }
+
+            $url = "{$this->baseUri}/{$phoneNumberId}/media";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(60)
+                ->attach('file', file_get_contents($filePath), basename($filePath), ['Content-Type' => $mimeType])
+                ->post($url, [
+                    'messaging_product' => 'whatsapp',
+                    'type' => $mimeType,
+                ]);
+
+            if ($response->successful() && $response->json('id')) {
+                return ['success' => true, 'id' => $response->json('id')];
+            }
+
+            Log::error('WhatsApp uploadMedia error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp uploadMedia exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     public function markAsRead(string $phoneNumberId, string $messageId)
     {
         return $this->sendRequest($phoneNumberId, [
@@ -337,6 +379,16 @@ class MetaWhatsAppService
     }
 
     public function uploadProfilePhoto(string $appId, string $accessToken, string $filePath, string $mimeType): array
+    {
+        return $this->uploadResumable($appId, $accessToken, $filePath, $mimeType);
+    }
+
+    /**
+     * Subida reanudable (resumable upload) a la app de Meta. Devuelve el handle "h"
+     * que se usa como example.header_handle al crear plantillas con encabezado
+     * multimedia (IMAGE/VIDEO/DOCUMENT) o como profile_picture_handle.
+     */
+    public function uploadResumable(string $appId, string $accessToken, string $filePath, string $mimeType): array
     {
         try {
             $fileSize = filesize($filePath);

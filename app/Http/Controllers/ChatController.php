@@ -411,6 +411,57 @@ class ChatController extends Controller
         ]));
     }
 
+    /**
+     * Sube un archivo (imagen/video/documento) a Meta para usarlo como encabezado
+     * multimedia al ENVIAR una plantilla. Lo sube a /{phone_number_id}/media y
+     * devuelve el media_id; el frontend lo pasa como
+     * header.parameters[].{image|video|document}.id en los componentes del envío.
+     */
+    public function uploadTemplateMedia(Request $request, $conversationId)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:102400',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+        $conversation = WhatsAppConversation::with('instance')->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $instance = $conversation->instance;
+        if (!$instance->isMetaConfigured()) {
+            return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
+        }
+
+        $file = $request->file('file');
+        $result = $this->metaService->uploadMedia(
+            $instance->phone_number_id,
+            $file->getRealPath(),
+            $file->getMimeType()
+        );
+
+        if (!($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'error' => $this->metaError($result, 'No se pudo subir el archivo a Meta.'),
+                'meta'  => $result['error']['error'] ?? null,
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'media_id' => $result['id'],
+            'filename' => $file->getClientOriginalName(),
+            'mime_type' => $file->getMimeType(),
+        ]);
+    }
+
     public function updates(Request $request)
     {
         $user = auth()->user();
