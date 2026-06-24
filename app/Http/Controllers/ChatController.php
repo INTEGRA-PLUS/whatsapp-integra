@@ -113,7 +113,15 @@ class ChatController extends Controller
                 $query->search($search);
             })
             ->when($request->status, function ($query, $status) {
-                $query->where('status', $status);
+                // Acepta un estado ('closed') o una lista ('open,pending') para que la
+                // paginación del backend coincida con el filtro de estado del cliente.
+                $list = collect(is_array($status) ? $status : explode(',', (string) $status))
+                    ->map(fn ($s) => trim($s))->filter()->values()->all();
+                if (count($list) === 1) {
+                    $query->where('status', $list[0]);
+                } elseif (count($list) > 1) {
+                    $query->whereIn('status', $list);
+                }
             })
             ->when($request->tag_ids ?? $request->tag_id, function ($query, $tags) {
                 $ids = collect(is_array($tags) ? $tags : explode(',', (string) $tags))

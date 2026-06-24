@@ -1582,11 +1582,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
     }, [searchQuery]);
 
     useEffect(() => {
-        // Reset and load when search changes
+        // Reset and load when search/filters change
         setPage(1);
         setConversations([]);
         setHasMore(true);
-    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter]);
 
     const loadConversations = useCallback(async (pageNum = 1) => {
         if (!selectedInstanceId || loadingMore) return;
@@ -1603,9 +1603,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
             if (filterMyAssignments) params.assigned_to = auth.user.id;
             if (folder !== 'all') params.filter = folder;
-            // Sólo el estado "Cerradas" se filtra en el backend; "Abiertas"/"Todas"
-            // se resuelven en el cliente para no excluir estados intermedios.
+            // El estado se filtra en el backend para que la paginación (hasMore)
+            // coincida con lo que se ve: "Abiertas" = open+pending, "Cerradas" = closed.
+            // "Todas" no envía estado. Evita paginar cientos de cerradas ocultas.
             if (statusFilter === 'closed') params.status = 'closed';
+            else if (statusFilter === 'open') params.status = 'open,pending';
 
             const res = await axios.get('/api/chat/conversations', { params });
 
@@ -2460,15 +2462,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onToggleSelect={toggleSelect}
                                 />
 
-                                {/* Sentinel for Infinite Scroll */}
-                                <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
-                                    {loadingMore && (
-                                        <div className="flex items-center gap-2 text-[10px] font-black text-teal-600/40 uppercase tracking-widest">
-                                            <div className="size-3 border-2 border-teal-600/20 border-t-teal-600 rounded-full animate-spin" />
-                                            Cargando más...
-                                        </div>
-                                    )}
-                                </div>
+                                {/* Sentinel for Infinite Scroll — solo cuando hay más por cargar */}
+                                {hasMore && (
+                                    <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
+                                        {loadingMore && (
+                                            <div className="flex items-center gap-2 text-[10px] font-black text-teal-600/40 uppercase tracking-widest">
+                                                <div className="size-3 border-2 border-teal-600/20 border-t-teal-600 rounded-full animate-spin" />
+                                                Cargando más...
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {filteredConversations.length === 0 && !loadingMore && (
                                     <div className="p-8 text-center">
