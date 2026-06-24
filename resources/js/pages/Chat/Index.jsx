@@ -22,6 +22,8 @@ import {
     MessageSquare,
     ChevronDown,
     Filter,
+    ArrowUpDown,
+    Plus,
     Tag as TagIcon,
     PlusCircle,
     X as XIcon,
@@ -56,6 +58,24 @@ import {
 import QuickReplyPicker from '@/components/quick-reply-picker';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+// Filtro de conversaciones (estilo Chatwoot) ─────────────────────────────────
+const STATUS_OPTIONS = [
+    { value: 'open', label: 'Abiertas' },
+    { value: 'closed', label: 'Cerradas' },
+    { value: 'all', label: 'Todas' },
+];
+const STATUS_LABELS = { open: 'Abiertas', closed: 'Cerradas', all: 'Todas' };
+const FILTER_FIELDS = [
+    { value: 'estado', label: 'Estado' },
+    { value: 'agente', label: 'Agente' },
+    { value: 'etiqueta', label: 'Etiqueta' },
+];
+const SORT_OPTIONS = [
+    { value: 'last_activity', label: 'Última actividad' },
+    { value: 'newest', label: 'Más recientes' },
+    { value: 'oldest', label: 'Más antiguas' },
+];
 
 function escapeRegExp(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -619,6 +639,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
     const [folderCounts, setFolderCounts] = useState({ all: 0, mentions: 0, unattended: 0, tags: {} });
+    // Filtro de estado (estilo Chatwoot): 'open' | 'closed' | 'all'
+    const [statusFilter, setStatusFilter] = useState('open');
+    // Orden de la lista: 'last_activity' | 'newest' | 'oldest'
+    const [sortBy, setSortBy] = useState('last_activity');
+    // Popover "Filtrar conversaciones" + sus filas en edición (borrador)
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [draftFilters, setDraftFilters] = useState([{ field: 'estado', value: 'open' }]);
 
     // Nuevo chat hacia un número directo
     const [newChatOpen, setNewChatOpen] = useState(false);
@@ -1231,14 +1258,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // ── Logic ──────────────────────────────────────────────────────────────
 
     const hasActiveFilters = Boolean(
-        filterMyAssignments || selectedTagIds.length || selectedAgentId || searchQuery.trim()
+        filterMyAssignments || selectedTagIds.length || selectedAgentId || searchQuery.trim() || statusFilter !== 'open'
     );
 
     const activeFilterCount =
         (filterMyAssignments ? 1 : 0) +
         selectedTagIds.length +
         (selectedAgentId ? 1 : 0) +
-        (searchQuery.trim() ? 1 : 0);
+        (searchQuery.trim() ? 1 : 0) +
+        (statusFilter !== 'open' ? 1 : 0);
 
     const resetFilters = useCallback(() => {
         setFilterMyAssignments(false);
@@ -1246,7 +1274,91 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setSelectedAgentId('');
         setAgentFilterQuery('');
         setSearchQuery('');
+        setStatusFilter('open');
+        setSortBy('last_activity');
     }, []);
+
+    // ── Popover "Filtrar conversaciones" ─────────────────────────────────────
+    // Construye las filas del borrador a partir del estado de filtros aplicado.
+    const buildDraftFromState = useCallback(() => {
+        const rows = [{ field: 'estado', value: statusFilter }];
+        if (filterMyAssignments) rows.push({ field: 'agente', value: 'mine' });
+        else if (selectedAgentId) rows.push({ field: 'agente', value: selectedAgentId });
+        selectedTagIds.forEach(id => rows.push({ field: 'etiqueta', value: String(id) }));
+        return rows;
+    }, [statusFilter, filterMyAssignments, selectedAgentId, selectedTagIds]);
+
+    const openFilterPopover = useCallback((open) => {
+        if (open) setDraftFilters(buildDraftFromState());
+        setFilterOpen(open);
+    }, [buildDraftFromState]);
+
+    const addDraftRow = useCallback(() => {
+        setDraftFilters(prev => {
+            const used = new Set(prev.map(r => r.field));
+            const next = FILTER_FIELDS.find(f => !used.has(f.value)) || FILTER_FIELDS[0];
+            const defaultValue = next.value === 'estado' ? 'open' : next.value === 'agente' ? 'mine' : '';
+            return [...prev, { field: next.value, value: defaultValue }];
+        });
+    }, []);
+
+    const updateDraftRow = useCallback((idx, patch) => {
+        setDraftFilters(prev => prev.map((r, i) => {
+            if (i !== idx) return r;
+            const merged = { ...r, ...patch };
+            // Al cambiar de campo, reiniciamos el valor a uno válido para ese campo.
+            if (patch.field && patch.field !== r.field) {
+                merged.value = patch.field === 'estado' ? 'open' : patch.field === 'agente' ? 'mine' : '';
+            }
+            return merged;
+        }));
+    }, []);
+
+    const removeDraftRow = useCallback((idx) => {
+        setDraftFilters(prev => prev.filter((_, i) => i !== idx));
+    }, []);
+
+    // Traduce las filas del borrador al estado de filtros aplicado.
+    const applyDraftFilters = useCallback(() => {
+        let status = 'all', mine = false, agent = '', tagIds = [];
+        let hasEstado = false;
+        draftFilters.forEach(r => {
+            if (r.field === 'estado') { status = r.value; hasEstado = true; }
+            else if (r.field === 'agente') {
+                if (r.value === 'mine') mine = true;
+                else if (r.value) agent = String(r.value);
+            } else if (r.field === 'etiqueta' && r.value) {
+                tagIds.push(String(r.value));
+            }
+        });
+        setStatusFilter(hasEstado ? status : 'all');
+        setFilterMyAssignments(mine);
+        setSelectedAgentId(mine ? '' : agent);
+        setSelectedTagIds([...new Set(tagIds)]);
+        setFilterOpen(false);
+    }, [draftFilters]);
+
+    const clearDraftFilters = useCallback(() => {
+        setDraftFilters([{ field: 'estado', value: 'open' }]);
+    }, []);
+
+    // Cierre del popover de filtros al hacer clic fuera o con Escape.
+    const filterPopoverRef = useRef(null);
+    useEffect(() => {
+        if (!filterOpen) return;
+        const onDown = (e) => {
+            if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target)) {
+                setFilterOpen(false);
+            }
+        };
+        const onKey = (e) => { if (e.key === 'Escape') setFilterOpen(false); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [filterOpen]);
 
     // Base list: todos los filtros (búsqueda, etiqueta, agente, "mis asignaciones")
     // EXCEPTO la pestaña de asignación. Sirve para que los contadores de las
@@ -1273,31 +1385,35 @@ export default function ChatIndex({ instances, integrations = [] }) {
         );
     }, [conversations, searchQuery, filterMyAssignments, selectedTagIds, selectedAgentId, auth.user.id]);
 
-    // Contadores de cada pestaña sobre la base ya filtrada. Las conversaciones
-    // cerradas se excluyen de Mías/Sin asignar/Todos y solo viven en "Cerrados".
-    const tabCounts = useMemo(() => {
-        const openItems = baseConversations.filter(c => c.status !== 'closed');
-        return {
-            all: openItems.length,
-            mine: openItems.filter(c => Number(c.assigned_to) === Number(auth.user.id)).length,
-            unassigned: openItems.filter(c => !c.assigned_to).length,
-            closed: baseConversations.filter(c => c.status === 'closed').length,
-        };
-    }, [baseConversations, auth.user.id]);
+    // Aplica el filtro de Estado (Abiertas/Cerradas/Todas) sobre la base.
+    const statusConversations = useMemo(() => {
+        if (statusFilter === 'open') return baseConversations.filter(c => c.status !== 'closed');
+        if (statusFilter === 'closed') return baseConversations.filter(c => c.status === 'closed');
+        return baseConversations;
+    }, [baseConversations, statusFilter]);
+
+    // Contadores de las pestañas Mías / Sin asignar / Todos, respetando el
+    // estado seleccionado y los filtros activos.
+    const tabCounts = useMemo(() => ({
+        all: statusConversations.length,
+        mine: statusConversations.filter(c => Number(c.assigned_to) === Number(auth.user.id)).length,
+        unassigned: statusConversations.filter(c => !c.assigned_to).length,
+    }), [statusConversations, auth.user.id]);
 
     const filteredConversations = useMemo(() => {
-        if (assignmentTab === 'closed') {
-            return baseConversations.filter(c => c.status === 'closed');
-        }
-        const openItems = baseConversations.filter(c => c.status !== 'closed');
+        let items = statusConversations;
         if (assignmentTab === 'mine') {
-            return openItems.filter(c => Number(c.assigned_to) === Number(auth.user.id));
+            items = items.filter(c => Number(c.assigned_to) === Number(auth.user.id));
+        } else if (assignmentTab === 'unassigned') {
+            items = items.filter(c => !c.assigned_to);
         }
-        if (assignmentTab === 'unassigned') {
-            return openItems.filter(c => !c.assigned_to);
-        }
-        return openItems;
-    }, [baseConversations, assignmentTab, auth.user.id]);
+        const ts = (v) => { const t = v ? new Date(v).getTime() : 0; return Number.isNaN(t) ? 0 : t; };
+        const sorted = [...items];
+        if (sortBy === 'newest') sorted.sort((a, b) => ts(b.created_at) - ts(a.created_at));
+        else if (sortBy === 'oldest') sorted.sort((a, b) => ts(a.created_at) - ts(b.created_at));
+        else sorted.sort((a, b) => ts(b.last_message_at) - ts(a.last_message_at));
+        return sorted;
+    }, [statusConversations, assignmentTab, sortBy, auth.user.id]);
 
     // ── Selección múltiple / cierre en lote ──────────────────────────────────
     const toggleSelect = useCallback((id) => {
@@ -1417,6 +1533,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
             if (filterMyAssignments) params.assigned_to = auth.user.id;
             if (folder !== 'all') params.filter = folder;
+            // Sólo el estado "Cerradas" se filtra en el backend; "Abiertas"/"Todas"
+            // se resuelven en el cliente para no excluir estados intermedios.
+            if (statusFilter === 'closed') params.status = 'closed';
 
             const res = await axios.get('/api/chat/conversations', { params });
 
@@ -1429,7 +1548,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         } finally {
             setLoadingMore(false);
         }
-    }, [selectedInstanceId, debouncedSearch, selectedTagIds, selectedAgentId, filterMyAssignments, folder, auth.user.id]);
+    }, [selectedInstanceId, debouncedSearch, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, auth.user.id]);
 
     useEffect(() => {
         loadFolderCounts();
@@ -1437,7 +1556,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     useEffect(() => {
         loadConversations(1);
-    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, loadConversations]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, loadConversations]);
 
     const sidebarScrollRef = useRef(null);
     const observerTarget = useRef(null);
@@ -1821,104 +1940,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <button className={clsx(
-                                    "p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center",
-                                    (filterMyAssignments || selectedTagIds.length || selectedAgentId) ? "bg-teal-600 text-white border-teal-600 shadow-sm" : "bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground"
-                                )}>
+                                <button className="p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground">
                                     <MoreHorizontal className="size-5" />
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
                                 <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones de Chat</DropdownMenuLabel>
                                 <DropdownMenuSeparator className="bg-border/5" />
-                                
-                                <DropdownMenuItem 
-                                    onClick={() => { setFilterMyAssignments(!filterMyAssignments); setSelectedAgentId(''); }}
-                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
-                                >
-                                    <div className={clsx(
-                                        "size-8 rounded-lg flex items-center justify-center transition-colors shadow-sm",
-                                        filterMyAssignments ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-teal-50 group-hover:text-teal-600"
-                                    )}>
-                                        <User className="size-4" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold leading-none mb-1">Mis Asignaciones</span>
-                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">
-                                            {filterMyAssignments ? 'Viendo solo mis chats' : 'Ver todos los chats'}
-                                        </span>
-                                    </div>
-                                    {filterMyAssignments && <Check className="size-4 text-teal-600 ml-auto" />}
-                                </DropdownMenuItem>
 
-                                {isAdmin && companyUsers.length > 0 && (
-                                    <>
-                                        <DropdownMenuSeparator className="bg-border/5" />
-                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2 flex justify-between items-center">
-                                            <span>Filtrar por Agente</span>
-                                            {selectedAgentId && <span className="text-[8px] bg-teal-600 text-white px-1 rounded">Activo</span>}
-                                        </DropdownMenuLabel>
-                                        
-                                        {/* Search Input for Agents */}
-                                        <div className="px-2 pb-2" onClick={(e) => e.stopPropagation()}>
-                                            <div className="relative">
-                                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/40" />
-                                                <input 
-                                                    type="text"
-                                                    placeholder="Buscar agente..."
-                                                    value={agentFilterQuery}
-                                                    onChange={(e) => setAgentFilterQuery(e.target.value)}
-                                                    className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg pl-7 pr-2 py-1.5 text-[11px] focus:ring-1 focus:ring-teal-600/20 outline-none"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        <div className="max-h-60 overflow-y-auto px-1 py-1 custom-scrollbar">
-                                            {!agentFilterQuery && (
-                                                <DropdownMenuItem 
-                                                    onClick={() => { setSelectedAgentId(selectedAgentId === 'unassigned' ? '' : 'unassigned'); setFilterMyAssignments(false); }}
-                                                    className="flex items-center gap-3 py-2 px-3 cursor-pointer group"
-                                                >
-                                                    <div className={clsx(
-                                                        "size-7 rounded-lg flex items-center justify-center transition-all",
-                                                        selectedAgentId === 'unassigned' ? "bg-amber-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-amber-50 group-hover:text-amber-600"
-                                                    )}>
-                                                        <XIcon className="size-3.5" />
-                                                    </div>
-                                                    <span className="text-xs font-bold flex-1 text-amber-600 dark:text-amber-400">Sin Asignar</span>
-                                                    {selectedAgentId === 'unassigned' && <Check className="size-3.5 text-teal-600" />}
-                                                </DropdownMenuItem>
-                                            )}
-                                            
-                                            {companyUsers
-                                                .filter(u => u.name.toLowerCase().includes(agentFilterQuery.toLowerCase()))
-                                                .map(u => (
-                                                    <DropdownMenuItem 
-                                                        key={u.id}
-                                                        onClick={() => { setSelectedAgentId(selectedAgentId === String(u.id) ? '' : String(u.id)); setFilterMyAssignments(false); }}
-                                                        className="flex items-center gap-3 py-2 px-3 cursor-pointer group"
-                                                    >
-                                                        <div className={clsx(
-                                                            "size-7 rounded-lg flex items-center justify-center transition-all",
-                                                            selectedAgentId === String(u.id) ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600"
-                                                        )}>
-                                                            <User className="size-3.5" />
-                                                        </div>
-                                                        <span className="text-xs font-bold flex-1">{u.name}</span>
-                                                        {selectedAgentId === String(u.id) && <Check className="size-3.5 text-teal-600" />}
-                                                    </DropdownMenuItem>
-                                                ))
-                                            }
-                                            {companyUsers.filter(u => u.name.toLowerCase().includes(agentFilterQuery.toLowerCase())).length === 0 && (
-                                                <div className="py-4 text-center">
-                                                    <p className="text-[10px] font-bold text-muted-foreground">No se encontraron agentes</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                )}
-
-                                <DropdownMenuSeparator className="bg-border/5" />
                                 <DropdownMenuItem
                                     onClick={() => handleNewTag(null)}
                                     className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
@@ -1932,39 +1961,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     </div>
                                 </DropdownMenuItem>
 
-                                {tags.length > 0 && (
+                                {hasActiveFilters && (
                                     <>
                                         <DropdownMenuSeparator className="bg-border/5" />
-                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Filtrar por Etiqueta</DropdownMenuLabel>
-                                        <div className="max-h-48 overflow-y-auto px-1">
-                                            {tags.map(tag => (
-                                                <DropdownMenuItem 
-                                                    key={tag.id}
-                                                    onClick={() => toggleTag(tag.id)}
-                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
-                                                >
-                                                    <div className="size-3 rounded-full shadow-sm" style={{ backgroundColor: tag.color }} />
-                                                    <span className="text-xs font-bold flex-1">{tag.name}</span>
-                                                    {selectedTagIds.includes(String(tag.id)) && <Check className="size-3.5 text-teal-600" />}
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </div>
+                                        <DropdownMenuItem
+                                            className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
+                                            onClick={() => { resetFilters(); loadConversations(); }}
+                                        >
+                                            <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
+                                                <Filter className="size-4" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold leading-none mb-1">Limpiar Filtros</span>
+                                                <span className="text-[9px] font-medium text-muted-foreground leading-none">Restablecer vista</span>
+                                            </div>
+                                        </DropdownMenuItem>
                                     </>
                                 )}
-                                
-                                <DropdownMenuSeparator className="bg-border/5" />
-                                <DropdownMenuItem
-                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
-                                    onClick={() => { resetFilters(); loadConversations(); }}
-                                >
-                                    <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
-                                        <Filter className="size-4" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold leading-none mb-1">Limpiar Filtros</span>
-                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">Restablecer vista</span>
-                                    </div>
-                                </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
@@ -2182,14 +2195,155 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 )}
                             </div>
 
-                            {/* Pestañas de asignación: Mías / Sin asignar / Todos / Cerrados */}
-                            <div className="px-3 py-2 border-b border-border/10">
+                            {/* Encabezado de conversaciones: título + estado + filtros + orden */}
+                            <div className="px-3 pt-1 pb-2 border-b border-border/10">
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <h3 className="text-sm font-bold text-foreground truncate">Conversaciones</h3>
+                                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-[#e9edef] dark:bg-[#2a3942] text-[10px] font-black uppercase tracking-wide text-teal-600 dark:text-teal-400">
+                                            {STATUS_LABELS[statusFilter]}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        {/* Filtrar conversaciones */}
+                                        <div className="relative" ref={filterPopoverRef}>
+                                            <button
+                                                type="button"
+                                                title="Filtrar conversaciones"
+                                                onClick={() => openFilterPopover(!filterOpen)}
+                                                className={clsx(
+                                                    "size-8 flex items-center justify-center rounded-lg border transition-colors",
+                                                    hasActiveFilters
+                                                        ? "bg-teal-600 text-white border-teal-600 shadow-sm"
+                                                        : "border-border/10 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                                                )}
+                                            >
+                                                <Filter className="size-4" />
+                                            </button>
+                                            {filterOpen && (
+                                                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
+                                                    <p className="text-sm font-bold text-foreground mb-3">Filtrar conversaciones</p>
+                                                    <div className="space-y-2">
+                                                        {draftFilters.map((row, i) => (
+                                                            <div key={i} className="flex items-center gap-1.5">
+                                                                <select
+                                                                    value={row.field}
+                                                                    onChange={(e) => updateDraftRow(i, { field: e.target.value })}
+                                                                    className="shrink-0 w-[88px] bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer"
+                                                                >
+                                                                    {FILTER_FIELDS.map(f => (
+                                                                        <option key={f.value} value={f.value}>{f.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">Es igual a</span>
+                                                                {row.field === 'estado' && (
+                                                                    <select
+                                                                        value={row.value}
+                                                                        onChange={(e) => updateDraftRow(i, { value: e.target.value })}
+                                                                        className="flex-1 min-w-0 bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer"
+                                                                    >
+                                                                        {STATUS_OPTIONS.map(o => (
+                                                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                                {row.field === 'agente' && (
+                                                                    <select
+                                                                        value={row.value}
+                                                                        onChange={(e) => updateDraftRow(i, { value: e.target.value })}
+                                                                        className="flex-1 min-w-0 bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer"
+                                                                    >
+                                                                        <option value="mine">Yo</option>
+                                                                        <option value="unassigned">Sin asignar</option>
+                                                                        {companyUsers.map(u => (
+                                                                            <option key={u.id} value={String(u.id)}>{u.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                                {row.field === 'etiqueta' && (
+                                                                    <select
+                                                                        value={row.value}
+                                                                        onChange={(e) => updateDraftRow(i, { value: e.target.value })}
+                                                                        className="flex-1 min-w-0 bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-lg px-2 py-1.5 text-xs font-bold outline-none cursor-pointer"
+                                                                    >
+                                                                        <option value="">Elegir…</option>
+                                                                        {tags.map(t => (
+                                                                            <option key={t.id} value={String(t.id)}>{t.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeDraftRow(i)}
+                                                                    title="Quitar filtro"
+                                                                    className="shrink-0 size-7 flex items-center justify-center rounded-lg text-muted-foreground/60 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                                                                >
+                                                                    <Trash2 className="size-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={addDraftRow}
+                                                        className="mt-3 flex items-center gap-1 text-xs font-bold text-teal-600 hover:underline"
+                                                    >
+                                                        <Plus className="size-3.5" /> Añadir Filtro
+                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-border/10">
+                                                        <button
+                                                            type="button"
+                                                            onClick={clearDraftFilters}
+                                                            className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
+                                                        >
+                                                            Limpiar filtros
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={applyDraftFilters}
+                                                            className="text-xs font-black text-white bg-teal-600 px-3 py-1.5 rounded-lg hover:bg-teal-700 transition-colors"
+                                                        >
+                                                            Aplicar filtros
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Ordenar */}
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <button
+                                                    type="button"
+                                                    title="Ordenar conversaciones"
+                                                    className="size-8 flex items-center justify-center rounded-lg border border-border/10 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                                                >
+                                                    <ArrowUpDown className="size-4" />
+                                                </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-52 rounded-xl border-border/10 shadow-2xl">
+                                                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Ordenar por</DropdownMenuLabel>
+                                                <DropdownMenuSeparator className="bg-border/5" />
+                                                {SORT_OPTIONS.map(o => (
+                                                    <DropdownMenuItem
+                                                        key={o.value}
+                                                        onClick={() => setSortBy(o.value)}
+                                                        className="flex items-center justify-between py-2 px-3 cursor-pointer"
+                                                    >
+                                                        <span className="text-xs font-bold">{o.label}</span>
+                                                        {sortBy === o.value && <Check className="size-3.5 text-teal-600" />}
+                                                    </DropdownMenuItem>
+                                                ))}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                </div>
+
                                 <div className="flex items-center gap-1 p-1 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33]">
                                     {[
                                         { key: 'mine', label: 'Mías', count: tabCounts.mine },
                                         { key: 'unassigned', label: 'Sin asignar', count: tabCounts.unassigned },
                                         { key: 'all', label: 'Todos', count: tabCounts.all },
-                                        { key: 'closed', label: 'Cerrados', count: tabCounts.closed },
                                     ].map(tab => {
                                         const active = assignmentTab === tab.key;
                                         return (
@@ -2217,48 +2371,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     })}
                                 </div>
                             </div>
-
-                            {/* Barra de acciones masivas (cerrar varios / todos) */}
-                            {isAdmin && (
-                                <div className="px-3 py-1.5 flex items-center justify-between gap-2 border-b border-border/10 bg-[#f8f9fa] dark:bg-[#161f25]">
-                                    {!selectionMode ? (
-                                        <>
-                                            <button
-                                                onClick={() => setSelectionMode(true)}
-                                                className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors"
-                                            >
-                                                <CheckSquare className="size-3.5" /> Seleccionar
-                                            </button>
-                                            {assignmentTab !== 'closed' && (
-                                                <button
-                                                    onClick={closeAllOpen}
-                                                    className="flex items-center gap-1.5 text-[11px] font-bold text-rose-600/80 hover:text-rose-600 transition-colors"
-                                                    title="Cerrar todas las conversaciones abiertas de esta instancia"
-                                                >
-                                                    <CheckCircle2 className="size-3.5" /> Cerrar todos
-                                                </button>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center gap-3">
-                                                <button onClick={selectAllVisible} className="text-[11px] font-bold text-teal-600 hover:underline">Todos</button>
-                                                <span className="text-[11px] font-semibold text-muted-foreground">{selectedIds.size} sel.</span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={exitSelection} className="text-[11px] font-bold text-muted-foreground hover:text-foreground">Cancelar</button>
-                                                <button
-                                                    onClick={closeSelected}
-                                                    disabled={selectedIds.size === 0}
-                                                    className="flex items-center gap-1 text-[11px] font-black text-white bg-teal-600 px-2.5 py-1 rounded-md hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                                                >
-                                                    <CheckCircle2 className="size-3.5" /> Cerrar ({selectedIds.size})
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            )}
 
                             <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
                                 <ConversationList
@@ -2291,12 +2403,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 {filteredConversations.length === 0 && !loadingMore && (
                                     <div className="p-8 text-center">
                                         <p className="text-xs text-muted-foreground font-medium italic opacity-60">
-                                            {assignmentTab === 'mine'
-                                                ? 'No tienes chats asignados'
-                                                : assignmentTab === 'unassigned'
-                                                    ? 'No hay chats sin asignar'
-                                                    : assignmentTab === 'closed'
-                                                        ? 'No hay chats cerrados'
+                                            {statusFilter === 'closed'
+                                                ? 'No hay chats cerrados'
+                                                : assignmentTab === 'mine'
+                                                    ? 'No tienes chats asignados'
+                                                    : assignmentTab === 'unassigned'
+                                                        ? 'No hay chats sin asignar'
                                                         : 'No se encontraron chats'}
                                         </p>
                                     </div>
