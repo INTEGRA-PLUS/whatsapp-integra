@@ -1123,8 +1123,20 @@ const VERTICAL_OPTIONS = [
     { value: 'RESTAURANT', label: 'Restaurantes' },
 ];
 
+// Estado del "display name" (verified_name) según Meta. Es solo lectura por API.
+const NAME_STATUS_META = {
+    APPROVED: { label: 'Aprobado', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30' },
+    AVAILABLE_WITHOUT_REVIEW: { label: 'Disponible', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30' },
+    PENDING_REVIEW: { label: 'En revisión', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30' },
+    PENDING: { label: 'En revisión', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30' },
+    DECLINED: { label: 'Rechazado', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 ring-1 ring-inset ring-rose-500/30' },
+    EXPIRED: { label: 'Expirado', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 ring-1 ring-inset ring-rose-500/30' },
+    NONE: { label: 'Sin nombre', cls: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 ring-1 ring-inset ring-zinc-500/30' },
+};
+
 function BusinessProfilePanel({ instanceId, setToast }) {
     const [profile, setProfile] = useState(null);
+    const [nameInfo, setNameInfo] = useState(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
@@ -1147,6 +1159,7 @@ function BusinessProfilePanel({ instanceId, setToast }) {
                 vertical: p.vertical ?? '',
                 profile_picture_url: p.profile_picture_url ?? null,
             });
+            setNameInfo(data.name ?? null);
         } catch (err) {
             setError(err?.response?.data?.message ?? 'No se pudo cargar el perfil.');
             setProfile(null);
@@ -1221,8 +1234,31 @@ function BusinessProfilePanel({ instanceId, setToast }) {
     }
     if (!profile) return null;
 
+    const nameStatus = nameInfo?.name_status ? (NAME_STATUS_META[nameInfo.name_status] ?? { label: nameInfo.name_status, cls: NAME_STATUS_META.NONE.cls }) : null;
+
     return (
         <form onSubmit={save} className="space-y-6">
+            {/* Nombre para mostrar (solo lectura) */}
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <h3 className="font-semibold text-foreground">Nombre para mostrar</h3>
+                        <p className="text-lg font-bold text-foreground mt-1 truncate">{nameInfo?.display_name || 'Sin nombre aprobado'}</p>
+                        {nameInfo?.display_phone_number && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{nameInfo.display_phone_number}</p>
+                        )}
+                    </div>
+                    {nameStatus && (
+                        <span className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full ${nameStatus.cls}`}>
+                            {nameStatus.label}
+                        </span>
+                    )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
+                    El nombre para mostrar no se edita aquí: se solicita en <span className="font-medium text-foreground">WhatsApp Manager</span>, Meta lo revisa y luego debes re-registrar el número en la pestaña <span className="font-medium text-foreground">Estado y activaciones</span>. Permite hasta 10 cambios cada 30 días.
+                </p>
+            </div>
+
             {/* Photo */}
             <div className="rounded-2xl border border-border/60 bg-card/50 p-5">
                 <div className="flex items-center gap-5">

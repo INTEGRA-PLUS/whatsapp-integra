@@ -225,6 +225,12 @@ class WhatsAppSettingsController extends Controller
 
         $data = $result['data']['data'][0] ?? [];
 
+        // Nombre para mostrar (display name) y su estado de revisión. Es de solo
+        // lectura por la API: cambiarlo se hace en WhatsApp Manager y luego se
+        // re-registra el número. Lo leemos del nodo del número telefónico.
+        $phone = $this->meta->getPhoneNumber($instance->phone_number_id, $instance->access_token);
+        $phoneData = ($phone['success'] ?? false) ? ($phone['data'] ?? []) : [];
+
         return response()->json([
             'profile' => [
                 'about' => $data['about'] ?? '',
@@ -234,6 +240,11 @@ class WhatsAppSettingsController extends Controller
                 'profile_picture_url' => $data['profile_picture_url'] ?? null,
                 'websites' => $data['websites'] ?? [],
                 'vertical' => $data['vertical'] ?? '',
+            ],
+            'name' => [
+                'display_name' => $phoneData['verified_name'] ?? null,
+                'display_phone_number' => $phoneData['display_phone_number'] ?? ($instance->display_phone_number ?? null),
+                'name_status' => $phoneData['name_status'] ?? null,
             ],
         ]);
     }
