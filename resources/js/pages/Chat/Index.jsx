@@ -213,7 +213,7 @@ const ConversationItem = memo(({
         <div
             onClick={() => selectionMode ? onToggleSelect(conv.id) : onSelect(conv)}
             className={clsx(
-                "flex items-center gap-3 px-4 py-3 cursor-pointer transition-all border-b border-border/5 group/conv",
+                "flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-all border-b border-border/5 group/conv",
                 selected ? 'bg-teal-50 dark:bg-teal-950/30' : isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
             )}
         >
@@ -235,8 +235,8 @@ const ConversationItem = memo(({
                     </div>
                 )}
             </div>
-            <div className="flex-1 min-w-0 border-b border-border/5 pb-0.5">
-                <div className="flex items-center justify-between gap-2 mb-0.5">
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                         {conv.status === 'closed' && (
                             <span title="Conversación cerrada" className="shrink-0 text-slate-400 dark:text-slate-500">
@@ -247,7 +247,7 @@ const ConversationItem = memo(({
                             "text-sm font-bold truncate",
                             conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
                         )}>
-                            {conv.name || conv.phone_number}
+                            {conv.contact?.name || conv.name || conv.phone_number}
                         </p>
                         {conv.assigned_agent && (
                             <span 
@@ -401,7 +401,7 @@ const ConversationItem = memo(({
 
 // Estilo estable para el wrapper de cada fila (evita recrear el objeto en cada
 // render y permite que el navegador omita el layout/paint de filas fuera de vista).
-const LIST_ITEM_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '0 72px' };
+const LIST_ITEM_STYLE = { contentVisibility: 'auto', containIntrinsicSize: '0 80px' };
 
 // ─── ConversationList ────────────────────────────────────────────────────────
 // Lista memoizada: con miles de conversaciones, este componente NO se vuelve a
@@ -1665,13 +1665,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
     }
 
     async function checkForUpdates() {
-        if (!lastUpdateTimestamp) {
-            setLastUpdateTimestamp(new Date().toISOString());
-            return;
-        }
         try {
             setIsPolling(true);
-            const params = { instance_id: selectedInstanceId, since: lastUpdateTimestamp };
+            // El primer poll va sin `since`: el servidor responde solo con su propio
+            // timestamp para sembrar la referencia (evita el desfase por el reloj o la
+            // zona horaria del cliente). Los polls siguientes ya envían ese valor.
+            const params = { instance_id: selectedInstanceId };
+            if (lastUpdateTimestamp) params.since = lastUpdateTimestamp;
             if (selectedConversation) params.conversation_id = selectedConversation.id;
             if (folder !== 'all') params.filter = folder;
 
@@ -1682,6 +1682,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
             if (res.data.conversations?.length > 0) {
                 mergeConversations(res.data.conversations);
                 loadFolderCounts();
+                // Sincroniza la conversación abierta en pantalla: si el cliente
+                // vuelve a escribir y el backend la reabrió (closed → open), la
+                // cabecera refleja el nuevo estado al instante (el botón pasa de
+                // "Reabrir" a "Cerrar") sin que nadie la abra manualmente.
+                setSelectedConversation(prev => {
+                    if (!prev) return prev;
+                    const updated = res.data.conversations.find(c => c.id === prev.id);
+                    return updated ? { ...prev, ...updated } : prev;
+                });
             }
             if (res.data.new_messages?.length > 0) {
                 setMessages(prev => {
@@ -2217,7 +2226,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                         {/* Sidebar - WhatsApp Web Style */}
                         <div className="w-full sm:w-80 lg:w-96 bg-white dark:bg-[#111b21] flex flex-col border-r border-border/10">
-                            <div className="p-3">
+                            <div className="px-3 pt-3 pb-3">
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -2228,7 +2237,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             placeholder="Busca o empieza un chat nuevo"
                                             value={searchQuery}
                                             onChange={e => setSearchQuery(e.target.value)}
-                                            className="w-full pl-10 pr-10 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
+                                            className="w-full pl-10 pr-10 py-2.5 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm transition-all outline-none placeholder:text-muted-foreground/60 text-foreground"
                                         />
                                         {searchQuery && (
                                             <button
@@ -2268,8 +2277,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             </div>
 
                             {/* Encabezado de conversaciones: título + estado + filtros + orden */}
-                            <div className="px-3 pt-1 pb-2 border-b border-border/10">
-                                <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="px-3 pt-2">
+                                <div className="flex items-center justify-between gap-2 mb-4">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <h3 className="text-sm font-bold text-foreground truncate">Conversaciones</h3>
                                         <span className="shrink-0 px-2 py-0.5 rounded-md bg-[#e9edef] dark:bg-[#2a3942] text-[10px] font-black uppercase tracking-wide text-teal-600 dark:text-teal-400">
@@ -2284,13 +2293,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 title="Filtrar conversaciones"
                                                 onClick={() => openFilterPopover(!filterOpen)}
                                                 className={clsx(
-                                                    "size-8 flex items-center justify-center rounded-lg border transition-colors",
+                                                    "size-7 flex items-center justify-center rounded-md transition-colors",
                                                     hasActiveFilters
-                                                        ? "bg-teal-600 text-white border-teal-600 shadow-sm"
-                                                        : "border-border/10 text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                                                        ? "bg-teal-600 text-white shadow-sm"
+                                                        : "text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
                                                 )}
                                             >
-                                                <Filter className="size-4" />
+                                                <Filter className="size-[15px]" />
                                             </button>
                                             {filterOpen && (
                                                 <div className="absolute right-0 top-full mt-2 z-50 w-[340px] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
@@ -2388,9 +2397,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     type="button"
                                                     title="Ordenar conversaciones"
-                                                    className="size-8 flex items-center justify-center rounded-lg border border-border/10 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                                                    className="size-7 flex items-center justify-center rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-colors"
                                                 >
-                                                    <ArrowUpDown className="size-4" />
+                                                    <ArrowUpDown className="size-[15px]" />
                                                 </button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end" className="w-52 rounded-xl border-border/10 shadow-2xl">
@@ -2411,7 +2420,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-1 p-1 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33]">
+                                <div className="flex items-center gap-4 border-b border-border/10">
                                     {[
                                         { key: 'mine', label: 'Mías', count: tabCounts.mine },
                                         { key: 'unassigned', label: 'Sin asignar', count: tabCounts.unassigned },
@@ -2425,16 +2434,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 onClick={() => setAssignmentTab(tab.key)}
                                                 title={`${tab.label} (${tab.count})`}
                                                 className={clsx(
-                                                    "flex-1 min-w-0 flex items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-bold whitespace-nowrap transition-all",
+                                                    "relative flex items-center gap-1.5 pb-3 -mb-px text-[12px] whitespace-nowrap transition-colors border-b-2",
                                                     active
-                                                        ? "bg-white dark:bg-[#2a3942] text-teal-600 dark:text-teal-400 shadow-sm"
-                                                        : "text-muted-foreground hover:text-foreground"
+                                                        ? "text-teal-600 dark:text-teal-400 font-bold border-teal-600 dark:border-teal-400"
+                                                        : "text-muted-foreground hover:text-foreground font-semibold border-transparent"
                                                 )}
                                             >
                                                 <span className="truncate">{tab.label}</span>
                                                 <span className={clsx(
-                                                    "shrink-0 text-[10px] font-black leading-none tabular-nums",
-                                                    active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground/50"
+                                                    "shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none tabular-nums",
+                                                    active
+                                                        ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
+                                                        : "bg-muted/60 text-muted-foreground/70"
                                                 )}>
                                                     {tab.count}
                                                 </span>
@@ -2444,7 +2455,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 </div>
                             </div>
 
-                            <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
+                            <div ref={sidebarScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pt-1.5">
                                 <ConversationList
                                     conversations={filteredConversations}
                                     selectedId={selectedConversation?.id}
@@ -2509,14 +2520,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             ) : (
                                 <>
                                     {/* Chat Header */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-2.5 flex items-center justify-between gap-3 z-10 shadow-sm">
+                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-3 flex items-center justify-between gap-3 z-10 shadow-sm">
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="size-10 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm">
                                                 {selectedConversation.initials}
                                             </div>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                    <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.name}</h3>
+                                                    <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.contact?.name || selectedConversation.name}</h3>
                                                     {selectedConversation.status === 'closed' && (
                                                         <span className="shrink-0 text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
                                                     )}
@@ -2548,7 +2559,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-1 shrink-0">
+                                        <div className="flex items-center gap-1.5 shrink-0">
                                             {/* Admin Assignment Button */}
                                             {isAdmin && (
                                                 <DropdownMenu>
@@ -2678,7 +2689,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
                                                     title="Reabrir conversación"
-                                                    className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors"
+                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-white bg-amber-500 hover:bg-amber-400 shadow-sm shadow-amber-500/25 transition-colors"
                                                 >
                                                     <RotateCcw className="size-4" />
                                                     <span className="hidden md:inline">Reabrir</span>
@@ -2691,12 +2702,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         }
                                                     }}
                                                     title="Cerrar conversación"
-                                                    className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-[12px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
+                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-sm shadow-emerald-600/25 transition-colors"
                                                 >
                                                     <CheckCircle2 className="size-4" />
                                                     <span className="hidden md:inline">Cerrar</span>
                                                 </button>
                                             )}
+
+                                            {/* Separador entre la acción principal y las utilidades */}
+                                            <span className="w-px h-5 bg-border/40 mx-0.5" />
 
                                             <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-[18px]" /></button>
                                             <DropdownMenu>
@@ -2787,7 +2801,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         className={`flex mb-2 sm:mb-3 ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
                                                     >
                                                         <div
-                                                            className={`relative px-3 py-1.5 shadow-sm min-w-[110px] max-w-[85%] lg:max-w-[70%] group ${
+                                                            className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[80%] lg:max-w-[65%] group ${
                                                                 isOut 
                                                                     ? 'bg-[#dcf8c6] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none' 
                                                                     : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tl-none'
@@ -2803,12 +2817,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                                             <div className="flex flex-col relative">
                                                                 {isOut && msg.sender?.name && (
-                                                                    <span className="text-[11px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
+                                                                    <span className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
                                                                         {msg.sender.name}
                                                                     </span>
                                                                 )}
                                                                 {msg.type === 'text' && (
-                                                                    <p className="text-[13.5px] leading-[19px] whitespace-pre-wrap break-words pr-20 pb-1 font-medium">{msg.content}</p>
+                                                                    <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
                                                                 )}
                                                                 
                                                                 {msg.type === 'image' && (
@@ -2825,7 +2839,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                                 alt="media"
                                                                             />
                                                                         </div>
-                                                                        {msg.content && <p className="text-[13.5px] leading-[19px] mb-6 pr-10">{msg.content}</p>}
+                                                                        {msg.content && <p className="text-[12.5px] leading-[17px] mb-6 pr-10">{msg.content}</p>}
                                                                     </div>
                                                                 )}
                                                                 
@@ -2846,7 +2860,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                             </div>
                                                                         </div>
                                                                         <div className="mt-1 pb-6">
-                                                                            <p className="text-[13.5px] leading-relaxed font-medium whitespace-pre-wrap break-words opacity-90">{msg.content || 'Sin descripción'}</p>
+                                                                            <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words opacity-90">{msg.content || 'Sin descripción'}</p>
                                                                         </div>
                                                                     </div>
                                                                 )}
@@ -2880,35 +2894,35 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                     {/* Composer mode strip: Responder / Nota interna */}
                                     {!isRecording && (
-                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-1.5 flex items-center gap-1 z-10">
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2.5 flex items-center gap-1.5 z-10">
                                             <button
                                                 onClick={() => { setComposerMode('reply'); closeMentions(); }}
                                                 className={clsx(
-                                                    "px-3 py-1 rounded-t-md text-[11px] font-bold uppercase tracking-wide transition-colors flex items-center gap-1.5",
+                                                    "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1",
                                                     composerMode === 'reply'
-                                                        ? "bg-white dark:bg-[#2a3942] text-teal-600 dark:text-teal-400"
-                                                        : "text-muted-foreground hover:text-foreground"
+                                                        ? "bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-200/80 dark:ring-teal-800/50"
+                                                        : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                 )}
                                             >
-                                                <MessageSquare className="size-3.5" /> Responder
+                                                <MessageSquare className="size-3" /> Responder
                                             </button>
                                             <button
                                                 onClick={() => { setComposerMode('note'); closeQuickReplies(); }}
                                                 className={clsx(
-                                                    "px-3 py-1 rounded-t-md text-[11px] font-bold uppercase tracking-wide transition-colors flex items-center gap-1.5",
+                                                    "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1",
                                                     composerMode === 'note'
-                                                        ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300"
-                                                        : "text-muted-foreground hover:text-foreground"
+                                                        ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200/80 dark:ring-amber-800/50"
+                                                        : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                 )}
                                             >
-                                                <StickyNote className="size-3.5" /> Nota interna
+                                                <StickyNote className="size-3" /> Nota interna
                                             </button>
                                         </div>
                                     )}
 
                                     {/* Input Area - WhatsApp Web Style */}
                                     <div className={clsx(
-                                        "px-3 py-2 flex items-end gap-2 z-10 text-foreground min-h-[62px] transition-colors",
+                                        "px-3 pt-2 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
                                         composerMode === 'note' && !isRecording
                                             ? "bg-amber-50 dark:bg-amber-900/20"
                                             : "bg-[#f0f2f5] dark:bg-[#202c33]"
@@ -2934,36 +2948,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </button>
                                             </div>
                                         ) : !isRecording ? (
-                                            <>
-                                                <div className="flex items-center pb-0.5">
-                                                    {composerMode === 'reply' ? (
-                                                        <>
-                                                            <button title="Insertar emoji" aria-label="Insertar emoji" className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Smile className="size-6" /></button>
-                                                            <label title="Adjuntar imagen" aria-label="Adjuntar imagen" className="p-2 rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
-                                                                <Paperclip className="size-6" />
-                                                                <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
-                                                            </label>
-                                                            <button
-                                                                onClick={startRecording}
-                                                                className="p-2 rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                                                                title="Grabar audio"
-                                                                aria-label="Grabar audio"
-                                                            >
-                                                                <Mic className="size-6" />
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <button
-                                                            disabled
-                                                            title="Programar nota (próximamente)"
-                                                            className="p-2 text-amber-400/70 cursor-not-allowed"
-                                                        >
-                                                            <Clock className="size-6" />
-                                                        </button>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex-1 relative">
+                                            <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                                {/* Área de texto a todo el ancho */}
+                                                <div className="relative">
                                                     {composerMode === 'reply' && qrOpen && (
                                                         <QuickReplyPicker
                                                             matches={qrMatches}
@@ -3000,7 +2987,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         onChange={handleComposerChange}
                                                         onKeyDown={handleComposerKeyDown}
                                                         className={clsx(
-                                                            "block w-full border-none rounded-lg px-4 py-2 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
+                                                            "block w-full border-none rounded-lg px-4 py-2.5 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
                                                             composerMode === 'note'
                                                                 ? "bg-white dark:bg-[#2a3942] ring-1 ring-amber-300/70 dark:ring-amber-700/50"
                                                                 : "bg-white dark:bg-[#2a3942]"
@@ -3009,21 +2996,53 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     />
                                                 </div>
 
-                                                <button
-                                                    onClick={composerMode === 'note' ? sendNote : sendMessage}
-                                                    disabled={!newMessage.trim() || sending}
-                                                    title={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
-                                                    aria-label={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
-                                                    className={clsx(
-                                                        "p-2 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed",
-                                                        composerMode === 'note'
-                                                            ? "text-amber-600 hover:text-amber-700 hover:bg-amber-100/50 dark:hover:bg-amber-900/20"
-                                                            : "text-[#54656f] dark:text-[#8696a0] hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5"
-                                                    )}
-                                                >
-                                                    <Send className={`size-6 ${sending ? 'animate-pulse' : ''}`} />
-                                                </button>
-                                            </>
+                                                {/* Barra de herramientas inferior (estilo Chatwoot) */}
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-0.5">
+                                                        {composerMode === 'reply' ? (
+                                                            <>
+                                                                <button title="Insertar emoji" aria-label="Insertar emoji" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Smile className="size-[19px]" /></button>
+                                                                <label title="Adjuntar imagen" aria-label="Adjuntar imagen" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
+                                                                    <Paperclip className="size-[19px]" />
+                                                                    <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
+                                                                </label>
+                                                                <button
+                                                                    onClick={startRecording}
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                                                                    title="Grabar audio"
+                                                                    aria-label="Grabar audio"
+                                                                >
+                                                                    <Mic className="size-[19px]" />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <button
+                                                                disabled
+                                                                title="Programar nota (próximamente)"
+                                                                className="size-9 flex items-center justify-center rounded-lg text-amber-400/70 cursor-not-allowed"
+                                                            >
+                                                                <Clock className="size-[19px]" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={composerMode === 'note' ? sendNote : sendMessage}
+                                                        disabled={!newMessage.trim() || sending}
+                                                        title={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
+                                                        aria-label={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
+                                                        className={clsx(
+                                                            "flex items-center gap-2 h-9 px-4 rounded-lg text-[13px] font-bold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none",
+                                                            composerMode === 'note'
+                                                                ? "bg-amber-500 hover:bg-amber-400 shadow-amber-500/25 focus-visible:ring-amber-400"
+                                                                : "bg-teal-600 hover:bg-teal-500 shadow-teal-600/25 focus-visible:ring-teal-500"
+                                                        )}
+                                                    >
+                                                        <span>{composerMode === 'note' ? 'Guardar nota' : 'Enviar'}</span>
+                                                        <Send className={`size-4 ${sending ? 'animate-pulse' : ''}`} />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         ) : (
                                             <div className="flex-1 flex items-center justify-between bg-white dark:bg-[#2a3942] rounded-lg px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
                                                 <div className="flex items-center gap-3">
@@ -3098,8 +3117,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         currentContact={selectedConversation.contact}
                         onClose={() => setShowLinkContact(false)}
                         onLinked={(contact) => {
-                            setSelectedConversation(prev => prev ? { ...prev, contact } : prev);
-                            setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact } : c));
+                            const linkedName = contact?.name;
+                            setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName || prev.name } : prev);
+                            setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName || c.name } : c));
                             setShowLinkContact(false);
                         }}
                     />

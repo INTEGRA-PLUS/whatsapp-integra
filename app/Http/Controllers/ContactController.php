@@ -211,7 +211,13 @@ class ContactController extends Controller
             }
         }
 
-        $conversation->update(['contact_id' => $contact->id]);
+        // Al vincular, el nombre del contacto manda sobre el nombre de perfil de
+        // WhatsApp: así la lista y la cabecera (que muestran `name`) reflejan el
+        // contacto inmediatamente y tras refrescos/polling.
+        $conversation->update([
+            'contact_id' => $contact->id,
+            'name' => $contact->name ?: $conversation->name,
+        ]);
         $contact->loadCount('conversations');
 
         return response()->json($this->sanitizeUtf8([

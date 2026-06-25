@@ -228,10 +228,19 @@ class WhatsAppWebhookController extends Controller
 
         $savedMessage = WhatsAppMessage::create($messageData);
 
-        $conversation->update([
+        $conversationUpdate = [
             'last_message' => $messageData['content'] ?? 'Media',
-            'last_message_at' => now()
-        ]);
+            'last_message_at' => now(),
+        ];
+
+        // Si el cliente vuelve a escribir, una conversación cerrada se reabre
+        // automáticamente para que no quede oculta en "Cerradas" y vuelva a la
+        // bandeja normal de chats abiertos.
+        if ($conversation->status === 'closed') {
+            $conversationUpdate['status'] = 'open';
+        }
+
+        $conversation->update($conversationUpdate);
         $conversation->incrementUnread();
 
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);

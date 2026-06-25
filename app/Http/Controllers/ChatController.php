@@ -474,40 +474,57 @@ class ChatController extends Controller
     {
         $user = auth()->user();
         $instanceId = $request->instance_id;
-        $since = $request->since;
 
         if (!$instanceId) {
             return response()->json(['error' => 'instance_id es requerido'], 400);
+        }
+
+        // Normaliza `since` a la zona horaria de la app antes de comparar. El cliente
+        // puede enviarlo en UTC ("...Z") o con offset ("...-05:00"); MySQL interpreta
+        // el offset/Z y desfasa la comparación contra los timestamps (que se guardan
+        // en hora local naive), provocando que `updated_at > since` falle y que las
+        // conversaciones/mensajes nuevos nunca lleguen al polling. Carbon parsea el
+        // instante real y lo lleva a la zona de la app para una comparación correcta.
+        $sinceTs = null;
+        if ($request->since) {
+            try {
+                $sinceTs = \Carbon\Carbon::parse($request->since)->setTimezone(config('app.timezone'));
+            } catch (\Throwable $e) {
+                $sinceTs = $request->since;
+            }
         }
 
         $instance = Instance::where('id', $instanceId)
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
-        $updatedConversations = WhatsAppConversation::forInstance($instanceId)
-            ->with(['assignedAgent:id,name', 'tags'])
-            ->when($since, function ($query, $since) {
-                $query->where('updated_at', '>', $since);
-            })
-            ->when($request->filter, function ($query, $filter) use ($user) {
-                $this->applyFolderFilter($query, $filter, $user);
-            })
-            ->orderByDesc('last_message_at')
-            ->get();
+        // Sin `since` solo sembramos el timestamp del servidor (primer poll), sin
+        // devolver toda la lista.
+        $updatedConversations = [];
+        if ($sinceTs) {
+            $updatedConversations = WhatsAppConversation::forInstance($instanceId)
+                ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email'])
+                ->where('updated_at', '>', $sinceTs)
+                ->when($request->filter, function ($query, $filter) use ($user) {
+                    $this->applyFolderFilter($query, $filter, $user);
+                })
+                ->orderByDesc('last_message_at')
+                ->get();
+        }
 
         $newMessages = [];
-        if ($request->conversation_id && $since) {
+        if ($request->conversation_id && $sinceTs) {
             $newMessages = WhatsAppMessage::where('conversation_id', $request->conversation_id)
                 ->with('sender:id,name')
-                ->where('created_at', '>', $since)
+                ->where('created_at', '>', $sinceTs)
                 ->orderBy('created_at', 'asc')
                 ->get();
         }
 
         $updatedStatuses = [];
-        if ($request->conversation_id && $since) {
+        if ($request->conversation_id && $sinceTs) {
             $updatedStatuses = WhatsAppMessage::where('conversation_id', $request->conversation_id)
-                ->where('updated_at', '>', $since)
+                ->where('updated_at', '>', $sinceTs)
                 ->whereIn('status', ['delivered', 'read', 'failed'])
                 ->select('id', 'wamid', 'status', 'delivered_at', 'read_at', 'error_message')
                 ->get();

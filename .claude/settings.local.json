@@ -59,7 +59,9 @@
       "Bash(brew install *)",
       "Bash(ffmpeg -hide_banner -encoders)",
       "Bash(command -v ffmpeg)",
-      "Bash(xargs ls -la)"
+      "Bash(xargs ls -la)",
+      "Bash(npx esbuild *)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }
