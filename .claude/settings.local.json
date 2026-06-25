@@ -61,7 +61,9 @@
       "Bash(command -v ffmpeg)",
       "Bash(xargs ls -la)",
       "Bash(npx esbuild *)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(awk 'NR>=3470 && /^function [A-Z]/{print NR\": \"$0}' resources/js/pages/Chat/Index.jsx)",
+      "Bash(awk -F: '$1>3450')"
     ]
   }
 }

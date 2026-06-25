@@ -661,6 +661,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
     const [showLinkContact, setShowLinkContact] = useState(false);
+    const [showTemplates, setShowTemplates] = useState(false);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState(() => new Set());
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
@@ -3014,6 +3015,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 >
                                                                     <Mic className="size-[19px]" />
                                                                 </button>
+                                                                <button
+                                                                    onClick={() => setShowTemplates(true)}
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-[#25d366] hover:bg-[#25d366]/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25d366]"
+                                                                    title="Enviar plantilla de WhatsApp"
+                                                                    aria-label="Enviar plantilla de WhatsApp"
+                                                                >
+                                                                    <FileText className="size-[19px]" />
+                                                                </button>
                                                             </>
                                                         ) : (
                                                             <button
@@ -3121,6 +3130,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName || prev.name } : prev);
                             setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName || c.name } : c));
                             setShowLinkContact(false);
+                        }}
+                    />
+                )}
+
+                {/* Selector de plantillas de WhatsApp para la conversación activa */}
+                {showTemplates && selectedConversation && (
+                    <TemplatePickerModal
+                        conversationId={selectedConversation.id}
+                        instanceId={selectedInstanceId}
+                        onClose={() => setShowTemplates(false)}
+                        onSent={(message, preview) => {
+                            if (message) setMessages(prev => [...prev, message]);
+                            setConversations(prev => prev.map(c => c.id === selectedConversation.id
+                                ? { ...c, last_message: preview, last_message_at: new Date().toISOString() }
+                                : c));
+                            setShowTemplates(false);
+                            requestAnimationFrame(() => messageInputRef.current?.focus());
                         }}
                     />
                 )}
@@ -3574,6 +3600,307 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                         </form>
                     )}
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── TemplatePickerModal ─────────────────────────────────────────────────────
+// Selector de plantillas de WhatsApp para la conversación activa. Al hacer clic
+// en una plantilla sin variables ni encabezado multimedia, se envía de inmediato.
+// Si requiere variables/encabezado, se expande un formulario para completarlas.
+function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
+    const [templates, setTemplates] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [error, setError] = useState(null);
+    const [sending, setSending] = useState(false);
+    const [selected, setSelected] = useState(null); // plantilla en modo "completar"
+    const [vars, setVars] = useState([]);
+    const [header, setHeader] = useState(null);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const res = await axios.get('/api/chat/templates', { params: { instance_id: instanceId } });
+                const approved = (res.data.data || []).filter(t => (t.status || '').toUpperCase() === 'APPROVED');
+                if (active) setTemplates(approved);
+            } catch {
+                if (active) { setTemplates([]); setError('No se pudieron cargar las plantillas.'); }
+            } finally {
+                if (active) setLoading(false);
+            }
+        })();
+        return () => { active = false; };
+    }, [instanceId]);
+
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return templates;
+        return templates.filter(t =>
+            (t.name || '').toLowerCase().includes(q) ||
+            (templateBodyComponent(t)?.text || '').toLowerCase().includes(q));
+    }, [templates, search]);
+
+    const needsFill = (t) => {
+        const body = templateBodyComponent(t);
+        return countTemplateVars(body?.text) > 0 || !!templateHeaderFormat(t);
+    };
+
+    async function sendTemplate(t, varsArr = [], hdr = null) {
+        setSending(true);
+        setError(null);
+        const body = templateBodyComponent(t);
+        const n = countTemplateVars(body?.text);
+        const components = [];
+        const headerComp = buildTemplateHeaderComponent(hdr);
+        if (headerComp) components.push(headerComp);
+        if (n > 0) {
+            components.push({ type: 'body', parameters: varsArr.slice(0, n).map(v => ({ type: 'text', text: v })) });
+        }
+        const preview = fillTemplate(body?.text, varsArr);
+        try {
+            const res = await axios.post(`/api/chat/conversations/${conversationId}/send-template`, {
+                template_name: t.name,
+                language_code: t.language,
+                components,
+                preview,
+            });
+            if (res.data.success) {
+                onSent(res.data.data, preview);
+            } else {
+                setError(res.data.error || 'No se pudo enviar la plantilla.');
+                setSending(false);
+            }
+        } catch (err) {
+            setError(err?.response?.data?.error || 'No se pudo enviar la plantilla.');
+            setSending(false);
+        }
+    }
+
+    function handlePick(t) {
+        if (sending) return;
+        // Sin variables ni encabezado → envío directo al seleccionar.
+        if (!needsFill(t)) { sendTemplate(t); return; }
+        setError(null);
+        setSelected(t);
+        const body = templateBodyComponent(t);
+        const n = countTemplateVars(body?.text);
+        setVars(Array.from({ length: n }, () => ''));
+        const fmt = templateHeaderFormat(t);
+        setHeader(fmt
+            ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
+            : null);
+    }
+
+    async function uploadHeader(file) {
+        if (!file) return;
+        setHeader(h => ({ ...h, uploading: true, error: '', mediaId: '', filename: file.name }));
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await axios.post(`/api/chat/conversations/${conversationId}/template-media`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setHeader(h => ({ ...h, uploading: false, mediaId: res.data.media_id, filename: res.data.filename || file.name }));
+        } catch (err) {
+            setHeader(h => ({ ...h, uploading: false, mediaId: '', error: err?.response?.data?.error || 'No se pudo subir el archivo a Meta.' }));
+        }
+    }
+
+    function confirmSend() {
+        const body = templateBodyComponent(selected);
+        const n = countTemplateVars(body?.text);
+        if (vars.some((v, i) => i < n && !v.trim())) { setError('Completa todas las variables de la plantilla.'); return; }
+        if (header) {
+            if (header.format === 'LOCATION') {
+                if (!String(header.lat).trim() || !String(header.lng).trim()) { setError('Completa la latitud y longitud del encabezado.'); return; }
+            } else if (!header.mediaId) { setError('Sube el archivo del encabezado de la plantilla.'); return; }
+        }
+        sendTemplate(selected, vars, header);
+    }
+
+    return (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                <div className="relative bg-gradient-to-br from-emerald-600 to-teal-600 px-6 py-5 text-white shrink-0">
+                    <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
+                        <XIcon className="size-4" />
+                    </button>
+                    <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                            <FileText className="size-6" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-lg leading-tight">Plantillas de WhatsApp</h3>
+                            <p className="text-xs text-white/80">
+                                {selected ? 'Completa los datos y envía' : 'Selecciona una plantilla para enviarla'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {!selected ? (
+                    <>
+                        <div className="px-4 pt-4 shrink-0">
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Search className="size-4 text-muted-foreground/60" />
+                                </div>
+                                <input
+                                    autoFocus
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Buscar plantilla…"
+                                    className="w-full pl-10 pr-3 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-none rounded-lg text-sm outline-none placeholder:text-muted-foreground/60 text-foreground"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="px-4 py-4 overflow-y-auto custom-scrollbar">
+                            {loading ? (
+                                <div className="py-10 flex items-center justify-center text-muted-foreground">
+                                    <Loader2 className="size-5 animate-spin" />
+                                </div>
+                            ) : filtered.length === 0 ? (
+                                <div className="py-8 text-center">
+                                    <FileText className="size-8 mx-auto text-muted-foreground/30 mb-2" />
+                                    <p className="text-sm text-muted-foreground">
+                                        {templates.length === 0 ? 'No hay plantillas aprobadas en esta instancia.' : 'Sin resultados para tu búsqueda.'}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-border/60 divide-y divide-border/40 overflow-hidden">
+                                    {filtered.map(t => {
+                                        const body = templateBodyComponent(t);
+                                        return (
+                                            <button
+                                                key={`${t.name}-${t.language}`}
+                                                type="button"
+                                                disabled={sending}
+                                                onClick={() => handlePick(t)}
+                                                className="w-full text-left px-3 py-2.5 hover:bg-muted/40 transition-colors disabled:opacity-50"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[13px] font-semibold text-foreground truncate">{t.name}</span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5 shrink-0">{t.language}</span>
+                                                    {needsFill(t) && (
+                                                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 rounded px-1.5 py-0.5 shrink-0">Requiere datos</span>
+                                                    )}
+                                                </div>
+                                                {body?.text && <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{body.text}</p>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                    <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                    <span>{error}</span>
+                                </div>
+                            )}
+
+                            {sending && (
+                                <p className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                                    <Loader2 className="size-4 animate-spin" /> Enviando plantilla…
+                                </p>
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <div className="px-4 py-4 space-y-3 overflow-y-auto custom-scrollbar">
+                        <button
+                            type="button"
+                            onClick={() => { setSelected(null); setError(null); }}
+                            className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            <ArrowLeft className="size-3.5" /> Volver a la lista
+                        </button>
+
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-bold text-foreground truncate">{selected.name}</span>
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5">{selected.language}</span>
+                            </div>
+                        </div>
+
+                        {header && (
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">
+                                    Encabezado · {HEADER_MEDIA_LABEL[header.format]}
+                                </label>
+                                {header.format !== 'LOCATION' ? (
+                                    <>
+                                        <input
+                                            type="file"
+                                            accept={HEADER_MEDIA_ACCEPT[header.format]}
+                                            disabled={header.uploading}
+                                            onChange={e => uploadHeader(e.target.files?.[0])}
+                                            className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-teal-600/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-teal-600 hover:file:bg-teal-600/20 disabled:opacity-60"
+                                        />
+                                        {header.uploading && (
+                                            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                <Loader2 className="size-3.5 animate-spin" /> Subiendo a Meta…
+                                            </p>
+                                        )}
+                                        {!header.uploading && header.mediaId && (
+                                            <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                                                <Check className="size-3.5" /> Archivo listo{header.filename ? `: ${header.filename}` : ''}
+                                            </p>
+                                        )}
+                                        {header.error && <p className="text-xs text-rose-600 dark:text-rose-400">{header.error}</p>}
+                                    </>
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input value={header.lat} onChange={e => setHeader(h => ({ ...h, lat: e.target.value }))} placeholder="Latitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
+                                        <input value={header.lng} onChange={e => setHeader(h => ({ ...h, lng: e.target.value }))} placeholder="Longitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
+                                        <input value={header.name} onChange={e => setHeader(h => ({ ...h, name: e.target.value }))} placeholder="Nombre (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
+                                        <input value={header.address} onChange={e => setHeader(h => ({ ...h, address: e.target.value }))} placeholder="Dirección (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {vars.length > 0 && (
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
+                                {vars.map((v, i) => (
+                                    <input
+                                        key={i}
+                                        value={v}
+                                        onChange={e => setVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                                        placeholder={`Variable {{${i + 1}}}`}
+                                        className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="rounded-xl bg-[#dcf8c6] dark:bg-[#005c4b] px-3 py-2 text-[13px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                            {fillTemplate(templateBodyComponent(selected)?.text, vars) || '(Plantilla sin cuerpo de texto)'}
+                        </div>
+
+                        {error && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                <span>{error}</span>
+                            </div>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={() => { setSelected(null); setError(null); }} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                Cancelar
+                            </button>
+                            <button type="button" onClick={confirmSend} disabled={sending || header?.uploading} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                                Enviar plantilla
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
