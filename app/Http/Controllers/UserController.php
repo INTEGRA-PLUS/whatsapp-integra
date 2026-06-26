@@ -58,10 +58,12 @@ class UserController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
             'role_id' => 'required|exists:roles,id',
             'active' => 'boolean',
+        ], [
+            'email.unique' => 'Este correo ya está registrado. No se puede tener dos usuarios con el mismo correo.',
         ]);
 
         $newUser = User::create([
@@ -114,6 +116,8 @@ class UserController extends Controller
             'password' => 'nullable|string|min:8',
             'role_id' => 'required|exists:roles,id',
             'active' => 'boolean',
+        ], [
+            'email.unique' => 'Este correo ya está registrado. No se puede tener dos usuarios con el mismo correo.',
         ]);
 
         $data = [

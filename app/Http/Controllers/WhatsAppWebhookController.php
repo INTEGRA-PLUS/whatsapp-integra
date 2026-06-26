@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use App\Models\Instance;
+use App\Models\Contact;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
@@ -151,6 +152,9 @@ class WhatsAppWebhookController extends Controller
             ]
         );
 
+        // Registrar automáticamente el contacto entrante si aún no está registrado
+        $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+
         $existingMessage = WhatsAppMessage::where('wamid', $wamid)->first();
         if ($existingMessage) {
             Log::channel('whatsapp')->info('ℹ️ Mensaje duplicado, ignorando', ['wamid' => $wamid]);
@@ -254,6 +258,53 @@ class WhatsAppWebhookController extends Controller
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,
             'message_id' => $savedMessage->id
+        ]);
+    }
+
+    /**
+     * Registra automáticamente el contacto de una conversación entrante.
+     *
+     * Si ya existe un contacto con ese número (principal o secundario) dentro de
+     * la empresa, vincula la conversación a ese contacto. Si no existe, lo crea
+     * usando el nombre del perfil de WhatsApp. Así ningún contacto que escriba
+     * queda "sin registrar".
+     */
+    private function ensureContactRegistered(WhatsAppConversation $conversation, Instance $instance, string $phone, string $contactName): void
+    {
+        // Si la conversación ya está vinculada a un contacto, no hay nada que hacer
+        if ($conversation->contact_id) {
+            return;
+        }
+
+        // Buscar un contacto existente por número principal o secundario
+        $contact = Contact::where('company_id', $instance->company_id)
+            ->where(function ($q) use ($phone) {
+                $q->where('phone_number', $phone)
+                  ->orWhere('phone_numbers', 'like', '%"' . $phone . '"%');
+            })
+            ->first();
+
+        if (!$contact) {
+            $contact = Contact::create([
+                'company_id' => $instance->company_id,
+                'phone_number' => $phone,
+                'name' => $contactName,
+            ]);
+
+            Log::channel('whatsapp')->info('🆕 Contacto registrado automáticamente', [
+                'contact_id' => $contact->id,
+                'company_id' => $instance->company_id,
+                'phone' => $phone,
+            ]);
+        } elseif ((empty($contact->name) || $contact->name === 'Desconocido')
+            && $contactName && $contactName !== 'Desconocido') {
+            // El contacto existía sin nombre: lo completamos con el del perfil
+            $contact->update(['name' => $contactName]);
+        }
+
+        $conversation->update([
+            'contact_id' => $contact->id,
+            'name' => $contact->name ?: $conversation->name,
         ]);
     }
 
