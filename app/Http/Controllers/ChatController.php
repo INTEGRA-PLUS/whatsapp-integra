@@ -108,7 +108,7 @@ class ChatController extends Controller
             ->firstOrFail();
 
         $conversations = WhatsAppConversation::forInstance($instanceId)
-            ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email'])
+            ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
             ->when($request->search, function ($query, $search) {
                 $query->search($search);
             })
@@ -503,7 +503,7 @@ class ChatController extends Controller
         $updatedConversations = [];
         if ($sinceTs) {
             $updatedConversations = WhatsAppConversation::forInstance($instanceId)
-                ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email'])
+                ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
                 ->where('updated_at', '>', $sinceTs)
                 ->when($request->filter, function ($query, $filter) use ($user) {
                     $this->applyFolderFilter($query, $filter, $user);

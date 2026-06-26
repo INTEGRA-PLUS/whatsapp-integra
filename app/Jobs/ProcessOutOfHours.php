@@ -35,7 +35,12 @@ class ProcessOutOfHours implements ShouldQueue
             return false;
         }
 
-        if ($conversation->assigned_to !== null || $conversation->status === 'closed') {
+        // El horario aplica a TODO el mundo (nuevos y existentes). A diferencia de
+        // las auto-respuestas, NO se omite cuando la conversación está asignada a un
+        // agente: fuera de horario el agente no está, así que igual debe avisarse.
+        // El cooldown evita el spam. Solo se omite si la conversación está cerrada
+        // (el webhook la reabre al entrar el mensaje, así que rara vez ocurre).
+        if ($conversation->status === 'closed') {
             return false;
         }
 

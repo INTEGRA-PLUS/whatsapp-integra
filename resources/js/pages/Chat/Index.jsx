@@ -45,7 +45,8 @@ import {
     CheckCircle2,
     CheckSquare,
     AlertTriangle,
-    DollarSign
+    DollarSign,
+    Mail
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -55,6 +56,10 @@ import {
     DropdownMenuSeparator,
     DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
+import {
+    Sheet,
+    SheetContent,
+} from '@/components/ui/sheet';
 import QuickReplyPicker from '@/components/quick-reply-picker';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
@@ -661,6 +666,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
     const [showLinkContact, setShowLinkContact] = useState(false);
+    const [showContactPanel, setShowContactPanel] = useState(false);
+    const [editingContact, setEditingContact] = useState(false);
+    const [contactForm, setContactForm] = useState({ name: '', email: '', notes: '' });
+    const [savingContact, setSavingContact] = useState(false);
+    const [contactError, setContactError] = useState(null);
     const [showTemplates, setShowTemplates] = useState(false);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -1157,6 +1167,55 @@ export default function ChatIndex({ instances, integrations = [] }) {
             console.error('Error cambiando estado de la conversación:', err);
         }
     }, [loadFolderCounts]);
+
+    // Abre el modo edición del panel de contacto, precargando los datos actuales.
+    const openContactEdit = useCallback(() => {
+        const c = selectedConversation?.contact;
+        setContactForm({
+            name: c?.name || selectedConversation?.name || '',
+            email: c?.email || '',
+            notes: c?.notes || '',
+        });
+        setContactError(null);
+        setEditingContact(true);
+    }, [selectedConversation]);
+
+    // Guarda los datos del contacto: actualiza el contacto vinculado, o crea y
+    // vincula uno nuevo a partir del número de la conversación.
+    const saveContact = useCallback(async () => {
+        if (!selectedConversation) return;
+        const name = contactForm.name.trim();
+        if (!name) { setContactError('El nombre es obligatorio.'); return; }
+
+        setSavingContact(true);
+        setContactError(null);
+        try {
+            let contact;
+            if (selectedConversation.contact?.id) {
+                const res = await axios.put(`/api/contacts/${selectedConversation.contact.id}`, {
+                    name,
+                    email: contactForm.email.trim() || null,
+                    notes: contactForm.notes.trim() || null,
+                });
+                contact = res.data;
+            } else {
+                const res = await axios.post(`/api/chat/conversations/${selectedConversation.id}/attach-contact`, {
+                    name,
+                    phone_number: selectedConversation.phone_number,
+                    email: contactForm.email.trim() || null,
+                });
+                contact = res.data.contact;
+            }
+            const linkedName = contact?.name || name;
+            setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName } : prev);
+            setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName } : c));
+            setEditingContact(false);
+        } catch (err) {
+            setContactError(err?.response?.data?.message || 'No se pudo guardar el contacto.');
+        } finally {
+            setSavingContact(false);
+        }
+    }, [selectedConversation, contactForm]);
 
     // Elimina por completo una conversación (acción destructiva).
     const deleteConversation = useCallback(async (convId) => {
@@ -2523,12 +2582,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {/* Chat Header */}
                                     <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-3 flex items-center justify-between gap-3 z-10 shadow-sm">
                                         <div className="flex items-center gap-3 min-w-0">
-                                            <div className="size-10 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowContactPanel(true)}
+                                                title="Ver información del contacto"
+                                                className="size-10 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm hover:ring-2 hover:ring-teal-400/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                                            >
                                                 {selectedConversation.initials}
-                                            </div>
+                                            </button>
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                    <h3 className="text-sm font-bold text-foreground leading-tight truncate">{selectedConversation.contact?.name || selectedConversation.name}</h3>
+                                                    <h3
+                                                        onClick={() => setShowContactPanel(true)}
+                                                        title="Ver información del contacto"
+                                                        className="text-sm font-bold text-foreground leading-tight truncate cursor-pointer hover:underline"
+                                                    >
+                                                        {selectedConversation.contact?.name || selectedConversation.name}
+                                                    </h3>
                                                     {selectedConversation.status === 'closed' && (
                                                         <span className="shrink-0 text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
                                                     )}
@@ -3132,6 +3202,226 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             setShowLinkContact(false);
                         }}
                     />
+                )}
+
+                {/* Panel lateral con la información del contacto */}
+                {selectedConversation && (
+                    <Sheet open={showContactPanel} onOpenChange={(open) => { setShowContactPanel(open); if (!open) setEditingContact(false); }}>
+                        <SheetContent side="right" className="w-full sm:max-w-md p-0 gap-0">
+                            <div className="flex flex-col h-full overflow-y-auto">
+                                {/* Encabezado del panel */}
+                                <div className="flex flex-col items-center text-center gap-3 px-6 pt-10 pb-6 bg-gradient-to-b from-teal-500/10 to-transparent border-b border-border/40">
+                                    <div className="size-20 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-2xl uppercase shadow-md">
+                                        {selectedConversation.initials}
+                                    </div>
+                                    <div className="min-w-0 w-full">
+                                        <h2 className="text-lg font-bold text-foreground truncate">{selectedConversation.contact?.name || selectedConversation.name}</h2>
+                                        <p className="text-sm text-muted-foreground">{selectedConversation.phone_number}</p>
+                                    </div>
+                                    <span className={clsx(
+                                        "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full",
+                                        selectedConversation.status === 'closed'
+                                            ? "bg-slate-400/15 text-slate-500 dark:text-slate-400"
+                                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                    )}>
+                                        <span className={clsx("size-1.5 rounded-full", selectedConversation.status === 'closed' ? "bg-slate-400" : "bg-emerald-500")} />
+                                        {selectedConversation.status === 'closed' ? 'Cerrada' : 'Abierta'}
+                                    </span>
+                                </div>
+
+                                {editingContact ? (
+                                    /* ----- Modo edición ----- */
+                                    <div className="flex flex-col gap-4 px-6 py-6">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Editar contacto</p>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-sm font-medium text-foreground">Nombre</label>
+                                            <input
+                                                type="text"
+                                                value={contactForm.name}
+                                                onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                                                placeholder="Nombre del contacto"
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-sm font-medium text-foreground">Teléfono</label>
+                                            <input
+                                                type="text"
+                                                value={selectedConversation.phone_number}
+                                                disabled
+                                                className="flex h-9 w-full rounded-md border border-input bg-muted/40 px-3 py-1 text-sm text-muted-foreground cursor-not-allowed"
+                                            />
+                                            <p className="text-[11px] text-muted-foreground">El número de WhatsApp no se puede cambiar.</p>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-sm font-medium text-foreground">Email</label>
+                                            <input
+                                                type="email"
+                                                value={contactForm.email}
+                                                onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                                                placeholder="correo@ejemplo.com"
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                            />
+                                        </div>
+
+                                        {selectedConversation.contact?.id && (
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-medium text-foreground">Notas</label>
+                                                <textarea
+                                                    value={contactForm.notes}
+                                                    onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))}
+                                                    rows={3}
+                                                    placeholder="Notas internas sobre el contacto"
+                                                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {contactError && <p className="text-xs text-rose-600">{contactError}</p>}
+
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={saveContact}
+                                                disabled={savingContact}
+                                                className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-teal-600 hover:bg-teal-500 disabled:opacity-60 transition-colors"
+                                            >
+                                                {savingContact ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                                                Guardar
+                                            </button>
+                                            <button
+                                                onClick={() => setEditingContact(false)}
+                                                disabled={savingContact}
+                                                className="h-10 px-4 rounded-lg text-sm font-bold text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* ----- Modo lectura ----- */}
+                                        <div className="flex flex-col gap-5 px-6 py-6">
+                                            {/* Datos de contacto */}
+                                            <div className="space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Datos de contacto</p>
+                                                    <button
+                                                        onClick={openContactEdit}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+                                                    >
+                                                        <PencilIcon className="size-3" /> Editar
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-sm">
+                                                    <Phone className="size-4 text-muted-foreground shrink-0" />
+                                                    <span className="text-foreground truncate">{selectedConversation.phone_number}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-sm">
+                                                    <Mail className="size-4 text-muted-foreground shrink-0" />
+                                                    {selectedConversation.contact?.email ? (
+                                                        <span className="text-foreground truncate">{selectedConversation.contact.email}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground italic">Sin email</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-3 text-sm">
+                                                    <Contact className="size-4 text-muted-foreground shrink-0" />
+                                                    {selectedConversation.contact ? (
+                                                        <span className="text-foreground truncate">{selectedConversation.contact.name}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground italic">Sin contacto vinculado</span>
+                                                    )}
+                                                </div>
+                                                {selectedConversation.contact?.notes && (
+                                                    <div className="flex items-start gap-3 text-sm">
+                                                        <StickyNote className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                                                        <span className="text-foreground whitespace-pre-wrap">{selectedConversation.contact.notes}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Agente asignado */}
+                                            <div className="space-y-3">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Agente asignado</p>
+                                                <div className="flex items-center gap-3 text-sm">
+                                                    <User className="size-4 text-muted-foreground shrink-0" />
+                                                    {selectedConversation.assigned_agent ? (
+                                                        <span className="text-foreground truncate">{selectedConversation.assigned_agent.name}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground italic">Sin asignar</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Etiquetas */}
+                                            <div className="space-y-3">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Etiquetas</p>
+                                                {selectedConversation.tags?.length ? (
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {selectedConversation.tags.map(tag => (
+                                                            <span
+                                                                key={tag.id}
+                                                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+                                                                style={{ backgroundColor: `${tag.color}1a`, color: tag.color }}
+                                                            >
+                                                                <span className="size-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                                                                {tag.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-3 text-sm">
+                                                        <TagIcon className="size-4 text-muted-foreground shrink-0" />
+                                                        <span className="text-muted-foreground italic">Sin etiquetas</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Acciones rápidas */}
+                                        <div className="mt-auto border-t border-border/40 px-6 py-4 flex flex-col gap-2">
+                                            <button
+                                                onClick={openContactEdit}
+                                                className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
+                                            >
+                                                <PencilIcon className="size-4" /> Editar contacto
+                                            </button>
+                                            <button
+                                                onClick={() => { setShowContactPanel(false); setShowLinkContact(true); }}
+                                                className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                            >
+                                                {selectedConversation.contact ? <Contact className="size-4" /> : <UserPlus className="size-4" />}
+                                                {selectedConversation.contact ? 'Cambiar contacto vinculado' : 'Vincular contacto'}
+                                            </button>
+                                            {selectedConversation.status === 'closed' ? (
+                                                <button
+                                                    onClick={() => { setConversationStatus(selectedConversation.id, 'reopen'); setShowContactPanel(false); }}
+                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors"
+                                                >
+                                                    <RotateCcw className="size-4" /> Reabrir conversación
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
+                                                            setConversationStatus(selectedConversation.id, 'close');
+                                                            setShowContactPanel(false);
+                                                        }
+                                                    }}
+                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
+                                                >
+                                                    <CheckCircle2 className="size-4" /> Cerrar conversación
+                                                </button>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </SheetContent>
+                    </Sheet>
                 )}
 
                 {/* Selector de plantillas de WhatsApp para la conversación activa */}
