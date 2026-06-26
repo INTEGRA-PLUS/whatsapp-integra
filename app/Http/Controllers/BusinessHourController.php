@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\BusinessHour;
 use App\Models\Instance;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class BusinessHourController extends Controller
 {
@@ -36,6 +37,8 @@ class BusinessHourController extends Controller
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
 
+        $this->assertNoConflictingRule($data, $user->company_id);
+
         $hour = BusinessHour::create(array_merge($data, [
             'company_id' => $user->company_id,
         ]));
@@ -56,6 +59,8 @@ class BusinessHourController extends Controller
         if (!empty($data['instance_id'])) {
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
+
+        $this->assertNoConflictingRule($data, $user->company_id, $hour->id);
 
         $hour->update($data);
 
@@ -97,6 +102,38 @@ class BusinessHourController extends Controller
         $data['cooldown_minutes'] = $data['cooldown_minutes'] ?? 60;
 
         return $data;
+    }
+
+    /**
+     * Impide que existan dos horarios ACTIVOS con el mismo alcance para una empresa
+     * (dos para "todas las instancias", o dos para la misma instancia). Era la causa
+     * de que una regla vieja invisible siguiera disparando aunque el usuario editara otra.
+     */
+    private function assertNoConflictingRule(array $data, int $companyId, ?int $ignoreId = null): void
+    {
+        if (!($data['active'] ?? true)) {
+            return;
+        }
+
+        $instanceId = $data['instance_id'] ?? null;
+
+        $conflict = BusinessHour::where('company_id', $companyId)
+            ->where('active', true)
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->when(
+                $instanceId === null,
+                fn ($q) => $q->whereNull('instance_id'),
+                fn ($q) => $q->where('instance_id', $instanceId)
+            )
+            ->exists();
+
+        if ($conflict) {
+            $scope = $instanceId === null ? 'todas las instancias' : 'esta instancia';
+
+            throw ValidationException::withMessages([
+                'instance_id' => ["Ya existe un horario activo para {$scope}. Edita o desactiva el existente antes de crear otro."],
+            ]);
+        }
     }
 
     private function ensureInstanceBelongsToCompany(int $instanceId, int $companyId): void

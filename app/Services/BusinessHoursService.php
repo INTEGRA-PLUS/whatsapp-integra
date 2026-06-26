@@ -26,7 +26,12 @@ class BusinessHoursService
         return true;
     }
 
-    private function findApplicableRule(Instance $instance): ?BusinessHour
+    /**
+     * Devuelve la ÚNICA regla aplicable a la instancia: la de instancia específica
+     * tiene prioridad sobre la de "todas las instancias". Esta misma regla es la que
+     * usa el Job para enviar, de modo que la decisión y el mensaje sean coherentes.
+     */
+    public function findApplicableRule(Instance $instance): ?BusinessHour
     {
         return BusinessHour::active()
             ->where('company_id', $instance->company_id)

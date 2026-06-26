@@ -1488,6 +1488,28 @@ const EMPTY_HOUR = {
     cooldown_minutes: 60,
 };
 
+function to12h(hhmm) {
+    if (!hhmm) return '';
+    const [h, m] = hhmm.slice(0, 5).split(':').map(Number);
+    const period = h < 12 ? 'a.m.' : 'p.m.';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+// Describe en lenguaje claro qué hará el horario, para evitar que se cargue invertido (la trampa de a.m./p.m.).
+function describeSchedule(start, end) {
+    if (!start || !end) return null;
+    const s = start.slice(0, 5);
+    const e = end.slice(0, 5);
+    if (s === e) {
+        return { tone: 'info', text: 'Abierto las 24 horas: nunca se enviará el mensaje fuera de horario.' };
+    }
+    if (s < e) {
+        return { tone: 'ok', text: `Abierto de ${to12h(s)} a ${to12h(e)}. Fuera de ese rango se enviará el mensaje automático.` };
+    }
+    return { tone: 'warn', text: `Atención: este horario cruza la medianoche. Se interpreta como abierto desde las ${to12h(s)} hasta las ${to12h(e)} del día siguiente. Si tu negocio atiende de día, seguramente invertiste Inicio y Fin (revisa a.m./p.m.).` };
+}
+
 function TabHorarios() {
     const [items, setItems] = useState([]);
     const [instances, setInstances] = useState([]);
@@ -1717,6 +1739,24 @@ function TabHorarios() {
                                     />
                                 </Field>
                             </div>
+
+                            {(() => {
+                                const d = describeSchedule(editing.start_time, editing.end_time);
+                                if (!d) return null;
+                                const styles = {
+                                    ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                    warn: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+                                    info: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+                                };
+                                return (
+                                    <div className={`-mt-2 rounded-lg border px-3 py-2 text-[12px] flex items-start gap-2 ${styles[d.tone]}`}>
+                                        {d.tone === 'warn'
+                                            ? <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                            : <Clock className="size-3.5 mt-0.5 shrink-0" />}
+                                        <span>{d.text}</span>
+                                    </div>
+                                );
+                            })()}
 
                             <Field label="Días" error={errors.days_of_week?.[0]}>
                                 <div className="flex gap-1.5 flex-wrap">

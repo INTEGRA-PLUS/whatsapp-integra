@@ -6,6 +6,7 @@ use App\Models\BusinessHour;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Services\BusinessHoursService;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -44,16 +45,13 @@ class ProcessOutOfHours implements ShouldQueue
             return false;
         }
 
-        $rule = BusinessHour::active()
-            ->where('company_id', $instance->company_id)
-            ->where(function ($q) use ($instance) {
-                $q->whereNull('instance_id')->orWhere('instance_id', $instance->id);
-            })
-            ->orderByRaw('instance_id IS NULL')
-            ->get()
-            ->first(fn (BusinessHour $r) => !$r->isWithinHours());
+        // Se reusa exactamente la misma selección de regla que el servicio que
+        // despachó este job: una sola regla aplicable (la de instancia específica
+        // gana sobre la de "todas las instancias"). Así el mensaje enviado siempre
+        // corresponde a la regla que decidió que estábamos fuera de horario.
+        $rule = app(BusinessHoursService::class)->findApplicableRule($instance);
 
-        if (!$rule) {
+        if (!$rule || $rule->isWithinHours()) {
             return false;
         }
 
