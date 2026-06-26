@@ -46,7 +46,8 @@ import {
     CheckSquare,
     AlertTriangle,
     DollarSign,
-    Mail
+    Mail,
+    Reply
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -665,6 +666,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
+    const [pendingImage, setPendingImage] = useState(null); // { file, url } imagen a previsualizar antes de enviar
+    const [imageCaption, setImageCaption] = useState('');
+    const [isDraggingFile, setIsDraggingFile] = useState(false);
+    const dragDepthRef = useRef(0); // cuenta dragenter/dragleave para evitar parpadeo del overlay
+    const [replyingTo, setReplyingTo] = useState(null); // mensaje al que se está respondiendo (cita)
     const [showLinkContact, setShowLinkContact] = useState(false);
     const [showContactPanel, setShowContactPanel] = useState(false);
     const [editingContact, setEditingContact] = useState(false);
@@ -1345,6 +1351,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     const selectConversation = useCallback(async (conv) => {
         setSelectedConversation(conv);
+        setReplyingTo(null);
         try {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
             forceScrollRef.current = true;
@@ -1788,7 +1795,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     async function sendMessage() {
         if (!newMessage.trim() || sending) return;
         const msg = newMessage;
+        const replyWamid = replyingTo?.wamid || null;
         setNewMessage('');
+        setReplyingTo(null);
         setSendError(null);
         setSending(true);
 
@@ -1800,6 +1809,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             conversation_id: selectedConversation.id,
             type: 'text',
             content: msg,
+            reply_to_wamid: replyWamid,
             direction: 'outbound',
             status: 'sending',
             sender: { name: auth.user.name },
@@ -1810,7 +1820,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         try {
             const res = await axios.post(
                 `/api/chat/conversations/${selectedConversation.id}/send`,
-                { message: msg },
+                { message: msg, reply_to_wamid: replyWamid },
             );
             if (res.data.success) {
                 // Replace the temp message with the real one from the server.
@@ -1874,11 +1884,49 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }
 
-    async function handleFileUpload(e) {
+    // Abre la vista previa con el archivo elegido desde el botón de adjuntar.
+    function handleFileUpload(e) {
         const file = e.target.files[0];
-        if (!file) return;
+        e.target.value = '';
+        if (file) openImagePreview(file);
+    }
+
+    // Muestra la imagen seleccionada (adjunto / arrastrada / pegada) en una
+    // previsualización antes de enviarla, con opción a escribir un pie de foto.
+    function openImagePreview(file) {
+        if (!file || !file.type?.startsWith('image/')) {
+            alert('Solo se pueden adjuntar imágenes.');
+            return;
+        }
+        // 5 MB es el límite del backend (sendImage: image|max:5120).
+        if (file.size > 5 * 1024 * 1024) {
+            alert('La imagen supera el límite de 5 MB.');
+            return;
+        }
+        if (pendingImage?.url) URL.revokeObjectURL(pendingImage.url);
+        setPendingImage({ file, url: URL.createObjectURL(file) });
+        setImageCaption('');
+    }
+
+    function closeImagePreview() {
+        if (pendingImage?.url) URL.revokeObjectURL(pendingImage.url);
+        setPendingImage(null);
+        setImageCaption('');
+    }
+
+    // Sube y envía la imagen previsualizada con su pie de foto opcional.
+    async function confirmSendImage() {
+        if (!pendingImage || !selectedConversation || sending) return;
+        const { file } = pendingImage;
+        const caption = imageCaption;
+        const replyWamid = replyingTo?.wamid || null;
+        closeImagePreview();
+        setReplyingTo(null);
+
         const formData = new FormData();
         formData.append('image', file);
+        if (caption.trim()) formData.append('caption', caption.trim());
+        if (replyWamid) formData.append('reply_to_wamid', replyWamid);
         setSending(true);
         try {
             const res = await axios.post(
@@ -1887,12 +1935,96 @@ export default function ChatIndex({ instances, integrations = [] }) {
             );
             if (res.data.success) {
                 setMessages(prev => [...prev, res.data.data]);
+            } else {
+                alert(res.data.error || 'No se pudo enviar la imagen.');
             }
         } catch (err) {
             console.error('Error enviando imagen:', err);
+            alert(err?.response?.data?.error || err?.response?.data?.errors?.image?.[0] || 'No se pudo enviar la imagen.');
         } finally {
             setSending(false);
-            e.target.value = '';
+        }
+    }
+
+    // --- Arrastrar y soltar imágenes sobre el chat (estilo WhatsApp Web) ---
+    function handleChatDragEnter(e) {
+        if (!selectedConversation || composerMode !== 'reply') return;
+        if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
+        e.preventDefault();
+        dragDepthRef.current += 1;
+        setIsDraggingFile(true);
+    }
+
+    function handleChatDragOver(e) {
+        if (!isDraggingFile) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    }
+
+    function handleChatDragLeave(e) {
+        if (!isDraggingFile) return;
+        e.preventDefault();
+        dragDepthRef.current -= 1;
+        if (dragDepthRef.current <= 0) {
+            dragDepthRef.current = 0;
+            setIsDraggingFile(false);
+        }
+    }
+
+    function handleChatDrop(e) {
+        if (!isDraggingFile) return;
+        e.preventDefault();
+        dragDepthRef.current = 0;
+        setIsDraggingFile(false);
+        if (!selectedConversation || composerMode !== 'reply') return;
+        const file = Array.from(e.dataTransfer?.files || []).find(f => f.type?.startsWith('image/'));
+        if (file) openImagePreview(file);
+    }
+
+    // --- Responder a un mensaje (cita estilo WhatsApp) ---
+    // Índice wamid -> mensaje, para resolver la cita de cada mensaje.
+    const messagesByWamid = useMemo(() => {
+        const map = new Map();
+        for (const m of messages) {
+            if (m.wamid) map.set(m.wamid, m);
+        }
+        return map;
+    }, [messages]);
+
+    function quotedAuthor(m) {
+        if (m.direction === 'outbound') return m.sender?.name || 'Tú';
+        return selectedConversation?.contact?.name || selectedConversation?.name || 'Cliente';
+    }
+
+    function quotedSnippet(m) {
+        if (!m) return '';
+        if (m.type === 'image') return '📷 ' + (m.content || 'Foto');
+        if (m.type === 'audio') return '🎵 Audio';
+        if (m.type === 'video') return '🎥 ' + (m.content || 'Video');
+        if (m.type === 'document') return '📄 ' + (m.filename || 'Documento');
+        if (m.type === 'template') return m.content || 'Plantilla';
+        return m.content || '';
+    }
+
+    // Desplaza y resalta brevemente el mensaje original al tocar la cita.
+    function scrollToMessage(id) {
+        const el = document.getElementById(`msg-${id}`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-teal-400');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1500);
+    }
+
+    // --- Pegar imágenes (Ctrl/Cmd + V) en el área de texto ---
+    function handleComposerPaste(e) {
+        if (composerMode !== 'reply' || !selectedConversation) return;
+        const items = Array.from(e.clipboardData?.items || []);
+        const imageItem = items.find(it => it.type?.startsWith('image/'));
+        if (!imageItem) return;
+        const file = imageItem.getAsFile();
+        if (file) {
+            e.preventDefault();
+            openImagePreview(file);
         }
     }
 
@@ -2562,9 +2694,25 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         </div>
 
                         {/* Chat Area - WhatsApp Web Theme */}
-                        <div className="flex-1 flex flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative">
+                        <div
+                            className="flex-1 flex flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative"
+                            onDragEnter={handleChatDragEnter}
+                            onDragOver={handleChatDragOver}
+                            onDragLeave={handleChatDragLeave}
+                            onDrop={handleChatDrop}
+                        >
                             {/* Theme Pattern Overlay */}
                             <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.4] pointer-events-none" />
+
+                            {/* Overlay al arrastrar una imagen sobre el chat */}
+                            {isDraggingFile && selectedConversation && (
+                                <div className="absolute inset-0 z-30 flex items-center justify-center bg-teal-600/15 dark:bg-teal-500/15 backdrop-blur-sm pointer-events-none">
+                                    <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-teal-500 bg-white/90 dark:bg-[#202c33]/90 px-10 py-8 shadow-xl">
+                                        <ImageIcon className="size-10 text-teal-600" />
+                                        <p className="text-sm font-bold text-foreground">Suelta la imagen para enviarla</p>
+                                    </div>
+                                </div>
+                            )}
 
                             {!selectedConversation ? (
                                 <div className="flex-1 flex items-center justify-center relative z-10">
@@ -2837,7 +2985,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     >
                                         {messages.map((msg, i) => {
                                             const isOut = msg.direction === 'outbound';
-                                            
+                                            const quoted = msg.reply_to_wamid ? messagesByWamid.get(msg.reply_to_wamid) : null;
+                                            const canReply = !!msg.wamid && !msg.is_internal;
+
                                             // Handle Date Separator
                                             const prevMsg = i > 0 ? messages[i-1] : null;
                                             const currDate = new Date(msg.created_at).toDateString();
@@ -2869,13 +3019,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         </div>
                                                     ) : (
                                                     <div
-                                                        className={`flex mb-2 sm:mb-3 ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
+                                                        className={`flex mb-2 sm:mb-3 items-center gap-1 group/msg ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
                                                     >
+                                                        {isOut && canReply && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setReplyingTo(msg); setTimeout(() => messageInputRef.current?.focus(), 0); }}
+                                                                title="Responder"
+                                                                className="opacity-0 group-hover/msg:opacity-100 transition-opacity size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10"
+                                                            >
+                                                                <Reply className="size-4" />
+                                                            </button>
+                                                        )}
                                                         <div
-                                                            className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[80%] lg:max-w-[65%] group ${
-                                                                isOut 
-                                                                    ? 'bg-[#dcf8c6] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tr-none' 
-                                                                    : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-lg rounded-tl-none'
+                                                            id={`msg-${msg.id}`}
+                                                            className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[80%] lg:max-w-[65%] group rounded-lg transition-shadow ${
+                                                                isOut
+                                                                    ? 'bg-[#dcf8c6] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-tr-none'
+                                                                    : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-none'
                                                             }`}
                                                             title={new Date(msg.created_at).toLocaleString('es-CO')}
                                                         >
@@ -2887,6 +3048,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             )}
 
                                                             <div className="flex flex-col relative">
+                                                                {quoted && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => scrollToMessage(quoted.id)}
+                                                                        className="mb-1 w-full text-left rounded-md border-l-4 border-teal-500 bg-black/10 dark:bg-white/10 px-2 py-1 hover:bg-black/15 dark:hover:bg-white/15 transition-colors overflow-hidden"
+                                                                    >
+                                                                        <p className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 truncate">{quotedAuthor(quoted)}</p>
+                                                                        <p className="text-[11px] text-muted-foreground dark:text-white/50 truncate">{quotedSnippet(quoted) || 'Mensaje'}</p>
+                                                                    </button>
+                                                                )}
+                                                                {msg.reply_to_wamid && !quoted && (
+                                                                    <div className="mb-1 w-full rounded-md border-l-4 border-teal-500/60 bg-black/10 dark:bg-white/10 px-2 py-1 overflow-hidden">
+                                                                        <p className="text-[11px] italic text-muted-foreground dark:text-white/50 truncate">↩︎ Mensaje citado</p>
+                                                                    </div>
+                                                                )}
                                                                 {isOut && msg.sender?.name && (
                                                                     <span className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
                                                                         {msg.sender.name}
@@ -2943,6 +3119,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                        {!isOut && canReply && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setReplyingTo(msg); setTimeout(() => messageInputRef.current?.focus(), 0); }}
+                                                                title="Responder"
+                                                                className="opacity-0 group-hover/msg:opacity-100 transition-opacity size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10"
+                                                            >
+                                                                <Reply className="size-4" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                     )}
                                                 </Fragment>
@@ -3020,6 +3206,25 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             </div>
                                         ) : !isRecording ? (
                                             <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                                {/* Barra de cita: mensaje al que se está respondiendo */}
+                                                {replyingTo && (
+                                                    <div className="flex items-stretch gap-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-4 border-teal-500 pl-2 pr-1 py-1.5">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[11px] font-bold text-teal-700 dark:text-teal-300 truncate">
+                                                                Respondiendo a {quotedAuthor(replyingTo)}
+                                                            </p>
+                                                            <p className="text-[11.5px] text-muted-foreground truncate">{quotedSnippet(replyingTo) || 'Mensaje'}</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setReplyingTo(null)}
+                                                            title="Cancelar respuesta"
+                                                            className="self-center size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                                        >
+                                                            <X className="size-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
                                                 {/* Área de texto a todo el ancho */}
                                                 <div className="relative">
                                                     {composerMode === 'reply' && qrOpen && (
@@ -3057,6 +3262,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         value={newMessage}
                                                         onChange={handleComposerChange}
                                                         onKeyDown={handleComposerKeyDown}
+                                                        onPaste={handleComposerPaste}
                                                         className={clsx(
                                                             "block w-full border-none rounded-lg px-4 py-2.5 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
                                                             composerMode === 'note'
@@ -3184,6 +3390,59 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             onClick={e => e.stopPropagation()}
                             alt="full view"
                         />
+                    </div>
+                )}
+
+                {/* Previsualización de imagen antes de enviar (arrastrar/pegar/adjuntar) */}
+                {pendingImage && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 animate-in fade-in duration-200"
+                        onClick={closeImagePreview}
+                    >
+                        <div
+                            className="w-full max-w-lg rounded-2xl bg-[#202c33] shadow-2xl overflow-hidden flex flex-col"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                                <span className="text-sm font-bold text-white">Enviar imagen</span>
+                                <button
+                                    onClick={closeImagePreview}
+                                    className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                                    title="Cancelar"
+                                >
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center justify-center bg-black/40 p-4">
+                                <img
+                                    src={pendingImage.url}
+                                    alt="previsualización"
+                                    className="max-h-[55vh] max-w-full object-contain rounded-lg"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2 p-3 border-t border-white/10">
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    value={imageCaption}
+                                    onChange={e => setImageCaption(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); confirmSendImage(); } }}
+                                    placeholder="Añade un pie de foto (opcional)"
+                                    maxLength={1024}
+                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/50"
+                                />
+                                <button
+                                    onClick={confirmSendImage}
+                                    disabled={sending}
+                                    title="Enviar imagen"
+                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors"
+                                >
+                                    <Send className="size-5" />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
 

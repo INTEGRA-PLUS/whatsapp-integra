@@ -14,6 +14,7 @@ class WhatsAppMessage extends Model
     protected $fillable = [
         'conversation_id',
         'wamid',
+        'reply_to_wamid',
         'type',
         'content',
         'media_id',

@@ -18,9 +18,9 @@ class MetaWhatsAppService
         $this->baseUri = "https://graph.facebook.com/{$this->apiVersion}";
     }
 
-    public function sendMessage(string $phoneNumberId, string $to, string $message)
+    public function sendMessage(string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
     {
-        return $this->sendRequest($phoneNumberId, [
+        $payload = [
             'messaging_product' => 'whatsapp',
             'recipient_type' => 'individual',
             'to' => $to,
@@ -29,12 +29,19 @@ class MetaWhatsAppService
                 'preview_url' => true,
                 'body' => $message
             ]
-        ]);
+        ];
+
+        // Responder a un mensaje concreto (cita estilo WhatsApp).
+        if ($contextWamid) {
+            $payload['context'] = ['message_id' => $contextWamid];
+        }
+
+        return $this->sendRequest($phoneNumberId, $payload);
     }
 
-    public function sendImage(string $phoneNumberId, string $to, string $imageUrl, string $caption = '')
+    public function sendImage(string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
     {
-        return $this->sendRequest($phoneNumberId, [
+        $payload = [
             'messaging_product' => 'whatsapp',
             'to' => $to,
             'type' => 'image',
@@ -42,7 +49,13 @@ class MetaWhatsAppService
                 'link' => $imageUrl,
                 'caption' => $caption
             ]
-        ]);
+        ];
+
+        if ($contextWamid) {
+            $payload['context'] = ['message_id' => $contextWamid];
+        }
+
+        return $this->sendRequest($phoneNumberId, $payload);
     }
 
     public function sendAudio(string $phoneNumberId, string $to, string $audioUrl)

@@ -230,6 +230,11 @@ class WhatsAppWebhookController extends Controller
                 $messageData['content'] = "Tipo de mensaje no soportado: {$message['type']}";
         }
 
+        // Si el cliente respondió a un mensaje, Meta envía el wamid citado en context.
+        if (isset($message['context']['id'])) {
+            $messageData['reply_to_wamid'] = $message['context']['id'];
+        }
+
         $savedMessage = WhatsAppMessage::create($messageData);
 
         $conversationUpdate = [

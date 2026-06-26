@@ -566,7 +566,8 @@ class ChatController extends Controller
     public function sendMessage(Request $request, $conversationId)
     {
         $validator = Validator::make($request->all(), [
-            'message' => 'required|string|max:4096'
+            'message' => 'required|string|max:4096',
+            'reply_to_wamid' => 'nullable|string|max:500'
         ]);
 
         if ($validator->fails()) {
@@ -596,16 +597,20 @@ class ChatController extends Controller
         // se muestra aparte, sin duplicar).
         $outgoing = '*' . $user->name . ':*' . "\n" . $request->message;
 
+        $replyToWamid = $request->input('reply_to_wamid') ?: null;
+
         $result = $this->metaService->sendMessage(
             $instance->phone_number_id,
             $conversation->phone_number,
-            $outgoing
+            $outgoing,
+            $replyToWamid
         );
 
         if ($result['success']) {
             $message = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
                 'wamid' => $result['data']['messages'][0]['id'],
+                'reply_to_wamid' => $replyToWamid,
                 'type' => 'text',
                 'content' => $request->message,
                 'direction' => 'outbound',
@@ -651,7 +656,8 @@ class ChatController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'image' => 'required|image|max:5120',
-            'caption' => 'nullable|string|max:1024'
+            'caption' => 'nullable|string|max:1024',
+            'reply_to_wamid' => 'nullable|string|max:500'
         ]);
 
         if ($validator->fails()) {
@@ -672,17 +678,21 @@ class ChatController extends Controller
         $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
         $imageUrl = Storage::disk('s3_media')->url($path);
 
+        $replyToWamid = $request->input('reply_to_wamid') ?: null;
+
         $result = $this->metaService->sendImage(
             $instance->phone_number_id,
             $conversation->phone_number,
             $imageUrl,
-            $request->caption ?? ''
+            $request->caption ?? '',
+            $replyToWamid
         );
 
         if ($result['success']) {
             $message = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
                 'wamid' => $result['data']['messages'][0]['id'],
+                'reply_to_wamid' => $replyToWamid,
                 'type' => 'image',
                 'content' => $request->caption ?? '',
                 'media_url' => $imageUrl,
