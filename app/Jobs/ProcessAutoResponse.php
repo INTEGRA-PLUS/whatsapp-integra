@@ -55,21 +55,36 @@ class ProcessAutoResponse implements ShouldQueue
             ->first();
         $isFirstInbound = $firstInbound !== null && $firstInbound->wamid === $this->inboundWamid;
 
+        // Tiempo de inactividad: minutos entre el mensaje anterior y el actual (para "reabrir").
+        $currentMessage = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('wamid', $this->inboundWamid)
+            ->first();
+        $previousMessage = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->when($currentMessage, fn ($q) => $q->where('id', '<', $currentMessage->id))
+            ->orderByDesc('id')
+            ->first();
+        $gapMinutes = $previousMessage
+            ? (int) $previousMessage->created_at->diffInMinutes(now())
+            : null;
+
+        $context = [
+            'is_first_inbound' => $isFirstInbound,
+            'gap_minutes' => $gapMinutes,
+        ];
+
         $rule = AutoResponse::active()
             ->where('company_id', $instance->company_id)
             ->where(function ($q) use ($instance) {
                 $q->whereNull('instance_id')->orWhere('instance_id', $instance->id);
             })
-            ->orderByRaw('instance_id IS NULL')
-            ->orderByRaw("CASE WHEN match_type = 'welcome' THEN 0 WHEN match_type = 'always' THEN 2 ELSE 1 END")
-            ->orderBy('created_at', 'desc')
             ->get()
-            ->first(function (AutoResponse $r) use ($isFirstInbound) {
-                if ($r->match_type === 'welcome' && !$isFirstInbound) {
-                    return false;
-                }
-                return $r->matches($this->incomingText);
-            });
+            ->sort(fn (AutoResponse $a, AutoResponse $b) =>
+                [$a->instance_id === null ? 1 : 0, $a->priority(), -$a->created_at->timestamp]
+                <=>
+                [$b->instance_id === null ? 1 : 0, $b->priority(), -$b->created_at->timestamp]
+            )
+            ->values()
+            ->first(fn (AutoResponse $r) => $r->qualifies($this->incomingText, $context));
 
         if (!$rule) {
             return;
@@ -124,7 +139,7 @@ class ProcessAutoResponse implements ShouldQueue
             'conversation_id' => $conversation->id,
         ]);
 
-        if ($rule->match_type === 'always') {
+        if (in_array('always', $rule->matchTypes(), true)) {
             SendAutoResponseFollowUp::dispatch(
                 $instance->id,
                 $conversation->id,

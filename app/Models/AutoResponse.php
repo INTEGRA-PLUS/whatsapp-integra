@@ -9,15 +9,22 @@ class AutoResponse extends Model
 {
     use HasFactory;
 
+    public const KEYWORD_TYPES = ['exact', 'contains', 'starts_with'];
+    public const TRIGGERLESS_TYPES = ['always', 'welcome', 'reopen'];
+
+    public const DEFAULT_REOPEN_HOURS = 24;
+
     protected $fillable = [
         'company_id',
         'instance_id',
         'name',
         'trigger_text',
         'match_type',
+        'match_types',
         'response_message',
         'active',
         'cooldown_minutes',
+        'reopen_hours',
         'fires_count',
         'last_fired_at',
     ];
@@ -25,6 +32,8 @@ class AutoResponse extends Model
     protected $casts = [
         'active' => 'boolean',
         'cooldown_minutes' => 'integer',
+        'reopen_hours' => 'integer',
+        'match_types' => 'array',
         'fires_count' => 'integer',
         'last_fired_at' => 'datetime',
     ];
@@ -44,12 +53,77 @@ class AutoResponse extends Model
         return $query->where('active', true);
     }
 
-    public function matches(string $incoming): bool
+    /**
+     * Tipos de coincidencia configurados para esta regla.
+     * Usa la columna nueva match_types y cae al match_type legacy si está vacía.
+     */
+    public function matchTypes(): array
     {
-        if ($this->match_type === 'always' || $this->match_type === 'welcome') {
-            return true;
+        $types = $this->match_types;
+
+        if (empty($types)) {
+            return $this->match_type ? [$this->match_type] : [];
         }
 
+        return array_values(array_unique($types));
+    }
+
+    /**
+     * Prioridad de la regla (menor = más prioritaria) cuando varias podrían disparar.
+     * welcome/reopen primero, luego palabra clave, y "always" de último.
+     */
+    public function priority(): int
+    {
+        $map = ['welcome' => 0, 'reopen' => 0, 'exact' => 1, 'contains' => 1, 'starts_with' => 1, 'always' => 2];
+        $best = 2;
+
+        foreach ($this->matchTypes() as $type) {
+            $best = min($best, $map[$type] ?? 1);
+        }
+
+        return $best;
+    }
+
+    /**
+     * ¿La regla aplica? Lógica OR: basta con que CUALQUIER tipo configurado se cumpla.
+     *
+     * @param array{is_first_inbound?: bool, gap_minutes?: int|null} $context
+     */
+    public function qualifies(string $incoming, array $context = []): bool
+    {
+        foreach ($this->matchTypes() as $type) {
+            if ($this->typeQualifies($type, $incoming, $context)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function typeQualifies(string $type, string $incoming, array $context): bool
+    {
+        return match ($type) {
+            'always' => true,
+            'welcome' => (bool) ($context['is_first_inbound'] ?? false),
+            'reopen' => $this->reopenQualifies($context['gap_minutes'] ?? null),
+            'exact', 'contains', 'starts_with' => $this->keywordMatches($type, $incoming),
+            default => false,
+        };
+    }
+
+    private function reopenQualifies(?int $gapMinutes): bool
+    {
+        if ($gapMinutes === null) {
+            return false;
+        }
+
+        $thresholdHours = $this->reopen_hours ?: self::DEFAULT_REOPEN_HOURS;
+
+        return $gapMinutes >= $thresholdHours * 60;
+    }
+
+    private function keywordMatches(string $type, string $incoming): bool
+    {
         $haystack = mb_strtolower(trim($incoming));
 
         if ($haystack === '') {
@@ -63,7 +137,7 @@ class AutoResponse extends Model
         }
 
         foreach ($keywords as $needle) {
-            $matched = match ($this->match_type) {
+            $matched = match ($type) {
                 'exact' => $haystack === $needle,
                 'starts_with' => str_starts_with($haystack, $needle),
                 default => str_contains($haystack, $needle),

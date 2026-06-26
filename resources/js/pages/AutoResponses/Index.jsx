@@ -10,18 +10,33 @@ const MATCH_LABELS = {
     starts_with: 'Empieza con',
     always: 'Siempre responde',
     welcome: 'Mensaje de bienvenida',
+    reopen: 'Saludo al reabrir',
 };
 
-const TRIGGERLESS_TYPES = ['always', 'welcome'];
+const MATCH_OPTIONS = [
+    { value: 'contains', label: 'Contiene la palabra' },
+    { value: 'exact', label: 'Coincidencia exacta' },
+    { value: 'starts_with', label: 'Empieza con' },
+    { value: 'welcome', label: 'Mensaje de bienvenida (primer contacto)' },
+    { value: 'reopen', label: 'Saludo al reabrir (cliente vuelve tras inactividad)' },
+    { value: 'always', label: 'Siempre responde' },
+];
+
+const KEYWORD_TYPES = ['exact', 'contains', 'starts_with'];
+const TRIGGERLESS_TYPES = ['always', 'welcome', 'reopen'];
+
+const typesOf = (item) => item.match_types ?? (item.match_type ? [item.match_type] : []);
+const hasKeywordType = (types) => types.some(t => KEYWORD_TYPES.includes(t));
 
 const emptyForm = {
     name: '',
     trigger_text: '',
-    match_type: 'contains',
+    match_types: ['contains'],
     response_message: '',
     instance_id: '',
     active: true,
     cooldown_minutes: 60,
+    reopen_hours: 24,
 };
 
 export default function AutoResponsesIndex({ autoResponses, instances }) {
@@ -38,6 +53,9 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
             cooldown_minutes: form.cooldown_minutes === '' || form.cooldown_minutes === null
                 ? 0
                 : Number(form.cooldown_minutes),
+            reopen_hours: form.match_types.includes('reopen')
+                ? (form.reopen_hours === '' || form.reopen_hours === null ? 24 : Number(form.reopen_hours))
+                : null,
         };
     }
 
@@ -61,14 +79,16 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
     }
 
     function openEdit(item) {
+        const types = typesOf(item);
         setEditForm({
             name: item.name ?? '',
-            trigger_text: item.trigger_text ?? '',
-            match_type: item.match_type ?? 'contains',
+            trigger_text: item.trigger_text === '*' ? '' : (item.trigger_text ?? ''),
+            match_types: types.length ? types : ['contains'],
             response_message: item.response_message ?? '',
             instance_id: item.instance_id ? String(item.instance_id) : '',
             active: !!item.active,
             cooldown_minutes: item.cooldown_minutes ?? 60,
+            reopen_hours: item.reopen_hours ?? 24,
         });
         setEditing(item);
     }
@@ -121,8 +141,10 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
 
                                 <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1">
                                     <div>
-                                        <span className="text-muted-foreground">{MATCH_LABELS[item.match_type] ?? item.match_type}</span>
-                                        {!TRIGGERLESS_TYPES.includes(item.match_type) && (
+                                        <span className="text-muted-foreground">
+                                            {typesOf(item).map(t => MATCH_LABELS[t] ?? t).join(' · ')}
+                                        </span>
+                                        {hasKeywordType(typesOf(item)) && item.trigger_text && item.trigger_text !== '*' && (
                                             <>
                                                 <span className="text-muted-foreground">: </span>
                                                 <span className="font-mono text-foreground">"{item.trigger_text}"</span>
@@ -191,15 +213,27 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
 
 function FormFields({ form, setForm, instances, autoResponses, editingId = null, errors, onSubmit, onCancel, submitLabel }) {
     const currentInstanceId = form.instance_id === '' ? null : Number(form.instance_id);
-    const isExclusiveTakenByOther = (type) => autoResponses.some(r =>
-        r.match_type === type &&
+    const isTriggerlessTakenByOther = (type) => autoResponses.some(r =>
+        typesOf(r).includes(type) &&
         r.id !== editingId &&
         r.instance_id === currentInstanceId
     );
-    const isAlwaysTakenByOther = isExclusiveTakenByOther('always');
-    const isWelcomeTakenByOther = isExclusiveTakenByOther('welcome');
-    const isCurrentTypeBlocked = (form.match_type === 'always' && isAlwaysTakenByOther) ||
-        (form.match_type === 'welcome' && isWelcomeTakenByOther);
+
+    const selectedTypes = form.match_types ?? [];
+    const showTrigger = hasKeywordType(selectedTypes);
+    const showReopen = selectedTypes.includes('reopen');
+
+    function toggleType(value) {
+        setForm(f => {
+            const set = new Set(f.match_types ?? []);
+            set.has(value) ? set.delete(value) : set.add(value);
+            return { ...f, match_types: Array.from(set) };
+        });
+    }
+
+    const noTypeSelected = selectedTypes.length === 0;
+    const missingTrigger = showTrigger && form.trigger_text.trim() === '';
+    const isBlocked = noTypeSelected || missingTrigger;
 
     return (
         <form onSubmit={onSubmit} className="space-y-4">
@@ -207,39 +241,70 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
 
             <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground">Tipo de coincidencia</label>
-                <select
-                    value={form.match_type}
-                    onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))}
-                    className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.match_type ? 'border-destructive' : 'border-input'}`}
-                >
-                    <option value="contains">Contiene la palabra</option>
-                    <option value="exact">Coincidencia exacta</option>
-                    <option value="starts_with">Empieza con</option>
-                    {!isWelcomeTakenByOther && <option value="welcome">Mensaje de bienvenida (primer contacto)</option>}
-                    {!isAlwaysTakenByOther && <option value="always">Siempre responde</option>}
-                </select>
-                {errors?.match_type && <p className="text-xs text-destructive mt-1">{errors.match_type}</p>}
+                <p className="text-[11px] text-muted-foreground">Puedes elegir varios. La respuesta se enviará si se cumple cualquiera.</p>
+                <div className={`flex flex-col gap-1.5 rounded-md border p-2.5 ${errors?.match_types ? 'border-destructive' : 'border-input'}`}>
+                    {MATCH_OPTIONS.map(opt => {
+                        const isSelected = selectedTypes.includes(opt.value);
+                        const disabled = TRIGGERLESS_TYPES.includes(opt.value) && !isSelected && isTriggerlessTakenByOther(opt.value);
+                        return (
+                            <label key={opt.value} className={`flex items-center gap-2 text-sm ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    disabled={disabled}
+                                    onChange={() => toggleType(opt.value)}
+                                    className="rounded border-input size-4 accent-green-600"
+                                />
+                                <span className="text-foreground">{opt.label}</span>
+                                {disabled && <span className="text-[10px] text-muted-foreground">(ya usado en esta instancia)</span>}
+                            </label>
+                        );
+                    })}
+                </div>
+                {errors?.match_types && <p className="text-xs text-destructive mt-1">{errors.match_types}</p>}
+                {noTypeSelected && <p className="text-xs text-destructive mt-1">Selecciona al menos un tipo de coincidencia.</p>}
 
-                {form.match_type === 'always' && (
+                {selectedTypes.includes('welcome') && (
                     <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
-                        Nota: Esta respuesta se enviará automáticamente con cualquier mensaje del usuario.
-                        Si no hay respuesta dentro de la primera hora, se reenviará el mensaje una única vez como recordatorio.
+                        Bienvenida: se enviará solo al primer mensaje de un contacto nuevo en esta instancia.
                     </p>
                 )}
-
-                {form.match_type === 'welcome' && (
+                {showReopen && (
                     <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
-                        Nota: Esta respuesta se enviará solo al primer mensaje de un contacto nuevo en esta instancia.
+                        Reabrir: se reenviará el saludo cuando el cliente vuelva a escribir después del tiempo de inactividad definido abajo.
+                    </p>
+                )}
+                {selectedTypes.includes('always') && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                        Siempre: se enviará con cualquier mensaje del usuario. Si no hay respuesta dentro de la primera hora, se reenviará una única vez como recordatorio.
                     </p>
                 )}
             </div>
 
-            {!TRIGGERLESS_TYPES.includes(form.match_type) && (
+            {showTrigger && (
                 <div className="space-y-1.5">
                     <Field label="Texto disparador" value={form.trigger_text} onChange={v => setForm(f => ({ ...f, trigger_text: v }))} required placeholder='Ej: hola, buenas, saludos' error={errors?.trigger_text} />
                     <p className="text-[11px] text-muted-foreground">
                         Puedes definir varias palabras separadas por coma. Cualquiera que coincida disparará la respuesta.
                     </p>
+                </div>
+            )}
+
+            {showReopen && (
+                <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Inactividad para reabrir (horas)</label>
+                    <input
+                        type="number"
+                        min="1"
+                        max="8760"
+                        value={form.reopen_hours}
+                        onChange={e => setForm(f => ({ ...f, reopen_hours: e.target.value }))}
+                        className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.reopen_hours ? 'border-destructive' : 'border-input'}`}
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                        Si pasan al menos estas horas desde el último mensaje y el cliente vuelve a escribir, se reenvía el saludo.
+                    </p>
+                    {errors?.reopen_hours && <p className="text-xs text-destructive mt-1">{errors.reopen_hours}</p>}
                 </div>
             )}
 
@@ -301,7 +366,7 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
             </label>
 
             <div className="flex gap-2 pt-2">
-                <Button type="submit" className="flex-1" disabled={isCurrentTypeBlocked}>{submitLabel}</Button>
+                <Button type="submit" className="flex-1" disabled={isBlocked}>{submitLabel}</Button>
                 <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
             </div>
         </form>

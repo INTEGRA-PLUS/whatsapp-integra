@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AutoResponse;
 use App\Models\Instance;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class AutoResponseController extends Controller
@@ -38,34 +39,18 @@ class AutoResponseController extends Controller
 
         $user = auth()->user();
 
-        if (in_array($data['match_type'], ['always', 'welcome'], true)) {
-            $exists = AutoResponse::where('company_id', $user->company_id)
-                ->where('instance_id', $data['instance_id'] ?? null)
-                ->where('match_type', $data['match_type'])
-                ->exists();
-
-            if ($exists) {
-                $label = $data['match_type'] === 'always' ? '"Siempre responde"' : '"Mensaje de bienvenida"';
-                return back()->withErrors(['match_type' => "Ya existe una respuesta configurada como {$label} para esta instancia."]);
-            }
+        if ($conflict = $this->triggerlessConflict($data, $user->company_id)) {
+            return $conflict;
         }
 
         if (!empty($data['instance_id'])) {
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
 
-        $triggerlessTypes = ['always', 'welcome'];
-
-        AutoResponse::create([
-            'company_id' => $user->company_id,
-            'instance_id' => $data['instance_id'] ?? null,
-            'name' => $data['name'],
-            'trigger_text' => in_array($data['match_type'], $triggerlessTypes, true) ? '*' : $data['trigger_text'],
-            'match_type' => $data['match_type'],
-            'response_message' => $data['response_message'],
-            'active' => $data['active'] ?? true,
-            'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
-        ]);
+        AutoResponse::create(array_merge(
+            ['company_id' => $user->company_id],
+            $this->mappedAttributes($data, true)
+        ));
 
         return redirect()->route('auto-responses.index')
             ->with('success', 'Respuesta automática creada');
@@ -81,37 +66,69 @@ class AutoResponseController extends Controller
 
         $data = $this->validateData($request);
 
-        if (in_array($data['match_type'], ['always', 'welcome'], true)) {
-            $exists = AutoResponse::where('company_id', $user->company_id)
-                ->where('instance_id', $data['instance_id'] ?? null)
-                ->where('match_type', $data['match_type'])
-                ->where('id', '!=', $id)
-                ->exists();
-
-            if ($exists) {
-                $label = $data['match_type'] === 'always' ? '"Siempre responde"' : '"Mensaje de bienvenida"';
-                return back()->withErrors(['match_type' => "Ya existe otra respuesta configurada como {$label} para esta instancia."]);
-            }
+        if ($conflict = $this->triggerlessConflict($data, $user->company_id, $id)) {
+            return $conflict;
         }
 
         if (!empty($data['instance_id'])) {
             $this->ensureInstanceBelongsToCompany($data['instance_id'], $user->company_id);
         }
 
-        $triggerlessTypes = ['always', 'welcome'];
-
-        $autoResponse->update([
-            'instance_id' => $data['instance_id'] ?? null,
-            'name' => $data['name'],
-            'trigger_text' => in_array($data['match_type'], $triggerlessTypes, true) ? '*' : $data['trigger_text'],
-            'match_type' => $data['match_type'],
-            'response_message' => $data['response_message'],
-            'active' => $data['active'] ?? false,
-            'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
-        ]);
+        $autoResponse->update($this->mappedAttributes($data, false));
 
         return redirect()->route('auto-responses.index')
             ->with('success', 'Respuesta automática actualizada');
+    }
+
+    /**
+     * Construye los atributos a persistir a partir de los datos validados.
+     */
+    private function mappedAttributes(array $data, bool $creating): array
+    {
+        $types = array_values(array_unique($data['match_types']));
+        $hasKeyword = count(array_intersect($types, AutoResponse::KEYWORD_TYPES)) > 0;
+        $hasReopen = in_array('reopen', $types, true);
+
+        return [
+            'instance_id' => $data['instance_id'] ?? null,
+            'name' => $data['name'],
+            'trigger_text' => $hasKeyword ? $data['trigger_text'] : '*',
+            'match_type' => $types[0], // legacy: primer tipo, para compatibilidad/listados
+            'match_types' => $types,
+            'response_message' => $data['response_message'],
+            'active' => $data['active'] ?? ($creating ? true : false),
+            'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
+            'reopen_hours' => $hasReopen ? ($data['reopen_hours'] ?? AutoResponse::DEFAULT_REOPEN_HOURS) : null,
+        ];
+    }
+
+    /**
+     * Solo puede existir UNA regla por instancia para cada tipo sin disparador
+     * (bienvenida, siempre, reabrir) para evitar respuestas duplicadas.
+     */
+    private function triggerlessConflict(array $data, int $companyId, $ignoreId = null)
+    {
+        $labels = [
+            'always' => '"Siempre responde"',
+            'welcome' => '"Mensaje de bienvenida"',
+            'reopen' => '"Saludo al reabrir"',
+        ];
+
+        foreach (array_intersect($data['match_types'], AutoResponse::TRIGGERLESS_TYPES) as $type) {
+            $exists = AutoResponse::where('company_id', $companyId)
+                ->where('instance_id', $data['instance_id'] ?? null)
+                ->whereJsonContains('match_types', $type)
+                ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+                ->exists();
+
+            if ($exists) {
+                return back()->withErrors([
+                    'match_types' => "Ya existe una respuesta configurada como {$labels[$type]} para esta instancia.",
+                ]);
+            }
+        }
+
+        return null;
     }
 
     public function destroy($id)
@@ -130,15 +147,27 @@ class AutoResponseController extends Controller
 
     private function validateData(Request $request): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:120',
-            'trigger_text' => 'required_if:match_type,exact,contains,starts_with|nullable|string|max:1000',
-            'match_type' => 'required|in:exact,contains,starts_with,always,welcome',
+            'match_types' => 'required|array|min:1',
+            'match_types.*' => 'in:exact,contains,starts_with,always,welcome,reopen',
+            'trigger_text' => 'nullable|string|max:1000',
             'response_message' => 'required|string|max:4096',
             'instance_id' => 'nullable|integer|exists:instances,id',
             'active' => 'boolean',
             'cooldown_minutes' => 'nullable|integer|min:0|max:10080',
+            'reopen_hours' => 'nullable|integer|min:1|max:8760',
         ]);
+
+        $hasKeyword = count(array_intersect($validated['match_types'], AutoResponse::KEYWORD_TYPES)) > 0;
+
+        if ($hasKeyword && trim((string) ($validated['trigger_text'] ?? '')) === '') {
+            throw ValidationException::withMessages([
+                'trigger_text' => 'Indica el texto disparador para los tipos por palabra clave.',
+            ]);
+        }
+
+        return $validated;
     }
 
     private function ensureInstanceBelongsToCompany(int $instanceId, int $companyId): void
