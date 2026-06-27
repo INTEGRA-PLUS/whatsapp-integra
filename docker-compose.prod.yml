@@ -40,6 +40,17 @@ services:
           cpus: "0.5"
           memory: 256M
 
+  reverb:
+    pull_policy: always
+    build: !reset null
+    image: ${APP_IMAGE:?APP_IMAGE must be set}
+    deploy:
+      replicas: 1   # un solo servidor de websockets (sin escalado horizontal)
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
   db:
     deploy:
       resources:

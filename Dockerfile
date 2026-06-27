@@ -14,6 +14,18 @@ COPY vite.config.js ./
 COPY resources ./resources
 COPY public ./public
 
+# Variables del cliente Reverb (Echo). Vite las incrusta en el bundle EN TIEMPO
+# DE BUILD, por eso deben llegar como build args con los valores PÚBLICOS (el
+# dominio al que se conecta el navegador, no el nombre interno del contenedor).
+ARG VITE_REVERB_APP_KEY
+ARG VITE_REVERB_HOST
+ARG VITE_REVERB_PORT=443
+ARG VITE_REVERB_SCHEME=https
+ENV VITE_REVERB_APP_KEY=${VITE_REVERB_APP_KEY} \
+    VITE_REVERB_HOST=${VITE_REVERB_HOST} \
+    VITE_REVERB_PORT=${VITE_REVERB_PORT} \
+    VITE_REVERB_SCHEME=${VITE_REVERB_SCHEME}
+
 RUN npm run build
 
 

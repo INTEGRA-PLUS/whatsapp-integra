@@ -38,10 +38,25 @@ x-app-env: &app-env
   BROADCAST_CONNECTION: ${BROADCAST_CONNECTION:-log}
   FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
 
+  # Reverb (websockets para llamadas en tiempo real).
+  # - REVERB_HOST/PORT/SCHEME: cómo el BACKEND publica eventos → apunta al
+  #   contenedor `reverb` por la red interna (no al dominio público).
+  # - REVERB_SERVER_HOST/PORT: dónde escucha el daemon dentro del contenedor.
+  # - El navegador se conecta vía nginx (/app) usando las VITE_* del build.
+  REVERB_APP_ID: ${REVERB_APP_ID:-}
+  REVERB_APP_KEY: ${REVERB_APP_KEY:-}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET:-}
+  REVERB_HOST: ${REVERB_HOST:-reverb}
+  REVERB_PORT: ${REVERB_PORT:-8080}
+  REVERB_SCHEME: ${REVERB_SCHEME:-http}
+  REVERB_SERVER_HOST: 0.0.0.0
+  REVERB_SERVER_PORT: 8080
+
   ACCESS_TOKEN_META: ${ACCESS_TOKEN_META:-}
   META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
   META_APP_SECRET: ${META_APP_SECRET:-}
   META_API_VERSION: ${META_API_VERSION:-v21.0}
+  META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 
   MAIL_MAILER: ${MAIL_MAILER:-log}
   MAIL_HOST: ${MAIL_HOST:-127.0.0.1}
@@ -58,6 +73,12 @@ x-app-build: &app-build
     target: runtime
     args:
       BUILDKIT_INLINE_CACHE: "1"
+      # Valores PÚBLICOS del cliente Reverb, incrustados en el bundle por Vite.
+      # VITE_REVERB_HOST debe ser tu dominio (el navegador se conecta a wss://dominio/app).
+      VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-}
+      VITE_REVERB_HOST: ${VITE_REVERB_HOST:-}
+      VITE_REVERB_PORT: ${VITE_REVERB_PORT:-443}
+      VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME:-https}
   image: ${APP_IMAGE:-whatsapp-integra:latest}
 
 x-app-defaults: &app-defaults
@@ -133,6 +154,31 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'schedule:work' >/dev/null"]
       interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      app:
+        condition: service_healthy
+
+  reverb:
+    <<: *app-defaults
+    environment:
+      <<: *app-env
+      RUN_MIGRATIONS: "false"
+      WARM_CACHES: "true"
+      SKIP_FPM_PING: "true"
+    command:
+      - php
+      - artisan
+      - reverb:start
+      - --host=0.0.0.0
+      - --port=8080
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'reverb:start' >/dev/null"]
+      interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s

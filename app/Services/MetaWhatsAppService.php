@@ -11,11 +11,15 @@ class MetaWhatsAppService
     protected $baseUri;
     protected $accessToken;
     protected $apiVersion;
+    protected $callingBaseUri;
 
     public function __construct()
     {
         $this->apiVersion = config('services.meta.api_version', 'v21.0');
         $this->baseUri = "https://graph.facebook.com/{$this->apiVersion}";
+
+        $callingVersion = config('services.meta.calling_api_version', 'v23.0');
+        $this->callingBaseUri = "https://graph.facebook.com/{$callingVersion}";
     }
 
     public function sendMessage(string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
@@ -148,6 +152,205 @@ class MetaWhatsAppService
             'status' => 'read',
             'message_id' => $messageId
         ]);
+    }
+
+    /* ===================== Calling API ===================== */
+
+    /**
+     * Inicia una llamada saliente (business-initiated). Requiere que el usuario
+     * haya concedido permiso de llamada previamente. Envía nuestra oferta SDP.
+     */
+    public function connectCall(string $phoneNumberId, string $to, string $sdpOffer)
+    {
+        return $this->sendCallRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'to' => $to,
+            'action' => 'connect',
+            'session' => [
+                'sdp_type' => 'offer',
+                'sdp' => $sdpOffer,
+            ],
+        ]);
+    }
+
+    /**
+     * Acepta provisionalmente una llamada entrante (timbrando) para indicarle a
+     * Meta que la estamos procesando antes de conectar el audio.
+     */
+    public function preAcceptCall(string $phoneNumberId, string $callId)
+    {
+        return $this->sendCallRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'call_id' => $callId,
+            'action' => 'pre_accept',
+        ]);
+    }
+
+    /**
+     * Acepta una llamada entrante respondiendo con nuestra SDP answer, lo que
+     * abre el canal de audio.
+     */
+    public function acceptCall(string $phoneNumberId, string $callId, string $sdpAnswer)
+    {
+        return $this->sendCallRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'call_id' => $callId,
+            'action' => 'accept',
+            'session' => [
+                'sdp_type' => 'answer',
+                'sdp' => $sdpAnswer,
+            ],
+        ]);
+    }
+
+    /**
+     * Rechaza una llamada entrante sin contestarla.
+     */
+    public function rejectCall(string $phoneNumberId, string $callId)
+    {
+        return $this->sendCallRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'call_id' => $callId,
+            'action' => 'reject',
+        ]);
+    }
+
+    /**
+     * Cuelga / finaliza una llamada en curso (entrante o saliente).
+     */
+    public function terminateCall(string $phoneNumberId, string $callId)
+    {
+        return $this->sendCallRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'call_id' => $callId,
+            'action' => 'terminate',
+        ]);
+    }
+
+    /**
+     * Envía una solicitud de permiso de llamada al usuario (mensaje interactivo
+     * "call_permission_request"). El usuario debe aceptar antes de que el negocio
+     * pueda iniciar llamadas salientes. La respuesta llega por webhook.
+     */
+    public function requestCallPermission(string $phoneNumberId, string $to, string $bodyText = '¿Nos permites llamarte por WhatsApp?')
+    {
+        try {
+            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $accessToken = $instance ? $instance->access_token : null;
+
+            if (!$accessToken) {
+                return ['success' => false, 'error' => 'Access token not found'];
+            }
+
+            // La solicitud de permiso es un mensaje, pero usa la versión de Graph
+            // API de llamadas porque el tipo interactivo es reciente.
+            $url = "{$this->callingBaseUri}/{$phoneNumberId}/messages";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post($url, [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $to,
+                    'type' => 'interactive',
+                    'interactive' => [
+                        'type' => 'call_permission_request',
+                        'body' => ['text' => $bodyText],
+                        'action' => ['name' => 'call_permission_request'],
+                    ],
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::channel('whatsapp')->error('WhatsApp Request Call Permission Error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::channel('whatsapp')->error('WhatsApp Request Call Permission Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Activa la función de llamadas en un número (POST /{phone_number_id}/settings).
+     * Debe hacerse una sola vez por número antes de poder enviar/recibir llamadas.
+     */
+    public function enableCalling(string $phoneNumberId, string $accessToken)
+    {
+        try {
+            $url = "{$this->callingBaseUri}/{$phoneNumberId}/settings";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post($url, [
+                    'calling' => [
+                        'status' => 'ENABLED',
+                    ],
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::channel('whatsapp')->error('WhatsApp Enable Calling Error', [
+                'phone_number_id' => $phoneNumberId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::channel('whatsapp')->error('WhatsApp Enable Calling Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * POST a /{phone_number_id}/calls usando la versión de Graph API dedicada a
+     * llamadas. Comparte el patrón de autenticación/manejo de errores de sendRequest.
+     */
+    protected function sendCallRequest(string $phoneNumberId, array $data)
+    {
+        try {
+            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $accessToken = $instance ? $instance->access_token : null;
+
+            if (!$accessToken) {
+                Log::error('WhatsApp Calling Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
+                return ['success' => false, 'error' => 'Access token not found'];
+            }
+
+            $url = "{$this->callingBaseUri}/{$phoneNumberId}/calls";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post($url, $data);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::channel('whatsapp')->error('WhatsApp Calling API Error', [
+                'url' => $url,
+                'action' => $data['action'] ?? null,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::channel('whatsapp')->error('WhatsApp Calling API Exception', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     public function downloadMedia(string $mediaId, string $accessToken)

@@ -8,6 +8,8 @@ use App\Models\Instance;
 use App\Models\Contact;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Models\WhatsAppCall;
+use App\Models\WhatsAppCallPermission;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
@@ -76,6 +78,8 @@ class WhatsAppWebhookController extends Controller
                     foreach ($entry['changes'] as $change) {
                         if ($change['field'] === 'messages') {
                             $this->processChange($change['value']);
+                        } elseif ($change['field'] === 'calls') {
+                            $this->processCallChange($change['value']);
                         }
                     }
                 }
@@ -128,6 +132,189 @@ class WhatsAppWebhookController extends Controller
         }
     }
 
+    /**
+     * Enruta los eventos del campo "calls" del webhook hacia processCallEvent,
+     * identificando primero la instancia por phone_number_id (igual que los mensajes).
+     */
+    private function processCallChange($value)
+    {
+        $metadata = $value['metadata'] ?? [];
+        $phoneNumberId = $metadata['phone_number_id'] ?? null;
+
+        $instance = Instance::where('phone_number_id', $phoneNumberId)
+            ->where('active', true)
+            ->first();
+
+        if (!$instance) {
+            Log::channel('whatsapp')->warning('⚠️ Llamada recibida sin instancia activa', [
+                'phone_number_id' => $phoneNumberId,
+            ]);
+            return;
+        }
+
+        foreach ($value['calls'] ?? [] as $call) {
+            $this->processCallEvent($call, $instance);
+        }
+    }
+
+    /**
+     * Procesa un evento individual de llamada de la Calling API de WhatsApp.
+     *
+     * Fase 1 (señalización): registra y actualiza el ciclo de vida de la llamada
+     * en whatsapp_calls. La conexión real del audio (responder con SDP answer vía
+     * acceptCall) se hará desde el servidor de media en una fase posterior.
+     */
+    private function processCallEvent($call, Instance $instance)
+    {
+        $callId = $call['id'] ?? null;
+        if (!$callId) {
+            Log::channel('whatsapp')->warning('⚠️ Evento de llamada sin id', ['call' => $call]);
+            return;
+        }
+
+        // Meta usa "event" (connect/terminate) y "status" (RINGING/ACCEPTED/...)
+        // según la versión. Normalizamos ambos a minúsculas para decidir.
+        $event = strtolower($call['event'] ?? '');
+        $status = strtolower($call['status'] ?? '');
+        $rawDirection = strtoupper($call['direction'] ?? '');
+        $direction = str_contains($rawDirection, 'BUSINESS') ? 'outbound' : 'inbound';
+
+        $from = $call['from'] ?? null;
+        $to = $call['to'] ?? null;
+        $sdp = $call['session']['sdp'] ?? null;
+
+        // Para entrantes el contraparte es "from"; para salientes es "to"
+        $counterpart = $direction === 'inbound' ? $from : $to;
+
+        $conversation = null;
+        if ($counterpart) {
+            $conversation = WhatsAppConversation::firstOrCreate(
+                ['instance_id' => $instance->id, 'wa_id' => $counterpart],
+                [
+                    'phone_number' => $counterpart,
+                    'name' => $counterpart,
+                    'status' => 'open',
+                    'last_message_at' => now(),
+                ]
+            );
+            $this->ensureContactRegistered($conversation, $instance, $counterpart, $conversation->name ?? $counterpart);
+        }
+
+        $record = WhatsAppCall::firstOrNew(['wacid' => $callId]);
+        $isNew = !$record->exists;
+
+        if (!$record->exists) {
+            $record->fill([
+                'instance_id' => $instance->id,
+                'conversation_id' => $conversation?->id,
+                'direction' => $direction,
+                'status' => 'ringing',
+                'from' => $from,
+                'to' => $to,
+                'started_at' => now(),
+            ]);
+        }
+
+        // Guardar la oferta SDP entrante para que el servidor de media la use al aceptar
+        if ($sdp && ($call['session']['sdp_type'] ?? null) === 'offer') {
+            $record->offer_sdp = $sdp;
+        }
+
+        // Resolver el estado nuevo a partir de event/status
+        $isTerminate = $event === 'terminate' || in_array($status, ['completed', 'failed', 'rejected', 'missed', 'canceled']);
+
+        if ($isTerminate) {
+            $newStatus = match (true) {
+                $status === 'rejected' => 'rejected',
+                $status === 'failed' => 'failed',
+                $status === 'missed' => 'missed',
+                $status === 'canceled' => 'canceled',
+                // terminate sin haber conectado audio => perdida (entrante) / cancelada (saliente)
+                !$record->connected_at => $direction === 'inbound' ? 'missed' : 'canceled',
+                default => 'completed',
+            };
+            $record->ended_at = now();
+            $record->duration_seconds = $record->connected_at
+                ? $record->connected_at->diffInSeconds($record->ended_at)
+                : 0;
+            $record->status = $newStatus;
+        } elseif (in_array($status, ['accepted', 'in_progress', 'connected'])) {
+            $record->status = 'in_progress';
+            $record->connected_at = $record->connected_at ?? now();
+        } elseif ($status === 'connecting') {
+            $record->status = 'connecting';
+        }
+
+        // Conservar el payload crudo para depuración / fases siguientes
+        $meta = $record->metadata ?? [];
+        $meta['last_event'] = $call;
+        $record->metadata = $meta;
+
+        $record->save();
+
+        // Notificar al frontend en tiempo real (Reverb). action:
+        // - incoming: nueva llamada entrante timbrando (mostrar UI de contestar)
+        // - ended: la llamada terminó (cualquier estado final)
+        // - status: actualización de estado intermedia
+        $action = match (true) {
+            $isNew && $direction === 'inbound' => 'incoming',
+            in_array($record->status, ['completed', 'missed', 'rejected', 'failed', 'canceled']) => 'ended',
+            default => 'status',
+        };
+
+        try {
+            broadcast(new \App\Events\WhatsAppCallEvent($record, $action));
+        } catch (\Throwable $e) {
+            Log::channel('whatsapp')->warning('No se pudo emitir el evento de llamada', ['error' => $e->getMessage()]);
+        }
+
+        Log::channel('whatsapp')->info('📞 Evento de llamada procesado', [
+            'wacid' => $callId,
+            'direction' => $direction,
+            'event' => $event ?: $status,
+            'status' => $record->status,
+            'broadcast' => $action,
+        ]);
+    }
+
+    /**
+     * Procesa la respuesta del usuario a una solicitud de permiso de llamada.
+     * Actualiza (o crea) el registro de permiso para ese contacto en la instancia.
+     */
+    private function processCallPermissionReply($message, Instance $instance, WhatsAppConversation $conversation)
+    {
+        $from = $message['from'] ?? $conversation->wa_id;
+        $reply = $message['interactive']['call_permission_reply'] ?? [];
+
+        // Meta indica la decisión en "response" (accept/reject) y, si acepta, la
+        // ventana de validez en "expiration_timestamp".
+        $response = strtolower($reply['response'] ?? '');
+        $granted = in_array($response, ['accept', 'accepted', 'approve', 'approved', 'yes']);
+
+        $expiresAt = null;
+        if (!empty($reply['expiration_timestamp'])) {
+            $expiresAt = \Carbon\Carbon::createFromTimestamp($reply['expiration_timestamp']);
+        }
+
+        WhatsAppCallPermission::updateOrCreate(
+            ['instance_id' => $instance->id, 'wa_id' => $from],
+            [
+                'conversation_id' => $conversation->id,
+                'status' => $granted ? 'granted' : 'rejected',
+                'expires_at' => $expiresAt,
+                'responded_at' => now(),
+                'metadata' => ['last_reply' => $reply],
+            ]
+        );
+
+        Log::channel('whatsapp')->info('🔐 Permiso de llamada actualizado', [
+            'instance_id' => $instance->id,
+            'wa_id' => $from,
+            'status' => $granted ? 'granted' : 'rejected',
+            'expires_at' => $expiresAt?->toIso8601String(),
+        ]);
+    }
+
     private function processInboundMessage($message, Instance $instance, $metadata)
     {
         $from = $message['from'];
@@ -154,6 +341,21 @@ class WhatsAppWebhookController extends Controller
 
         // Registrar automáticamente el contacto entrante si aún no está registrado
         $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+
+        // Respuesta a una solicitud de permiso de llamada: se procesa aparte y no
+        // se guarda como un mensaje normal del chat.
+        if (($message['type'] ?? null) === 'interactive'
+            && ($message['interactive']['type'] ?? null) === 'call_permission_reply') {
+            $this->processCallPermissionReply($message, $instance, $conversation);
+            return;
+        }
+
+        // Reacción (emoji) a un mensaje existente: se adjunta al mensaje original
+        // en vez de crear una burbuja nueva. No genera "tipo no soportado".
+        if (($message['type'] ?? null) === 'reaction') {
+            $this->processReaction($message, $conversation);
+            return;
+        }
 
         $existingMessage = WhatsAppMessage::where('wamid', $wamid)->first();
         if ($existingMessage) {
@@ -225,6 +427,18 @@ class WhatsAppWebhookController extends Controller
                 }
                 break;
 
+            case 'sticker':
+                $messageData['type'] = 'sticker';
+                $messageData['media_id'] = $message['sticker']['id'];
+                $messageData['media_mime_type'] = $message['sticker']['mime_type'] ?? 'image/webp';
+
+                $mediaInfo = $this->metaService->downloadMedia($message['sticker']['id'], $instance->access_token);
+                if ($mediaInfo) {
+                    $messageData['media_url'] = $mediaInfo['url'];
+                    $messageData['filename'] = $mediaInfo['filename'];
+                }
+                break;
+
             default:
                 $messageData['type'] = 'text';
                 $messageData['content'] = "Tipo de mensaje no soportado: {$message['type']}";
@@ -263,6 +477,45 @@ class WhatsAppWebhookController extends Controller
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,
             'message_id' => $savedMessage->id
+        ]);
+    }
+
+    /**
+     * Adjunta una reacción (emoji) al mensaje al que responde. WhatsApp manda
+     * `reaction.message_id` (wamid del mensaje original) y `reaction.emoji`
+     * (cadena vacía cuando el usuario quita la reacción).
+     */
+    private function processReaction($message, WhatsAppConversation $conversation): void
+    {
+        $reaction = $message['reaction'] ?? [];
+        $targetWamid = $reaction['message_id'] ?? null;
+        $emoji = $reaction['emoji'] ?? null;
+
+        if (!$targetWamid) {
+            return;
+        }
+
+        $target = WhatsAppMessage::where('wamid', $targetWamid)
+            ->whereHas('conversation', fn($q) => $q->where('id', $conversation->id))
+            ->first();
+
+        if (!$target) {
+            Log::channel('whatsapp')->info('ℹ️ Reacción a un mensaje no encontrado', ['target' => $targetWamid]);
+            return;
+        }
+
+        $meta = $target->metadata ?? [];
+        if ($emoji === null || $emoji === '') {
+            unset($meta['reaction']);
+        } else {
+            $meta['reaction'] = $emoji;
+        }
+        $target->metadata = $meta;
+        $target->save();
+
+        Log::channel('whatsapp')->info('🙂 Reacción procesada', [
+            'target_wamid' => $targetWamid,
+            'emoji' => $emoji ?: '(removida)',
         ]);
     }
 

@@ -578,6 +578,7 @@ const WA_SUBTABS = [
     { id: 'readiness', label: 'Estado y activaciones', Icon: ListChecks },
     { id: 'profile',   label: 'Perfil del negocio',    Icon: Building2 },
     { id: 'numbers',   label: 'Números',               Icon: PhoneIcon },
+    { id: 'calling',   label: 'Llamadas',              Icon: PhoneCall },
 ];
 
 function TabWhatsApp() {
@@ -701,6 +702,7 @@ function TabWhatsApp() {
 
             {subTab === 'profile' && <BusinessProfilePanel instanceId={instanceId} setToast={setToast} />}
             {subTab === 'numbers' && <PhoneNumbersPanel instanceId={instanceId} />}
+            {subTab === 'calling' && <CallingSettingsPanel instanceId={instanceId} showToast={showToast} />}
             {subTab !== 'readiness' ? null : (
             <>
             <div className="flex items-center gap-2">
@@ -1445,6 +1447,126 @@ function PhoneNumbersPanel({ instanceId }) {
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+function CallingSettingsPanel({ instanceId, showToast }) {
+    const [calling, setCalling] = useState(null);
+    const [cost, setCost] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => { if (instanceId) load(); }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const { data } = await axios.get('/api/settings/whatsapp/calling', { params: { instance_id: instanceId } });
+            setCalling(data.calling);
+            setCost(data.cost_notice);
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo cargar la configuración de llamadas.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function enableCalling() {
+        setBusy(true);
+        try {
+            const { data } = await axios.post('/api/settings/whatsapp/calling/enable', { instance_id: instanceId });
+            setCalling(data.calling);
+            showToast?.('Llamadas habilitadas en el número.');
+        } catch (err) {
+            const meta = err?.response?.data?.error?.error;
+            showToast?.(meta?.error_user_msg || meta?.message || err?.response?.data?.message || 'No se pudo habilitar las llamadas.', 'error');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function toggleOutbound(next) {
+        setBusy(true);
+        try {
+            const { data } = await axios.post('/api/settings/whatsapp/calling', { instance_id: instanceId, outbound_enabled: next });
+            setCalling(data.calling);
+            showToast?.(next ? 'Llamadas salientes activadas.' : 'Llamadas salientes desactivadas.');
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo actualizar la configuración.', 'error');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (!instanceId) return <p className="text-sm text-muted-foreground">Selecciona una instancia.</p>;
+    if (loading && !calling) return <p className="text-sm text-muted-foreground">Cargando…</p>;
+
+    const enabled = calling?.enabled;
+    const outbound = calling?.outbound_enabled;
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Habilita las llamadas de voz por WhatsApp en este número. Las entrantes son gratuitas; las salientes tienen costo.
+            </p>
+
+            {/* Habilitar la función de llamadas en el número */}
+            <div className={`rounded-2xl border p-5 ${enabled ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/60 bg-card/50'}`}>
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <PhoneCall className="size-4 text-teal-600 dark:text-teal-400" />
+                            <p className="text-sm font-semibold text-foreground">Llamadas en el número</p>
+                            {enabled && (
+                                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-emerald-500/30">
+                                    <CheckCircle2 className="size-3" /> Habilitado
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            {enabled
+                                ? 'El número puede recibir y realizar llamadas. Las entrantes funcionan sin costo.'
+                                : 'Activa la función de llamadas en Meta para empezar a recibir llamadas (gratis).'}
+                        </p>
+                    </div>
+                    {!enabled && (
+                        <Button onClick={enableCalling} disabled={busy} size="sm" className="gap-2 shrink-0">
+                            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <PhoneCall className="size-3.5" />}
+                            Habilitar
+                        </Button>
+                    )}
+                </div>
+            </div>
+
+            {/* Toggle de salientes con aviso de costo */}
+            <div className={`rounded-2xl border p-5 ${outbound ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/60 bg-card/50'} ${!enabled ? 'opacity-60' : ''}`}>
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">Llamadas salientes</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Permite que los agentes inicien llamadas a los clientes (requiere que el cliente otorgue permiso).
+                        </p>
+                        <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                            <span>{cost?.outbound ?? 'Las llamadas salientes tienen costo por minuto facturado por Meta.'}</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!!outbound}
+                        disabled={busy || !enabled}
+                        onClick={() => toggleOutbound(!outbound)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${outbound ? 'bg-amber-500' : 'bg-muted'}`}
+                    >
+                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${outbound ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                </div>
+                {!enabled && (
+                    <p className="text-[11px] text-muted-foreground mt-3">Primero habilita las llamadas en el número.</p>
+                )}
+            </div>
         </div>
     );
 }

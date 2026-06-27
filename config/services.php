@@ -39,6 +39,9 @@ return [
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'app_secret' => env('META_APP_SECRET'),
         'api_version' => env('META_API_VERSION', 'v21.0'),
+        // La Calling API requiere una versión más reciente del Graph API que la
+        // mensajería. Se mantiene separada para no afectar el resto de llamadas.
+        'calling_api_version' => env('META_CALLING_API_VERSION', 'v23.0'),
     ],
 
     // Software Integra (integración "Pagos a facturas").

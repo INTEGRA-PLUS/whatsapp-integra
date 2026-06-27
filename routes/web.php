@@ -300,6 +300,13 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:instances.update');
         Route::post('/profile/photo', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfilePhoto'])
             ->middleware('permission:instances.update');
+
+        // Configuración de llamadas: estado, habilitar función y toggle de salientes
+        Route::get('/calling', [App\Http\Controllers\WhatsAppSettingsController::class, 'callingSettings']);
+        Route::post('/calling/enable', [App\Http\Controllers\WhatsAppSettingsController::class, 'enableCalling'])
+            ->middleware('permission:instances.update');
+        Route::post('/calling', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateCallingSettings'])
+            ->middleware('permission:instances.update');
     });
 
     // API routes for Chat (moved from api.php to share session)
@@ -323,6 +330,14 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
         Route::post('/conversations/{conversationId}/attach-contact', [App\Http\Controllers\ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);
+
+        // Llamadas WhatsApp (Fase 2: permiso para salientes)
+        Route::post('/conversations/{conversationId}/call-permission', [App\Http\Controllers\CallController::class, 'requestPermission']);
+        Route::get('/conversations/{conversationId}/call-permission', [App\Http\Controllers\CallController::class, 'permissionStatus']);
+
+        // Historial de llamadas
+        Route::get('/calls', [App\Http\Controllers\CallController::class, 'history']);
+        Route::get('/conversations/{conversationId}/calls', [App\Http\Controllers\CallController::class, 'conversationHistory']);
     });
 
     // Contacts API routes

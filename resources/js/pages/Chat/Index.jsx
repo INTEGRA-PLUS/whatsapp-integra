@@ -6,11 +6,15 @@ import { clsx } from 'clsx';
 import { 
     Search, 
     Send, 
-    Image as ImageIcon, 
-    MoreVertical, 
+    Image as ImageIcon,
+    MoreVertical,
     MoreHorizontal,
-    Phone, 
-    Info, 
+    Phone,
+    PhoneCall,
+    PhoneIncoming,
+    PhoneOutgoing,
+    PhoneMissed,
+    Info,
     Check, 
     CheckCheck,
     Paperclip,
@@ -678,6 +682,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [savingContact, setSavingContact] = useState(false);
     const [contactError, setContactError] = useState(null);
     const [showTemplates, setShowTemplates] = useState(false);
+    const [showCallHistory, setShowCallHistory] = useState(false);
+    const [incomingCall, setIncomingCall] = useState(null);
     const [selectionMode, setSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState(() => new Set());
     const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState(null);
@@ -1391,6 +1397,30 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Tiempo real de llamadas (Reverb): escucha el canal privado de la instancia
+    // y reacciona a los eventos de llamada (entrante, cambios de estado, fin).
+    useEffect(() => {
+        if (!selectedInstanceId || !window.Echo) return;
+
+        const channelName = `instance.${selectedInstanceId}`;
+        const channel = window.Echo.private(channelName);
+
+        channel.listen('.call.event', (e) => {
+            const call = e?.call;
+            if (!call) return;
+
+            if (e.action === 'incoming') {
+                setIncomingCall(call);
+            } else if (e.action === 'ended') {
+                setIncomingCall(prev => (prev && prev.wacid === call.wacid ? null : prev));
+            }
+        });
+
+        return () => {
+            window.Echo.leave(channelName);
+        };
+    }, [selectedInstanceId]);
 
     // ── Logic ──────────────────────────────────────────────────────────────
 
@@ -2931,6 +2961,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             {/* Separador entre la acción principal y las utilidades */}
                                             <span className="w-px h-5 bg-border/40 mx-0.5" />
 
+                                            <button onClick={() => setShowCallHistory(true)} title="Historial de llamadas" aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><PhoneCall className="size-[18px]" /></button>
                                             <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-[18px]" /></button>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
@@ -3096,7 +3127,47 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     </div>
                                                                 )}
 
-                                                                {(msg.type === 'template' || msg.type === 'document') && (
+                                                                {msg.type === 'video' && (
+                                                                    <div className="p-1 pb-1">
+                                                                        <video
+                                                                            controls
+                                                                            src={msg.media_url}
+                                                                            onLoadedData={handleMediaLoad}
+                                                                            className="max-h-[320px] w-full rounded-md bg-black mb-2"
+                                                                        />
+                                                                        {msg.content && <p className="text-[12.5px] leading-[17px] mb-6 pr-10">{msg.content}</p>}
+                                                                    </div>
+                                                                )}
+
+                                                                {msg.type === 'sticker' && (
+                                                                    <div className="p-1 pb-5">
+                                                                        <img
+                                                                            src={msg.media_url}
+                                                                            onLoad={handleMediaLoad}
+                                                                            className="max-h-[140px] max-w-[140px] object-contain"
+                                                                            alt="sticker"
+                                                                        />
+                                                                    </div>
+                                                                )}
+
+                                                                {msg.type === 'document' && (
+                                                                    <a
+                                                                        href={msg.media_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className={`flex items-center gap-3 p-3 rounded-lg my-1 w-full transition-colors ${isOut ? 'bg-black/5 hover:bg-black/10' : 'bg-[#f0f2f5] dark:bg-[#111b21] hover:bg-black/5'}`}
+                                                                    >
+                                                                        <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                            <Paperclip className="size-5" />
+                                                                        </div>
+                                                                        <div className="min-w-0 pr-10">
+                                                                            <p className="text-[12.5px] font-semibold truncate">{msg.filename || 'Documento'}</p>
+                                                                            <p className="text-[10px] opacity-50 uppercase tracking-wide">Descargar</p>
+                                                                        </div>
+                                                                    </a>
+                                                                )}
+
+                                                                {msg.type === 'template' && (
                                                                     <div className={`flex flex-col gap-2 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
                                                                         <div className="flex items-center gap-3">
                                                                             <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
@@ -3117,6 +3188,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && <StatusIcons status={msg.status} />}
                                                                 </div>
+
+                                                                {/* Reacción (emoji) del contacto a este mensaje */}
+                                                                {msg.metadata?.reaction && (
+                                                                    <span className={`absolute -bottom-3 ${isOut ? 'right-1' : 'left-1'} text-[13px] leading-none bg-white dark:bg-[#202c33] border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm`}>
+                                                                        {msg.metadata.reaction}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                         {!isOut && canReply && (
@@ -3700,6 +3778,35 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     />
                 )}
 
+                {showCallHistory && selectedConversation && (
+                    <CallHistoryModal
+                        conversationId={selectedConversation.id}
+                        contactName={selectedConversation.name || selectedConversation.phone_number}
+                        onClose={() => setShowCallHistory(false)}
+                    />
+                )}
+
+                {incomingCall && (
+                    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[130] w-[min(92vw,380px)] animate-in slide-in-from-top duration-300">
+                        <div className="rounded-2xl bg-card border border-teal-500/40 shadow-2xl shadow-teal-500/10 p-4 flex items-center gap-3">
+                            <div className="size-11 rounded-full bg-teal-500/15 flex items-center justify-center shrink-0">
+                                <PhoneIncoming className="size-5 text-teal-600 dark:text-teal-400 animate-pulse" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-teal-600 dark:text-teal-400">Llamada entrante</p>
+                                <p className="text-sm font-semibold text-foreground truncate">{incomingCall.from || 'Número desconocido'}</p>
+                            </div>
+                            <button
+                                onClick={() => setIncomingCall(null)}
+                                title="Descartar"
+                                className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg shrink-0"
+                            >
+                                <X className="size-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Create Tag Modal */}
                 {/* Modal: Nuevo chat hacia un número */}
                 {newChatOpen && (
@@ -4147,6 +4254,98 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                                 {submitting ? <Loader2 className="size-4 animate-spin" /> : <UserPlus className="size-4" />} Crear y vincular
                             </button>
                         </form>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── CallHistoryModal ────────────────────────────────────────────────────────
+// Muestra el historial de llamadas de la conversación activa (entrantes y
+// salientes), con dirección, estado, duración y fecha.
+const CALL_STATUS_LABEL = {
+    ringing: 'Timbrando',
+    connecting: 'Conectando',
+    in_progress: 'En curso',
+    completed: 'Completada',
+    missed: 'Perdida',
+    rejected: 'Rechazada',
+    failed: 'Fallida',
+    canceled: 'Cancelada',
+};
+
+function formatCallDuration(seconds) {
+    if (!seconds) return null;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function CallHistoryModal({ conversationId, contactName, onClose }) {
+    const [calls, setCalls] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let active = true;
+        setLoading(true);
+        axios.get(`/api/chat/conversations/${conversationId}/calls`)
+            .then(r => { if (active) setCalls(r.data.calls ?? []); })
+            .catch(() => { if (active) setError('No se pudo cargar el historial de llamadas.'); })
+            .finally(() => { if (active) setLoading(false); });
+        return () => { active = false; };
+    }, [conversationId]);
+
+    return (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="w-full max-w-md max-h-[80vh] flex flex-col rounded-2xl bg-card border border-border/40 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <PhoneCall className="size-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <div className="min-w-0">
+                            <p className="text-sm font-bold text-foreground truncate">Historial de llamadas</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{contactName}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="size-8 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"><X className="size-4" /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3">
+                    {loading ? (
+                        <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="size-5 animate-spin" /></div>
+                    ) : error ? (
+                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300 m-2">{error}</div>
+                    ) : !calls?.length ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
+                            <PhoneCall className="size-8 mb-2 opacity-30" />
+                            <p className="text-sm">Sin llamadas registradas.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-1.5">
+                            {calls.map(call => {
+                                const isInbound = call.direction === 'inbound';
+                                const isMissed = ['missed', 'rejected', 'failed', 'canceled'].includes(call.status);
+                                const Icon = isMissed ? PhoneMissed : (isInbound ? PhoneIncoming : PhoneOutgoing);
+                                const color = isMissed ? 'text-rose-500' : (isInbound ? 'text-emerald-500' : 'text-sky-500');
+                                const duration = formatCallDuration(call.duration_seconds);
+                                return (
+                                    <div key={call.id} className="flex items-center gap-3 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
+                                        <Icon className={`size-4 shrink-0 ${color}`} />
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-semibold text-foreground">
+                                                {isInbound ? 'Entrante' : 'Saliente'} · {CALL_STATUS_LABEL[call.status] ?? call.status}
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                {call.started_at ? new Date(call.started_at).toLocaleString() : '—'}
+                                                {duration && ` · ${duration}`}
+                                                {call.handled_by && ` · ${call.handled_by}`}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             </div>

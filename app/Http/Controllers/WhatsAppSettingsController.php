@@ -351,6 +351,105 @@ class WhatsAppSettingsController extends Controller
         ]);
     }
 
+    /**
+     * Estado de la configuración de llamadas de la instancia: si la función está
+     * habilitada en el número (necesaria para entrantes) y si el negocio activó
+     * las salientes (que tienen costo por minuto).
+     */
+    public function callingSettings(Request $request)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        return response()->json([
+            'success' => true,
+            'calling' => [
+                'enabled' => $instance->callingEnabled(),
+                'outbound_enabled' => $instance->outboundCallsEnabled(),
+            ],
+            // Aviso de costo para mostrar junto al toggle de salientes.
+            'cost_notice' => [
+                'inbound' => 'Las llamadas entrantes son gratuitas.',
+                'outbound' => 'Las llamadas salientes tienen costo por minuto (facturado por Meta en bloques de 6s, solo si el cliente contesta). La tarifa varía por país.',
+            ],
+        ]);
+    }
+
+    /**
+     * Activa la función de llamadas en el número (POST a Meta). Hace falta una
+     * sola vez por número para poder recibir/realizar llamadas.
+     */
+    public function enableCalling(Request $request)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        if (!$instance->phone_number_id) {
+            return response()->json(['message' => 'La instancia no tiene phone_number_id configurado.'], 422);
+        }
+
+        $result = $this->meta->enableCalling($instance->phone_number_id, $instance->access_token);
+
+        if (!($result['success'] ?? false)) {
+            return response()->json([
+                'message' => 'No se pudo habilitar las llamadas en Meta.',
+                'error' => $result['error'] ?? null,
+            ], 502);
+        }
+
+        $instance->setCallingSettings(['enabled' => true]);
+        $instance->save();
+
+        return response()->json([
+            'success' => true,
+            'calling' => [
+                'enabled' => true,
+                'outbound_enabled' => $instance->outboundCallsEnabled(),
+            ],
+        ]);
+    }
+
+    /**
+     * Activa/desactiva las llamadas SALIENTES para la instancia. Se guarda en
+     * `meta` y actúa como compuerta antes de iniciar cualquier llamada saliente
+     * (por el costo que implican).
+     */
+    public function updateCallingSettings(Request $request)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'outbound_enabled' => 'required|boolean',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        // No se pueden activar salientes si la función de llamadas no está
+        // habilitada en el número.
+        if ($data['outbound_enabled'] && !$instance->callingEnabled()) {
+            return response()->json([
+                'message' => 'Primero debes habilitar las llamadas en el número antes de activar las salientes.',
+            ], 422);
+        }
+
+        $instance->setCallingSettings(['outbound_enabled' => $data['outbound_enabled']]);
+        $instance->save();
+
+        return response()->json([
+            'success' => true,
+            'calling' => [
+                'enabled' => $instance->callingEnabled(),
+                'outbound_enabled' => $instance->outboundCallsEnabled(),
+            ],
+        ]);
+    }
+
     protected function wrap(array $result, string $errorMessage)
     {
         if (!$result['success']) {
