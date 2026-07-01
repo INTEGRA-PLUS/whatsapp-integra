@@ -2213,20 +2213,20 @@ export default function ChatIndex({ instances, integrations = [] }) {
             <Head title="Chat WhatsApp Business" />
             <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {/* Clean Header */}
-                <div className="bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/10 px-4 py-2 flex justify-between items-center z-20 shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <div className="size-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-sm">
+                <div className="bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/10 px-3 sm:px-4 py-2 flex justify-between items-center gap-2 z-20 shadow-sm">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <div className="size-9 sm:size-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
                             <MessageSquare className="size-5" />
                         </div>
-                        <div>
-                            <h2 className="text-sm font-bold text-foreground">Canales de WhatsApp Business</h2>
-                            <p className="text-[10px] text-teal-600 dark:text-teal-400 font-black uppercase tracking-widest">Servicio Multi-agente</p>
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-bold text-foreground truncate">Canales de WhatsApp Business</h2>
+                            <p className="hidden sm:block text-[10px] text-teal-600 dark:text-teal-400 font-black uppercase tracking-widest">Servicio Multi-agente</p>
                         </div>
                     </div>
-                    
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 bg-background/50 dark:bg-black/20 px-3 py-1.5 rounded-lg border border-border/10">
-                            <span className="text-[11px] font-bold text-muted-foreground uppercase opacity-60">Instancia</span>
+
+                    <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                        <div className="flex items-center gap-2 bg-background/50 dark:bg-black/20 px-2 sm:px-3 py-1.5 rounded-lg border border-border/10">
+                            <span className="hidden sm:inline text-[11px] font-bold text-muted-foreground uppercase opacity-60">Instancia</span>
                             <select
                                 value={selectedInstanceId}
                                 onChange={handleInstanceChange}
@@ -2447,7 +2447,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         </div>
 
                         {/* Sidebar - WhatsApp Web Style */}
-                        <div className="w-full sm:w-80 lg:w-96 bg-white dark:bg-[#111b21] flex flex-col border-r border-border/10">
+                        <div className={clsx(
+                            "w-full sm:w-80 lg:w-96 shrink-0 bg-white dark:bg-[#111b21] flex-col border-r border-border/10",
+                            // En móvil: mostrar la lista sólo cuando no hay chat abierto; en sm+ siempre visible.
+                            selectedConversation ? "hidden sm:flex" : "flex"
+                        )}>
                             <div className="px-3 pt-3 pb-3">
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
@@ -2725,7 +2729,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                         {/* Chat Area - WhatsApp Web Theme */}
                         <div
-                            className="flex-1 flex flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative"
+                            className={clsx(
+                                "flex-1 flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative",
+                                // En móvil: mostrar el chat sólo cuando hay conversación abierta; en sm+ siempre visible.
+                                selectedConversation ? "flex" : "hidden sm:flex"
+                            )}
                             onDragEnter={handleChatDragEnter}
                             onDragOver={handleChatDragOver}
                             onDragLeave={handleChatDragLeave}
@@ -2758,8 +2766,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             ) : (
                                 <>
                                     {/* Chat Header */}
-                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-4 py-3 flex items-center justify-between gap-3 z-10 shadow-sm">
-                                        <div className="flex items-center gap-3 min-w-0">
+                                    <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-3 z-10 shadow-sm">
+                                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                            {/* Volver a la lista de chats (sólo móvil) */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedConversation(null)}
+                                                title="Volver a la lista"
+                                                className="sm:hidden -ml-1 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition shrink-0"
+                                            >
+                                                <ArrowLeft className="size-5" />
+                                            </button>
                                             <button
                                                 type="button"
                                                 onClick={() => setShowContactPanel(true)}
