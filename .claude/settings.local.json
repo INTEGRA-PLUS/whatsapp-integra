@@ -67,7 +67,11 @@
       "Bash(lsof -nP -iTCP -sTCP:LISTEN)",
       "Read(//Users/juanmanuel/.ssh/**)",
       "Bash(awk *)",
-      "Bash(git -C /Users/juanmanuel/Documents/istinge/whatsapp-integra log -1 --format='%h %ci %s')"
+      "Bash(git -C /Users/juanmanuel/Documents/istinge/whatsapp-integra log -1 --format='%h %ci %s')",
+      "Bash(curl -s https://wpp.integracolombia.online/login)",
+      "Bash(curl -s https://wpp.integracolombia.online/build/assets/app-EOUa2fDB.js -o /private/tmp/claude-501/-Users-juanmanuel-Documents-istinge-whatsapp-integra/b66bf3c8-0ce3-4534-8b1a-42e4a77b7e30/scratchpad/deployed-app.js)",
+      "Bash(curl -s \"https://wpp.integracolombia.online/build/assets/Index-BnATI273.js\" -o chat-chunk.js)",
+      "Bash(curl *)"
     ]
   }
 }

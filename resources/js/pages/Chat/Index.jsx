@@ -3188,7 +3188,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     </a>
                                                                 )}
 
-                                                                {msg.type === 'location' && (() => {
+                                                                {(msg.type === 'location' || (msg.type !== 'contacts' && msg.metadata?.location)) && (() => {
                                                                     const loc = msg.metadata?.location || {};
                                                                     const hasCoords = loc.latitude != null && loc.longitude != null;
                                                                     return (
@@ -3221,7 +3221,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     );
                                                                 })()}
 
-                                                                {msg.type === 'contacts' && (
+                                                                {(msg.type === 'contacts' || (msg.type !== 'location' && msg.metadata?.contacts)) && (
                                                                     <div className={`flex flex-col gap-1.5 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
                                                                         {(msg.metadata?.contacts?.length ? msg.metadata.contacts : [null]).map((c, ci) => {
                                                                             const name = c?.name?.formatted_name || msg.content || 'Contacto';
@@ -3275,6 +3275,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                             <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words opacity-90">{msg.content || 'Sin descripción'}</p>
                                                                         </div>
                                                                     </div>
+                                                                )}
+
+                                                                {/* Fallback: tipos no reconocidos (o type vacío) muestran el contenido en vez de una burbuja vacía */}
+                                                                {!['text', 'image', 'audio', 'video', 'sticker', 'document', 'location', 'contacts', 'template'].includes(msg.type)
+                                                                    && !msg.metadata?.location && !msg.metadata?.contacts && (
+                                                                    <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content || 'Mensaje sin contenido'}</p>
                                                                 )}
 
                                                                 {/* Internal timestamp inside bubble - ALWAYS HH:mm */}
