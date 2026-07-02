@@ -2734,7 +2734,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         {/* Chat Area - WhatsApp Web Theme */}
                         <div
                             className={clsx(
-                                "flex-1 flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative",
+                                "flex-1 min-w-0 flex-col bg-[#e5ddd5] dark:bg-[#0b141a] relative",
                                 // En móvil: mostrar el chat sólo cuando hay conversación abierta; en sm+ siempre visible.
                                 selectedConversation ? "flex" : "hidden sm:flex"
                             )}
@@ -3033,7 +3033,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <div
                                         ref={messagesContainerRef}
                                         onScroll={handleMessagesScroll}
-                                        className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-2 custom-scrollbar relative z-10 flex flex-col"
+                                        className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-8 space-y-2 custom-scrollbar relative z-10 flex flex-col"
                                     >
                                         {messages.map((msg, i) => {
                                             const isOut = msg.direction === 'outbound';
