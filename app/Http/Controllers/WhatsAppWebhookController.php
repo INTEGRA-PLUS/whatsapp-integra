@@ -439,6 +439,46 @@ class WhatsAppWebhookController extends Controller
                 }
                 break;
 
+            case 'contacts':
+                // Tarjetas de contacto compartidas. Se guarda el payload completo en
+                // metadata para que el chat pueda mostrar nombre(s) y teléfono(s).
+                $contacts = $message['contacts'] ?? [];
+                $names = array_values(array_filter(array_map(
+                    fn ($c) => $c['name']['formatted_name'] ?? ($c['phones'][0]['phone'] ?? null),
+                    $contacts
+                )));
+                $messageData['type'] = 'contacts';
+                $messageData['content'] = $names ? implode(', ', $names) : 'Contacto compartido';
+                $messageData['metadata'] = ['contacts' => $contacts];
+                break;
+
+            case 'location':
+                $location = $message['location'] ?? [];
+                $messageData['type'] = 'location';
+                $messageData['content'] = trim(implode(' — ', array_filter([
+                    $location['name'] ?? null,
+                    $location['address'] ?? null,
+                ]))) ?: 'Ubicación compartida';
+                $messageData['metadata'] = ['location' => $location];
+                break;
+
+            case 'interactive':
+                // Respuesta a botones o listas interactivas: se guarda como texto
+                // con el título de la opción elegida.
+                $interactive = $message['interactive'] ?? [];
+                $reply = $interactive['button_reply'] ?? $interactive['list_reply'] ?? [];
+                $messageData['type'] = 'text';
+                $messageData['content'] = $reply['title'] ?? 'Respuesta interactiva';
+                $messageData['metadata'] = ['interactive' => $interactive];
+                break;
+
+            case 'button':
+                // Respuesta a un botón rápido de plantilla.
+                $messageData['type'] = 'text';
+                $messageData['content'] = $message['button']['text'] ?? 'Botón';
+                $messageData['metadata'] = ['button' => $message['button'] ?? []];
+                break;
+
             default:
                 $messageData['type'] = 'text';
                 $messageData['content'] = "Tipo de mensaje no soportado: {$message['type']}";

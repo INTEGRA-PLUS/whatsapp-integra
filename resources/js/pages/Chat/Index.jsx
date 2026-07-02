@@ -51,7 +51,8 @@ import {
     AlertTriangle,
     DollarSign,
     Mail,
-    Reply
+    Reply,
+    MapPin
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -690,6 +691,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [lastUpdate, setLastUpdate] = useState('Nunca');
     const [isPolling, setIsPolling] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
+    const [selectedLocation, setSelectedLocation] = useState(null); // { latitude, longitude, name, address }
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
@@ -1141,7 +1143,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     useEffect(() => {
         function handleEscape(e) {
             if (e.key !== 'Escape') return;
-            const overlayOpen = selectedImage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
+            const overlayOpen = selectedImage || selectedLocation || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
             if (overlayOpen) return;
             if (selectedConversation) {
                 e.preventDefault();
@@ -1150,7 +1152,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [selectedConversation, selectedImage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
+    }, [selectedConversation, selectedImage, selectedLocation, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -2033,6 +2035,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (m.type === 'video') return '🎥 ' + (m.content || 'Video');
         if (m.type === 'document') return '📄 ' + (m.filename || 'Documento');
         if (m.type === 'template') return m.content || 'Plantilla';
+        if (m.type === 'location') return '📍 ' + (m.content || 'Ubicación');
+        if (m.type === 'contacts') return '👤 ' + (m.content || 'Contacto');
         return m.content || '';
     }
 
@@ -3184,6 +3188,61 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     </a>
                                                                 )}
 
+                                                                {msg.type === 'location' && (() => {
+                                                                    const loc = msg.metadata?.location || {};
+                                                                    const hasCoords = loc.latitude != null && loc.longitude != null;
+                                                                    return (
+                                                                        <div
+                                                                            onClick={(e) => { if (hasCoords) { e.stopPropagation(); setSelectedLocation(loc); } }}
+                                                                            className={`flex flex-col rounded-lg my-1 w-full min-w-[220px] overflow-hidden transition-colors ${hasCoords ? 'cursor-pointer' : ''} ${isOut ? 'bg-black/5 hover:bg-black/10' : 'bg-[#f0f2f5] dark:bg-[#111b21] hover:bg-black/5'}`}
+                                                                        >
+                                                                            {hasCoords && (
+                                                                                <div className="relative h-[130px] w-full bg-black/10">
+                                                                                    {/* pointer-events-none: el clic lo captura la tarjeta y abre el visor interno */}
+                                                                                    <iframe
+                                                                                        src={`https://www.google.com/maps?q=${loc.latitude},${loc.longitude}&hl=es&z=15&output=embed`}
+                                                                                        className="w-full h-full border-0 pointer-events-none"
+                                                                                        loading="lazy"
+                                                                                        title="Mapa"
+                                                                                    />
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="flex items-center gap-3 p-3">
+                                                                                <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                                    <MapPin className="size-5" />
+                                                                                </div>
+                                                                                <div className="min-w-0 pr-10">
+                                                                                    <p className="text-[12.5px] font-semibold truncate">{loc.name || 'Ubicación compartida'}</p>
+                                                                                    {loc.address && <p className="text-[11px] opacity-70 truncate">{loc.address}</p>}
+                                                                                    {hasCoords && <p className="text-[10px] opacity-50 uppercase tracking-wide">Ver mapa</p>}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })()}
+
+                                                                {msg.type === 'contacts' && (
+                                                                    <div className={`flex flex-col gap-1.5 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
+                                                                        {(msg.metadata?.contacts?.length ? msg.metadata.contacts : [null]).map((c, ci) => {
+                                                                            const name = c?.name?.formatted_name || msg.content || 'Contacto';
+                                                                            const phones = (c?.phones || []).map(p => p.phone).filter(Boolean);
+                                                                            return (
+                                                                                <div key={ci} className="flex items-center gap-3 pr-10">
+                                                                                    <div className="size-10 rounded-full bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                                        <User className="size-5" />
+                                                                                    </div>
+                                                                                    <div className="min-w-0">
+                                                                                        <p className="text-[12.5px] font-semibold truncate">{name}</p>
+                                                                                        {phones.map((p, pi) => (
+                                                                                            <p key={pi} className="text-[11px] opacity-70 truncate flex items-center gap-1"><Phone className="size-3" /> {p}</p>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+
                                                                 {msg.type === 'template' && (
                                                                     <div className={`flex flex-col gap-2 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
                                                                         {msg.media_url ? (
@@ -3503,6 +3562,43 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             onClick={e => e.stopPropagation()}
                             alt="full view"
                         />
+                    </div>
+                )}
+
+                {/* Visor de ubicación embebido: el mapa se ve dentro del aplicativo */}
+                {selectedLocation && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-300"
+                        onClick={() => setSelectedLocation(null)}
+                    >
+                        <div
+                            className="w-full max-w-3xl rounded-2xl bg-white dark:bg-[#202c33] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-105 duration-300"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                        <MapPin className="size-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-foreground truncate">{selectedLocation.name || 'Ubicación compartida'}</p>
+                                        {selectedLocation.address && <p className="text-xs text-muted-foreground truncate">{selectedLocation.address}</p>}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedLocation(null)}
+                                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-muted-foreground"
+                                >
+                                    <XIcon className="size-5" />
+                                </button>
+                            </div>
+                            <iframe
+                                src={`https://www.google.com/maps?q=${selectedLocation.latitude},${selectedLocation.longitude}&hl=es&z=17&output=embed`}
+                                className="w-full h-[65vh] border-0"
+                                loading="lazy"
+                                title="Ubicación compartida"
+                            />
+                        </div>
                     </div>
                 )}
 
