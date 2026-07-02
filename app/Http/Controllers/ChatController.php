@@ -377,11 +377,32 @@ class ChatController extends Controller
 
         $preview = $request->preview ?: "[Plantilla: {$templateName}]";
 
+        // Si la plantilla lleva header multimedia (documento/imagen/video) subido a
+        // Meta, descargamos una copia a nuestro S3 para que el archivo quede
+        // visible/descargable en el chat y no solo como texto.
+        $mediaUrl = null;
+        $filename = null;
+        foreach ($components as $component) {
+            if (($component['type'] ?? '') !== 'header') continue;
+            foreach ($component['parameters'] ?? [] as $param) {
+                $mediaKey = $param['type'] ?? '';
+                if (in_array($mediaKey, ['document', 'image', 'video']) && !empty($param[$mediaKey]['id'])) {
+                    $mediaInfo = $this->metaService->downloadMedia($param[$mediaKey]['id'], $instance->access_token);
+                    if ($mediaInfo) {
+                        $mediaUrl = $mediaInfo['url'];
+                        $filename = $param[$mediaKey]['filename'] ?? $mediaInfo['filename'];
+                    }
+                }
+            }
+        }
+
         $message = WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
             'wamid'           => $result['data']['messages'][0]['id'] ?? null,
             'type'            => 'template',
             'content'         => $preview,
+            'media_url'       => $mediaUrl,
+            'filename'        => $filename,
             'direction'       => 'outbound',
             'status'          => 'sent',
             'sent_by'         => $user->id,

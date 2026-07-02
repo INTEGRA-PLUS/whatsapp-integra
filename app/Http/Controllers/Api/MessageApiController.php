@@ -216,6 +216,7 @@ class MessageApiController extends Controller
             'direction' => 'nullable|string|in:inbound,outbound',
             'name' => 'nullable|string', // contact name
             'media_url' => 'nullable|string',
+            'filename' => 'nullable|string',
             'metadata' => 'nullable|array',
             'sent_at' => 'nullable', // ISO8601 timestamp
             'incoming_invoice_id' => 'nullable|integer',
@@ -236,6 +237,20 @@ class MessageApiController extends Controller
         $status = $request->status ?? 'sent';
         $direction = $request->direction ?? 'outbound';
         $sentAt = $request->sent_at ? Carbon::parse($request->sent_at) : now();
+        $metadata = $request->metadata;
+        $mediaUrl = $request->media_url;
+        $filename = $request->filename;
+
+        // Plantillas con header multimedia (documento/imagen/video): el sistema
+        // externo solo conoce el media_id que subió a Meta. Descargamos una copia
+        // a nuestro S3 para que el archivo quede visible/descargable en el chat.
+        if (!$mediaUrl && !empty($metadata['header_media_id'])) {
+            $mediaInfo = $this->metaService->downloadMedia($metadata['header_media_id'], $instance->access_token);
+            if ($mediaInfo) {
+                $mediaUrl = $mediaInfo['url'];
+                $filename = $filename ?: ($metadata['filename'] ?? $mediaInfo['filename']);
+            }
+        }
 
         // Find or create conversation
         $conversation = WhatsAppConversation::firstOrCreate(
@@ -256,10 +271,11 @@ class MessageApiController extends Controller
             'wamid' => $wamid,
             'type' => $type,
             'content' => $content,
-            'media_url' => $request->media_url,
+            'media_url' => $mediaUrl,
+            'filename' => $filename,
             'direction' => $direction,
             'status' => $status,
-            'metadata' => $request->metadata,
+            'metadata' => $metadata,
             'sent_at' => $sentAt,
             'incoming_invoice_id' => $request->incoming_invoice_id,
             'incoming_contract_id' => $request->incoming_contract_id,

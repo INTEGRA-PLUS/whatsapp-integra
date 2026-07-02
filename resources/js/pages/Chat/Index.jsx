@@ -3186,14 +3186,32 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                                                 {msg.type === 'template' && (
                                                                     <div className={`flex flex-col gap-2 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                                                                                <Paperclip className="size-5" />
+                                                                        {msg.media_url ? (
+                                                                            <a
+                                                                                href={msg.media_url}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className={`flex items-center gap-3 -m-1 p-1 rounded-lg transition-colors ${isOut ? 'hover:bg-black/10' : 'hover:bg-black/5'}`}
+                                                                            >
+                                                                                <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                                    <Paperclip className="size-5" />
+                                                                                </div>
+                                                                                <div className="min-w-0">
+                                                                                    <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Plantilla WhatsApp</p>
+                                                                                    <p className="text-[12.5px] font-semibold truncate">{msg.filename || 'Documento'}</p>
+                                                                                    <p className="text-[10px] opacity-50 uppercase tracking-wide">Descargar</p>
+                                                                                </div>
+                                                                            </a>
+                                                                        ) : (
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                                    <Paperclip className="size-5" />
+                                                                                </div>
+                                                                                <div className="min-w-0">
+                                                                                    <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Plantilla WhatsApp</p>
+                                                                                </div>
                                                                             </div>
-                                                                            <div className="min-w-0">
-                                                                                <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">{msg.type === 'template' ? 'Plantilla WhatsApp' : 'Documento Adjunto'}</p>
-                                                                            </div>
-                                                                        </div>
+                                                                        )}
                                                                         <div className="mt-1 pb-6">
                                                                             <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words opacity-90">{msg.content || 'Sin descripción'}</p>
                                                                         </div>
