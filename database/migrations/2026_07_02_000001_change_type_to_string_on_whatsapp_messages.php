@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 return new class extends Migration
 {
@@ -16,9 +17,15 @@ return new class extends Migration
 
         // Repara mensajes de ubicación/contacto ya guardados con type vacío:
         // el metadata sí se almacenó, así que se puede restaurar el tipo real.
-        DB::statement("UPDATE whatsapp_messages SET type = 'location' WHERE type = '' AND JSON_EXTRACT(metadata, '$.location') IS NOT NULL");
-        DB::statement("UPDATE whatsapp_messages SET type = 'contacts' WHERE type = '' AND JSON_EXTRACT(metadata, '$.contacts') IS NOT NULL");
-        DB::statement("UPDATE whatsapp_messages SET type = 'text' WHERE type = ''");
+        // Best-effort: si el metadata de filas viejas no es JSON válido, no debe
+        // impedir el arranque del contenedor (el entrypoint corre migrate).
+        try {
+            DB::statement("UPDATE whatsapp_messages SET type = 'location' WHERE type = '' AND metadata IS NOT NULL AND JSON_VALID(metadata) AND JSON_EXTRACT(metadata, '$.location') IS NOT NULL");
+            DB::statement("UPDATE whatsapp_messages SET type = 'contacts' WHERE type = '' AND metadata IS NOT NULL AND JSON_VALID(metadata) AND JSON_EXTRACT(metadata, '$.contacts') IS NOT NULL");
+            DB::statement("UPDATE whatsapp_messages SET type = 'text' WHERE type = ''");
+        } catch (\Throwable $e) {
+            Log::warning('No se pudieron reparar mensajes con type vacío: ' . $e->getMessage());
+        }
     }
 
     public function down(): void

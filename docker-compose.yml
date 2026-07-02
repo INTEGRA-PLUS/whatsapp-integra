@@ -112,7 +112,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # Margen amplio: el arranque del web corre migraciones + config/route/view
+      # cache y puede superar con holgura los 30s en el servidor.
+      start_period: 180s
 
   queue:
     <<: *app-defaults
