@@ -392,6 +392,17 @@ class WhatsAppSettingsController extends Controller
             return response()->json(['message' => 'La instancia no tiene phone_number_id configurado.'], 422);
         }
 
+        // Prerrequisito de Meta (error 138018): la app debe estar suscrita al campo
+        // de webhook "calls" antes de poder habilitar llamadas. Lo suscribimos aquí
+        // mismo para que la activación sea de un solo clic.
+        $subscription = $this->ensureCallsWebhookSubscribed($instance);
+        if (!($subscription['success'] ?? false)) {
+            return response()->json([
+                'message' => $subscription['message'] ?? 'No se pudo suscribir el webhook de llamadas (campo "calls") en la app de Meta.',
+                'error' => $subscription['error'] ?? null,
+            ], $subscription['status'] ?? 502);
+        }
+
         $result = $this->meta->enableCalling($instance->phone_number_id, $instance->access_token);
 
         if (!($result['success'] ?? false)) {
@@ -448,6 +459,77 @@ class WhatsAppSettingsController extends Controller
                 'outbound_enabled' => $instance->outboundCallsEnabled(),
             ],
         ]);
+    }
+
+    /**
+     * Garantiza que la app de Meta esté suscrita al campo de webhook "calls"
+     * (prerrequisito para habilitar llamadas). Si falta, actualiza la suscripción
+     * a nivel de app conservando los campos ya suscritos (messages, etc.).
+     */
+    protected function ensureCallsWebhookSubscribed(Instance $instance): array
+    {
+        $appSecret = config('services.meta.app_secret');
+        $verifyToken = config('services.meta.webhook_verify_token');
+
+        if (!$appSecret || !$verifyToken) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Para habilitar llamadas hace falta configurar META_APP_SECRET y META_WEBHOOK_VERIFY_TOKEN en el servidor (se usan para suscribir el webhook "calls" en la app de Meta).',
+            ];
+        }
+
+        $debug = $this->meta->debugToken($instance->access_token);
+        if (!$debug['success'] || empty($debug['data']['app_id'])) {
+            return [
+                'success' => false,
+                'message' => 'No se pudo identificar la app de Meta a partir del token de la instancia.',
+                'error' => $debug['error'] ?? null,
+            ];
+        }
+        $appId = $debug['data']['app_id'];
+
+        $subs = $this->meta->getAppSubscriptions($appId, $appSecret);
+        if (!($subs['success'] ?? false)) {
+            return [
+                'success' => false,
+                'message' => 'No se pudo consultar la suscripción de webhooks de la app en Meta. Verifica que META_APP_SECRET corresponda a la app del token.',
+                'error' => $subs['error'] ?? null,
+            ];
+        }
+
+        // La respuesta trae un item por objeto suscrito; los campos vienen como
+        // [{name, version}, ...]. Buscamos el de whatsapp_business_account.
+        $current = collect($subs['data']['data'] ?? [])
+            ->first(fn ($s) => ($s['object'] ?? null) === 'whatsapp_business_account');
+
+        $fields = collect($current['fields'] ?? [])
+            ->map(fn ($f) => is_array($f) ? ($f['name'] ?? null) : $f)
+            ->filter()
+            ->values()
+            ->all();
+
+        if (in_array('calls', $fields)) {
+            return ['success' => true];
+        }
+
+        $fields[] = 'calls';
+        if (!in_array('messages', $fields)) {
+            $fields[] = 'messages';
+        }
+
+        $callbackUrl = $current['callback_url'] ?? url('/webhooks/whatsapp');
+
+        $update = $this->meta->updateAppSubscription($appId, $appSecret, $callbackUrl, $verifyToken, array_values(array_unique($fields)));
+        if (!($update['success'] ?? false)) {
+            return [
+                'success' => false,
+                'message' => 'Meta rechazó la suscripción del campo "calls" en el webhook de la app.',
+                'error' => $update['error'] ?? null,
+            ];
+        }
+
+        return ['success' => true];
     }
 
     protected function wrap(array $result, string $errorMessage)

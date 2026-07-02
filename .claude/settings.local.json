@@ -64,7 +64,9 @@
       "Bash(echo \"exit: $?\")",
       "Bash(awk 'NR>=3470 && /^function [A-Z]/{print NR\": \"$0}' resources/js/pages/Chat/Index.jsx)",
       "Bash(awk -F: '$1>3450')",
-      "Bash(lsof -nP -iTCP -sTCP:LISTEN)"
+      "Bash(lsof -nP -iTCP -sTCP:LISTEN)",
+      "Read(//Users/juanmanuel/.ssh/**)",
+      "Bash(awk *)"
     ]
   }
 }

@@ -312,6 +312,72 @@ class MetaWhatsAppService
     }
 
     /**
+     * Lee las suscripciones de webhook a nivel de APP (GET /{app_id}/subscriptions).
+     * Es donde viven los campos suscritos (messages, calls, ...); requiere app
+     * access token (app_id|app_secret), un token de usuario/sistema no sirve.
+     */
+    public function getAppSubscriptions(string $appId, string $appSecret)
+    {
+        try {
+            $response = Http::withToken("{$appId}|{$appSecret}")
+                ->timeout(30)
+                ->get("{$this->callingBaseUri}/{$appId}/subscriptions");
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::channel('whatsapp')->error('WhatsApp Get App Subscriptions Error', [
+                'app_id' => $appId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::channel('whatsapp')->error('WhatsApp Get App Subscriptions Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Actualiza la suscripción de webhook de la app para whatsapp_business_account
+     * (POST /{app_id}/subscriptions). `fields` REEMPLAZA la lista completa del
+     * objeto, así que el caller debe mandar los campos existentes + los nuevos.
+     * Meta re-verifica el callback (GET con hub.challenge) en el momento del POST.
+     */
+    public function updateAppSubscription(string $appId, string $appSecret, string $callbackUrl, string $verifyToken, array $fields)
+    {
+        try {
+            $response = Http::withToken("{$appId}|{$appSecret}")
+                ->asForm()
+                ->timeout(30)
+                ->post("{$this->callingBaseUri}/{$appId}/subscriptions", [
+                    'object' => 'whatsapp_business_account',
+                    'callback_url' => $callbackUrl,
+                    'verify_token' => $verifyToken,
+                    'fields' => implode(',', $fields),
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::channel('whatsapp')->error('WhatsApp Update App Subscription Error', [
+                'app_id' => $appId,
+                'fields' => $fields,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::channel('whatsapp')->error('WhatsApp Update App Subscription Exception', ['message' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * POST a /{phone_number_id}/calls usando la versión de Graph API dedicada a
      * llamadas. Comparte el patrón de autenticación/manejo de errores de sendRequest.
      */
