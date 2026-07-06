@@ -21,3 +21,8 @@ yarn-error.log
 *.DS_Store
 Thumbs.db
 .env
+
+# Overlay de desarrollo local — Compose lo auto-carga, NUNCA debe llegar a producción
+# (monta ./public sobre el contenedor y tapa los assets compilados de la imagen).
+# Copia docker-compose.override.yml.example para desarrollo local.
+docker-compose.override.yml
