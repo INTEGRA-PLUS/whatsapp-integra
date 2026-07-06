@@ -12,6 +12,11 @@ public/build
 public/hot
 public/storage
 
+# Laravel bootstrap caches: NUNCA copiar los del host — un packages.php viejo
+# del working tree impide registrar paquetes nuevos (p.ej. laravel/reverb) y
+# el fallo es silencioso. La imagen los regenera con package:discover.
+bootstrap/cache
+
 # Environment / secrets
 .env
 .env.*

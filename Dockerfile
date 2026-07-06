@@ -172,8 +172,12 @@ RUN set -eux; \
         bootstrap/cache; \
     chown -R www-data:www-data storage bootstrap/cache; \
     chmod -R ug+rwX storage bootstrap/cache; \
-    # Pre-warm autoloader for the prod dependency set
-    composer dump-autoload --classmap-authoritative --no-dev --working-dir=${APP_HOME} || true
+    # Regenerate the package manifest from the REAL vendor tree. Loud on
+    # purpose: a stale/missing manifest silently unregisters providers
+    # (reverb:start "no commands in namespace") and only breaks at runtime.
+    # (The old `composer dump-autoload || true` here never worked: the runtime
+    # image has no composer binary, and the || true hid that for months.)
+    php artisan package:discover --ansi
 
 # Expose Nginx (PHP-FPM stays internal on 9000)
 EXPOSE 8080
