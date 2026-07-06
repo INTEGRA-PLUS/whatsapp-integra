@@ -71,7 +71,10 @@
       "Bash(curl -s https://wpp.integracolombia.online/login)",
       "Bash(curl -s https://wpp.integracolombia.online/build/assets/app-EOUa2fDB.js -o /private/tmp/claude-501/-Users-juanmanuel-Documents-istinge-whatsapp-integra/b66bf3c8-0ce3-4534-8b1a-42e4a77b7e30/scratchpad/deployed-app.js)",
       "Bash(curl -s \"https://wpp.integracolombia.online/build/assets/Index-BnATI273.js\" -o chat-chunk.js)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Read(//tmp/wtest/**)",
+      "Bash(printf 'VITE_REVERB_APP_KEY=${REVERB_APP_KEY}\\\\nREVERB_APP_KEY=ykab123\\\\n')",
+      "Bash(printf 'VITE_REVERB_APP_KEY=${REVERB_APP_KEY}\\\\n')"
     ]
   }
 }
