@@ -75,8 +75,10 @@ x-app-build: &app-build
       BUILDKIT_INLINE_CACHE: "1"
       # Valores PÚBLICOS del cliente Reverb, incrustados en el bundle por Vite.
       # VITE_REVERB_HOST debe ser tu dominio (el navegador se conecta a wss://dominio/app).
-      VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:-}
-      VITE_REVERB_HOST: ${VITE_REVERB_HOST:-}
+      # Requeridos a propósito: si faltan, el bundle se hornea sin host y el
+      # tiempo real muere en silencio. Mejor que el build falle aquí, de una.
+      VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:?Falta REVERB_APP_KEY en el .env de este directorio}
+      VITE_REVERB_HOST: ${VITE_REVERB_HOST:?Falta VITE_REVERB_HOST en el .env de este directorio (dominio publico, ej. wpp.integracolombia.online)}
       VITE_REVERB_PORT: ${VITE_REVERB_PORT:-443}
       VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME:-https}
   image: ${APP_IMAGE:-whatsapp-integra:latest}
