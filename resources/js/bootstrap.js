@@ -9,15 +9,31 @@ import Pusher from 'pusher-js';
 
 window.Pusher = Pusher;
 
-window.Echo = new Echo({
-    broadcaster: 'reverb',
-    key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST,
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 80,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 443,
-    forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
-    enabledTransports: ['ws', 'wss'],
-});
+// Config de Reverb horneada por Vite en build. Si el host o la key no están
+// presentes, NO inicializamos Echo: de lo contrario pusher-js cae en su host
+// por defecto (wss://ws-<cluster>.pusher.com) y reintenta sin parar, generando
+// errores en consola y lentitud. Reverb NO es Pusher cloud.
+const reverbKey = import.meta.env.VITE_REVERB_APP_KEY;
+const reverbHost = import.meta.env.VITE_REVERB_HOST;
+const reverbScheme = import.meta.env.VITE_REVERB_SCHEME ?? 'https';
+const reverbPort = Number(import.meta.env.VITE_REVERB_PORT ?? (reverbScheme === 'https' ? 443 : 80));
+
+if (reverbKey && reverbHost) {
+    window.Echo = new Echo({
+        broadcaster: 'reverb',
+        key: reverbKey,
+        wsHost: reverbHost,
+        wsPort: reverbPort,
+        wssPort: reverbPort,
+        forceTLS: reverbScheme === 'https',
+        enabledTransports: ['ws', 'wss'],
+    });
+} else {
+    console.warn(
+        '[Echo] Reverb no configurado (faltan VITE_REVERB_APP_KEY o VITE_REVERB_HOST). ' +
+        'El tiempo real queda deshabilitado. Revisa el .env y recompila con `npm run build`.',
+    );
+}
 
 function applyCsrfToken(token) {
     if (!token) return;
