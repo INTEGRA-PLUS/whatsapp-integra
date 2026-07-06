@@ -37,12 +37,3 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();
-
-// Fix for cPanel: Force public path to the actual document root
-if (isset($_SERVER['DOCUMENT_ROOT']) && !empty($_SERVER['DOCUMENT_ROOT'])) {
-    $app->usePublicPath($_SERVER['DOCUMENT_ROOT']);
-} elseif (file_exists('/home/intesoga/whatsapp.integracolombia.online')) {
-    $app->usePublicPath('/home/intesoga/whatsapp.integracolombia.online');
-}
-
-return $app;
