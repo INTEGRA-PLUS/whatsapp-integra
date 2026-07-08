@@ -12,6 +12,7 @@ use App\Models\WhatsAppMessage;
 use App\Models\User;
 use App\Services\MetaWhatsAppService;
 use App\Services\WebhookDispatcher;
+use App\Jobs\DeliverWhatsAppMessage;
 use App\Http\Controllers\KanbanController;
 use Inertia\Inertia;
 
@@ -359,52 +360,16 @@ class ChatController extends Controller
         $languageCode = $request->language_code ?: 'es';
         $components   = $request->components ?? [];
 
-        $result = $this->metaService->sendTemplate(
-            $instance->phone_number_id,
-            $conversation->phone_number,
-            $templateName,
-            $languageCode,
-            $components
-        );
-
-        if (!($result['success'] ?? false)) {
-            return response()->json([
-                'success' => false,
-                'error'   => $this->metaError($result, 'Error al enviar la plantilla'),
-                'meta'    => $result['error']['error'] ?? null,
-            ], 500);
-        }
-
         $preview = $request->preview ?: "[Plantilla: {$templateName}]";
 
-        // Si la plantilla lleva header multimedia (documento/imagen/video) subido a
-        // Meta, descargamos una copia a nuestro S3 para que el archivo quede
-        // visible/descargable en el chat y no solo como texto.
-        $mediaUrl = null;
-        $filename = null;
-        foreach ($components as $component) {
-            if (($component['type'] ?? '') !== 'header') continue;
-            foreach ($component['parameters'] ?? [] as $param) {
-                $mediaKey = $param['type'] ?? '';
-                if (in_array($mediaKey, ['document', 'image', 'video']) && !empty($param[$mediaKey]['id'])) {
-                    $mediaInfo = $this->metaService->downloadMedia($param[$mediaKey]['id'], $instance->access_token);
-                    if ($mediaInfo) {
-                        $mediaUrl = $mediaInfo['url'];
-                        $filename = $param[$mediaKey]['filename'] ?? $mediaInfo['filename'];
-                    }
-                }
-            }
-        }
-
+        // La llamada a Meta y la descarga de la copia S3 del header multimedia se
+        // hacen en DeliverWhatsAppMessage (cola). Aquí solo persistimos "pending".
         $message = WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
-            'wamid'           => $result['data']['messages'][0]['id'] ?? null,
             'type'            => 'template',
             'content'         => $preview,
-            'media_url'       => $mediaUrl,
-            'filename'        => $filename,
             'direction'       => 'outbound',
-            'status'          => 'sent',
+            'status'          => 'pending',
             'sent_by'         => $user->id,
             'sent_at'         => now(),
             'metadata'        => [
@@ -420,19 +385,7 @@ class ChatController extends Controller
             'last_message_at' => now(),
         ]);
 
-        WebhookDispatcher::emit(
-            $user->company_id,
-            'message.sent',
-            WebhookDispatcher::conversationPayload($conversation, [
-                'message' => [
-                    'id'      => $message->id,
-                    'wamid'   => $message->wamid,
-                    'type'    => 'template',
-                    'content' => $message->content,
-                    'sent_by' => $user->id,
-                ],
-            ])
-        );
+        DeliverWhatsAppMessage::dispatch($message->id);
 
         return response()->json($this->sanitizeUtf8([
             'success' => true,
@@ -546,7 +499,9 @@ class ChatController extends Controller
         if ($request->conversation_id && $sinceTs) {
             $updatedStatuses = WhatsAppMessage::where('conversation_id', $request->conversation_id)
                 ->where('updated_at', '>', $sinceTs)
-                ->whereIn('status', ['delivered', 'read', 'failed'])
+                // 'sent' incluido para propagar el paso pending → sent (con su
+                // wamid real) que ahora hace DeliverWhatsAppMessage en la cola.
+                ->whereIn('status', ['sent', 'delivered', 'read', 'failed'])
                 ->select('id', 'wamid', 'status', 'delivered_at', 'read_at', 'error_message')
                 ->get();
         }
@@ -613,64 +568,36 @@ class ChatController extends Controller
             ], 400);
         }
 
-        // El cliente ve quién le escribe: anteponemos el nombre del agente en
-        // negrita. En el CRM se guarda el texto limpio (la etiqueta del agente
-        // se muestra aparte, sin duplicar).
-        $outgoing = '*' . $user->name . ':*' . "\n" . $request->message;
-
+        // En el CRM se guarda el texto limpio (la etiqueta del agente se muestra
+        // aparte). El prefijo con el nombre en negrita se antepone al enviar a
+        // Meta, dentro del job.
         $replyToWamid = $request->input('reply_to_wamid') ?: null;
 
-        $result = $this->metaService->sendMessage(
-            $instance->phone_number_id,
-            $conversation->phone_number,
-            $outgoing,
-            $replyToWamid
-        );
+        // Persistimos el mensaje como "pending" y respondemos de inmediato; la
+        // llamada a Meta (hasta 60s) la hace DeliverWhatsAppMessage en la cola.
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'reply_to_wamid' => $replyToWamid,
+            'type' => 'text',
+            'content' => $request->message,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now()
+        ]);
 
-        if ($result['success']) {
-            $message = WhatsAppMessage::create([
-                'conversation_id' => $conversation->id,
-                'wamid' => $result['data']['messages'][0]['id'],
-                'reply_to_wamid' => $replyToWamid,
-                'type' => 'text',
-                'content' => $request->message,
-                'direction' => 'outbound',
-                'status' => 'sent',
-                'sent_by' => $user->id,
-                'sent_at' => now()
-            ]);
+        $conversation->update([
+            'last_message' => $request->message,
+            'last_message_at' => now()
+        ]);
 
-            $conversation->update([
-                'last_message' => $request->message,
-                'last_message_at' => now()
-            ]);
+        DeliverWhatsAppMessage::dispatch($message->id);
 
-            WebhookDispatcher::emit(
-                $user->company_id,
-                'message.sent',
-                WebhookDispatcher::conversationPayload($conversation, [
-                    'message' => [
-                        'id'      => $message->id,
-                        'wamid'   => $message->wamid,
-                        'type'    => 'text',
-                        'content' => $message->content,
-                        'sent_by' => $user->id,
-                    ],
-                ])
-            );
-
-            return response()->json($this->sanitizeUtf8([
-                'success' => true,
-                'message' => 'Mensaje enviado',
-                'data' => $message->load('sender')
-            ]));
-        }
-
-        return response()->json([
-            'success' => false,
-            'error' => $this->metaError($result, 'Error al enviar'),
-            'meta'  => $result['error']['error'] ?? null,
-        ], 500);
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'message' => 'Mensaje encolado',
+            'data' => $message->load('sender')
+        ]));
     }
 
     public function sendImage(Request $request, $conversationId)
@@ -694,67 +621,35 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $instance = $conversation->instance;
-
         $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
         $imageUrl = Storage::disk('s3_media')->url($path);
 
         $replyToWamid = $request->input('reply_to_wamid') ?: null;
 
-        $result = $this->metaService->sendImage(
-            $instance->phone_number_id,
-            $conversation->phone_number,
-            $imageUrl,
-            $request->caption ?? '',
-            $replyToWamid
-        );
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'reply_to_wamid' => $replyToWamid,
+            'type' => 'image',
+            'content' => $request->caption ?? '',
+            'media_url' => $imageUrl,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now()
+        ]);
 
-        if ($result['success']) {
-            $message = WhatsAppMessage::create([
-                'conversation_id' => $conversation->id,
-                'wamid' => $result['data']['messages'][0]['id'],
-                'reply_to_wamid' => $replyToWamid,
-                'type' => 'image',
-                'content' => $request->caption ?? '',
-                'media_url' => $imageUrl,
-                'direction' => 'outbound',
-                'status' => 'sent',
-                'sent_by' => $user->id,
-                'sent_at' => now()
-            ]);
+        $conversation->update([
+            'last_message' => $request->caption ?? 'Imagen',
+            'last_message_at' => now()
+        ]);
 
-            $conversation->update([
-                'last_message' => $request->caption ?? 'Imagen',
-                'last_message_at' => now()
-            ]);
+        DeliverWhatsAppMessage::dispatch($message->id);
 
-            WebhookDispatcher::emit(
-                $user->company_id,
-                'message.sent',
-                WebhookDispatcher::conversationPayload($conversation, [
-                    'message' => [
-                        'id'      => $message->id,
-                        'wamid'   => $message->wamid,
-                        'type'    => 'image',
-                        'content' => $message->content,
-                        'media_url' => $message->media_url,
-                        'sent_by' => $user->id,
-                    ],
-                ])
-            );
-
-            return response()->json($this->sanitizeUtf8([
-                'success' => true,
-                'message' => 'Imagen enviada',
-                'data' => $message->load('sender')
-            ]));
-        }
-
-        return response()->json([
-            'success' => false,
-            'error' => $this->metaError($result, 'Error al enviar imagen'),
-            'meta'  => $result['error']['error'] ?? null,
-        ], 500);
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'message' => 'Imagen encolada',
+            'data' => $message->load('sender')
+        ]));
     }
 
     public function sendAudio(Request $request, $conversationId)
@@ -778,59 +673,30 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $instance = $conversation->instance;
-
         $audioUrl = $this->storeAudioForMeta($request->file('audio'));
 
-        $result = $this->metaService->sendAudio(
-            $instance->phone_number_id,
-            $conversation->phone_number,
-            $audioUrl
-        );
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'type' => 'audio',
+            'media_url' => $audioUrl,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now()
+        ]);
 
-        if ($result['success']) {
-            $message = WhatsAppMessage::create([
-                'conversation_id' => $conversation->id,
-                'wamid' => $result['data']['messages'][0]['id'],
-                'type' => 'audio',
-                'media_url' => $audioUrl,
-                'direction' => 'outbound',
-                'status' => 'sent',
-                'sent_by' => $user->id,
-                'sent_at' => now()
-            ]);
+        $conversation->update([
+            'last_message' => 'Audio',
+            'last_message_at' => now()
+        ]);
 
-            $conversation->update([
-                'last_message' => 'Audio',
-                'last_message_at' => now()
-            ]);
+        DeliverWhatsAppMessage::dispatch($message->id);
 
-            WebhookDispatcher::emit(
-                $user->company_id,
-                'message.sent',
-                WebhookDispatcher::conversationPayload($conversation, [
-                    'message' => [
-                        'id'      => $message->id,
-                        'wamid'   => $message->wamid,
-                        'type'    => 'audio',
-                        'media_url' => $message->media_url,
-                        'sent_by' => $user->id,
-                    ],
-                ])
-            );
-
-            return response()->json($this->sanitizeUtf8([
-                'success' => true,
-                'message' => 'Audio enviado',
-                'data' => $message->load('sender')
-            ]));
-        }
-
-        return response()->json([
-            'success' => false,
-            'error' => $this->metaError($result, 'Error al enviar audio'),
-            'meta'  => $result['error']['error'] ?? null,
-        ], 500);
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'message' => 'Audio encolado',
+            'data' => $message->load('sender')
+        ]));
     }
 
     public function close($conversationId)

@@ -174,7 +174,9 @@ function detectMentionToken(value, cursor) {
 // ─── StatusIcons Sub-component ───────────────────────────────────────────────
 
 const StatusIcons = memo(({ status }) => {
-    if (status === 'sending') return <Loader2 className="size-3 text-muted-foreground/40 animate-spin" />;
+    // 'pending' = persistido y encolado, aún sin confirmación de Meta: mismo
+    // spinner que el optimista 'sending' para que se lea como "enviando".
+    if (status === 'sending' || status === 'pending') return <Loader2 className="size-3 text-muted-foreground/40 animate-spin" />;
     if (status === 'failed') return <AlertTriangle className="size-3 text-red-500" />;
     if (status === 'sent') return <Check className="size-3 text-muted-foreground/40" />;
     if (status === 'delivered') return <CheckCheck className="size-3 text-muted-foreground/40" />;
