@@ -506,6 +506,9 @@ class WhatsAppWebhookController extends Controller
         $conversation->update($conversationUpdate);
         $conversation->incrementUnread();
 
+        // Tiempo real: empuja el mensaje entrante a los agentes conectados.
+        broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
+
         $this->metaService->markAsRead($instance->phone_number_id, $wamid);
 
         $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
@@ -644,6 +647,9 @@ class WhatsAppWebhookController extends Controller
         }
 
         $message->update($updateData);
+
+        // Tiempo real: refleja el check (enviado/entregado/leído/fallido) en la UI.
+        broadcast(new \App\Events\WhatsAppMessageEvent($message, $instance->id, 'status'));
 
         Log::channel('whatsapp')->info('✅ Estado actualizado', [
             'wamid' => $wamid,

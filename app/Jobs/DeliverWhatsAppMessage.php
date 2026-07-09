@@ -106,6 +106,10 @@ class DeliverWhatsAppMessage implements ShouldQueue
             'sent_at'  => $message->sent_at ?: now(),
         ]);
 
+        // Tiempo real: empuja el saliente ya confirmado a los demás agentes
+        // conectados (el emisor ya lo ve optimista; el front deduplica por id).
+        broadcast(new \App\Events\WhatsAppMessageEvent($message->load('sender'), $instance->id, 'new'));
+
         WebhookDispatcher::emit(
             $conversation->instance->company_id,
             'message.sent',
@@ -136,6 +140,13 @@ class DeliverWhatsAppMessage implements ShouldQueue
             'status'        => 'failed',
             'error_message' => mb_substr($error, 0, 2000),
         ]);
+
+        // Tiempo real: la burbuja del emisor pasa a "fallido" sin esperar el poll.
+        $instanceId = $message->conversation?->instance_id
+            ?? $message->conversation()->value('instance_id');
+        if ($instanceId) {
+            broadcast(new \App\Events\WhatsAppMessageEvent($message, $instanceId, 'status'));
+        }
 
         Log::warning('DeliverWhatsAppMessage falló', [
             'message_id' => $message->id,

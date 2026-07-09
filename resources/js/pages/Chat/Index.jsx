@@ -765,6 +765,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const pollingIntervalRef = useRef(null);
     const messageInputRef = useRef(null);
     const tempMsgCounter = useRef(0);
+    // Espejo de selectedConversation para leerlo dentro del listener de Reverb
+    // sin recrear la suscripción cada vez que cambia la conversación abierta.
+    const selectedConversationRef = useRef(null);
 
     // ── Callbacks for Performance ──────────────────────────────────────────
 
@@ -1402,8 +1405,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Tiempo real de llamadas (Reverb): escucha el canal privado de la instancia
-    // y reacciona a los eventos de llamada (entrante, cambios de estado, fin).
+    // Tiempo real (Reverb): un solo canal privado por instancia con dos tipos de
+    // evento — llamadas (.call.event) y mensajes (.message.event). Se suscribe
+    // una vez para no pisar el canal compartido con dos `Echo.leave`.
+    //
+    // El de mensajes sustituye al polling de 10s como vía principal (el poll de
+    // 30s queda de respaldo); todos los updates se aplican por id (idempotentes),
+    // así que recibir lo mismo por Echo y por poll es inofensivo.
     useEffect(() => {
         if (!selectedInstanceId || !window.Echo) return;
 
@@ -1419,6 +1427,40 @@ export default function ChatIndex({ instances, integrations = [] }) {
             } else if (e.action === 'ended') {
                 setIncomingCall(prev => (prev && prev.wacid === call.wacid ? null : prev));
             }
+        });
+
+        channel.listen('.message.event', (e) => {
+            if (!e?.message) return;
+
+            if (e.action === 'status') {
+                setMessages(prev => prev.map(m => (m.id === e.message.id ? { ...m, ...e.message } : m)));
+                return;
+            }
+
+            // action === 'new': si es de la conversación abierta, la anexamos
+            // (deduplicando por id y reconciliando la burbuja optimista por wamid).
+            if (selectedConversationRef.current?.id === e.conversation_id) {
+                setMessages(prev => {
+                    if (prev.some(m => m.id === e.message.id)) return prev;
+                    const optimisticIdx = e.message.wamid
+                        ? prev.findIndex(m => typeof m.id === 'string' && String(m.id).startsWith('temp-') && m.wamid === e.message.wamid)
+                        : -1;
+                    if (optimisticIdx !== -1) {
+                        const next = [...prev];
+                        next[optimisticIdx] = e.message;
+                        return next;
+                    }
+                    return [...prev, e.message];
+                });
+            }
+
+            // Refresca la fila de la conversación en la lista (último mensaje y
+            // hora); el reordenamiento fino lo termina de ajustar el poll de 30s.
+            setConversations(prev => prev.map(c => (
+                c.id === e.conversation_id
+                    ? { ...c, last_message: e.message.content, last_message_at: e.message.created_at || new Date().toISOString() }
+                    : c
+            )));
         });
 
         return () => {
@@ -1749,13 +1791,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
     }, [hasMore, loadingMore, page, loadConversations]);
 
     useEffect(() => {
+        selectedConversationRef.current = selectedConversation;
+    }, [selectedConversation]);
+
+    useEffect(() => {
         startPolling();
         return () => stopPolling();
     }, [selectedInstanceId, lastUpdateTimestamp]);
 
     function startPolling() {
         stopPolling();
-        pollingIntervalRef.current = setInterval(checkForUpdates, 10000);
+        // El tiempo real llega por Reverb (ver el useEffect de `.message.event`);
+        // este polling queda como red de seguridad por si el websocket se cae,
+        // por eso 30s en vez de 10s (menos carga sobre MySQL). El merge deduplica
+        // por id, así que recibir lo mismo por Echo y por poll es inofensivo.
+        pollingIntervalRef.current = setInterval(checkForUpdates, 30000);
     }
 
     function stopPolling() {
