@@ -194,6 +194,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.view')->name('index');
         Route::get('/analytics', [App\Http\Controllers\TemplateController::class, 'analyticsIndex'])
             ->middleware('permission:templates.view')->name('analytics');
+        Route::get('/create', [App\Http\Controllers\TemplateController::class, 'create'])
+            ->middleware('permission:templates.create')->name('create');
     });
 
     Route::prefix('api/templates')->group(function () {

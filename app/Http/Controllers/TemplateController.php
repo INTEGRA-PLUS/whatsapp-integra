@@ -27,6 +27,28 @@ class TemplateController extends Controller
         ]);
     }
 
+    public function create(Request $request)
+    {
+        $user = auth()->user();
+
+        $instances = Instance::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->whereNotNull('waba_id')
+            ->whereNotNull('access_token')
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_phone_number', 'waba_id']);
+
+        return Inertia::render('Templates/Create', [
+            'instances' => $instances,
+            'prefill' => [
+                'mode' => $request->query('mode') === 'translation' ? 'translation' : 'new',
+                'family' => $request->query('family'),
+                'source_id' => $request->query('source_id'),
+                'instance_id' => $request->query('instance_id'),
+            ],
+        ]);
+    }
+
     public function analyticsIndex()
     {
         $user = auth()->user();
@@ -520,7 +542,11 @@ class TemplateController extends Controller
             'components.*.buttons.*.signature_hash' => 'nullable|string|max:50',
         ]);
 
-        $semanticErrors = $this->validateComponentsRules($data['components'], $data['category']);
+        $semanticErrors = $this->validateComponentsRules(
+            $data['components'],
+            $data['category'],
+            $data['parameter_format'] ?? 'POSITIONAL'
+        );
         if (!empty($semanticErrors)) {
             return response()->json([
                 'message' => 'Componentes inválidos.',
@@ -584,9 +610,12 @@ class TemplateController extends Controller
      * - URL con {{1}} debe traer example: ["url_completa"].
      * - Conteo de botones por tipo (Meta: 1 PHONE_NUMBER, 2 URL, 1 COPY_CODE, 1 OTP, 1 VOICE_CALL).
      * - AUTHENTICATION exige botón OTP.
+     * - Con parameter_format NAMED las variables son {{nombre}} y los ejemplos van en
+     *   header_text_named_params / body_text_named_params.
      */
-    protected function validateComponentsRules(array $components, string $category): array
+    protected function validateComponentsRules(array $components, string $category, string $parameterFormat = 'POSITIONAL'): array
     {
+        $named = $parameterFormat === 'NAMED';
         $errors = [];
         $typesSeen = [];
         $hasOtp = false;
@@ -606,16 +635,29 @@ class TemplateController extends Controller
                     if (mb_strlen($text) > 60) {
                         $errors[] = 'El encabezado de texto no puede superar 60 caracteres.';
                     }
-                    $vars = $this->extractVariables($text);
-                    if (count($vars) > 1) {
-                        $errors[] = 'El encabezado de texto admite máximo una variable {{1}}.';
-                    }
-                    if (!$this->isSequential($vars)) {
-                        $errors[] = 'Las variables del encabezado deben ser secuenciales desde {{1}}.';
-                    }
-                    $examples = $c['example']['header_text'] ?? [];
-                    if (count($vars) !== count($examples)) {
-                        $errors[] = 'Debes proveer un ejemplo por cada variable del encabezado.';
+                    if ($named) {
+                        $vars = $this->extractNamedVariables($text);
+                        if (count($vars) > 1) {
+                            $errors[] = 'El encabezado de texto admite máximo una variable.';
+                        }
+                        $errors = array_merge($errors, $this->validateNamedVariableNames($vars, 'encabezado'));
+                        $params = $c['example']['header_text_named_params'] ?? [];
+                        if (!$this->namedExamplesMatch($vars, $params)) {
+                            $errors[] = 'Debes proveer un ejemplo por cada variable del encabezado (header_text_named_params).';
+                        }
+                    } else {
+                        $errors = array_merge($errors, $this->rejectNamedInPositional($text, 'encabezado'));
+                        $vars = $this->extractVariables($text);
+                        if (count($vars) > 1) {
+                            $errors[] = 'El encabezado de texto admite máximo una variable {{1}}.';
+                        }
+                        if (!$this->isSequential($vars)) {
+                            $errors[] = 'Las variables del encabezado deben ser secuenciales desde {{1}}.';
+                        }
+                        $examples = $c['example']['header_text'] ?? [];
+                        if (count($vars) !== count($examples)) {
+                            $errors[] = 'Debes proveer un ejemplo por cada variable del encabezado.';
+                        }
                     }
                 } elseif (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
                     $handle = $c['example']['header_handle'] ?? null;
@@ -633,13 +675,23 @@ class TemplateController extends Controller
                 if (mb_strlen($text) > 1024) {
                     $errors[] = 'El cuerpo no puede superar 1024 caracteres.';
                 }
-                $vars = $this->extractVariables($text);
-                if (!$this->isSequential($vars)) {
-                    $errors[] = 'Las variables del cuerpo deben ser secuenciales desde {{1}} sin saltos.';
-                }
-                $examples = $c['example']['body_text'][0] ?? [];
-                if (count($vars) !== count($examples)) {
-                    $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo.';
+                if ($named) {
+                    $vars = $this->extractNamedVariables($text);
+                    $errors = array_merge($errors, $this->validateNamedVariableNames($vars, 'cuerpo'));
+                    $params = $c['example']['body_text_named_params'] ?? [];
+                    if (!$this->namedExamplesMatch($vars, $params)) {
+                        $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo (body_text_named_params).';
+                    }
+                } else {
+                    $errors = array_merge($errors, $this->rejectNamedInPositional($text, 'cuerpo'));
+                    $vars = $this->extractVariables($text);
+                    if (!$this->isSequential($vars)) {
+                        $errors[] = 'Las variables del cuerpo deben ser secuenciales desde {{1}} sin saltos.';
+                    }
+                    $examples = $c['example']['body_text'][0] ?? [];
+                    if (count($vars) !== count($examples)) {
+                        $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo.';
+                    }
                 }
             }
 
@@ -718,6 +770,41 @@ class TemplateController extends Controller
         $nums = array_unique(array_map('intval', $matches[1] ?? []));
         sort($nums);
         return $nums;
+    }
+
+    protected function extractNamedVariables(string $text): array
+    {
+        preg_match_all('/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/', $text, $matches);
+        return array_values(array_unique($matches[1] ?? []));
+    }
+
+    protected function validateNamedVariableNames(array $vars, string $where): array
+    {
+        $errors = [];
+        foreach ($vars as $v) {
+            if (!preg_match('/^[a-z][a-z0-9_]*$/', $v)) {
+                $errors[] = "Variable {{{$v}}} del {$where}: con tipo de variable \"Nombre\" usa minúsculas, números y guiones bajos, empezando por letra.";
+            }
+        }
+        return $errors;
+    }
+
+    protected function namedExamplesMatch(array $vars, array $params): bool
+    {
+        if (empty($vars)) return true;
+        $names = array_map(fn ($p) => $p['param_name'] ?? null, $params);
+        return count($vars) === count($params)
+            && empty(array_diff($vars, $names))
+            && !in_array(null, array_map(fn ($p) => ($p['example'] ?? '') === '' ? null : true, $params), true);
+    }
+
+    protected function rejectNamedInPositional(string $text, string $where): array
+    {
+        $all = $this->extractNamedVariables($text);
+        $nonNumeric = array_filter($all, fn ($v) => !ctype_digit($v));
+        return empty($nonNumeric)
+            ? []
+            : ["El {$where} usa variables con nombre ({{" . reset($nonNumeric) . '}}), pero el tipo de variable es "Número". Cambia el tipo de variable a "Nombre" o usa {{1}}, {{2}}...'];
     }
 
     protected function isSequential(array $nums): bool

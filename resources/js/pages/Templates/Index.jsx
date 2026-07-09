@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import TemplateFormModal from './TemplateFormModal';
 import { TabButton, WhatsAppPreview, templateToModel } from './preview';
 import {
     FileText,
@@ -96,7 +95,20 @@ export default function TemplatesIndex({ instances = [] }) {
     const [categoryFilter, setCategoryFilter] = useState('');
     const [expanded, setExpanded] = useState(() => new Set());
     const [detail, setDetail] = useState(null);
-    const [createMode, setCreateMode] = useState(null);
+
+    function goToCreate() {
+        router.visit(route('templates.create', { instance_id: instanceId }));
+    }
+
+    function goToTranslation(family) {
+        const source = family.variants.find(v => v.status === 'APPROVED') ?? family.variants[0];
+        router.visit(route('templates.create', {
+            mode: 'translation',
+            family: family.name,
+            source_id: source?.id,
+            instance_id: instanceId,
+        }));
+    }
 
     useEffect(() => {
         if (instanceId) load();
@@ -208,7 +220,7 @@ export default function TemplatesIndex({ instances = [] }) {
                                 </Button>
                             </Link>
                             {can('templates.create') && instanceId && (
-                                <Button onClick={() => setCreateMode({ mode: 'new' })} className="gap-2 h-9 shadow-md">
+                                <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
                                     <Sparkles className="size-4" /> Nueva plantilla
                                 </Button>
                             )}
@@ -337,7 +349,7 @@ export default function TemplatesIndex({ instances = [] }) {
                                 : 'Ningún resultado coincide con los filtros aplicados.'}
                         </p>
                         {templates.length === 0 && can('templates.create') && instanceId && (
-                            <Button onClick={() => setCreateMode({ mode: 'new' })} className="mt-6 gap-2">
+                            <Button onClick={goToCreate} className="mt-6 gap-2">
                                 <Sparkles className="size-4" /> Crear primera plantilla
                             </Button>
                         )}
@@ -352,11 +364,7 @@ export default function TemplatesIndex({ instances = [] }) {
                                 onToggle={() => toggle(family.name)}
                                 onOpenDetail={openDetail}
                                 canCreate={can('templates.create')}
-                                onAddTranslation={() => setCreateMode({
-                                    mode: 'translation',
-                                    family,
-                                    sourceTemplate: family.variants.find(v => v.status === 'APPROVED') ?? family.variants[0],
-                                })}
+                                onAddTranslation={() => goToTranslation(family)}
                             />
                         ))}
                     </div>
@@ -373,19 +381,6 @@ export default function TemplatesIndex({ instances = [] }) {
                 />
             )}
 
-            {createMode && (
-                <TemplateFormModal
-                    mode={createMode.mode}
-                    instanceId={instanceId}
-                    family={createMode.family}
-                    sourceTemplate={createMode.sourceTemplate}
-                    onClose={() => setCreateMode(null)}
-                    onCreated={() => {
-                        setCreateMode(null);
-                        load();
-                    }}
-                />
-            )}
         </>
     );
 }

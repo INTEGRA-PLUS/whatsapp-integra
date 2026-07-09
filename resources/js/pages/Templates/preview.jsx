@@ -23,13 +23,13 @@ const BUTTON_ICONS = {
     QUICK_REPLY: Reply,
 };
 
-// Replace {{1}}, {{2}} in `text` using a {number: value} map.
-// Falls back to the literal "{{N}}" if no example is provided.
+// Replace {{1}}, {{2}} (positional) or {{nombre}} (named) in `text` using a
+// {token: value} map. Falls back to the literal "{{token}}" if no example is provided.
 export function substituteVars(text, examples = {}) {
     if (!text) return '';
-    return text.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => {
-        const v = examples[parseInt(n, 10)];
-        return v && String(v).length > 0 ? v : `{{${n}}}`;
+    return text.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_, k) => {
+        const v = examples[k] ?? examples[parseInt(k, 10)];
+        return v && String(v).length > 0 ? v : `{{${k}}}`;
     });
 }
 
