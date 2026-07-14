@@ -66,18 +66,7 @@ class IntegraClient
      */
     public static function probeBase(string $inputUrl, string $token): self
     {
-        $base = rtrim(trim($inputUrl), '/');
-        // Normaliza sufijos comunes que la gente copia de la barra del navegador.
-        foreach (['/api/v1', '/api/docs', '/api'] as $suffix) {
-            if (str_ends_with($base, $suffix)) {
-                $base = substr($base, 0, -strlen($suffix));
-            }
-        }
-        $base = rtrim($base, '/');
-
-        $candidates = str_ends_with($base, '/software')
-            ? [$base]
-            : [$base.'/software', $base];
+        $candidates = self::baseCandidates($inputUrl);
 
         $lastError = null;
         foreach ($candidates as $candidate) {
@@ -96,6 +85,77 @@ class IntegraClient
         }
 
         throw $lastError ?? new \RuntimeException('No se pudo conectar con el entorno Integra.');
+    }
+
+    /**
+     * Conecta iniciando sesión con las credenciales de Integra: canjea
+     * email + contraseña por un token itg_ recién emitido (POST /api/v1/tokens,
+     * scopes del flujo de pagos) sondeando los mismos prefijos que probeBase.
+     *
+     * @return array{0: self, 1: string} cliente apuntando a la base que funcionó + token en claro.
+     * @throws \RuntimeException con mensaje apto para UI (401 credenciales, 422 validación,
+     *                           CODE_ENDPOINT_MISSING si el entorno no expone /tokens).
+     */
+    public static function connectWithLogin(string $inputUrl, string $email, string $password): array
+    {
+        $lastError = null;
+
+        foreach (self::baseCandidates($inputUrl) as $candidate) {
+            try {
+                $res = Http::baseUrl($candidate)
+                    ->acceptJson()
+                    ->timeout(20)
+                    ->post('/api/v1/tokens', [
+                        'email'    => $email,
+                        'password' => $password,
+                        'nombre'   => 'wpp-integraciones',
+                    ]);
+            } catch (\Throwable $e) {
+                Log::warning('Integra: error de red al emitir token', ['base' => $candidate, 'msg' => $e->getMessage()]);
+                $lastError = new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL del entorno.', 0);
+                continue;
+            }
+
+            $token = $res->json('data.token');
+            if ($res->successful() && $res->json('success') === true && $token) {
+                return [new self($candidate, $token), $token];
+            }
+
+            // Credenciales malas o validación: el envelope trae el mensaje y
+            // cambiar de prefijo no lo va a arreglar.
+            if (in_array($res->status(), [401, 422, 429], true) && $res->json('message')) {
+                throw new \RuntimeException($res->json('message'), $res->status());
+            }
+
+            // 404 sin envelope = el entorno aún no tiene POST /api/v1/tokens.
+            $lastError = $res->status() === 404
+                ? new \RuntimeException('Este entorno Integra aún no permite iniciar sesión desde aquí (actualiza Integra o pega un token de API).', self::CODE_ENDPOINT_MISSING)
+                : new \RuntimeException('Integra respondió con un error ('.$res->status().').', $res->status());
+        }
+
+        throw $lastError ?? new \RuntimeException('No se pudo conectar con el entorno Integra.');
+    }
+
+    /**
+     * Variantes de URL base a sondear a partir de lo que escribió el usuario:
+     * limpia sufijos que la gente copia de la barra del navegador y prueba
+     * con y sin el prefijo /software que Caddy añade en producción.
+     *
+     * @return string[]
+     */
+    protected static function baseCandidates(string $inputUrl): array
+    {
+        $base = rtrim(trim($inputUrl), '/');
+        foreach (['/api/v1', '/api/docs', '/api'] as $suffix) {
+            if (str_ends_with($base, $suffix)) {
+                $base = substr($base, 0, -strlen($suffix));
+            }
+        }
+        $base = rtrim($base, '/');
+
+        return str_ends_with($base, '/software')
+            ? [$base]
+            : [$base.'/software', $base];
     }
 
     protected function request(): PendingRequest

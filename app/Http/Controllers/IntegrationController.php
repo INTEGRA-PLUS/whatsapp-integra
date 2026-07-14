@@ -68,12 +68,16 @@ class IntegrationController extends Controller
     /**
      * POST /api/integrations/invoice-payments/connect — conecta con el entorno Integra 2.0.
      *
-     * La empresa indica la URL de SU entorno (Integra es multi-tenant) y un token
-     * de la API pública (`php artisan api:token` en el servidor de Integra, con
-     * scopes clientes.leer, facturas.leer, pagos.leer y pagos.registrar).
-     * probeBase() valida la pareja URL+token con una llamada real y resuelve el
-     * prefijo correcto (/software/api/v1 en prod). El token se persiste cifrado
-     * (cast `encrypted` del modelo) y nunca vuelve al frontend.
+     * La empresa indica la URL de SU entorno (Integra es multi-tenant) y se
+     * autentica de una de dos formas:
+     *  - email + password de su usuario de Integra (camino normal): el wizard
+     *    canjea las credenciales por un token itg_ recién emitido vía
+     *    POST /api/v1/tokens (la contraseña solo se usa aquí, nunca se guarda);
+     *  - un token itg_ pegado a mano (`php artisan api:token` en el servidor de
+     *    Integra), para entornos sin el endpoint de emisión.
+     * En ambos casos se valida la conexión con una llamada real (que además
+     * resuelve el prefijo /software) y el token se persiste cifrado (cast
+     * `encrypted` del modelo); nunca vuelve al frontend.
      */
     public function connect(Request $request)
     {
@@ -81,7 +85,9 @@ class IntegrationController extends Controller
 
         $data = $request->validate([
             'base_url' => 'required|string|max:255',
-            'token'    => 'required|string|max:255',
+            'token'    => 'nullable|string|max:255|required_without:email',
+            'email'    => 'nullable|string|email|max:255|required_without:token',
+            'password' => 'nullable|string|max:255|required_with:email',
         ]);
 
         $inputUrl = trim($data['base_url']);
@@ -90,7 +96,15 @@ class IntegrationController extends Controller
         }
 
         try {
-            $client = IntegraClient::probeBase($inputUrl, $data['token']);
+            if (! empty($data['token'])) {
+                $client = IntegraClient::probeBase($inputUrl, $data['token']);
+                $plainToken = $data['token'];
+            } else {
+                [$client, $plainToken] = IntegraClient::connectWithLogin($inputUrl, $data['email'], (string) $data['password']);
+                // El token recién emitido trae los scopes del flujo de pagos;
+                // esta llamada valida además que la API responda con él.
+                $client->testConnection();
+            }
         } catch (\RuntimeException $e) {
             // Recordamos la URL para precargarla en reintentos, pero sin token ni estado conectado.
             CompanyIntegration::updateOrCreate(
@@ -106,7 +120,7 @@ class IntegrationController extends Controller
             [
                 'status'           => 'connected',
                 'base_url'         => $client->baseUrl(), // base resuelta (con /software si aplica)
-                'access_token'     => $data['token'],
+                'access_token'     => $plainToken,
                 'token_expires_at' => null, // los tokens de API de Integra no expiran
                 'account'          => ['api' => 'integra2-v1'],
                 'last_error'       => null,
@@ -249,17 +263,31 @@ class IntegrationController extends Controller
         return response()->json(['data' => $cliente ? [$this->presentClient($cliente)] : []]);
     }
 
-    /** Normaliza el contacto de Integra a lo que usa el modal del chat. */
+    /**
+     * Normaliza el contacto de Integra a lo que usa el modal del chat.
+     *
+     * Soporta las dos formas del payload de /contactos/buscar: la plana
+     * original (nombre/celular/telefono1 en la raíz) y la segmentada de
+     * Integra ≥ jul-2026 (nombre_completo en la raíz + segmento `contacto`
+     * con los datos personales y `resumen` con los totales).
+     */
     private function presentClient(array $c): array
     {
+        $contacto = is_array($c['contacto'] ?? null) ? $c['contacto'] : [];
+        $resumen  = is_array($c['resumen'] ?? null) ? $c['resumen'] : [];
+
+        $porPagar = $c['total_por_pagar'] ?? $resumen['total_por_pagar'] ?? null;
+
         return [
             'id'              => $c['id'] ?? null,
-            'nit'             => $c['identificacion'] ?? null,
-            'nombre'          => $c['nombre'] ?? '',
-            'celular'         => $c['celular'] ?? null,
-            'telefono'        => $c['telefono1'] ?? null,
-            'total_por_pagar' => isset($c['total_por_pagar']) ? (float) $c['total_por_pagar'] : null,
-            'facturas_count'  => isset($c['facturas_pendientes']) ? count($c['facturas_pendientes']) : null,
+            'nit'             => $c['identificacion'] ?? $contacto['identificacion'] ?? null,
+            'nombre'          => $c['nombre_completo'] ?? $c['nombre'] ?? $contacto['nombre'] ?? '',
+            'celular'         => $c['celular'] ?? $contacto['celular'] ?? null,
+            'telefono'        => $c['telefono1'] ?? $contacto['telefono1'] ?? null,
+            'total_por_pagar' => $porPagar !== null ? (float) $porPagar : null,
+            'facturas_count'  => isset($c['facturas_pendientes'])
+                ? count($c['facturas_pendientes'])
+                : ($resumen['facturas_pendientes'] ?? null),
         ];
     }
 

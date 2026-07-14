@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, Link2, ShieldCheck, ArrowRight, ArrowLeft,
-    RefreshCw, AlertTriangle, Loader2, Save, CreditCard,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Mail, KeyRound,
 } from 'lucide-react';
 
 const SECTIONS = [
@@ -531,7 +531,10 @@ const wInput = 'flex h-9 w-full rounded-md border border-input bg-transparent px
 
 function StepConnect({ integration, onUpdated, onDone, showToast }) {
     const [connecting, setConnecting] = useState(false);
+    const [mode, setMode] = useState('login'); // 'login' (email+contraseña) | 'token' (pegar itg_)
     const [baseUrl, setBaseUrl] = useState(integration.base_url ?? '');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [token, setToken] = useState('');
     const [errors, setErrors] = useState({});
 
@@ -542,20 +545,25 @@ function StepConnect({ integration, onUpdated, onDone, showToast }) {
         if (!/^https?:\/\/.+\..+/i.test(url)) {
             e.base_url = 'Ingresa la URL completa de tu entorno Integra (ej. https://miempresa.integra.com).';
         }
-        if (!token.trim()) {
-            e.token = 'Ingresa el token maestro de la API de tu entorno Integra.';
+        if (mode === 'login') {
+            if (!email.trim()) e.email = 'Ingresa el email de tu usuario de Integra.';
+            if (!password) e.password = 'Ingresa tu contraseña de Integra.';
+        } else if (!token.trim()) {
+            e.token = 'Pega el token itg_ de la API de tu entorno Integra.';
         }
         setErrors(e);
         if (Object.keys(e).length) return;
 
         setConnecting(true);
         try {
-            // El backend valida la pareja URL+token con una llamada real a la API
-            // V1 de Integra antes de guardar el token (cifrado).
-            const { data } = await axios.post('/api/integrations/invoice-payments/connect', {
-                base_url: url,
-                token: token.trim(),
-            });
+            // El backend valida contra la API V1 de Integra antes de guardar: con
+            // credenciales, canjea el login por un token itg_ recién emitido (la
+            // contraseña solo viaja en esta petición, nunca se guarda); con token
+            // pegado, valida la pareja URL+token. El token queda cifrado.
+            const payload = mode === 'login'
+                ? { base_url: url, email: email.trim(), password }
+                : { base_url: url, token: token.trim() };
+            const { data } = await axios.post('/api/integrations/invoice-payments/connect', payload);
             onUpdated(data);
             showToast('Conexión establecida con Integra.');
             onDone();
@@ -570,7 +578,9 @@ function StepConnect({ integration, onUpdated, onDone, showToast }) {
         <div className="rounded-xl border bg-card p-5">
             <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                    Indica la dirección de tu entorno Integra y un token de su API pública (se genera en el servidor de Integra con <code className="font-mono text-xs">php artisan api:token</code>; la documentación vive en <code className="font-mono text-xs">/software/api/docs</code>). Validaremos la conexión antes de guardar.
+                    {mode === 'login'
+                        ? 'Indica la dirección de tu entorno Integra e inicia sesión con tu usuario. Generaremos automáticamente el token de la API con los permisos del flujo de pagos y validaremos la conexión antes de guardar.'
+                        : <>Indica la dirección de tu entorno Integra y un token de su API pública (se genera en el servidor de Integra con <code className="font-mono text-xs">php artisan api:token</code>; la documentación vive en <code className="font-mono text-xs">/software/api/docs</code>). Validaremos la conexión antes de guardar.</>}
                 </p>
 
                 <WField label="URL de tu entorno Integra" icon={Link2} error={errors.base_url}>
@@ -585,30 +595,69 @@ function StepConnect({ integration, onUpdated, onDone, showToast }) {
                     />
                 </WField>
 
-                <WField label="Token de la API" icon={ShieldCheck} error={errors.token}>
-                    <input
-                        type="password"
-                        value={token}
-                        onChange={e => { setToken(e.target.value); if (errors.token) setErrors(p => ({ ...p, token: null })); }}
-                        onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-                        placeholder="itg_xxxxxxxxxxxxxxxxxxxxxxxx"
-                        autoComplete="off"
-                        className={`${wInput} font-mono`}
-                    />
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                        El token necesita los scopes <code className="font-mono">contactos.leer, facturas.leer, pagos.leer, pagos.registrar</code> (o sin scopes = todos los permisos).
-                    </p>
-                </WField>
+                {mode === 'login' ? (
+                    <>
+                        <WField label="Email de tu usuario de Integra" icon={Mail} error={errors.email}>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={e => { setEmail(e.target.value); if (errors.email) setErrors(p => ({ ...p, email: null })); }}
+                                onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+                                placeholder="usuario@miempresa.com"
+                                autoComplete="off"
+                                className={wInput}
+                            />
+                        </WField>
+
+                        <WField label="Contraseña" icon={KeyRound} error={errors.password}>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={e => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: null })); }}
+                                onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+                                placeholder="Tu contraseña de Integra"
+                                autoComplete="new-password"
+                                className={wInput}
+                            />
+                        </WField>
+                    </>
+                ) : (
+                    <WField label="Token de la API" icon={ShieldCheck} error={errors.token}>
+                        <input
+                            type="password"
+                            value={token}
+                            onChange={e => { setToken(e.target.value); if (errors.token) setErrors(p => ({ ...p, token: null })); }}
+                            onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+                            placeholder="itg_xxxxxxxxxxxxxxxxxxxxxxxx"
+                            autoComplete="off"
+                            className={`${wInput} font-mono`}
+                        />
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                            El token necesita los scopes <code className="font-mono">contactos.leer, facturas.leer, pagos.leer, pagos.registrar</code> (o sin scopes = todos los permisos).
+                        </p>
+                    </WField>
+                )}
 
                 <div className="flex items-start gap-3 rounded-xl bg-muted/40 border p-4 text-xs text-muted-foreground">
                     <ShieldCheck className="size-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
                     <p>
-                        El token se guarda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos). Nunca se muestra de nuevo ni viaja al navegador.
+                        {mode === 'login'
+                            ? 'Tu contraseña solo se usa una vez para generar el token y no se guarda. El token queda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos).'
+                            : 'El token se guarda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos). Nunca se muestra de nuevo ni viaja al navegador.'}
                     </p>
                 </div>
-                <Button onClick={connect} disabled={connecting} className="gap-2">
-                    {connecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
-                </Button>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <Button onClick={connect} disabled={connecting} className="gap-2">
+                        {connecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
+                    </Button>
+                    <button
+                        type="button"
+                        onClick={() => { setMode(m => (m === 'login' ? 'token' : 'login')); setErrors({}); }}
+                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                        {mode === 'login' ? '¿Prefieres pegar un token de API?' : 'Volver a iniciar sesión con mi usuario'}
+                    </button>
+                </div>
             </div>
         </div>
     );
