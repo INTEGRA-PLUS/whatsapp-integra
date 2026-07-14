@@ -2303,7 +2303,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
             }
         } catch (err) {
             console.error('Error enviando imagen:', err);
-            alert(err?.response?.data?.error || err?.response?.data?.errors?.image?.[0] || 'No se pudo enviar la imagen.');
+            if (err?.response?.status === 413) {
+                alert('La imagen es demasiado grande para el servidor.');
+            } else if (!err?.response) {
+                alert('Fallo de conexión al subir la imagen, intenta de nuevo.');
+            } else {
+                alert(err?.response?.data?.error || err?.response?.data?.errors?.image?.[0] || 'No se pudo enviar la imagen.');
+            }
         } finally {
             setSending(false);
         }
@@ -2491,7 +2497,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
             }
         } catch (err) {
             console.error('Error enviando audio:', err);
-            alert(err?.response?.data?.error || err?.response?.data?.errors?.audio?.[0] || 'No se pudo enviar el audio.');
+            if (err?.response?.status === 413) {
+                alert('El audio es demasiado grande para el servidor.');
+            } else if (!err?.response) {
+                alert('Fallo de conexión al subir el audio, intenta de nuevo.');
+            } else {
+                alert(err?.response?.data?.error || err?.response?.data?.errors?.audio?.[0] || 'No se pudo enviar el audio.');
+            }
         } finally {
             setSending(false);
         }
