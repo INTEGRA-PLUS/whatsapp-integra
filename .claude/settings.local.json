@@ -146,7 +146,18 @@
       "Bash(echo \"exit:$?\")",
       "Bash(python3 -)",
       "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('/home/juan-manuel/Escritorio/istinge/integra2.0/docs/openapi.yaml'\\)\\); print\\('openapi.yaml válido'\\)\")",
-      "Bash(SSH_AUTH_SOCK= ssh *)"
+      "Bash(SSH_AUTH_SOCK= ssh *)",
+      "Skill(update-config)",
+      "Bash(echo \"---exit:$?\")",
+      "Bash(chmod 600 ~/.ssh/config)",
+      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 log --oneline -5)",
+      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 status --short)",
+      "Bash(scp -q /tmp/claude-1000/-home-juan-manuel-Escritorio-istinge-whatsapp-integra/c6d4b447-cfea-405a-9067-5e70381205dd/scratchpad/check_integra.php wpp-prod:/tmp/check_integra.php)",
+      "Bash(SSH_AUTH_SOCK= timeout 15 ssh -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 root@185.215.166.4 'hostname')",
+      "Bash(python3 -m json.tool)",
+      "Bash(pkill -f \"artisan serve --host=127.0.0.1 --port=8001\")",
+      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 log --oneline origin/master..HEAD)",
+      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 branch --show-current)"
     ]
   }
 }
