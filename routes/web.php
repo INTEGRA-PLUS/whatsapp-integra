@@ -415,16 +415,12 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:integrations.view');
     });
 
-    // Integraciones — Pagos a facturas (software Integra)
-    // Flujo OAuth (navegador): inicia la autorización y recibe el callback con el code.
-    Route::get('/integrations/invoice-payments/connect', [App\Http\Controllers\IntegrationController::class, 'oauthStart'])
-        ->middleware('permission:integrations.update')->name('integrations.invoice-payments.connect');
-    Route::get('/integrations/invoice-payments/callback', [App\Http\Controllers\IntegrationController::class, 'oauthCallback'])
-        ->middleware('permission:integrations.update')->name('integrations.invoice-payments.callback');
-
+    // Integraciones — Pagos a facturas (software Integra, API V1 con token maestro)
     Route::prefix('api/integrations')->group(function () {
         Route::get('/', [App\Http\Controllers\IntegrationController::class, 'index'])
             ->middleware('permission:integrations.view');
+        Route::post('/invoice-payments/connect', [App\Http\Controllers\IntegrationController::class, 'connect'])
+            ->middleware('permission:integrations.update');
         Route::get('/{key}/status', [App\Http\Controllers\IntegrationController::class, 'status'])
             ->middleware('permission:integrations.view');
         Route::post('/{key}/activate', [App\Http\Controllers\IntegrationController::class, 'activate'])
@@ -434,6 +430,8 @@ Route::middleware('auth')->group(function () {
 
         // Acciones usadas desde el chat por los agentes (solo requieren sesión).
         Route::get('/invoice-payments/clients', [App\Http\Controllers\IntegrationController::class, 'searchClients']);
+        Route::get('/invoice-payments/invoices', [App\Http\Controllers\IntegrationController::class, 'invoices']);
+        Route::get('/invoice-payments/catalogs', [App\Http\Controllers\IntegrationController::class, 'catalogs']);
         Route::post('/invoice-payments/pay', [App\Http\Controllers\IntegrationController::class, 'pay']);
     });
 });

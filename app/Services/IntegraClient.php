@@ -3,39 +3,45 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Cliente HTTP para el software Integra.
+ * Cliente HTTP para la API pública de Integra 2.0 (proyecto integra2.0).
  *
- * Conexión OAuth en 2 pasos (Integra es el proveedor; esta app es el cliente):
+ * Documentación: {base}/software/api/docs (Swagger UI) y docs/openapi.yaml.
+ * La API vive bajo https://{dominio}/software/api/v1 (el prefijo /software lo
+ * pone Caddy en producción; en entornos locales puede no existir, por eso
+ * probeBase() sondea ambas variantes al conectar).
  *
- *   1) Navegador → GET {base_url}/oauth/authorize?redirect_uri={callback}&state={aleatorio}
- *        Integra autentica al usuario con su propia vista de login y redirige de vuelta a
- *        {callback}?code={code}&state={state}. El code es de un solo uso y vive 5 min.
+ * Autenticación: Bearer token por empresa (tenant), generado en el servidor
+ * de Integra con `php artisan api:token {empresa} --abilities=...`. Scopes
+ * usados por esta integración: contactos.leer, facturas.leer, pagos.leer,
+ * pagos.registrar.
  *
- *   2) Servidor → POST {base_url}/api/auth/token   { "code": "...", "redirect_uri": "..." }
- *        200:  { "token": "...", "expires_at": "2026-06-19T23:00:00Z",
- *                "user": { "id": 1, "name": "...", "email": "...", "company": "..." } }
- *        400/422: code inválido/expirado o redirect_uri que no coincide.
+ * Envelope de respuesta: { success, data, message?, meta? } — errores llegan
+ * como { success: false, message } con HTTP 401/403/404/422/500.
  *
- *   --- ya implementados, se usan con Authorization: Bearer {token} ---
- *
- *   GET  {base_url}/api/me              200 { "user": { ... } } | 401 token revocado
- *   POST {base_url}/api/auth/logout     204 revoca el token (usado por "Desconectar")
- *
- *   --- pendientes de implementar en Integra ---
- *
- *   GET  {base_url}/api/clientes?search=texto   (Authorization)
- *     200:  { "data": [ { "id": 5, "nombre": "...", "documento": "...", "saldo": 120000 } ] }
- *
- *   POST {base_url}/api/payments      (Authorization)
- *     body: { "cliente_id": 5, "cliente_nombre": "...", "valor": 50000, "pago_total": false }
- *     201:  { "id": 99, "recibo": "REC-0099", "estado": "aplicado", "saldo_restante": 70000 }
+ * Endpoints usados:
+ *   GET  /api/v1/contactos/buscar?q=&limite=          (contactos.leer)
+ *        busca por nit, nombre/apellidos, celular, teléfonos y email; cada
+ *        contacto trae total_por_pagar y sus facturas_pendientes resumidas
+ *   GET  /api/v1/facturas/pendientes?nit=|cliente_id= (facturas.leer)
+ *   GET  /api/v1/pagos/catalogos                      (pagos.leer)
+ *   POST /api/v1/facturas/{factura}/pagos             (pagos.registrar)
+ *        body: { cuenta, metodo_pago, monto, fecha?, observaciones?,
+ *                comprobante_pago?, forma_pago? }
  */
 class IntegraClient
 {
+    /**
+     * Código de excepción para "la ruta no existe en este entorno" (deploy
+     * viejo de Integra). Distinto del 404 de negocio (recurso no encontrado),
+     * que conserva el código HTTP 404.
+     */
+    public const CODE_ENDPOINT_MISSING = 4404;
+
     protected string $baseUrl;
     protected ?string $token;
 
@@ -43,6 +49,53 @@ class IntegraClient
     {
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->token = $token;
+    }
+
+    public function baseUrl(): string
+    {
+        return $this->baseUrl;
+    }
+
+    /**
+     * Resuelve la URL base real del API a partir de lo que escribió el usuario.
+     * Acepta el dominio pelado, con /software, o incluso con /api/v1 pegado, y
+     * sondea {base} y {base}/software hasta que el API responda con el token.
+     *
+     * @return self cliente ya apuntando a la base que funcionó.
+     * @throws \RuntimeException si ninguna variante responde (mensaje apto para UI).
+     */
+    public static function probeBase(string $inputUrl, string $token): self
+    {
+        $base = rtrim(trim($inputUrl), '/');
+        // Normaliza sufijos comunes que la gente copia de la barra del navegador.
+        foreach (['/api/v1', '/api/docs', '/api'] as $suffix) {
+            if (str_ends_with($base, $suffix)) {
+                $base = substr($base, 0, -strlen($suffix));
+            }
+        }
+        $base = rtrim($base, '/');
+
+        $candidates = str_ends_with($base, '/software')
+            ? [$base]
+            : [$base.'/software', $base];
+
+        $lastError = null;
+        foreach ($candidates as $candidate) {
+            $client = new self($candidate, $token);
+            try {
+                $client->testConnection();
+
+                return $client;
+            } catch (\RuntimeException $e) {
+                // Token inválido o sin permisos: cambiar de prefijo no lo va a arreglar.
+                if (in_array($e->getCode(), [401, 403], true)) {
+                    throw $e;
+                }
+                $lastError = $e;
+            }
+        }
+
+        throw $lastError ?? new \RuntimeException('No se pudo conectar con el entorno Integra.');
     }
 
     protected function request(): PendingRequest
@@ -59,134 +112,165 @@ class IntegraClient
     }
 
     /**
-     * Construye la URL de autorización a la que se redirige el navegador (paso 1).
+     * Ejecuta la petición y traduce los fallos comunes del envelope a
+     * RuntimeException con mensajes aptos para la UI. El código de la
+     * excepción conserva el HTTP status para que el caller pueda reaccionar.
+     *
+     * @throws \RuntimeException
      */
-    public function authorizeUrl(string $redirectUri, string $state): string
+    protected function call(string $method, string $path, array $data = []): Response
     {
-        return $this->baseUrl.'/oauth/authorize?'.http_build_query([
-            'redirect_uri' => $redirectUri,
-            'state'        => $state,
-        ]);
+        try {
+            $res = $method === 'post'
+                ? $this->request()->post($path, $data)
+                : $this->request()->get($path, $data);
+        } catch (\Throwable $e) {
+            Log::warning('Integra: error de red', ['path' => $path, 'msg' => $e->getMessage()]);
+            throw new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL del entorno.', 0);
+        }
+
+        if ($res->successful()) {
+            return $res;
+        }
+
+        $message = $res->json('message');
+
+        if ($res->status() === 401) {
+            throw new \RuntimeException('Integra rechazó el token de API. Verifica el token en la configuración de la integración.', 401);
+        }
+        if ($res->status() === 403) {
+            throw new \RuntimeException($message ?? 'El token de API no tiene permisos para esta operación (revisa sus scopes).', 403);
+        }
+        if ($res->status() === 404) {
+            // 404 de negocio (cliente/factura no encontrada) trae el envelope
+            // {success:false, message}; un 404 sin envelope es ruta inexistente.
+            if ($res->json('success') === false && $message) {
+                throw new \RuntimeException($message, 404);
+            }
+            throw new \RuntimeException('El entorno Integra no expone este recurso ('.$path.'). Verifica la URL y que la API esté actualizada.', self::CODE_ENDPOINT_MISSING);
+        }
+        if ($res->status() === 422) {
+            $errors = $res->json('errors');
+            $detail = is_array($errors) ? implode(' ', array_map(fn ($v) => implode(' ', (array) $v), $errors)) : '';
+            throw new \RuntimeException(trim(($message ?? 'Datos inválidos.').' '.$detail), 422);
+        }
+
+        throw new \RuntimeException($message ?? 'Integra respondió con un error ('.$res->status().').', $res->status());
     }
 
     /**
-     * Canjea el código de autorización por un token de acceso (paso 2, server-to-server).
+     * Prueba URL + token contra los catálogos de pago (endpoint liviano que
+     * además valida el scope pagos.leer, necesario para el flujo del chat).
      *
-     * @return array{token:string, expires_at:?string, user:array}
-     * @throws \RuntimeException con un mensaje apto para mostrar al usuario.
+     * @return array{ok: bool, cuentas: int, metodos_pago: int}
+     * @throws \RuntimeException
      */
-    public function exchangeCode(string $code, string $redirectUri): array
+    public function testConnection(): array
     {
-        try {
-            $res = $this->request()->post('/api/auth/token', [
-                'code'         => $code,
-                'redirect_uri' => $redirectUri,
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('Integra token exchange error', ['msg' => $e->getMessage()]);
-            throw new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL.');
-        }
-
-        // Code inválido/expirado o redirect_uri que no coincide.
-        if (in_array($res->status(), [400, 401, 422], true)) {
-            throw new \RuntimeException($res->json('message') ?? 'El código de autorización no es válido o expiró. Vuelve a conectar.');
-        }
-
-        if (! $res->successful()) {
-            throw new \RuntimeException('Integra respondió con un error ('.$res->status().').');
-        }
-
-        $token = $res->json('token');
-        if (! $token) {
-            throw new \RuntimeException('Integra no devolvió un token de acceso.');
-        }
+        $data = $this->call('get', '/api/v1/pagos/catalogos')->json('data') ?? [];
 
         return [
-            'token'      => $token,
-            'expires_at' => $res->json('expires_at'),
-            'user'       => $res->json('user') ?? [],
+            'ok' => true,
+            'cuentas' => count($data['cuentas'] ?? []),
+            'metodos_pago' => count($data['metodos_pago'] ?? []),
         ];
     }
 
     /**
-     * Verifica que el token siga siendo válido.
+     * Búsqueda de contactos para el autocompletado del modal. El criterio `q`
+     * matchea a la vez nit, nombre/apellidos, celular, teléfonos y email; cada
+     * contacto llega con su total_por_pagar y facturas_pendientes resumidas.
+     * "Sin coincidencias" (404 de negocio) se devuelve como lista vacía.
      *
-     * @return array datos del usuario.
+     * @return array{data: array, total: int}
+     * @throws \RuntimeException (code CODE_ENDPOINT_MISSING si el entorno aún no tiene /contactos/buscar)
+     */
+    public function searchContacts(string $q, int $limite = 8): array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/contactos/buscar', ['q' => $q, 'limite' => $limite]);
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return ['data' => [], 'total' => 0];
+            }
+            throw $e;
+        }
+
+        return [
+            'data' => $res->json('data') ?? [],
+            'total' => (int) ($res->json('meta.total_contactos') ?? 0),
+        ];
+    }
+
+    /**
+     * Facturas pendientes (abiertas con saldo) de un cliente.
+     *
+     * @param array $params ['nit' => ...] o ['cliente_id' => ...]
+     * @return array{found: bool, message: ?string, facturas: array, cliente: ?array, total_facturas: int, total_por_pagar: float}
      * @throws \RuntimeException
      */
-    public function me(): array
+    public function pendingInvoices(array $params): array
     {
         try {
-            $res = $this->request()->get('/api/me');
-        } catch (\Throwable $e) {
-            throw new \RuntimeException('No se pudo contactar al servidor de Integra.');
+            $res = $this->call('get', '/api/v1/facturas/pendientes', $params);
+        } catch (\RuntimeException $e) {
+            // 404 de negocio: cliente no encontrado en Integra.
+            if ($e->getCode() === 404) {
+                return [
+                    'found' => false,
+                    'message' => $e->getMessage(),
+                    'facturas' => [],
+                    'cliente' => null,
+                    'total_facturas' => 0,
+                    'total_por_pagar' => 0.0,
+                ];
+            }
+            throw $e;
         }
 
-        if ($res->status() === 401) {
-            throw new \RuntimeException('La sesión con Integra expiró. Vuelve a conectar.');
-        }
-        if (! $res->successful()) {
-            throw new \RuntimeException('Integra respondió con un error ('.$res->status().').');
-        }
-
-        return $res->json('user') ?? $res->json() ?? [];
+        return [
+            'found' => true,
+            'message' => null,
+            'facturas' => $res->json('data') ?? [],
+            'cliente' => $res->json('meta.cliente'),
+            'total_facturas' => (int) ($res->json('meta.total_facturas') ?? 0),
+            'total_por_pagar' => (float) ($res->json('meta.total_por_pagar') ?? 0),
+        ];
     }
 
     /**
-     * Revoca el token en Integra (best-effort: no lanza si falla, porque
-     * de todos modos vamos a borrarlo de nuestro lado).
-     */
-    public function logout(): void
-    {
-        try {
-            $this->request()->post('/api/auth/logout');
-        } catch (\Throwable $e) {
-            Log::info('Integra logout no-op', ['msg' => $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Busca clientes para el autocompletado del modal.
+     * Catálogos para registrar un pago: cuentas/bancos, métodos y formas de pago.
      *
-     * @return array<int, array>
+     * @return array{cuentas: array, metodos_pago: array, formas_pago: array}
+     * @throws \RuntimeException
      */
-    public function searchClients(string $search): array
+    public function paymentCatalogs(): array
     {
-        try {
-            $res = $this->request()->get('/api/clientes', ['search' => $search]);
-        } catch (\Throwable $e) {
-            throw new \RuntimeException('No se pudo contactar al servidor de Integra.');
-        }
+        $data = $this->call('get', '/api/v1/pagos/catalogos')->json('data') ?? [];
 
-        if (! $res->successful()) {
-            throw new \RuntimeException('No se pudieron cargar los clientes.');
-        }
+        return [
+            'cuentas' => $data['cuentas'] ?? [],
+            'metodos_pago' => $data['metodos_pago'] ?? [],
+            'formas_pago' => $data['formas_pago'] ?? [],
+        ];
+    }
+
+    /**
+     * Registra un pago sobre una factura. Integra replica su flujo interno:
+     * recibo de caja, movimiento contable, cierre de la factura si se cubre el
+     * saldo y reactivación del servicio (Mikrotik/OLT) si corresponde.
+     *
+     * @param array $payload { cuenta, metodo_pago, monto, fecha?, observaciones?, comprobante_pago?, forma_pago? }
+     * @return array { ingreso_id, recibo_caja, monto_aplicado, factura_estado, factura_por_pagar }
+     * @throws \RuntimeException
+     */
+    public function registerPayment(int $facturaId, array $payload): array
+    {
+        $res = $this->call('post', "/api/v1/facturas/{$facturaId}/pagos", array_filter(
+            $payload,
+            fn ($v) => $v !== null && $v !== ''
+        ));
 
         return $res->json('data') ?? [];
-    }
-
-    /**
-     * Registra un pago contra una factura/cuenta del cliente.
-     *
-     * @return array respuesta de Integra (recibo, estado, etc.)
-     * @throws \RuntimeException
-     */
-    public function createPayment(array $payload): array
-    {
-        try {
-            $res = $this->request()->post('/api/payments', $payload);
-        } catch (\Throwable $e) {
-            throw new \RuntimeException('No se pudo contactar al servidor de Integra.');
-        }
-
-        if ($res->status() === 401) {
-            throw new \RuntimeException('La sesión con Integra expiró. Vuelve a conectar.');
-        }
-        if (! $res->successful()) {
-            $msg = $res->json('message') ?? 'No se pudo registrar el pago en Integra.';
-            throw new \RuntimeException($msg);
-        }
-
-        return $res->json() ?? [];
     }
 }

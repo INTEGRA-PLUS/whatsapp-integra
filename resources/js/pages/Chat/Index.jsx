@@ -45,6 +45,7 @@ import {
     AtSign,
     Wallet,
     CreditCard,
+    Receipt,
     Loader2,
     CheckCircle2,
     CheckSquare,
@@ -461,74 +462,178 @@ const ConversationList = memo(function ConversationList({
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-// ─── PaymentModal: formulario de pago a facturas (integración Integra) ───────
+// ─── PaymentModal: pagos a facturas (integración Integra 2.0) ────────────────
+// Flujo: buscar cliente (auto-busca con el teléfono de la conversación) →
+// facturas pendientes del cliente → registrar el pago de la factura elegida
+// (cuenta + método de pago de los catálogos del entorno Integra).
+
+// WhatsApp entrega números con indicativo (573001234567); Integra guarda el
+// celular de 10 dígitos. Nos quedamos con los últimos 10.
+function normalizePhoneForIntegra(phone) {
+    const digits = String(phone ?? '').replace(/\D+/g, '');
+    return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function formatCOP(value) {
+    if (value == null || isNaN(Number(value))) return null;
+    return '$' + Number(value).toLocaleString('es-CO');
+}
+
 function PaymentModal({ integration, conversation, onClose }) {
-    const [cliente, setCliente] = useState(conversation?.name ?? '');
-    const [clienteId, setClienteId] = useState(null);
-    const [valor, setValor] = useState('');
-    const [pagoTotal, setPagoTotal] = useState(false);
-    const [suggestions, setSuggestions] = useState([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
+    const initialPhone = normalizePhoneForIntegra(conversation?.phone_number);
+
+    // Paso 1: búsqueda de cliente
+    const [query, setQuery] = useState(initialPhone);
+    const [results, setResults] = useState([]);
     const [searching, setSearching] = useState(false);
+    const [searched, setSearched] = useState(false);
+    const [searchError, setSearchError] = useState(null);
+    const [selected, setSelected] = useState(null);   // cliente Integra elegido
+
+    // Paso 2: facturas pendientes
+    const [invoices, setInvoices] = useState(null);   // respuesta de /invoices
+    const [loadingInvoices, setLoadingInvoices] = useState(false);
+    const [invoicesError, setInvoicesError] = useState(null);
+    const [invoice, setInvoice] = useState(null);     // factura elegida
+
+    // Paso 3: registro del pago
+    const [catalogs, setCatalogs] = useState(null);   // cuentas + métodos de pago
+    const [catalogsError, setCatalogsError] = useState(null);
+    const [cuenta, setCuenta] = useState('');
+    const [metodoPago, setMetodoPago] = useState('');
+    const [monto, setMonto] = useState('');
+    const [observaciones, setObservaciones] = useState('');
     const [saving, setSaving] = useState(false);
-    const [error, setError] = useState(null);
+    const [payError, setPayError] = useState(null);
     const [success, setSuccess] = useState(null);
+
     const searchTimer = useRef(null);
+    const autoSelectRef = useRef(true); // en la búsqueda inicial por teléfono, si hay 1 resultado lo elegimos solos
 
-    // Autocompletado de clientes contra Integra (con debounce).
-    useEffect(() => {
-        if (clienteId) return; // ya se eligió un cliente concreto
-        const q = cliente.trim();
-        if (q.length < 2) { setSuggestions([]); return; }
-        if (searchTimer.current) clearTimeout(searchTimer.current);
-        searchTimer.current = setTimeout(async () => {
-            setSearching(true);
-            try {
-                const { data } = await axios.get('/api/integrations/invoice-payments/clients', { params: { search: q } });
-                setSuggestions(data.data ?? []);
-                setShowSuggestions(true);
-            } catch (_) {
-                setSuggestions([]);
-            } finally {
-                setSearching(false);
+    async function runSearch(q) {
+        setSearching(true);
+        setSearchError(null);
+        try {
+            const { data } = await axios.get('/api/integrations/invoice-payments/clients', { params: { search: q } });
+            const list = data.data ?? [];
+            setResults(list);
+            setSearched(true);
+            if (autoSelectRef.current && list.length === 1) {
+                selectClient(list[0]);
             }
-        }, 350);
-        return () => searchTimer.current && clearTimeout(searchTimer.current);
-    }, [cliente, clienteId]);
+        } catch (err) {
+            setResults([]);
+            setSearched(true);
+            setSearchError(err?.response?.data?.message ?? 'No se pudo buscar en Integra.');
+        } finally {
+            autoSelectRef.current = false;
+            setSearching(false);
+        }
+    }
 
-    function pickClient(c) {
-        setCliente(c.nombre ?? '');
-        setClienteId(c.id ?? null);
-        if (pagoTotal && c.saldo != null) setValor(String(c.saldo));
-        setShowSuggestions(false);
+    // Búsqueda con debounce; al abrir, busca de una vez por el teléfono del chat.
+    useEffect(() => {
+        if (selected) return;
+        const q = query.trim();
+        if (q.length < 2) { setResults([]); setSearched(false); return; }
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+        searchTimer.current = setTimeout(() => runSearch(q), autoSelectRef.current ? 0 : 350);
+        return () => searchTimer.current && clearTimeout(searchTimer.current);
+    }, [query, selected]);
+
+    async function fetchInvoices(client) {
+        setLoadingInvoices(true);
+        setInvoicesError(null);
+        setInvoices(null);
+        try {
+            const params = client.id ? { cliente_id: client.id } : { nit: client.nit };
+            const { data } = await axios.get('/api/integrations/invoice-payments/invoices', { params });
+            if (!data.found) {
+                setInvoicesError(data.message ?? 'El cliente no existe en Integra.');
+            } else {
+                setInvoices(data);
+            }
+        } catch (err) {
+            setInvoicesError(err?.response?.data?.message ?? 'No se pudieron consultar las facturas en Integra.');
+        } finally {
+            setLoadingInvoices(false);
+        }
+    }
+
+    function selectClient(c) {
+        setSelected(c);
+        setInvoice(null);
+        setPayError(null);
+        setSuccess(null);
+        fetchInvoices(c);
+    }
+
+    function backToSearch() {
+        setSelected(null);
+        setInvoices(null);
+        setInvoicesError(null);
+        setInvoice(null);
+        setPayError(null);
+        setSuccess(null);
+    }
+
+    async function selectInvoice(f) {
+        setInvoice(f);
+        setPayError(null);
+        setMonto(String(f.montos?.por_pagar ?? ''));
+        setObservaciones('');
+        // Catálogos del entorno (cuentas y métodos): una sola vez por modal.
+        if (!catalogs) {
+            try {
+                const { data } = await axios.get('/api/integrations/invoice-payments/catalogs');
+                setCatalogs(data);
+                setCatalogsError(null);
+                if ((data.cuentas ?? []).length === 1) setCuenta(String(data.cuentas[0].id));
+                if ((data.metodos_pago ?? []).length === 1) setMetodoPago(String(data.metodos_pago[0].id));
+            } catch (err) {
+                setCatalogsError(err?.response?.data?.message ?? 'No se pudieron cargar los catálogos de pago.');
+            }
+        }
+    }
+
+    function backToInvoices({ refresh = false } = {}) {
+        setInvoice(null);
+        setPayError(null);
+        setSuccess(null);
+        if (refresh && selected) fetchInvoices(selected);
     }
 
     async function submit(e) {
         e.preventDefault();
-        setError(null);
-        if (!cliente.trim()) { setError('Indica el cliente.'); return; }
-        if (!pagoTotal && (!valor || Number(valor) <= 0)) { setError('Ingresa un valor mayor a 0.'); return; }
+        setPayError(null);
+        if (!cuenta) { setPayError('Selecciona la cuenta/banco donde entra el pago.'); return; }
+        if (!metodoPago) { setPayError('Selecciona el método de pago.'); return; }
+        if (!monto || Number(monto) <= 0) { setPayError('Ingresa un valor mayor a 0.'); return; }
         setSaving(true);
         try {
             const { data } = await axios.post('/api/integrations/invoice-payments/pay', {
-                cliente_id: clienteId,
-                cliente_nombre: cliente.trim(),
-                valor: pagoTotal && !valor ? 0 : Number(valor || 0),
-                pago_total: pagoTotal,
+                factura_id: invoice.id,
+                cuenta: Number(cuenta),
+                metodo_pago: Number(metodoPago),
+                monto: Number(monto),
+                observaciones: observaciones.trim() || null,
             });
             setSuccess(data.result ?? { ok: true });
         } catch (err) {
-            setError(err?.response?.data?.message ?? 'No se pudo registrar el pago.');
+            setPayError(err?.response?.data?.message ?? 'No se pudo registrar el pago.');
         } finally {
             setSaving(false);
         }
     }
 
+    const clienteMeta = invoices?.cliente;
+    const facturas = invoices?.facturas ?? [];
+
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
-            <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 {/* Header */}
-                <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white">
+                <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white shrink-0">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -538,117 +643,291 @@ function PaymentModal({ integration, conversation, onClose }) {
                         </div>
                         <div>
                             <h3 className="font-bold text-lg leading-tight">{integration?.name ?? 'Pagos a facturas'}</h3>
-                            <p className="text-xs text-white/80">Registra un pago para el cliente</p>
+                            <p className="text-xs text-white/80">
+                                {success ? 'Pago registrado en Integra'
+                                    : invoice ? `Registrar pago · Factura ${invoice.codigo ?? invoice.id}`
+                                    : selected ? 'Facturas pendientes del cliente'
+                                    : 'Busca el cliente por teléfono, cédula o nombre'}
+                            </p>
                         </div>
                     </div>
                 </div>
 
+                <div className="overflow-y-auto">
                 {success ? (
+                    /* ── Éxito ── */
                     <div className="px-6 py-8 text-center space-y-4">
                         <div className="mx-auto size-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
                             <CheckCircle2 className="size-8 text-emerald-600 dark:text-emerald-400" />
                         </div>
-                        <div>
+                        <div className="space-y-1">
                             <p className="font-semibold text-foreground">Pago registrado</p>
-                            {success.recibo && <p className="text-sm text-muted-foreground mt-1">Recibo: <span className="font-mono font-medium text-foreground">{success.recibo}</span></p>}
-                            {success.saldo_restante != null && (
-                                <p className="text-sm text-muted-foreground">Saldo restante: <span className="font-medium text-foreground">${Number(success.saldo_restante).toLocaleString('es-CO')}</span></p>
+                            {success.recibo_caja != null && (
+                                <p className="text-sm text-muted-foreground">Recibo de caja: <span className="font-mono font-medium text-foreground">#{success.recibo_caja}</span></p>
+                            )}
+                            {success.monto_aplicado != null && (
+                                <p className="text-sm text-muted-foreground">Monto aplicado: <span className="font-medium text-foreground">{formatCOP(success.monto_aplicado)}</span></p>
+                            )}
+                            {success.factura_estado && (
+                                <p className="text-sm text-muted-foreground">
+                                    Factura: <span className={`font-medium ${success.factura_estado === 'cerrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>{success.factura_estado}</span>
+                                    {success.factura_por_pagar != null && Number(success.factura_por_pagar) > 0 && (
+                                        <> · queda por pagar <span className="font-medium text-foreground">{formatCOP(success.factura_por_pagar)}</span></>
+                                    )}
+                                </p>
                             )}
                         </div>
-                        <button onClick={onClose} className="w-full rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium py-2.5 transition-colors">
-                            Listo
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={() => backToInvoices({ refresh: true })} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                Registrar otro pago
+                            </button>
+                            <button onClick={onClose} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium py-2.5 transition-colors">
+                                Listo
+                            </button>
+                        </div>
                     </div>
-                ) : (
-                    <form onSubmit={submit} className="px-6 py-5 space-y-4">
-                        {/* Cliente */}
+                ) : !selected ? (
+                    /* ── Paso 1: búsqueda de cliente ── */
+                    <div className="px-6 py-5 space-y-3">
                         <div className="relative">
-                            <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
-                                <User className="size-3.5 text-muted-foreground" /> Cliente
-                            </label>
-                            <div className="relative">
-                                <input
-                                    value={cliente}
-                                    onChange={e => { setCliente(e.target.value); setClienteId(null); }}
-                                    onFocus={() => suggestions.length && setShowSuggestions(true)}
-                                    placeholder="Nombre o documento del cliente"
-                                    autoFocus
-                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
-                                />
-                                {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />}
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                            <input
+                                value={query}
+                                onChange={e => setQuery(e.target.value)}
+                                placeholder="Celular, cédula/NIT o nombre del cliente"
+                                autoFocus
+                                className="w-full rounded-xl border border-border/70 bg-background/80 pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                            />
+                            {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />}
+                        </div>
+                        {initialPhone && query === initialPhone && (
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                                <Phone className="size-3" /> Buscando por el número de esta conversación.
+                            </p>
+                        )}
+
+                        {searchError && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                <span>{searchError}</span>
                             </div>
-                            {showSuggestions && suggestions.length > 0 && (
-                                <div className="absolute z-10 mt-1 w-full rounded-xl border border-border/60 bg-popover shadow-lg max-h-48 overflow-y-auto">
-                                    {suggestions.map(c => (
-                                        <button
-                                            type="button"
-                                            key={c.id}
-                                            onClick={() => pickClient(c)}
-                                            className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors flex items-center justify-between gap-2"
-                                        >
-                                            <span className="text-sm text-foreground truncate">
-                                                {c.nombre}
-                                                {c.documento && <span className="text-muted-foreground"> · {c.documento}</span>}
+                        )}
+
+                        {results.length > 0 && (
+                            <div className="rounded-xl border border-border/60 divide-y divide-border/60 overflow-hidden">
+                                {results.map(c => (
+                                    <button
+                                        type="button"
+                                        key={c.id ?? c.nit}
+                                        onClick={() => selectClient(c)}
+                                        className="w-full text-left px-3.5 py-2.5 hover:bg-muted/50 transition-colors flex items-center gap-3"
+                                    >
+                                        <div className="size-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                            <User className="size-4" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-medium text-foreground truncate">{c.nombre || 'Sin nombre'}</p>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {[c.nit && `CC/NIT ${c.nit}`, c.celular && `Cel ${c.celular}`].filter(Boolean).join(' · ') || 'Sin datos de contacto'}
+                                            </p>
+                                        </div>
+                                        {c.total_por_pagar != null && (
+                                            <span className={`shrink-0 text-xs font-semibold tabular-nums ${Number(c.total_por_pagar) > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                {Number(c.total_por_pagar) > 0 ? `Debe ${formatCOP(c.total_por_pagar)}` : 'Al día'}
                                             </span>
-                                            {c.saldo != null && (
-                                                <span className="text-xs text-muted-foreground shrink-0">${Number(c.saldo).toLocaleString('es-CO')}</span>
-                                            )}
-                                        </button>
-                                    ))}
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {searched && !searching && !searchError && results.length === 0 && (
+                            <div className="rounded-xl border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                                Sin resultados en Integra. Prueba con la cédula o el nombre del cliente.
+                            </div>
+                        )}
+                    </div>
+                ) : !invoice ? (
+                    /* ── Paso 2: facturas pendientes ── */
+                    <div className="px-6 py-5 space-y-3">
+                        <div className="flex items-center gap-3">
+                            <button type="button" onClick={backToSearch} title="Cambiar cliente" className="p-1.5 rounded-full hover:bg-muted/60 transition-colors shrink-0">
+                                <ArrowLeft className="size-4 text-muted-foreground" />
+                            </button>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-foreground truncate">{clienteMeta?.nombre ?? selected.nombre ?? 'Sin nombre'}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                    {[(clienteMeta?.identificacion ?? selected.nit) && `CC/NIT ${clienteMeta?.identificacion ?? selected.nit}`, (clienteMeta?.celular ?? selected.celular) && `Cel ${clienteMeta?.celular ?? selected.celular}`].filter(Boolean).join(' · ')}
+                                </p>
+                            </div>
+                            {invoices && facturas.length > 0 && (
+                                <div className="text-right shrink-0">
+                                    <p className="text-[10px] text-muted-foreground">Total por pagar</p>
+                                    <p className="text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums">{formatCOP(invoices.total_por_pagar)}</p>
                                 </div>
                             )}
                         </div>
 
-                        {/* Valor */}
-                        <div>
-                            <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
-                                <DollarSign className="size-3.5 text-muted-foreground" /> Valor
-                            </label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                inputMode="decimal"
-                                value={valor}
-                                onChange={e => setValor(e.target.value)}
-                                disabled={pagoTotal}
-                                placeholder={pagoTotal ? 'Pago total de la deuda' : '0'}
-                                className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 disabled:opacity-60"
-                            />
-                        </div>
-
-                        {/* Pago total */}
-                        <label className="flex items-center gap-3 rounded-xl border border-border/60 p-3.5 cursor-pointer hover:bg-muted/30 transition-colors">
-                            <input
-                                type="checkbox"
-                                checked={pagoTotal}
-                                onChange={e => { setPagoTotal(e.target.checked); if (e.target.checked) setValor(''); }}
-                                className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
-                            />
-                            <div>
-                                <p className="text-sm font-medium text-foreground">Pago total</p>
-                                <p className="text-xs text-muted-foreground">Cancela el saldo completo del cliente.</p>
-                            </div>
-                        </label>
-
-                        {error && (
-                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
-                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
-                                <span>{error}</span>
+                        {loadingInvoices && (
+                            <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                                <Loader2 className="size-4 animate-spin" /> Consultando facturas en Integra…
                             </div>
                         )}
 
-                        <div className="flex gap-2 pt-1">
-                            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
-                                Cancelar
+                        {invoicesError && !loadingInvoices && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                <span>{invoicesError}</span>
+                            </div>
+                        )}
+
+                        {invoices && !loadingInvoices && facturas.length === 0 && (
+                            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-6 text-center space-y-1.5">
+                                <CheckCircle2 className="size-7 mx-auto text-emerald-600 dark:text-emerald-400" />
+                                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Cliente al día</p>
+                                <p className="text-xs text-muted-foreground">No tiene facturas pendientes por pagar en Integra.</p>
+                            </div>
+                        )}
+
+                        {facturas.length > 0 && (
+                            <div className="space-y-2">
+                                <p className="text-[11px] text-muted-foreground">
+                                    {facturas.length} factura{facturas.length > 1 ? 's' : ''} pendiente{facturas.length > 1 ? 's' : ''} — toca una para registrar su pago.
+                                </p>
+                                {facturas.map(f => (
+                                    <button
+                                        type="button"
+                                        key={f.id}
+                                        onClick={() => selectInvoice(f)}
+                                        className="w-full text-left rounded-xl border border-border/60 hover:border-teal-500/50 hover:bg-teal-500/5 transition-colors px-3.5 py-3"
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Receipt className="size-4 text-muted-foreground shrink-0" />
+                                                <span className="text-sm font-medium text-foreground font-mono truncate">{f.codigo ?? `#${f.id}`}</span>
+                                                {f.vencida && (
+                                                    <span className="rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 px-2 py-0.5 text-[10px] font-semibold shrink-0">Vencida</span>
+                                                )}
+                                            </div>
+                                            <span className="text-sm font-bold text-foreground tabular-nums shrink-0">{formatCOP(f.montos?.por_pagar)}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-2 mt-1 text-[11px] text-muted-foreground">
+                                            <span className="truncate">
+                                                {[f.vencimiento && `Vence ${f.vencimiento}`, f.contratos?.[0]?.plan].filter(Boolean).join(' · ')}
+                                            </span>
+                                            {Number(f.montos?.pagado ?? 0) > 0 && (
+                                                <span className="shrink-0">Abonado {formatCOP(f.montos.pagado)} de {formatCOP(f.montos.total)}</span>
+                                            )}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* ── Paso 3: registrar el pago ── */
+                    <div className="px-6 py-5 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <button type="button" onClick={() => backToInvoices()} title="Volver a facturas" className="p-1.5 rounded-full hover:bg-muted/60 transition-colors shrink-0">
+                                <ArrowLeft className="size-4 text-muted-foreground" />
                             </button>
-                            <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
-                                {saving ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
-                                Registrar pago
-                            </button>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-foreground truncate font-mono">{invoice.codigo ?? `Factura #${invoice.id}`}</p>
+                                <p className="text-xs text-muted-foreground truncate">{clienteMeta?.nombre ?? selected.nombre}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="text-[10px] text-muted-foreground">Por pagar</p>
+                                <p className="text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums">{formatCOP(invoice.montos?.por_pagar)}</p>
+                            </div>
                         </div>
-                    </form>
+
+                        {catalogsError && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                <span>{catalogsError}</span>
+                            </div>
+                        )}
+
+                        <form onSubmit={submit} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-sm font-medium text-foreground mb-1.5 block">Cuenta / banco</label>
+                                    <select
+                                        value={cuenta}
+                                        onChange={e => setCuenta(e.target.value)}
+                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                    >
+                                        <option value="">Selecciona…</option>
+                                        {(catalogs?.cuentas ?? []).map(c => (
+                                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-foreground mb-1.5 block">Método de pago</label>
+                                    <select
+                                        value={metodoPago}
+                                        onChange={e => setMetodoPago(e.target.value)}
+                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                    >
+                                        <option value="">Selecciona…</option>
+                                        {(catalogs?.metodos_pago ?? []).map(m => (
+                                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-1.5">
+                                    <DollarSign className="size-3.5 text-muted-foreground" /> Valor a pagar
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="any"
+                                    inputMode="decimal"
+                                    value={monto}
+                                    onChange={e => setMonto(e.target.value)}
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                />
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                    Si el valor supera el saldo, Integra lo topa al saldo pendiente. Si cubre el total, la factura se cierra y se reactiva el servicio.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="text-sm font-medium text-foreground mb-1.5 block">Observaciones <span className="text-xs font-normal text-muted-foreground">· Opcional</span></label>
+                                <input
+                                    type="text"
+                                    value={observaciones}
+                                    onChange={e => setObservaciones(e.target.value)}
+                                    maxLength={255}
+                                    placeholder="Pago recibido por WhatsApp"
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                />
+                            </div>
+
+                            {payError && (
+                                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                    <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                    <span>{payError}</span>
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 pt-1">
+                                <button type="button" onClick={() => backToInvoices()} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                                    Volver
+                                </button>
+                                <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                                    {saving ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                                    Registrar pago
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 )}
+                </div>
             </div>
         </div>
     );

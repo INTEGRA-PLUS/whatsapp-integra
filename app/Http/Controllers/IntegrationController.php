@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\CompanyIntegration;
 use App\Services\IntegraClient;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class IntegrationController extends Controller
@@ -67,102 +66,55 @@ class IntegrationController extends Controller
     }
 
     /**
-     * GET /integrations/invoice-payments/connect — inicia el flujo OAuth con Integra (paso 1).
+     * POST /api/integrations/invoice-payments/connect — conecta con el entorno Integra 2.0.
      *
-     * La empresa indica la URL de SU entorno Integra (Integra es multi-tenant); este wpp
-     * es de un solo tenant, así que el redirect_uri siempre es nuestra propia URL de callback.
-     * Genera un `state` aleatorio, lo guarda en sesión y redirige el navegador a la vista
-     * de autorización de Integra. Al terminar, Integra vuelve a {oauthCallback} con el code.
+     * La empresa indica la URL de SU entorno (Integra es multi-tenant) y un token
+     * de la API pública (`php artisan api:token` en el servidor de Integra, con
+     * scopes clientes.leer, facturas.leer, pagos.leer y pagos.registrar).
+     * probeBase() valida la pareja URL+token con una llamada real y resuelve el
+     * prefijo correcto (/software/api/v1 en prod). El token se persiste cifrado
+     * (cast `encrypted` del modelo) y nunca vuelve al frontend.
      */
-    public function oauthStart(Request $request)
+    public function connect(Request $request)
     {
-        $baseUrl = rtrim((string) $request->query('base_url', ''), '/');
+        $key = CompanyIntegration::KEY_INVOICE_PAYMENTS;
 
-        if ($baseUrl === '' || ! filter_var($baseUrl, FILTER_VALIDATE_URL) || ! Str::startsWith($baseUrl, ['http://', 'https://'])) {
-            return redirect()->route('integrations.index', ['integra' => 'error'])
-                ->with('error', 'La URL de tu entorno Integra no es válida. Debe incluir https://');
-        }
-
-        $state       = Str::random(40);
-        $redirectUri = route('integrations.invoice-payments.callback');
-
-        // Recordamos la URL de la empresa para precargarla en futuras reconexiones.
-        CompanyIntegration::updateOrCreate(
-            ['company_id' => $this->companyId(), 'key' => CompanyIntegration::KEY_INVOICE_PAYMENTS],
-            ['base_url' => $baseUrl]
-        );
-
-        // El redirect_uri debe ser idéntico en el canje: lo guardamos junto al state y la URL.
-        $request->session()->put('integra_oauth', [
-            'state'        => $state,
-            'redirect_uri' => $redirectUri,
-            'company_id'   => $this->companyId(),
-            'base_url'     => $baseUrl,
+        $data = $request->validate([
+            'base_url' => 'required|string|max:255',
+            'token'    => 'required|string|max:255',
         ]);
 
-        return redirect()->away((new IntegraClient($baseUrl))->authorizeUrl($redirectUri, $state));
-    }
-
-    /**
-     * GET /integrations/invoice-payments/callback — recibe el code y lo canjea por el token (paso 2).
-     */
-    public function oauthCallback(Request $request)
-    {
-        $key   = CompanyIntegration::KEY_INVOICE_PAYMENTS;
-        $oauth = $request->session()->pull('integra_oauth');
-
-        $fail = fn (string $msg) => redirect()
-            ->route('integrations.index', ['integra' => 'error'])
-            ->with('error', $msg);
-
-        // Integra puede devolver un error en vez de un code (p. ej. el usuario canceló).
-        if ($request->filled('error')) {
-            return $fail($request->query('error_description') ?: 'Integra rechazó la autorización.');
-        }
-
-        $code  = (string) $request->query('code', '');
-        $state = (string) $request->query('state', '');
-
-        // Validamos el state (CSRF) y que la sesión pertenezca a la misma empresa.
-        if (! $oauth
-            || ! hash_equals((string) ($oauth['state'] ?? ''), $state)
-            || (int) ($oauth['company_id'] ?? 0) !== $this->companyId()) {
-            return $fail('La sesión de autorización expiró o no es válida. Inténtalo de nuevo.');
-        }
-        if ($code === '') {
-            return $fail('Integra no devolvió un código de autorización.');
-        }
-
-        $baseUrl = $oauth['base_url'] ?? null;
-        if (! $baseUrl) {
-            return $fail('La URL de tu entorno Integra no está disponible. Vuelve a conectar.');
+        $inputUrl = trim($data['base_url']);
+        if (! filter_var($inputUrl, FILTER_VALIDATE_URL) || ! Str::startsWith($inputUrl, ['http://', 'https://'])) {
+            return response()->json(['message' => 'La URL de tu entorno Integra no es válida. Debe incluir https://'], 422);
         }
 
         try {
-            $result = (new IntegraClient($baseUrl))->exchangeCode($code, $oauth['redirect_uri']);
+            $client = IntegraClient::probeBase($inputUrl, $data['token']);
         } catch (\RuntimeException $e) {
-            $integration = $this->find($key);
-            if ($integration) {
-                $integration->update(['status' => 'error', 'last_error' => $e->getMessage()]);
-            }
-            return $fail($e->getMessage());
+            // Recordamos la URL para precargarla en reintentos, pero sin token ni estado conectado.
+            CompanyIntegration::updateOrCreate(
+                ['company_id' => $this->companyId(), 'key' => $key],
+                ['base_url' => rtrim($inputUrl, '/'), 'status' => 'error', 'last_error' => $e->getMessage()]
+            );
+
+            return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        CompanyIntegration::updateOrCreate(
+        $integration = CompanyIntegration::updateOrCreate(
             ['company_id' => $this->companyId(), 'key' => $key],
             [
                 'status'           => 'connected',
-                'base_url'         => $baseUrl,
-                'access_token'     => $result['token'],
-                'token_expires_at' => $result['expires_at'] ? Carbon::parse($result['expires_at']) : null,
-                'account'          => $result['user'],
+                'base_url'         => $client->baseUrl(), // base resuelta (con /software si aplica)
+                'access_token'     => $data['token'],
+                'token_expires_at' => null, // los tokens de API de Integra no expiran
+                'account'          => ['api' => 'integra2-v1'],
                 'last_error'       => null,
                 'connected_at'     => now(),
             ]
         );
 
-        return redirect()->route('integrations.index', ['integra' => 'connected'])
-            ->with('success', 'Conexión establecida con Integra.');
+        return response()->json($this->present($key, $integration->fresh()));
     }
 
     /** GET /api/integrations/{key}/status — verifica la conexión contra Integra. */
@@ -178,10 +130,9 @@ class IntegrationController extends Controller
         $client = new IntegraClient($integration->base_url, $integration->access_token);
 
         try {
-            $user = $client->me();
+            $client->testConnection();
             $integration->update([
                 'status'     => 'connected',
-                'account'    => $user ?: $integration->account,
                 'last_error' => null,
             ]);
         } catch (\RuntimeException $e) {
@@ -223,10 +174,8 @@ class IntegrationController extends Controller
 
         $integration = $this->find($key);
         if ($integration) {
-            // Revoca el token en Integra antes de borrarlo localmente (best-effort).
-            if ($integration->access_token && $integration->base_url) {
-                (new IntegraClient($integration->base_url, $integration->access_token))->logout();
-            }
+            // El token maestro es estático: no hay nada que revocar en Integra,
+            // basta con borrarlo de nuestro lado.
             $integration->update([
                 'status'           => 'disconnected',
                 'access_token'     => null,
@@ -239,45 +188,162 @@ class IntegrationController extends Controller
         return response()->json($this->present($key, $integration?->fresh()));
     }
 
-    /** GET /api/integrations/invoice-payments/clients?search= — autocompletado de clientes. */
+    /**
+     * GET /api/integrations/invoice-payments/clients?search= — autocompletado de clientes.
+     *
+     * Pasa por /api/v1/contactos/buscar de Integra 2.0, que matchea un solo
+     * criterio contra nit, nombre/apellidos, celular, teléfonos y email a la
+     * vez. Los números de WhatsApp llegan con indicativo (57300...): se
+     * normalizan a los últimos 10 dígitos, que es como Integra guarda los
+     * celulares. Cada resultado trae el total que debe el cliente.
+     *
+     * Si el entorno Integra aún no tiene desplegado /contactos/buscar, degrada
+     * a buscar por NIT exacto vía facturas/pendientes (que sí existe desde v1).
+     */
     public function searchClients(Request $request)
     {
         $integration = $this->connectedOrFail();
 
-        $search = (string) $request->query('search', '');
+        $search = trim((string) $request->query('search', ''));
         if (mb_strlen($search) < 2) {
             return response()->json(['data' => []]);
         }
 
         $client = new IntegraClient($integration->base_url, $integration->access_token);
 
+        $digits  = preg_replace('/\D+/', '', $search);
+        $isDigits = $digits !== '' && $digits === preg_replace('/[\s\-\+\.\(\)]+/', '', $search);
+
+        // Teléfono con indicativo → últimos 10 dígitos; lo demás va tal cual.
+        $q = ($isDigits && strlen($digits) > 10) ? substr($digits, -10) : ($isDigits ? $digits : $search);
+
         try {
-            return response()->json(['data' => $client->searchClients($search)]);
+            $res = $client->searchContacts($q, 8);
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === IntegraClient::CODE_ENDPOINT_MISSING && $isDigits) {
+                // Entorno sin /contactos/buscar: al menos resolvemos NIT exacto vía facturas.
+                return $this->searchClientsViaInvoices($client, $digits);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['data' => array_map([$this, 'presentClient'], $res['data'])]);
+    }
+
+    /** Fallback para entornos Integra sin GET /contactos/buscar: NIT exacto vía facturas/pendientes. */
+    private function searchClientsViaInvoices(IntegraClient $client, string $nit)
+    {
+        try {
+            $res = $client->pendingInvoices(['nit' => $nit]);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $cliente = $res['cliente'];
+        if ($cliente) {
+            $cliente['total_por_pagar'] = $res['total_por_pagar'];
+            $cliente['facturas_pendientes'] = $res['facturas'];
+        }
+
+        return response()->json(['data' => $cliente ? [$this->presentClient($cliente)] : []]);
+    }
+
+    /** Normaliza el contacto de Integra a lo que usa el modal del chat. */
+    private function presentClient(array $c): array
+    {
+        return [
+            'id'              => $c['id'] ?? null,
+            'nit'             => $c['identificacion'] ?? null,
+            'nombre'          => $c['nombre'] ?? '',
+            'celular'         => $c['celular'] ?? null,
+            'telefono'        => $c['telefono1'] ?? null,
+            'total_por_pagar' => isset($c['total_por_pagar']) ? (float) $c['total_por_pagar'] : null,
+            'facturas_count'  => isset($c['facturas_pendientes']) ? count($c['facturas_pendientes']) : null,
+        ];
+    }
+
+    /**
+     * GET /api/integrations/invoice-payments/invoices — facturas pendientes del cliente.
+     *
+     * Pasa por /api/v1/facturas/pendientes de Integra 2.0: facturas abiertas con
+     * saldo, con montos, ítems y contratos vinculados. Acepta `cliente_id` o `nit`.
+     */
+    public function invoices(Request $request)
+    {
+        $integration = $this->connectedOrFail();
+
+        $data = $request->validate([
+            'cliente_id' => 'nullable|integer',
+            'nit'        => 'nullable|string|max:32',
+        ]);
+
+        $params = array_filter([
+            'cliente_id' => $data['cliente_id'] ?? null,
+            'nit'        => $data['nit'] ?? null,
+        ]);
+
+        if (empty($params)) {
+            return response()->json(['message' => 'Indica el cliente (cliente_id o nit).'], 422);
+        }
+
+        // Si llegan ambos, cliente_id gana (array_filter conserva el orden de las llaves).
+        $params = array_slice($params, 0, 1);
+
+        $client = new IntegraClient($integration->base_url, $integration->access_token);
+
+        try {
+            return response()->json($client->pendingInvoices($params));
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
     }
 
-    /** POST /api/integrations/invoice-payments/pay — registra el pago en Integra. */
+    /**
+     * GET /api/integrations/invoice-payments/catalogs — catálogos para registrar
+     * un pago (cuentas/bancos, métodos y formas de pago del entorno Integra).
+     */
+    public function catalogs()
+    {
+        $integration = $this->connectedOrFail();
+
+        $client = new IntegraClient($integration->base_url, $integration->access_token);
+
+        try {
+            return response()->json($client->paymentCatalogs());
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * POST /api/integrations/invoice-payments/pay — registra el pago de una
+     * factura en Integra 2.0 (POST /api/v1/facturas/{id}/pagos). Integra genera
+     * el recibo de caja, el movimiento contable, cierra la factura si se cubre
+     * el saldo y reactiva el servicio si corresponde.
+     */
     public function pay(Request $request)
     {
         $integration = $this->connectedOrFail();
 
         $data = $request->validate([
-            'cliente_id'     => 'nullable',
-            'cliente_nombre' => 'required|string|max:255',
-            'valor'          => 'required|numeric|min:0',
-            'pago_total'     => 'required|boolean',
+            'factura_id'    => 'required|integer',
+            'cuenta'        => 'required|integer',
+            'metodo_pago'   => 'required|integer',
+            'monto'         => 'required|numeric|min:1',
+            'observaciones' => 'nullable|string|max:255',
         ]);
 
         $client = new IntegraClient($integration->base_url, $integration->access_token);
 
+        $agente = auth()->user()->name ?? 'agente';
+
         try {
-            $result = $client->createPayment([
-                'cliente_id'     => $data['cliente_id'],
-                'cliente_nombre' => $data['cliente_nombre'],
-                'valor'          => $data['valor'],
-                'pago_total'     => $data['pago_total'],
+            $result = $client->registerPayment((int) $data['factura_id'], [
+                'cuenta'        => $data['cuenta'],
+                'metodo_pago'   => $data['metodo_pago'],
+                'monto'         => $data['monto'],
+                'observaciones' => $data['observaciones'] ?? "Pago registrado desde WhatsApp ({$agente})",
             ]);
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

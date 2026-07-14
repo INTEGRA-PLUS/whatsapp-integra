@@ -15,26 +15,10 @@ const SECTIONS = [
 ];
 
 export default function IntegrationsIndex({ webhooks, eventCatalog }) {
-    const { auth, flash } = usePage().props;
+    const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
-    // Al volver del flujo OAuth de Integra (?integra=connected|error) abrimos la
-    // pestaña de pagos y mostramos el resultado de la conexión.
-    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const integraResult = params?.get('integra');
-    const [section, setSection] = useState(integraResult ? 'payments' : 'webhooks');
-    const initialToast = integraResult
-        ? (flash?.error
-            ? { text: flash.error, kind: 'error' }
-            : { text: flash?.success ?? 'Conexión establecida con Integra.', kind: 'success' })
-        : null;
-
-    // Limpia el query param para que el toast no reaparezca al recargar.
-    useEffect(() => {
-        if (integraResult && typeof window !== 'undefined') {
-            window.history.replaceState({}, '', window.location.pathname);
-        }
-    }, []);
+    const [section, setSection] = useState('webhooks');
 
     return (
         <>
@@ -74,7 +58,7 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
                 </div>
 
                 {section === 'webhooks' && <WebhooksSection webhooks={webhooks} eventCatalog={eventCatalog} can={can} />}
-                {section === 'payments' && <PaymentsSection can={can} initialToast={initialToast} />}
+                {section === 'payments' && <PaymentsSection can={can} />}
             </div>
         </>
     );
@@ -419,7 +403,7 @@ function DeliveriesModal({ webhook, eventCatalog, onClose }) {
 
 /* ───────────────────────── Pagos a facturas (software Integra) ───────────────────────── */
 
-function PaymentsSection({ can, initialToast }) {
+function PaymentsSection({ can }) {
     const [integration, setIntegration] = useState(null);
     const [error, setError] = useState(null);
 
@@ -445,7 +429,7 @@ function PaymentsSection({ can, initialToast }) {
         );
     }
 
-    return <PaymentsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} initialToast={initialToast} />;
+    return <PaymentsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} />;
 }
 
 const WIZARD_STEPS = [
@@ -454,7 +438,7 @@ const WIZARD_STEPS = [
     { n: 3, label: 'Activar',  Icon: Power },
 ];
 
-function PaymentsWizard({ integration, onUpdated, canManage, initialToast }) {
+function PaymentsWizard({ integration, onUpdated, canManage }) {
     const [step, setStep] = useState(integration.connected ? (integration.enabled ? 3 : 2) : 1);
     const [toast, setToast] = useState(null);
 
@@ -462,11 +446,6 @@ function PaymentsWizard({ integration, onUpdated, canManage, initialToast }) {
         setToast({ text, kind });
         setTimeout(() => setToast(null), 4000);
     }
-
-    // Resultado del flujo OAuth tras volver del navegador de Integra.
-    useEffect(() => {
-        if (initialToast) showToast(initialToast.text, initialToast.kind);
-    }, []);
 
     return (
         <div className="flex flex-col gap-6 max-w-2xl">
@@ -551,36 +530,54 @@ function WField({ label, icon: Icon, error, children }) {
 const wInput = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
 
 function StepConnect({ integration, onUpdated, onDone, showToast }) {
-    const [redirecting, setRedirecting] = useState(false);
+    const [connecting, setConnecting] = useState(false);
     const [baseUrl, setBaseUrl] = useState(integration.base_url ?? '');
-    const [error, setError] = useState(null);
+    const [token, setToken] = useState('');
+    const [errors, setErrors] = useState({});
 
-    function connect() {
+    async function connect() {
         const url = baseUrl.trim().replace(/\/+$/, '');
+        const e = {};
         // Integra es multi-tenant: cada empresa entra a la URL de su propio entorno.
         if (!/^https?:\/\/.+\..+/i.test(url)) {
-            setError('Ingresa la URL completa de tu entorno Integra (ej. https://miempresa.integra.com).');
-            return;
+            e.base_url = 'Ingresa la URL completa de tu entorno Integra (ej. https://miempresa.integra.com).';
         }
-        setError(null);
-        // Salimos al flujo OAuth de Integra en el mismo navegador. Al volver, el callback
-        // redirige a /integrations?integra=connected y el wizard avanza solo al paso 2.
-        setRedirecting(true);
-        window.location.href = `/integrations/invoice-payments/connect?base_url=${encodeURIComponent(url)}`;
+        if (!token.trim()) {
+            e.token = 'Ingresa el token maestro de la API de tu entorno Integra.';
+        }
+        setErrors(e);
+        if (Object.keys(e).length) return;
+
+        setConnecting(true);
+        try {
+            // El backend valida la pareja URL+token con una llamada real a la API
+            // V1 de Integra antes de guardar el token (cifrado).
+            const { data } = await axios.post('/api/integrations/invoice-payments/connect', {
+                base_url: url,
+                token: token.trim(),
+            });
+            onUpdated(data);
+            showToast('Conexión establecida con Integra.');
+            onDone();
+        } catch (err) {
+            showToast(err?.response?.data?.message ?? 'No se pudo conectar con Integra.', 'error');
+        } finally {
+            setConnecting(false);
+        }
     }
 
     return (
         <div className="rounded-xl border bg-card p-5">
             <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                    Indica la dirección de tu entorno Integra. Te llevaremos a iniciar sesión allí para autorizar la conexión y al terminar volverás aquí automáticamente. Solo guardamos el token de acceso, nunca tu contraseña.
+                    Indica la dirección de tu entorno Integra y un token de su API pública (se genera en el servidor de Integra con <code className="font-mono text-xs">php artisan api:token</code>; la documentación vive en <code className="font-mono text-xs">/software/api/docs</code>). Validaremos la conexión antes de guardar.
                 </p>
 
-                <WField label="URL de tu entorno Integra" icon={Link2} error={error}>
+                <WField label="URL de tu entorno Integra" icon={Link2} error={errors.base_url}>
                     <input
                         type="url"
                         value={baseUrl}
-                        onChange={e => { setBaseUrl(e.target.value); if (error) setError(null); }}
+                        onChange={e => { setBaseUrl(e.target.value); if (errors.base_url) setErrors(p => ({ ...p, base_url: null })); }}
                         onKeyDown={e => { if (e.key === 'Enter') connect(); }}
                         placeholder="https://miempresa.integra.com"
                         className={`${wInput} font-mono`}
@@ -588,14 +585,29 @@ function StepConnect({ integration, onUpdated, onDone, showToast }) {
                     />
                 </WField>
 
+                <WField label="Token de la API" icon={ShieldCheck} error={errors.token}>
+                    <input
+                        type="password"
+                        value={token}
+                        onChange={e => { setToken(e.target.value); if (errors.token) setErrors(p => ({ ...p, token: null })); }}
+                        onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+                        placeholder="itg_xxxxxxxxxxxxxxxxxxxxxxxx"
+                        autoComplete="off"
+                        className={`${wInput} font-mono`}
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                        El token necesita los scopes <code className="font-mono">contactos.leer, facturas.leer, pagos.leer, pagos.registrar</code> (o sin scopes = todos los permisos).
+                    </p>
+                </WField>
+
                 <div className="flex items-start gap-3 rounded-xl bg-muted/40 border p-4 text-xs text-muted-foreground">
                     <ShieldCheck className="size-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
                     <p>
-                        La autorización se hace en la propia página de Integra. Tu contraseña nunca pasa por esta aplicación; solo recibimos un token de acceso de un solo uso.
+                        El token se guarda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos). Nunca se muestra de nuevo ni viaja al navegador.
                     </p>
                 </div>
-                <Button onClick={connect} disabled={redirecting} className="gap-2">
-                    {redirecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
+                <Button onClick={connect} disabled={connecting} className="gap-2">
+                    {connecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
                 </Button>
             </div>
         </div>
@@ -630,7 +642,6 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
     }
 
     const ok = integration.connected;
-    const acc = integration.account ?? {};
 
     return (
         <div className="rounded-xl border bg-card p-5 space-y-5">
@@ -642,10 +653,11 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
                     </p>
                     {ok ? (
                         <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                            {(acc.name || acc.email) && <p>Usuario: <span className="font-medium text-foreground">{acc.name ?? acc.email}</span></p>}
-                            {acc.company && <p>Empresa: <span className="font-medium text-foreground">{acc.company}</span></p>}
                             {integration.base_url && <p className="font-mono">{integration.base_url}</p>}
-                            {integration.token_expired && <p className="text-amber-600 dark:text-amber-400">El token expiró, vuelve a conectar.</p>}
+                            <p>API pública de Integra 2.0 (v1) · token con scopes</p>
+                            {integration.connected_at && (
+                                <p>Conectada el {new Date(integration.connected_at).toLocaleString('es-CO')}</p>
+                            )}
                         </div>
                     ) : (
                         <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conéctate en el paso 1.'}</p>
