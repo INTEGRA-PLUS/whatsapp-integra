@@ -316,6 +316,11 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:instances.update');
         Route::post('/calling', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateCallingSettings'])
             ->middleware('permission:instances.update');
+
+        // Plantilla de reinicio de conversación (reabrir chats fuera de la ventana de 24h)
+        Route::get('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'resumeTemplateSettings']);
+        Route::post('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateResumeTemplate'])
+            ->middleware('permission:instances.update');
     });
 
     // API routes for Chat (moved from api.php to share session)

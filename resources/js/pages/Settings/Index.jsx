@@ -575,10 +575,11 @@ function stateClasses(color) {
 }
 
 const WA_SUBTABS = [
-    { id: 'readiness', label: 'Estado y activaciones', Icon: ListChecks },
-    { id: 'profile',   label: 'Perfil del negocio',    Icon: Building2 },
-    { id: 'numbers',   label: 'Números',               Icon: PhoneIcon },
-    { id: 'calling',   label: 'Llamadas',              Icon: PhoneCall },
+    { id: 'readiness', label: 'Estado y activaciones',   Icon: ListChecks },
+    { id: 'profile',   label: 'Perfil del negocio',      Icon: Building2 },
+    { id: 'numbers',   label: 'Números',                 Icon: PhoneIcon },
+    { id: 'calling',   label: 'Llamadas',                Icon: PhoneCall },
+    { id: 'resume',    label: 'Reinicio de conversación', Icon: RefreshCw },
 ];
 
 function TabWhatsApp() {
@@ -703,6 +704,7 @@ function TabWhatsApp() {
             {subTab === 'profile' && <BusinessProfilePanel instanceId={instanceId} setToast={setToast} />}
             {subTab === 'numbers' && <PhoneNumbersPanel instanceId={instanceId} />}
             {subTab === 'calling' && <CallingSettingsPanel instanceId={instanceId} showToast={showToast} />}
+            {subTab === 'resume' && <ResumeTemplatePanel instanceId={instanceId} showToast={showToast} />}
             {subTab !== 'readiness' ? null : (
             <>
             <div className="flex items-center gap-2">
@@ -1566,6 +1568,101 @@ function CallingSettingsPanel({ instanceId, showToast }) {
                 {!enabled && (
                     <p className="text-[11px] text-muted-foreground mt-3">Primero habilita las llamadas en el número.</p>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// Clave compuesta "nombre|idioma" para desambiguar traducciones de una misma plantilla en el <select>.
+function templateKey(t) { return `${t.name}|${t.language}`; }
+
+function ResumeTemplatePanel({ instanceId, showToast }) {
+    const [templates, setTemplates] = useState([]);
+    const [current, setCurrent] = useState(null); // { name, language } | null
+    const [selectedKey, setSelectedKey] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => { if (instanceId) load(); }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const { data } = await axios.get('/api/settings/whatsapp/resume-template', { params: { instance_id: instanceId } });
+            setTemplates(data.templates ?? []);
+            setCurrent(data.current ?? null);
+            setSelectedKey(data.current ? `${data.current.name}|${data.current.language}` : '');
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo cargar la configuración.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function save() {
+        setSaving(true);
+        try {
+            const [name, language] = selectedKey ? selectedKey.split('|') : [null, null];
+            const { data } = await axios.post('/api/settings/whatsapp/resume-template', {
+                instance_id: instanceId, name, language,
+            });
+            setCurrent(data.current ?? null);
+            showToast?.(data.current ? 'Plantilla de reinicio guardada.' : 'Configuración eliminada.');
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo guardar la configuración.', 'error');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (!instanceId) return <p className="text-sm text-muted-foreground">Selecciona una instancia.</p>;
+    if (loading && !templates.length) return <p className="text-sm text-muted-foreground">Cargando…</p>;
+
+    const selected = templates.find(t => templateKey(t) === selectedKey);
+    const selectedBody = selected?.components?.find(c => c.type === 'BODY')?.text;
+    const dirty = selectedKey !== (current ? `${current.name}|${current.language}` : '');
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Cuando la ventana de 24h de un contacto expira, el chat exige enviar una plantilla aprobada antes de
+                poder escribir libremente. Elige aquí cuál se sugiere automáticamente en ese momento (el agente
+                siempre puede elegir otra en su lugar).
+            </p>
+
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5 space-y-4">
+                {templates.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay plantillas aprobadas en esta instancia todavía.</p>
+                ) : (
+                    <>
+                        <div>
+                            <label className="text-xs font-semibold text-foreground mb-1.5 block">Plantilla de reinicio</label>
+                            <select
+                                value={selectedKey}
+                                onChange={e => setSelectedKey(e.target.value)}
+                                className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                            >
+                                <option value="">Sin configurar</option>
+                                {templates.map(t => (
+                                    <option key={templateKey(t)} value={templateKey(t)}>{t.name} — {t.language}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {selectedBody && (
+                            <div className="rounded-xl bg-[#dcf8c6] dark:bg-[#005c4b] px-3 py-2 text-[13px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                                {selectedBody}
+                            </div>
+                        )}
+                    </>
+                )}
+
+                <div className="flex justify-end">
+                    <Button onClick={save} disabled={saving || !dirty} size="sm" className="gap-2">
+                        {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                        Guardar
+                    </Button>
+                </div>
             </div>
         </div>
     );

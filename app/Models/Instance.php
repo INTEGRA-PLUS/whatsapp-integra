@@ -99,4 +99,38 @@ class Instance extends Model
         $meta['calling'] = array_merge($meta['calling'] ?? [], $values);
         $this->meta = $meta;
     }
+
+    /**
+     * Sub-arreglo de configuración de la plantilla de reinicio de conversación
+     * (para reabrir chats fuera de la ventana de 24h) dentro de `meta`.
+     */
+    public function resumeTemplateSettings(): array
+    {
+        return $this->meta['resume_template'] ?? [];
+    }
+
+    public function resumeTemplateName(): ?string
+    {
+        return $this->resumeTemplateSettings()['name'] ?? null;
+    }
+
+    public function resumeTemplateLanguage(): ?string
+    {
+        return $this->resumeTemplateSettings()['language'] ?? null;
+    }
+
+    /**
+     * Configura (o limpia, pasando $name null) la plantilla de reinicio de
+     * conversación de esta instancia, conservando el resto del JSON `meta`.
+     */
+    public function setResumeTemplate(?string $name, ?string $language): void
+    {
+        $meta = $this->meta ?? [];
+        if ($name) {
+            $meta['resume_template'] = ['name' => $name, 'language' => $language];
+        } else {
+            unset($meta['resume_template']);
+        }
+        $this->meta = $meta;
+    }
 }

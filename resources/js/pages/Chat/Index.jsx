@@ -4903,6 +4903,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     const [vars, setVars] = useState([]);
     const [header, setHeader] = useState(null);
     const [autoPicked, setAutoPicked] = useState(false);
+    const [resumeTemplateConfig, setResumeTemplateConfig] = useState(null); // { name, language } | null
 
     useEffect(() => {
         let active = true;
@@ -4910,7 +4911,10 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
             try {
                 const res = await axios.get('/api/chat/templates', { params: { instance_id: instanceId } });
                 const approved = (res.data.data || []).filter(t => (t.status || '').toUpperCase() === 'APPROVED');
-                if (active) setTemplates(approved);
+                if (active) {
+                    setTemplates(approved);
+                    setResumeTemplateConfig(res.data.resume_template ?? null);
+                }
             } catch {
                 if (active) { setTemplates([]); setError('No se pudieron cargar las plantillas.'); }
             } finally {
@@ -4920,15 +4924,19 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
         return () => { active = false; };
     }, [instanceId]);
 
-    // Al abrir por ventana vencida, preselecciona la plantilla de reanudación si
-    // ya está aprobada en esta instancia (el agente puede igual elegir otra).
+    // Al abrir por ventana vencida, preselecciona la plantilla de reinicio de
+    // conversación configurada para esta instancia (Configuración > WhatsApp >
+    // Reinicio de conversación). Si no hay ninguna configurada, no preselecciona
+    // nada: el agente elige manualmente entre las aprobadas.
     useEffect(() => {
-        if (!windowClosedHint || loading || autoPicked) return;
+        if (!windowClosedHint || loading || autoPicked || !resumeTemplateConfig?.name) return;
         setAutoPicked(true);
-        const t = templates.find(x => (x.name || '') === RESUME_WINDOW_TEMPLATE_NAME);
+        const t = templates.find(x =>
+            (x.name || '') === resumeTemplateConfig.name &&
+            (!resumeTemplateConfig.language || x.language === resumeTemplateConfig.language));
         if (t) handlePick(t, { 0: contactName || '' });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [windowClosedHint, loading, templates, autoPicked]);
+    }, [windowClosedHint, loading, templates, autoPicked, resumeTemplateConfig]);
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();

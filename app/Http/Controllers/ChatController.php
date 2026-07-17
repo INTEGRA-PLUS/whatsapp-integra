@@ -303,8 +303,13 @@ class ChatController extends Controller
             ->first();
 
         if (!$instance) {
-            return response()->json(['data' => []]);
+            return response()->json(['data' => [], 'resume_template' => null]);
         }
+
+        $resumeTemplate = $instance->resumeTemplateName() ? [
+            'name' => $instance->resumeTemplateName(),
+            'language' => $instance->resumeTemplateLanguage(),
+        ] : null;
 
         $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, [
             'status' => 'APPROVED',
@@ -312,11 +317,12 @@ class ChatController extends Controller
         ]);
 
         if (!($result['success'] ?? false)) {
-            return response()->json(['data' => []]);
+            return response()->json(['data' => [], 'resume_template' => $resumeTemplate]);
         }
 
         return response()->json([
             'data' => $result['data']['data'] ?? [],
+            'resume_template' => $resumeTemplate,
         ]);
     }
 

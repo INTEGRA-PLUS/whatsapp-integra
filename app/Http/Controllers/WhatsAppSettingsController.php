@@ -462,6 +462,61 @@ class WhatsAppSettingsController extends Controller
     }
 
     /**
+     * Plantilla configurada para reabrir conversaciones fuera de la ventana de
+     * 24h, más el catálogo de plantillas aprobadas de la instancia para elegir.
+     */
+    public function resumeTemplateSettings(Request $request)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        $result = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+            'status' => 'APPROVED',
+            'limit' => 200,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'current' => $instance->resumeTemplateName() ? [
+                'name' => $instance->resumeTemplateName(),
+                'language' => $instance->resumeTemplateLanguage(),
+            ] : null,
+            'templates' => ($result['success'] ?? false) ? ($result['data']['data'] ?? []) : [],
+        ]);
+    }
+
+    /**
+     * Configura (o limpia) cuál plantilla aprobada de la instancia se sugiere
+     * automáticamente en el chat al reabrir una conversación vencida.
+     */
+    public function updateResumeTemplate(Request $request)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'name' => 'nullable|string|max:512',
+            'language' => 'nullable|string|max:10',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        $instance->setResumeTemplate($data['name'] ?? null, $data['language'] ?? null);
+        $instance->save();
+
+        return response()->json([
+            'success' => true,
+            'current' => $instance->resumeTemplateName() ? [
+                'name' => $instance->resumeTemplateName(),
+                'language' => $instance->resumeTemplateLanguage(),
+            ] : null,
+        ]);
+    }
+
+    /**
      * Garantiza que la app de Meta esté suscrita al campo de webhook "calls"
      * (prerrequisito para habilitar llamadas). Si falta, actualiza la suscripción
      * a nivel de app conservando los campos ya suscritos (messages, etc.).
