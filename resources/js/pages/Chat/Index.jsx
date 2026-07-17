@@ -4293,7 +4293,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         conversationId={selectedConversation.id}
                         instanceId={selectedInstanceId}
                         windowClosedHint={windowExpired}
-                        contactName={selectedConversation.name}
+                        contactName={selectedConversation.contact?.name || selectedConversation.name}
                         onClose={() => setShowTemplates(false)}
                         onSent={(message, preview) => {
                             if (message) setMessages(prev => [...prev, message]);
@@ -4934,7 +4934,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
         const t = templates.find(x =>
             (x.name || '') === resumeTemplateConfig.name &&
             (!resumeTemplateConfig.language || x.language === resumeTemplateConfig.language));
-        if (t) handlePick(t, { 0: contactName || '' });
+        if (t) handlePick(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [windowClosedHint, loading, templates, autoPicked, resumeTemplateConfig]);
 
@@ -4990,7 +4990,11 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
         setSelected(t);
         const body = templateBodyComponent(t);
         const n = countTemplateVars(body?.text);
-        setVars(Array.from({ length: n }, (_, i) => prefill[i] ?? ''));
+        // La plantilla de reinicio conocida siempre trae el nombre del cliente en
+        // {{1}}: lo prellenamos aquí (elección manual o automática) ya que lo
+        // tenemos disponible y no tiene sentido pedírselo de nuevo al agente.
+        const knownPrefill = t.name === RESUME_WINDOW_TEMPLATE_NAME ? { 0: contactName || '', ...prefill } : prefill;
+        setVars(Array.from({ length: n }, (_, i) => knownPrefill[i] ?? ''));
         const fmt = templateHeaderFormat(t);
         setHeader(fmt
             ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
