@@ -157,7 +157,13 @@
       "Bash(python3 -m json.tool)",
       "Bash(pkill -f \"artisan serve --host=127.0.0.1 --port=8001\")",
       "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 log --oneline origin/master..HEAD)",
-      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 branch --show-current)"
+      "Bash(git -C /home/juan-manuel/Escritorio/istinge/integra2.0 branch --show-current)",
+      "Bash(xargs -I{} true)",
+      "Bash(php -l app/Http/Controllers/TemplateController.php)",
+      "Bash(php -l routes/web.php)",
+      "Bash(php -l config/whatsapp_default_templates.php)",
+      "Bash(python3 -m json.tool /Users/juan_calle/Desktop/proyects/whatsapp-integra/.claude/settings.local.json)",
+      "Bash(python3 -m json.tool .claude/settings.local.json)"
     ]
   }
 }

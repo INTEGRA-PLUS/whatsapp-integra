@@ -269,10 +269,7 @@ class ChatController extends Controller
             $conversation->update(['status' => 'open']);
         }
 
-        $sessionOpen = $conversation->messages()
-            ->where('direction', 'inbound')
-            ->where('created_at', '>=', now()->subDay())
-            ->exists();
+        $sessionOpen = $conversation->isWindowOpen();
 
         $messages = $conversation->messages()
             ->with('sender:id,name')
@@ -568,6 +565,14 @@ class ChatController extends Controller
             ], 400);
         }
 
+        if (!$conversation->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+            ], 422);
+        }
+
         // En el CRM se guarda el texto limpio (la etiqueta del agente se muestra
         // aparte). El prefijo con el nombre en negrita se antepone al enviar a
         // Meta, dentro del job.
@@ -621,6 +626,14 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
+        if (!$conversation->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+            ], 422);
+        }
+
         $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
         $imageUrl = Storage::disk('s3_media')->url($path);
 
@@ -671,6 +684,14 @@ class ChatController extends Controller
 
         if ($conversation->instance->company_id !== $user->company_id) {
             abort(403, 'No autorizado');
+        }
+
+        if (!$conversation->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+            ], 422);
         }
 
         $audioUrl = $this->storeAudioForMeta($request->file('audio'));

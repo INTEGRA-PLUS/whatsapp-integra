@@ -2155,8 +2155,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
         });
     }
 
+    // Ventana de servicio de 24h de Meta: sin un inbound reciente, solo se puede
+    // reabrir la conversación con una plantilla aprobada (texto/adjuntos libres
+    // quedan bloqueados). Se deriva de los mensajes ya cargados, sin llamadas nuevas.
+    const windowExpired = useMemo(() => {
+        if (!selectedConversation) return false;
+        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+        if (!lastInbound) return true;
+        return (Date.now() - new Date(lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
+    }, [messages, selectedConversation]);
+
     async function sendMessage() {
         if (!newMessage.trim() || sending) return;
+        if (windowExpired) { setShowTemplates(true); return; }
         const msg = newMessage;
         const replyWamid = replyingTo?.wamid || null;
         setNewMessage('');
@@ -2194,9 +2205,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
             }
         } catch (err) {
             console.error('Error enviando:', err);
-            setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
             setNewMessage(msg);
-            setSendError(err?.response?.data?.error || 'No se pudo enviar el mensaje.');
+            if (err?.response?.data?.code === 'window_closed') {
+                // No es un fallo de envío real: no se llegó a intentar. Se quita la
+                // burbuja optimista y se abre el selector de plantillas.
+                setMessages(prev => prev.filter(m => m.id !== tempId));
+                setShowTemplates(true);
+            } else {
+                setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
+                setSendError(err?.response?.data?.error || 'No se pudo enviar el mensaje.');
+            }
         } finally {
             setSending(false);
         }
@@ -2280,6 +2298,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // Sube y envía la imagen previsualizada con su pie de foto opcional.
     async function confirmSendImage() {
         if (!pendingImage || !selectedConversation || sending) return;
+        if (windowExpired) { closeImagePreview(); setShowTemplates(true); return; }
         const { file } = pendingImage;
         const caption = imageCaption;
         const replyWamid = replyingTo?.wamid || null;
@@ -2298,12 +2317,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
             );
             if (res.data.success) {
                 setMessages(prev => [...prev, res.data.data]);
+            } else if (res.data.code === 'window_closed') {
+                setShowTemplates(true);
             } else {
                 alert(res.data.error || 'No se pudo enviar la imagen.');
             }
         } catch (err) {
             console.error('Error enviando imagen:', err);
-            if (err?.response?.status === 413) {
+            if (err?.response?.data?.code === 'window_closed') {
+                setShowTemplates(true);
+            } else if (err?.response?.status === 413) {
                 alert('La imagen es demasiado grande para el servidor.');
             } else if (!err?.response) {
                 alert('Fallo de conexión al subir la imagen, intenta de nuevo.');
@@ -2477,6 +2500,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (!recordedAudio) return;
         const { blob, url, type } = recordedAudio;
         setRecordedAudio(null);
+        if (windowExpired) { if (url) URL.revokeObjectURL(url); setShowTemplates(true); return; }
         await sendAudioMessage(blob, type);
         if (url) URL.revokeObjectURL(url);
     }
@@ -2492,12 +2516,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
             );
             if (res.data.success) {
                 setMessages(prev => [...prev, res.data.data]);
+            } else if (res.data.code === 'window_closed') {
+                setShowTemplates(true);
             } else {
                 alert(res.data.error || 'No se pudo enviar el audio.');
             }
         } catch (err) {
             console.error('Error enviando audio:', err);
-            if (err?.response?.status === 413) {
+            if (err?.response?.data?.code === 'window_closed') {
+                setShowTemplates(true);
+            } else if (err?.response?.status === 413) {
                 alert('El audio es demasiado grande para el servidor.');
             } else if (!err?.response) {
                 alert('Fallo de conexión al subir el audio, intenta de nuevo.');
@@ -3670,6 +3698,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         </div>
                                     )}
 
+                                    {/* Ventana de 24h vencida: hay que reabrir con una plantilla aprobada */}
+                                    {windowExpired && composerMode === 'reply' && !isRecording && (
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
+                                            <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                                                <Clock className="size-4 mt-0.5 shrink-0" />
+                                                <span className="flex-1 leading-snug">
+                                                    La ventana de 24h para responder libremente a este contacto ya expiró. Debes enviar primero una <b>plantilla aprobada</b>.
+                                                </span>
+                                                <button
+                                                    onClick={() => setShowTemplates(true)}
+                                                    className="shrink-0 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold px-2.5 py-1 transition-colors"
+                                                >
+                                                    Enviar plantilla
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Composer mode strip: Responder / Nota interna */}
                                     {!isRecording && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2.5 flex items-center gap-1.5 z-10">
@@ -4246,6 +4292,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     <TemplatePickerModal
                         conversationId={selectedConversation.id}
                         instanceId={selectedInstanceId}
+                        windowClosedHint={windowExpired}
+                        contactName={selectedConversation.name}
                         onClose={() => setShowTemplates(false)}
                         onSent={(message, preview) => {
                             if (message) setMessages(prev => [...prev, message]);
@@ -4837,7 +4885,15 @@ function CallHistoryModal({ conversationId, contactName, onClose }) {
 // Selector de plantillas de WhatsApp para la conversación activa. Al hacer clic
 // en una plantilla sin variables ni encabezado multimedia, se envía de inmediato.
 // Si requiere variables/encabezado, se expande un formulario para completarlas.
-function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
+// Plantilla por defecto de Integra CRM para reabrir conversaciones fuera de la
+// ventana de 24h (ver config/whatsapp_default_templates.php). Se preselecciona
+// automáticamente cuando el modal se abre por ventana vencida.
+const RESUME_WINDOW_TEMPLATE_NAME = 'reanudar_conversacion_cliente';
+const RESUME_WINDOW_REASON_SUGGESTIONS = [
+    'tu servicio de internet', 'tu instalación', 'tu factura', 'tu soporte técnico', 'tu cotización',
+];
+
+function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, windowClosedHint = false, contactName = '' }) {
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -4846,6 +4902,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
     const [selected, setSelected] = useState(null); // plantilla en modo "completar"
     const [vars, setVars] = useState([]);
     const [header, setHeader] = useState(null);
+    const [autoPicked, setAutoPicked] = useState(false);
 
     useEffect(() => {
         let active = true;
@@ -4862,6 +4919,16 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
         })();
         return () => { active = false; };
     }, [instanceId]);
+
+    // Al abrir por ventana vencida, preselecciona la plantilla de reanudación si
+    // ya está aprobada en esta instancia (el agente puede igual elegir otra).
+    useEffect(() => {
+        if (!windowClosedHint || loading || autoPicked) return;
+        setAutoPicked(true);
+        const t = templates.find(x => (x.name || '') === RESUME_WINDOW_TEMPLATE_NAME);
+        if (t) handlePick(t, { 0: contactName || '' });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [windowClosedHint, loading, templates, autoPicked]);
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -4907,7 +4974,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
         }
     }
 
-    function handlePick(t) {
+    function handlePick(t, prefill = {}) {
         if (sending) return;
         // Sin variables ni encabezado → envío directo al seleccionar.
         if (!needsFill(t)) { sendTemplate(t); return; }
@@ -4915,7 +4982,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
         setSelected(t);
         const body = templateBodyComponent(t);
         const n = countTemplateVars(body?.text);
-        setVars(Array.from({ length: n }, () => ''));
+        setVars(Array.from({ length: n }, (_, i) => prefill[i] ?? ''));
         const fmt = templateHeaderFormat(t);
         setHeader(fmt
             ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
@@ -4968,6 +5035,15 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
                         </div>
                     </div>
                 </div>
+
+                {windowClosedHint && (
+                    <div className="px-4 pt-3 shrink-0">
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                            <Clock className="size-4 mt-0.5 shrink-0" />
+                            <span>La ventana de 24h de este contacto ya expiró. Envía una plantilla aprobada para reabrir la conversación.</span>
+                        </div>
+                    </div>
+                )}
 
                 {!selected ? (
                     <>
@@ -5095,15 +5171,37 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent }) {
                         {vars.length > 0 && (
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
-                                {vars.map((v, i) => (
-                                    <input
-                                        key={i}
-                                        value={v}
-                                        onChange={e => setVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
-                                        placeholder={`Variable {{${i + 1}}}`}
-                                        className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
-                                    />
-                                ))}
+                                {vars.map((v, i) => {
+                                    const isResumeReason = selected?.name === RESUME_WINDOW_TEMPLATE_NAME && i === 1;
+                                    return (
+                                        <div key={i}>
+                                            <input
+                                                value={v}
+                                                onChange={e => setVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                                                placeholder={
+                                                    selected?.name === RESUME_WINDOW_TEMPLATE_NAME
+                                                        ? (i === 0 ? 'Nombre del cliente' : 'Motivo de la conversación')
+                                                        : `Variable {{${i + 1}}}`
+                                                }
+                                                className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                            />
+                                            {isResumeReason && (
+                                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                                    {RESUME_WINDOW_REASON_SUGGESTIONS.map(s => (
+                                                        <button
+                                                            key={s}
+                                                            type="button"
+                                                            onClick={() => setVars(prev => prev.map((x, j) => (j === i ? s : x)))}
+                                                            className="text-[11px] rounded-full border border-border/60 px-2.5 py-1 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                                                        >
+                                                            {s}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 

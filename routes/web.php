@@ -196,6 +196,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.view')->name('analytics');
         Route::get('/create', [App\Http\Controllers\TemplateController::class, 'create'])
             ->middleware('permission:templates.create')->name('create');
+        Route::get('/defaults', [App\Http\Controllers\TemplateController::class, 'defaultsIndex'])
+            ->middleware('permission:templates.view')->name('defaults');
     });
 
     Route::prefix('api/templates')->group(function () {
@@ -207,6 +209,11 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.view');
         Route::post('/analytics/enable', [App\Http\Controllers\TemplateController::class, 'enableInsights'])
             ->middleware('permission:templates.view');
+        Route::get('/defaults', [App\Http\Controllers\TemplateController::class, 'defaults'])
+            ->middleware('permission:templates.view');
+        Route::post('/defaults/{key}/sync', [App\Http\Controllers\TemplateController::class, 'syncDefault'])
+            ->where('key', '[a-z0-9_]+')
+            ->middleware('permission:templates.create');
         Route::get('/family/{name}', [App\Http\Controllers\TemplateController::class, 'family'])
             ->where('name', '[A-Za-z0-9_\-\.]+')
             ->middleware('permission:templates.view');

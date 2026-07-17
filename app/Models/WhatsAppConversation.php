@@ -92,6 +92,19 @@ class WhatsAppConversation extends Model
         return $query->where('status', 'open');
     }
 
+    /**
+     * Ventana de servicio de 24h de Meta: solo se puede enviar texto/adjuntos
+     * libres si el cliente escribió en las últimas 24h. Fuera de esa ventana
+     * hay que reabrir con una plantilla aprobada.
+     */
+    public function isWindowOpen(): bool
+    {
+        return $this->messages()
+            ->where('direction', 'inbound')
+            ->where('created_at', '>=', now()->subDay())
+            ->exists();
+    }
+
     public function scopeForInstance($query, $instanceId)
     {
         return $query->where('instance_id', $instanceId);

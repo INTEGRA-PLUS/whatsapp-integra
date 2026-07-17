@@ -219,6 +219,11 @@ export default function TemplatesIndex({ instances = [] }) {
                                     <BarChart3 className="size-4" /> Analítica
                                 </Button>
                             </Link>
+                            <Link href={route('templates.defaults')}>
+                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                                    <Sparkles className="size-4" /> Plantillas por defecto
+                                </Button>
+                            </Link>
                             {can('templates.create') && instanceId && (
                                 <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
                                     <Sparkles className="size-4" /> Nueva plantilla

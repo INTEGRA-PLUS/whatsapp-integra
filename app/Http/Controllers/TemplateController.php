@@ -65,6 +65,97 @@ class TemplateController extends Controller
         ]);
     }
 
+    /**
+     * Catálogo de plantillas por defecto de Integra CRM (config/whatsapp_default_templates.php).
+     * Vive una sola vez para todo el producto; cada empresa las sincroniza contra
+     * su propio WABA desde aquí.
+     */
+    public function defaultsIndex()
+    {
+        $user = auth()->user();
+
+        $instances = Instance::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->whereNotNull('waba_id')
+            ->whereNotNull('access_token')
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_phone_number', 'waba_id']);
+
+        return Inertia::render('Templates/Defaults', [
+            'instances' => $instances,
+            'catalog'   => $this->defaultTemplatesCatalog(),
+        ]);
+    }
+
+    public function defaults()
+    {
+        return response()->json(['data' => $this->defaultTemplatesCatalog()]);
+    }
+
+    /**
+     * Crea en Meta, para la instancia indicada, una plantilla del catálogo por
+     * defecto. Reutiliza el mismo camino que store(): createTemplate() contra
+     * el WABA de la instancia con el payload ya armado en el catálogo.
+     */
+    public function syncDefault(Request $request, string $key)
+    {
+        $catalog = $this->defaultTemplatesCatalog();
+        if (!isset($catalog[$key])) {
+            return response()->json(['message' => 'Plantilla por defecto desconocida.'], 404);
+        }
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        $entry = $catalog[$key];
+
+        $payload = [
+            'name' => $key,
+            'language' => $entry['language'],
+            'category' => $entry['category'],
+            'components' => $entry['components'],
+        ];
+        if (!empty($entry['parameter_format'])) {
+            $payload['parameter_format'] = $entry['parameter_format'];
+        }
+
+        $result = $this->meta->createTemplate($instance->waba_id, $instance->access_token, $payload);
+
+        if (!$result['success']) {
+            $inner = $result['error']['error'] ?? null;
+            $code = is_array($inner) ? ($inner['code'] ?? null) : null;
+            $subcode = is_array($inner) ? ($inner['error_subcode'] ?? null) : null;
+
+            // Meta: nombre de plantilla duplicado (ya sincronizada antes).
+            if ((int) $code === 100 && (int) $subcode === 2388023) {
+                return response()->json([
+                    'success' => true,
+                    'already_exists' => true,
+                    'message' => 'Esta plantilla ya estaba sincronizada con esta instancia.',
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Error creando la plantilla en Meta.',
+                'error' => $result['error'] ?? null,
+            ], 502);
+        }
+
+        return response()->json([
+            'success' => true,
+            'already_exists' => false,
+            'data' => $result['data'],
+        ], 201);
+    }
+
+    protected function defaultTemplatesCatalog(): array
+    {
+        return config('whatsapp_default_templates', []);
+    }
+
     public function analytics(Request $request)
     {
         $data = $request->validate([
