@@ -509,7 +509,9 @@ class WhatsAppWebhookController extends Controller
         // Tiempo real: empuja el mensaje entrante a los agentes conectados.
         broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
 
-        $this->metaService->markAsRead($instance->phone_number_id, $wamid);
+        // El "leído" (doble check azul) para el cliente solo se envía cuando un
+        // agente realmente abre la conversación (ver ChatController::messages()
+        // y ::startConversation()), no apenas llega el mensaje al webhook.
 
         $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
 

@@ -278,6 +278,11 @@ class ChatController extends Controller
 
         $conversation->markAsRead();
 
+        $lastInboundWamid = $messages->where('direction', 'inbound')->whereNotNull('wamid')->last()?->wamid;
+        if ($lastInboundWamid) {
+            $this->metaService->markAsRead($instance->phone_number_id, $lastInboundWamid);
+        }
+
         return response()->json($this->sanitizeUtf8([
             'success'      => true,
             'conversation' => $conversation->load(['assignedAgent:id,name', 'tags']),
@@ -534,6 +539,18 @@ class ChatController extends Controller
             ->get();
 
         $conversation->markAsRead();
+
+        if ($conversation->instance->isMetaConfigured()) {
+            $lastInboundWamid = $conversation->messages()
+                ->where('direction', 'inbound')
+                ->whereNotNull('wamid')
+                ->orderBy('created_at', 'desc')
+                ->value('wamid');
+
+            if ($lastInboundWamid) {
+                $this->metaService->markAsRead($conversation->instance->phone_number_id, $lastInboundWamid);
+            }
+        }
 
         return response()->json($this->sanitizeUtf8([
             'conversation' => $conversation,
