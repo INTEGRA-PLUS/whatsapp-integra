@@ -174,11 +174,22 @@ function detectMentionToken(value, cursor) {
 
 // ─── StatusIcons Sub-component ───────────────────────────────────────────────
 
-const StatusIcons = memo(({ status }) => {
+const StatusIcons = memo(({ status, onFailedClick }) => {
     // 'pending' = persistido y encolado, aún sin confirmación de Meta: mismo
     // spinner que el optimista 'sending' para que se lea como "enviando".
     if (status === 'sending' || status === 'pending') return <Loader2 className="size-3 text-muted-foreground/40 animate-spin" />;
-    if (status === 'failed') return <AlertTriangle className="size-3 text-red-500" />;
+    if (status === 'failed') {
+        return (
+            <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onFailedClick?.(); }}
+                className="cursor-pointer rounded-sm hover:bg-red-500/10"
+                title="Ver motivo del error"
+            >
+                <AlertTriangle className="size-3 text-red-500" />
+            </button>
+        );
+    }
     if (status === 'sent') return <Check className="size-3 text-muted-foreground/40" />;
     if (status === 'delivered') return <CheckCheck className="size-3 text-muted-foreground/40" />;
     if (status === 'read') return <CheckCheck className="size-3 text-sky-400" />;
@@ -973,6 +984,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [isPolling, setIsPolling] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedLocation, setSelectedLocation] = useState(null); // { latitude, longitude, name, address }
+    const [failedMessage, setFailedMessage] = useState(null); // mensaje saliente 'failed' cuyo motivo de error se está mostrando
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
@@ -1427,7 +1439,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     useEffect(() => {
         function handleEscape(e) {
             if (e.key !== 'Escape') return;
-            const overlayOpen = selectedImage || selectedLocation || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
+            const overlayOpen = selectedImage || selectedLocation || failedMessage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
             if (overlayOpen) return;
             if (selectedConversation) {
                 e.preventDefault();
@@ -1436,7 +1448,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [selectedConversation, selectedImage, selectedLocation, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
+    }, [selectedConversation, selectedImage, selectedLocation, failedMessage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -3657,7 +3669,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 {/* Internal timestamp inside bubble - ALWAYS HH:mm */}
                                                                 <div className="absolute bottom-[0px] right-[0px] flex items-center gap-1.5 p-1">
                                                                     <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
-                                                                    {isOut && <StatusIcons status={msg.status} />}
+                                                                    {isOut && (
+                                                                        <StatusIcons
+                                                                            status={msg.status}
+                                                                            onFailedClick={() => setFailedMessage(msg)}
+                                                                        />
+                                                                    )}
                                                                 </div>
 
                                                                 {/* Reacción (emoji) del contacto a este mensaje */}
@@ -3993,6 +4010,42 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 loading="lazy"
                                 title="Ubicación compartida"
                             />
+                        </div>
+                    </div>
+                )}
+
+                {/* Motivo por el que un mensaje saliente no se pudo enviar */}
+                {failedMessage && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-300"
+                        onClick={() => setFailedMessage(null)}
+                    >
+                        <div
+                            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#202c33] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-105 duration-300"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="size-9 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0">
+                                        <AlertTriangle className="size-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-foreground truncate">Mensaje no enviado</p>
+                                        <p className="text-xs text-muted-foreground truncate">{formatMessageTimeOnly(failedMessage.created_at)}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setFailedMessage(null)}
+                                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-muted-foreground"
+                                >
+                                    <XIcon className="size-5" />
+                                </button>
+                            </div>
+                            <div className="px-4 py-4">
+                                <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+                                    {failedMessage.error_message || 'No se pudo enviar el mensaje. WhatsApp no reportó un motivo específico.'}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
