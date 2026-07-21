@@ -163,7 +163,15 @@
       "Bash(php -l routes/web.php)",
       "Bash(php -l config/whatsapp_default_templates.php)",
       "Bash(python3 -m json.tool /Users/juan_calle/Desktop/proyects/whatsapp-integra/.claude/settings.local.json)",
-      "Bash(python3 -m json.tool .claude/settings.local.json)"
+      "Bash(python3 -m json.tool .claude/settings.local.json)",
+      "Bash(node -e \"const m = require\\('lucide-react'\\); console.log\\(typeof m.TagsIcon, typeof m.Sparkles\\);\")",
+      "Skill(run)",
+      "Bash(npx playwright *)",
+      "Bash(cd *)",
+      "Bash(npm install *)",
+      "Bash(node drive_macros.js)",
+      "Bash(rm -rf /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/9bb31adf-e5ad-44ab-afd6-dc17bef45129/scratchpad/node_modules)",
+      "Bash(rm -f /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/9bb31adf-e5ad-44ab-afd6-dc17bef45129/scratchpad/package*.json)"
     ]
   }
 }

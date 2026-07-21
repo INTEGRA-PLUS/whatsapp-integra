@@ -87,21 +87,51 @@ class BusinessHourController extends Controller
             'instance_id' => 'nullable|integer|exists:instances,id',
             'active' => 'boolean',
             'timezone' => 'nullable|string|max:64',
-            'start_time' => 'required|date_format:H:i',
-            'end_time' => 'required|date_format:H:i',
-            'days_of_week' => 'nullable|array',
-            'days_of_week.*' => 'integer|min:0|max:6',
+            'schedule_days' => 'required|array',
+            'schedule_days.*.enabled' => 'boolean',
+            'schedule_days.*.all_day' => 'boolean',
+            'schedule_days.*.ranges' => 'array',
+            'schedule_days.*.ranges.*.start' => 'required|date_format:H:i',
+            'schedule_days.*.ranges.*.end' => 'required|date_format:H:i',
             'out_of_hours_message' => 'required|string|max:4096',
             'cooldown_minutes' => 'nullable|integer|min:0|max:10080',
         ]);
 
-        $data['start_time'] = $data['start_time'] . ':00';
-        $data['end_time'] = $data['end_time'] . ':00';
+        $data['schedule_days'] = $this->normalizeScheduleDays($data['schedule_days']);
         $data['timezone'] = $data['timezone'] ?? 'America/Bogota';
         $data['active'] = $data['active'] ?? true;
         $data['cooldown_minutes'] = $data['cooldown_minutes'] ?? 60;
 
         return $data;
+    }
+
+    /**
+     * Rellena los 7 días (0=domingo..6=sábado) con defaults seguros, para que el
+     * front nunca tenga que enviar un día "vacío" y el modelo siempre pueda leerlo.
+     */
+    private function normalizeScheduleDays(array $raw): array
+    {
+        $normalized = [];
+
+        for ($day = 0; $day <= 6; $day++) {
+            $config = $raw[$day] ?? $raw[(string) $day] ?? [];
+            $enabled = (bool) ($config['enabled'] ?? false);
+            $allDay = (bool) ($config['all_day'] ?? false);
+            $ranges = $enabled && !$allDay
+                ? array_values(array_map(
+                    fn ($range) => ['start' => $range['start'] . ':00', 'end' => $range['end'] . ':00'],
+                    $config['ranges'] ?? []
+                ))
+                : [];
+
+            $normalized[(string) $day] = [
+                'enabled' => $enabled,
+                'all_day' => $enabled && $allDay,
+                'ranges' => $ranges,
+            ];
+        }
+
+        return $normalized;
     }
 
     /**

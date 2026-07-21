@@ -245,6 +245,11 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:quick_replies.view')
         ->name('quick-replies.index');
 
+    // Macros — admin page
+    Route::get('/macros', [App\Http\Controllers\MacroController::class, 'index'])
+        ->middleware('permission:macros.view')
+        ->name('macros.index');
+
     // Contactos — admin page
     Route::get('/contactos', [App\Http\Controllers\ContactController::class, 'index'])
         ->middleware('permission:contacts.view')
@@ -380,6 +385,15 @@ Route::middleware('auth')->group(function () {
         Route::post('/', [App\Http\Controllers\QuickReplyController::class, 'store'])->middleware('permission:quick_replies.create');
         Route::put('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'update'])->middleware('permission:quick_replies.update');
         Route::delete('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'destroy'])->middleware('permission:quick_replies.delete');
+    });
+
+    // Macros API routes
+    Route::prefix('api/macros')->group(function () {
+        Route::get('/', [App\Http\Controllers\MacroController::class, 'list']);
+        Route::post('/', [App\Http\Controllers\MacroController::class, 'store'])->middleware('permission:macros.create');
+        Route::put('/{macro}', [App\Http\Controllers\MacroController::class, 'update'])->middleware('permission:macros.update');
+        Route::delete('/{macro}', [App\Http\Controllers\MacroController::class, 'destroy'])->middleware('permission:macros.delete');
+        Route::post('/{macro}/run/{conversationId}', [App\Http\Controllers\MacroController::class, 'run'])->middleware('permission:macros.run');
     });
 
     // Tag API routes

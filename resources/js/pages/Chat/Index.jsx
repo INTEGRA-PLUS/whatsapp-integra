@@ -53,7 +53,8 @@ import {
     DollarSign,
     Mail,
     Reply,
-    MapPin
+    MapPin,
+    Wand2
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -1022,6 +1023,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [newTagColor, setNewTagColor] = useState('#0d9488');
     const [taggingConversationId, setTaggingConversationId] = useState(null);
     const [companyUsers, setCompanyUsers] = useState([]);
+    const [macros, setMacros] = useState([]);
+    const [runningMacroId, setRunningMacroId] = useState(null);
 
     // Recording States
     const [isRecording, setIsRecording] = useState(false);
@@ -1086,6 +1089,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
             setQuickReplies(res.data);
         } catch (err) {
             console.error('Error cargando respuestas rápidas:', err);
+        }
+    }, []);
+
+    const loadMacros = useCallback(async () => {
+        try {
+            const res = await axios.get('/api/macros');
+            setMacros(res.data);
+        } catch (err) {
+            console.error('Error cargando macros:', err);
         }
     }, []);
 
@@ -1257,7 +1269,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
         loadTags();
         loadUsers();
         loadQuickReplies();
-    }, [loadTags, loadUsers, loadQuickReplies]);
+        loadMacros();
+    }, [loadTags, loadUsers, loadQuickReplies, loadMacros]);
 
     const qrMatches = useMemo(() => {
         if (!qrOpen) return [];
@@ -1566,6 +1579,31 @@ export default function ChatIndex({ instances, integrations = [] }) {
             }
         } catch (err) {
             console.error('Error quitando etiqueta:', err);
+        }
+    }, [loadFolderCounts]);
+
+    // Ejecuta en orden todas las acciones de un macro sobre una conversación
+    // (mensaje, etiquetas, asignación, estado) y refleja el resultado localmente.
+    const runMacro = useCallback(async (convId, macroId) => {
+        setRunningMacroId(macroId);
+        try {
+            const res = await axios.post(`/api/macros/${macroId}/run/${convId}`);
+            if (res.data.success) {
+                const snap = res.data.conversation;
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, ...snap } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, ...snap } : prev));
+                loadFolderCounts();
+
+                const failed = (res.data.results || []).filter(r => !r.success);
+                if (failed.length) {
+                    alert(`El macro se ejecutó, pero ${failed.length} acción(es) fallaron:\n${failed.map(f => `- ${f.error}`).join('\n')}`);
+                }
+            }
+        } catch (err) {
+            console.error('Error ejecutando macro:', err);
+            alert(err?.response?.data?.message ?? 'No se pudo ejecutar el macro.');
+        } finally {
+            setRunningMacroId(null);
         }
     }, [loadFolderCounts]);
 
@@ -3333,6 +3371,41 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
+
+                                            {/* Macros: ejecuta una secuencia de acciones sobre la conversación */}
+                                            {macros.length > 0 && (
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button
+                                                            title="Ejecutar macro"
+                                                            className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                                        >
+                                                            {runningMacroId ? <Loader2 className="size-[18px] animate-spin" /> : <Wand2 className="size-[18px]" />}
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Macros</DropdownMenuLabel>
+                                                        <DropdownMenuSeparator className="bg-border/5" />
+                                                        <div className="max-h-60 overflow-y-auto px-1 py-1">
+                                                            {macros.map(macro => (
+                                                                <DropdownMenuItem
+                                                                    key={macro.id}
+                                                                    disabled={!!runningMacroId}
+                                                                    onSelect={(e) => {
+                                                                        e.preventDefault();
+                                                                        runMacro(selectedConversation.id, macro.id);
+                                                                    }}
+                                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                                >
+                                                                    <Wand2 className="size-4 text-muted-foreground" />
+                                                                    <span className="text-xs font-bold flex-1 truncate">{macro.name}</span>
+                                                                    {runningMacroId === macro.id && <Loader2 className="size-3.5 animate-spin shrink-0" />}
+                                                                </DropdownMenuItem>
+                                                            ))}
+                                                        </div>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            )}
 
                                             {/* Separador sutil entre indicadores y acciones */}
                                             <span className="w-px h-5 bg-border/40 mx-0.5" />

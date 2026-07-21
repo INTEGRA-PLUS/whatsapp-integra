@@ -1684,28 +1684,16 @@ function QualityPill({ rating }) {
 
 /* ───────────────────────── Horarios ───────────────────────── */
 
-const DAY_OPTIONS = [
-    { value: 1, label: 'Lun' },
-    { value: 2, label: 'Mar' },
-    { value: 3, label: 'Mié' },
-    { value: 4, label: 'Jue' },
-    { value: 5, label: 'Vie' },
-    { value: 6, label: 'Sáb' },
-    { value: 0, label: 'Dom' },
+// 0=domingo..6=sábado (mismo orden que Carbon::dayOfWeek en el backend).
+const DAY_ORDER = [
+    { value: 0, label: 'Domingo', short: 'Dom' },
+    { value: 1, label: 'Lunes', short: 'Lun' },
+    { value: 2, label: 'Martes', short: 'Mar' },
+    { value: 3, label: 'Miércoles', short: 'Mié' },
+    { value: 4, label: 'Jueves', short: 'Jue' },
+    { value: 5, label: 'Viernes', short: 'Vie' },
+    { value: 6, label: 'Sábado', short: 'Sáb' },
 ];
-
-const EMPTY_HOUR = {
-    id: null,
-    name: 'Horario laboral',
-    instance_id: '',
-    active: true,
-    timezone: 'America/Bogota',
-    start_time: '08:00',
-    end_time: '20:00',
-    days_of_week: [1, 2, 3, 4, 5],
-    out_of_hours_message: 'Hola {name}, gracias por escribirnos. Nuestro horario de atención es de {start} a {end}. Te responderemos lo antes posible.',
-    cooldown_minutes: 60,
-};
 
 function to12h(hhmm) {
     if (!hhmm) return '';
@@ -1715,18 +1703,89 @@ function to12h(hhmm) {
     return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-// Describe en lenguaje claro qué hará el horario, para evitar que se cargue invertido (la trampa de a.m./p.m.).
-function describeSchedule(start, end) {
-    if (!start || !end) return null;
-    const s = start.slice(0, 5);
-    const e = end.slice(0, 5);
-    if (s === e) {
-        return { tone: 'info', text: 'Abierto las 24 horas: nunca se enviará el mensaje fuera de horario.' };
-    }
-    if (s < e) {
-        return { tone: 'ok', text: `Abierto de ${to12h(s)} a ${to12h(e)}. Fuera de ese rango se enviará el mensaje automático.` };
-    }
-    return { tone: 'warn', text: `Atención: este horario cruza la medianoche. Se interpreta como abierto desde las ${to12h(s)} hasta las ${to12h(e)} del día siguiente. Si tu negocio atiende de día, seguramente invertiste Inicio y Fin (revisa a.m./p.m.).` };
+// Opciones de hora cada 30 min para los selects de rango (00:00 a 23:30).
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+    const value = `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 === 0 ? '00' : '30'}`;
+    return { value, label: to12h(value) };
+});
+
+function defaultScheduleDays() {
+    const days = {};
+    DAY_ORDER.forEach(d => {
+        const isWeekday = d.value >= 1 && d.value <= 5;
+        const isSaturday = d.value === 6;
+        days[String(d.value)] = {
+            enabled: isWeekday || isSaturday,
+            all_day: false,
+            ranges: isWeekday
+                ? [{ start: '08:00', end: '18:00' }]
+                : (isSaturday ? [{ start: '08:00', end: '12:00' }] : []),
+        };
+    });
+    return days;
+}
+
+// Completa los 7 días con defaults seguros a partir de lo que venga del backend,
+// para que el formulario nunca se rompa si un día llega incompleto.
+function normalizeIncomingSchedule(raw) {
+    const days = {};
+    DAY_ORDER.forEach(d => {
+        const cfg = raw?.[String(d.value)];
+        days[String(d.value)] = {
+            enabled: !!cfg?.enabled,
+            all_day: !!cfg?.all_day,
+            ranges: Array.isArray(cfg?.ranges)
+                ? cfg.ranges.map(r => ({ start: (r.start ?? '08:00').slice(0, 5), end: (r.end ?? '18:00').slice(0, 5) }))
+                : [],
+        };
+    });
+    return days;
+}
+
+const EMPTY_HOUR = {
+    id: null,
+    name: 'Horario laboral',
+    instance_id: '',
+    active: true,
+    timezone: 'America/Bogota',
+    schedule_days: defaultScheduleDays(),
+    out_of_hours_message: 'Hola {name}, gracias por escribirnos. Nuestro horario de atención es {schedule}. Te responderemos lo antes posible.',
+    cooldown_minutes: 60,
+};
+
+function rangeHours(range) {
+    if (!range?.start || !range?.end) return 0;
+    const [sh, sm] = range.start.split(':').map(Number);
+    const [eh, em] = range.end.split(':').map(Number);
+    let minutes = (eh * 60 + em) - (sh * 60 + sm);
+    if (minutes <= 0) minutes += 24 * 60; // cruza medianoche
+    return minutes / 60;
+}
+
+function computeDayHours(dayConfig) {
+    if (!dayConfig?.enabled) return 0;
+    if (dayConfig.all_day) return 24;
+    return (dayConfig.ranges ?? []).reduce((sum, r) => sum + rangeHours(r), 0);
+}
+
+function formatHours(hours) {
+    const rounded = Math.round(hours * 10) / 10;
+    return `${rounded}h`;
+}
+
+// Resumen corto para la tarjeta de la lista: qué días están abiertos y cuántas horas suman en total.
+function summarizeSchedule(scheduleDays) {
+    if (!scheduleDays) return { openDays: 'Sin configurar', totalHours: 0 };
+    const openAbbrs = [];
+    let totalHours = 0;
+    DAY_ORDER.forEach(d => {
+        const cfg = scheduleDays[String(d.value)];
+        if (cfg?.enabled) {
+            openAbbrs.push(d.short);
+            totalHours += computeDayHours(cfg);
+        }
+    });
+    return { openDays: openAbbrs.length ? openAbbrs.join(', ') : 'Ningún día', totalHours };
 }
 
 function TabHorarios() {
@@ -1772,9 +1831,7 @@ function TabHorarios() {
             instance_id: item.instance_id ?? '',
             active: !!item.active,
             timezone: item.timezone ?? 'America/Bogota',
-            start_time: (item.start_time ?? '08:00:00').slice(0, 5),
-            end_time: (item.end_time ?? '20:00:00').slice(0, 5),
-            days_of_week: Array.isArray(item.days_of_week) ? item.days_of_week : [1, 2, 3, 4, 5],
+            schedule_days: normalizeIncomingSchedule(item.schedule_days),
             out_of_hours_message: item.out_of_hours_message ?? '',
             cooldown_minutes: item.cooldown_minutes ?? 60,
         });
@@ -1821,10 +1878,44 @@ function TabHorarios() {
         }
     }
 
-    function toggleDay(day) {
-        const set = new Set(editing.days_of_week ?? []);
-        if (set.has(day)) set.delete(day); else set.add(day);
-        setEditing(e => ({ ...e, days_of_week: Array.from(set).sort() }));
+    function updateDay(dayKey, patch) {
+        setEditing(s => ({
+            ...s,
+            schedule_days: {
+                ...s.schedule_days,
+                [dayKey]: { ...s.schedule_days[dayKey], ...patch },
+            },
+        }));
+    }
+
+    function toggleDayEnabled(dayKey) {
+        const current = editing.schedule_days[dayKey];
+        const enabling = !current.enabled;
+        updateDay(dayKey, {
+            enabled: enabling,
+            ranges: (enabling && !current.all_day && current.ranges.length === 0)
+                ? [{ start: '08:00', end: '18:00' }]
+                : current.ranges,
+        });
+    }
+
+    function toggleAllDay(dayKey) {
+        updateDay(dayKey, { all_day: !editing.schedule_days[dayKey].all_day });
+    }
+
+    function addRange(dayKey) {
+        const current = editing.schedule_days[dayKey];
+        updateDay(dayKey, { ranges: [...current.ranges, { start: '14:00', end: '18:00' }] });
+    }
+
+    function updateRange(dayKey, idx, patch) {
+        const current = editing.schedule_days[dayKey];
+        updateDay(dayKey, { ranges: current.ranges.map((r, i) => (i === idx ? { ...r, ...patch } : r)) });
+    }
+
+    function removeRange(dayKey, idx) {
+        const current = editing.schedule_days[dayKey];
+        updateDay(dayKey, { ranges: current.ranges.filter((_, i) => i !== idx) });
     }
 
     return (
@@ -1869,9 +1960,7 @@ function TabHorarios() {
             ) : (
                 <div className="space-y-3">
                     {items.map(item => {
-                        const days = Array.isArray(item.days_of_week) && item.days_of_week.length
-                            ? item.days_of_week.map(d => DAY_OPTIONS.find(o => o.value === d)?.label).filter(Boolean).join(', ')
-                            : 'Todos los días';
+                        const { openDays, totalHours } = summarizeSchedule(item.schedule_days);
                         return (
                             <div key={item.id} className="rounded-2xl border border-border/60 bg-card/50 p-5 flex flex-col sm:flex-row gap-4 sm:items-center">
                                 <div className="flex-1 min-w-0">
@@ -1889,7 +1978,7 @@ function TabHorarios() {
                                         )}
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1.5">
-                                        {(item.start_time ?? '').slice(0,5)} – {(item.end_time ?? '').slice(0,5)} · {days} · {item.timezone}
+                                        {openDays} · {formatHours(totalHours)}/semana · {item.timezone}
                                     </p>
                                     <p className="text-xs text-muted-foreground/80 mt-1 line-clamp-2">{item.out_of_hours_message}</p>
                                 </div>
@@ -1910,7 +1999,7 @@ function TabHorarios() {
 
             {editing && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !saving && setEditing(null)}>
-                    <div className="w-full max-w-xl rounded-2xl border bg-card shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="w-full max-w-2xl rounded-2xl border bg-card shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-3 mb-5">
                             <div className="size-10 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
                                 <CalendarClock className="size-5" />
@@ -1942,62 +2031,89 @@ function TabHorarios() {
                                 </select>
                             </Field>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <Field label="Inicio" icon={Clock} error={errors.start_time?.[0]}>
-                                    <Input
-                                        type="time"
-                                        value={editing.start_time}
-                                        onChange={e => setEditing(s => ({ ...s, start_time: e.target.value }))}
-                                    />
-                                </Field>
-                                <Field label="Fin" icon={Clock} error={errors.end_time?.[0]}>
-                                    <Input
-                                        type="time"
-                                        value={editing.end_time}
-                                        onChange={e => setEditing(s => ({ ...s, end_time: e.target.value }))}
-                                    />
-                                </Field>
-                            </div>
-
-                            {(() => {
-                                const d = describeSchedule(editing.start_time, editing.end_time);
-                                if (!d) return null;
-                                const styles = {
-                                    ok: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-                                    warn: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-                                    info: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-                                };
-                                return (
-                                    <div className={`-mt-2 rounded-lg border px-3 py-2 text-[12px] flex items-start gap-2 ${styles[d.tone]}`}>
-                                        {d.tone === 'warn'
-                                            ? <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-                                            : <Clock className="size-3.5 mt-0.5 shrink-0" />}
-                                        <span>{d.text}</span>
-                                    </div>
-                                );
-                            })()}
-
-                            <Field label="Días" error={errors.days_of_week?.[0]}>
-                                <div className="flex gap-1.5 flex-wrap">
-                                    {DAY_OPTIONS.map(d => {
-                                        const isActive = editing.days_of_week?.includes(d.value);
+                            <Field label="Horario por día" error={errors.schedule_days?.[0]}>
+                                <div className="space-y-2">
+                                    {DAY_ORDER.map(d => {
+                                        const key = String(d.value);
+                                        const dayCfg = editing.schedule_days[key];
+                                        const hours = computeDayHours(dayCfg);
                                         return (
-                                            <button
-                                                type="button"
-                                                key={d.value}
-                                                onClick={() => toggleDay(d.value)}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                                                    isActive
-                                                        ? 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-300'
-                                                        : 'bg-background border-border/60 text-muted-foreground hover:border-border'
-                                                }`}
-                                            >
-                                                {d.label}
-                                            </button>
+                                            <div key={d.value} className="rounded-xl border border-border/60 bg-background/40 p-3">
+                                                <div className="flex items-start gap-3">
+                                                    <label className="flex items-center gap-2 w-28 shrink-0 pt-1.5 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={dayCfg.enabled}
+                                                            onChange={() => toggleDayEnabled(key)}
+                                                            className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                                        />
+                                                        <span className="text-sm font-medium text-foreground">{d.label}</span>
+                                                    </label>
+
+                                                    {dayCfg.enabled ? (
+                                                        <div className="flex-1 min-w-0 space-y-2">
+                                                            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={dayCfg.all_day}
+                                                                    onChange={() => toggleAllDay(key)}
+                                                                    className="size-3.5 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                                                />
+                                                                Todo el día
+                                                            </label>
+
+                                                            {!dayCfg.all_day && (
+                                                                <div className="space-y-1.5">
+                                                                    {dayCfg.ranges.map((range, idx) => (
+                                                                        <div key={idx} className="flex items-center gap-1.5">
+                                                                            <select
+                                                                                value={range.start}
+                                                                                onChange={e => updateRange(key, idx, { start: e.target.value })}
+                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                            >
+                                                                                {TIME_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                                                            </select>
+                                                                            <span className="text-muted-foreground text-xs">–</span>
+                                                                            <select
+                                                                                value={range.end}
+                                                                                onChange={e => updateRange(key, idx, { end: e.target.value })}
+                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                            >
+                                                                                {TIME_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                                                            </select>
+                                                                            {dayCfg.ranges.length > 1 && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => removeRange(key, idx)}
+                                                                                    className="p-1 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400"
+                                                                                >
+                                                                                    <Trash2 className="size-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ))}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => addRange(key)}
+                                                                        className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700"
+                                                                    >
+                                                                        <Plus className="size-3" /> Agregar rango (ej. almuerzo)
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="flex-1 text-xs text-muted-foreground pt-1.5">Cerrado</p>
+                                                    )}
+
+                                                    <span className="shrink-0 mt-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30 px-2 py-1 text-[11px] font-semibold">
+                                                        {formatHours(hours)}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         );
                                     })}
                                 </div>
-                                <p className="text-[11px] text-muted-foreground mt-1">Si no seleccionas ningún día, aplica todos los días.</p>
                             </Field>
 
                             <Field label="Zona horaria" icon={Globe} error={errors.timezone?.[0]}>
@@ -2012,13 +2128,13 @@ function TabHorarios() {
                                 <textarea
                                     value={editing.out_of_hours_message}
                                     onChange={e => setEditing(s => ({ ...s, out_of_hours_message: e.target.value }))}
-                                    placeholder="Hola {name}, nuestro horario es de {start} a {end}..."
+                                    placeholder="Hola {name}, nuestro horario de hoy es {schedule}..."
                                     rows={4}
                                     maxLength={4096}
                                     className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-teal-500/30 resize-y"
                                 />
                                 <p className="text-[11px] text-muted-foreground mt-1">
-                                    Variables: <code className="text-foreground">{'{name}'}</code>, <code className="text-foreground">{'{phone}'}</code>, <code className="text-foreground">{'{start}'}</code>, <code className="text-foreground">{'{end}'}</code>
+                                    Variables: <code className="text-foreground">{'{name}'}</code>, <code className="text-foreground">{'{phone}'}</code>, <code className="text-foreground">{'{schedule}'}</code> (horario de hoy), <code className="text-foreground">{'{start}'}</code>, <code className="text-foreground">{'{end}'}</code> (primer rango de hoy)
                                 </p>
                             </Field>
 
