@@ -2724,7 +2724,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 ) : (
                     <div className="flex-1 flex overflow-hidden">
                         {/* Navegación contextual (Conversaciones / Canales / Etiquetas) */}
-                        <div className="hidden lg:flex w-60 shrink-0 flex-col bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10 overflow-y-auto custom-scrollbar">
+                        <div className="hidden lg:flex w-48 xl:w-60 shrink-0 flex-col bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10 overflow-y-auto custom-scrollbar">
                             {/* Carpetas de conversaciones */}
                             <div className="px-3 pt-4 pb-2">
                                 <p className="px-2 mb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Conversaciones</p>
@@ -2873,7 +2873,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                         {/* Sidebar - WhatsApp Web Style */}
                         <div className={clsx(
-                            "w-full sm:w-80 lg:w-96 shrink-0 bg-white dark:bg-[#111b21] flex-col border-r border-border/10",
+                            "w-full sm:w-80 xl:w-96 shrink-0 bg-white dark:bg-[#111b21] flex-col border-r border-border/10",
                             // En móvil: mostrar la lista sólo cuando no hay chat abierto; en sm+ siempre visible.
                             selectedConversation ? "hidden sm:flex" : "flex"
                         )}>
