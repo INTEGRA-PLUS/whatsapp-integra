@@ -88,7 +88,9 @@ class DeliverWhatsAppMessage implements ShouldQueue
         if (! ($result['success'] ?? false)) {
             $error = $result['error']['error']['message']
                 ?? (is_string($result['error'] ?? null) ? $result['error'] : 'Error al enviar');
-            $this->markFailed($message, $error);
+            $errorCode = $result['error']['error']['code'] ?? null;
+            $errorDetails = $result['error']['error']['error_data']['details'] ?? null;
+            $this->markFailed($message, $error, $errorCode, $errorDetails);
             return;
         }
 
@@ -134,11 +136,13 @@ class DeliverWhatsAppMessage implements ShouldQueue
         }
     }
 
-    private function markFailed(WhatsAppMessage $message, string $error): void
+    private function markFailed(WhatsAppMessage $message, string $error, $errorCode = null, ?string $errorDetails = null): void
     {
         $message->update([
             'status'        => 'failed',
             'error_message' => mb_substr($error, 0, 2000),
+            'error_code'    => $errorCode,
+            'error_details' => $errorDetails,
         ]);
 
         // Tiempo real: la burbuja del emisor pasa a "fallido" sin esperar el poll.

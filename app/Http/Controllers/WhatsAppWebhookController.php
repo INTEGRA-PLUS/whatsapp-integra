@@ -634,8 +634,11 @@ class WhatsAppWebhookController extends Controller
             $errorCode = $primaryError['code'] ?? null;
             $errorTitle = $primaryError['title'] ?? null;
             $errorMessage = $primaryError['message'] ?? 'Error desconocido';
+            $errorDetails = $primaryError['error_data']['details'] ?? null;
 
             $updateData['error_message'] = $errorMessage;
+            $updateData['error_code'] = $errorCode;
+            $updateData['error_details'] = $errorDetails;
 
             Log::channel('whatsapp')->warning('⚠️ Mensaje fallido', [
                 'wamid' => $wamid,
@@ -643,6 +646,7 @@ class WhatsAppWebhookController extends Controller
                 'error_code' => $errorCode,
                 'error_title' => $errorTitle,
                 'error_message' => $errorMessage,
+                'error_details' => $errorDetails,
                 'all_errors' => json_encode($errors, JSON_UNESCAPED_UNICODE),
                 'full_status' => json_encode($status, JSON_UNESCAPED_UNICODE),
             ]);

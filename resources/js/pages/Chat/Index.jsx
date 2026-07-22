@@ -1476,6 +1476,20 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }, []);
 
+    // Autoasignación: cualquier agente puede reclamar una conversación sin asignar.
+    const assignConversationToMe = useCallback(async (convId) => {
+        try {
+            const res = await axios.post(`/api/chat/conversations/${convId}/assign-me`);
+            if (res.data.success) {
+                const agent = res.data.assigned_agent;
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, assigned_to: agent.id, assigned_agent: agent } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, assigned_to: agent.id, assigned_agent: agent } : prev));
+            }
+        } catch (err) {
+            console.error('Error autoasignando conversación:', err);
+        }
+    }, []);
+
     // Cierra o reabre una conversación.
     const setConversationStatus = useCallback(async (convId, action) => {
         try {
@@ -3485,6 +3499,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         </div>
                                     </div>
 
+                                    {/* Banner: conversación sin asignar */}
+                                    {!selectedConversation.assigned_to && (
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
+                                            <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                                <span className="flex-1 leading-snug">
+                                                    Esta conversación no te está asignada. ¿Quieres asignarla a ti mismo?
+                                                </span>
+                                                <button
+                                                    onClick={() => assignConversationToMe(selectedConversation.id)}
+                                                    className="shrink-0 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline"
+                                                >
+                                                    → Asignar a mí
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Messages Area */}
                                     <div
                                         ref={messagesContainerRef}
@@ -4114,10 +4146,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <XIcon className="size-5" />
                                 </button>
                             </div>
-                            <div className="px-4 py-4">
+                            <div className="px-4 py-4 space-y-1.5">
                                 <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
-                                    {failedMessage.error_message || 'No se pudo enviar el mensaje. WhatsApp no reportó un motivo específico.'}
+                                    {failedMessage.error_details || failedMessage.error_message || 'No se pudo enviar el mensaje. WhatsApp no reportó un motivo específico.'}
                                 </p>
+                                {(failedMessage.error_details && failedMessage.error_message) || failedMessage.error_code ? (
+                                    <p className="text-xs text-muted-foreground">
+                                        {failedMessage.error_details ? failedMessage.error_message : null}
+                                        {failedMessage.error_code ? ` ${failedMessage.error_details ? '· ' : ''}Código ${failedMessage.error_code}` : ''}
+                                    </p>
+                                ) : null}
                             </div>
                         </div>
                     </div>

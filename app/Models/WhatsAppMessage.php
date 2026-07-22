@@ -30,6 +30,8 @@ class WhatsAppMessage extends Model
         'delivered_at',
         'read_at',
         'error_message',
+        'error_code',
+        'error_details',
         'metadata',
         'incoming_invoice_id',
         'incoming_contract_id',

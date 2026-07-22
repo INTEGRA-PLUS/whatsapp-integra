@@ -347,6 +347,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/reopen', [ChatController::class, 'reopen']);
         Route::delete('/conversations/{conversationId}', [ChatController::class, 'destroy']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
+        Route::post('/conversations/{conversationId}/assign-me', [ChatController::class, 'assignToMe']);
         Route::post('/conversations/{conversationId}/attach-contact', [App\Http\Controllers\ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);
 

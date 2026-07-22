@@ -171,7 +171,8 @@
       "Bash(npm install *)",
       "Bash(node drive_macros.js)",
       "Bash(rm -rf /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/9bb31adf-e5ad-44ab-afd6-dc17bef45129/scratchpad/node_modules)",
-      "Bash(rm -f /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/9bb31adf-e5ad-44ab-afd6-dc17bef45129/scratchpad/package*.json)"
+      "Bash(rm -f /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/9bb31adf-e5ad-44ab-afd6-dc17bef45129/scratchpad/package*.json)",
+      "Bash(xargs -I{} sh -c 'echo ==={}===; cat {}')"
     ]
   }
 }

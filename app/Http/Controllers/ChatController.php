@@ -510,7 +510,7 @@ class ChatController extends Controller
                 // 'sent' incluido para propagar el paso pending → sent (con su
                 // wamid real) que ahora hace DeliverWhatsAppMessage en la cola.
                 ->whereIn('status', ['sent', 'delivered', 'read', 'failed'])
-                ->select('id', 'wamid', 'status', 'delivered_at', 'read_at', 'error_message')
+                ->select('id', 'wamid', 'status', 'delivered_at', 'read_at', 'error_message', 'error_code', 'error_details')
                 ->get();
         }
 
@@ -908,6 +908,44 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Conversación asignada',
             'assigned_agent' => $conversation->assignedAgent()->select('id', 'name')->first()
+        ]);
+    }
+
+    /**
+     * Permite a cualquier agente autoasignarse una conversación que no tiene nadie asignado.
+     * A diferencia de assign(), no requiere el permiso chat.update y no permite tomar
+     * una conversación ya asignada a otro agente (evita "robar" chats ajenos).
+     */
+    public function assignToMe($conversationId)
+    {
+        $user = auth()->user();
+        $conversation = WhatsAppConversation::with('instance')->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $claimed = WhatsAppConversation::where('id', $conversationId)
+            ->whereNull('assigned_to')
+            ->update(['assigned_to' => $user->id]);
+
+        if (! $claimed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Esta conversación ya fue asignada a otro agente',
+            ], 409);
+        }
+
+        WebhookDispatcher::emit(
+            $user->company_id,
+            'conversation.assigned',
+            WebhookDispatcher::conversationPayload($conversation, ['assigned_to' => $user->id])
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Conversación asignada',
+            'assigned_agent' => ['id' => $user->id, 'name' => $user->name],
         ]);
     }
 
