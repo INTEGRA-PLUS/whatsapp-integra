@@ -69,6 +69,7 @@ import {
     SheetContent,
 } from '@/components/ui/sheet';
 import QuickReplyPicker from '@/components/quick-reply-picker';
+import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
 
@@ -1780,7 +1781,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 return;
             }
 
-            // action === 'new': si es de la conversación abierta, la anexamos
+            // action === 'new': suena la notificación solo para mensajes entrantes.
+            // playNotificationSound() ya coalesce internamente ráfagas de mensajes
+            // seguidos en una sola vez, y vuelve a sonar si hay una separación real.
+            if (e.message.direction === 'inbound') {
+                playNotificationSound();
+            }
+
+            // Si es de la conversación abierta, la anexamos
             // (deduplicando por id y reconciliando la burbuja optimista por wamid).
             if (selectedConversationRef.current?.id === e.conversation_id) {
                 setMessages(prev => {
