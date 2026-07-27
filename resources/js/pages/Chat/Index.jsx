@@ -5067,6 +5067,7 @@ const RESUME_WINDOW_REASON_SUGGESTIONS = [
 
 function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, windowClosedHint = false, contactName = '' }) {
     const [templates, setTemplates] = useState([]);
+    const [rawTemplates, setRawTemplates] = useState([]); // sin filtrar por status: para saber si la plantilla de reanudación ya existe y en qué estado
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [error, setError] = useState(null);
@@ -5076,25 +5077,72 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     const [header, setHeader] = useState(null);
     const [autoPicked, setAutoPicked] = useState(false);
     const [resumeTemplateConfig, setResumeTemplateConfig] = useState(null); // { name, language } | null
+    const [creatingResume, setCreatingResume] = useState(false);
+    const [resumeCreateError, setResumeCreateError] = useState(null);
+    const [resumeJustCreated, setResumeJustCreated] = useState(false);
+
+    const loadTemplates = useCallback(async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get('/api/chat/templates', { params: { instance_id: instanceId } });
+            const all = res.data.data || [];
+            const approved = all.filter(t => (t.status || '').toUpperCase() === 'APPROVED');
+            setRawTemplates(all);
+            setTemplates(approved);
+            setResumeTemplateConfig(res.data.resume_template ?? null);
+        } catch {
+            setTemplates([]);
+            setRawTemplates([]);
+            setError('No se pudieron cargar las plantillas.');
+        } finally {
+            setLoading(false);
+        }
+    }, [instanceId]);
 
     useEffect(() => {
         let active = true;
         (async () => {
-            try {
-                const res = await axios.get('/api/chat/templates', { params: { instance_id: instanceId } });
-                const approved = (res.data.data || []).filter(t => (t.status || '').toUpperCase() === 'APPROVED');
-                if (active) {
-                    setTemplates(approved);
-                    setResumeTemplateConfig(res.data.resume_template ?? null);
-                }
-            } catch {
-                if (active) { setTemplates([]); setError('No se pudieron cargar las plantillas.'); }
-            } finally {
-                if (active) setLoading(false);
-            }
+            if (active) await loadTemplates();
         })();
         return () => { active = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instanceId]);
+
+    // Plantilla de reanudación por defecto de Integra CRM (ver
+    // config/whatsapp_default_templates.php): puede no existir aún en el WABA
+    // de esta instancia, estar pendiente de aprobación, aprobada o rechazada.
+    const resumeTemplateStatus = useMemo(() => {
+        if (resumeJustCreated) return 'PENDING';
+        const found = rawTemplates.find(t => (t.name || '') === RESUME_WINDOW_TEMPLATE_NAME);
+        return found ? (found.status || '').toUpperCase() : null;
+    }, [rawTemplates, resumeJustCreated]);
+
+    // Si la empresa ya configuró (y tiene aprobada) otra plantilla de reanudación
+    // distinta a la del sistema, no tiene sentido insistir en crear/esperar la
+    // del sistema: ya hay una que funciona y el auto-pick de arriba la usa.
+    const hasWorkingResumeTemplate = useMemo(() => {
+        if (!resumeTemplateConfig?.name) return false;
+        return templates.some(t =>
+            (t.name || '') === resumeTemplateConfig.name &&
+            (!resumeTemplateConfig.language || t.language === resumeTemplateConfig.language));
+    }, [resumeTemplateConfig, templates]);
+
+    async function createResumeTemplate() {
+        setCreatingResume(true);
+        setResumeCreateError(null);
+        try {
+            const res = await axios.post('/api/chat/templates/ensure-resume', { instance_id: instanceId });
+            if (res.data.success) {
+                setResumeJustCreated(true);
+            } else {
+                setResumeCreateError(res.data.message || 'No se pudo crear la plantilla.');
+            }
+        } catch (err) {
+            setResumeCreateError(err?.response?.data?.message || 'No se pudo crear la plantilla.');
+        } finally {
+            setCreatingResume(false);
+        }
+    }
 
     // Al abrir por ventana vencida, preselecciona la plantilla de reinicio de
     // conversación configurada para esta instancia (Configuración > WhatsApp >
@@ -5225,6 +5273,60 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                         <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
                             <Clock className="size-4 mt-0.5 shrink-0" />
                             <span>La ventana de 24h de este contacto ya expiró. Envía una plantilla aprobada para reabrir la conversación.</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Estado de la plantilla de reanudación por defecto: créala en un clic
+                    si no existe, o avisa que está pendiente de aprobación de Meta. */}
+                {windowClosedHint && !selected && !loading && !hasWorkingResumeTemplate && resumeTemplateStatus === null && (
+                    <div className="px-4 pt-3 shrink-0">
+                        <div className="rounded-xl border border-teal-300/50 bg-teal-50 dark:bg-teal-900/15 px-3 py-3 text-[12px] text-teal-800 dark:text-teal-200 space-y-2">
+                            <div className="flex items-start gap-2">
+                                <Wand2 className="size-4 mt-0.5 shrink-0" />
+                                <span className="flex-1 leading-snug">
+                                    Aún no tienes lista la <b>plantilla para reabrir conversaciones vencidas</b>. Créala en un clic: WhatsApp la revisa automáticamente, normalmente en el transcurso del día.
+                                </span>
+                            </div>
+                            {resumeCreateError && (
+                                <p className="text-[11px] text-rose-600 dark:text-rose-400">{resumeCreateError}</p>
+                            )}
+                            <button
+                                type="button"
+                                onClick={createResumeTemplate}
+                                disabled={creatingResume}
+                                className="w-full rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-[12px] font-bold py-2 flex items-center justify-center gap-2 transition-colors"
+                            >
+                                {creatingResume ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                                {creatingResume ? 'Creando plantilla…' : 'Crear plantilla de reanudación'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {windowClosedHint && !selected && !loading && !hasWorkingResumeTemplate && resumeTemplateStatus === 'PENDING' && (
+                    <div className="px-4 pt-3 shrink-0">
+                        <div className="flex items-start gap-2 rounded-xl border border-sky-300/50 bg-sky-50 dark:bg-sky-900/15 px-3 py-2.5 text-[12px] text-sky-800 dark:text-sky-200">
+                            <Clock className="size-4 mt-0.5 shrink-0" />
+                            <span className="flex-1 leading-snug">
+                                Tu plantilla de reanudación está <b>pendiente de aprobación</b> de WhatsApp. Suele quedar lista en el transcurso del día; en cuanto se apruebe se sugerirá aquí automáticamente. Mientras tanto puedes usar otra plantilla aprobada.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={loadTemplates}
+                                className="shrink-0 text-sky-700 dark:text-sky-300 hover:underline text-[11px] font-bold"
+                            >
+                                Verificar
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {windowClosedHint && !selected && !loading && !hasWorkingResumeTemplate && resumeTemplateStatus === 'REJECTED' && (
+                    <div className="px-4 pt-3 shrink-0">
+                        <div className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-50 dark:bg-rose-900/15 px-3 py-2.5 text-[12px] text-rose-800 dark:text-rose-200">
+                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                            <span>WhatsApp rechazó la plantilla de reanudación. Pide a un administrador que la revise en Plantillas.</span>
                         </div>
                     </div>
                 )}

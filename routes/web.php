@@ -335,6 +335,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/start', [ChatController::class, 'startConversation']);
         Route::post('/conversations/close-bulk', [ChatController::class, 'closeBulk'])->middleware('permission:chat.update');
         Route::get('/templates', [ChatController::class, 'templates']);
+        Route::post('/templates/ensure-resume', [ChatController::class, 'ensureResumeTemplate']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);

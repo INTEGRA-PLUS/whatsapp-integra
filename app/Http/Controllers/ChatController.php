@@ -316,8 +316,10 @@ class ChatController extends Controller
             'language' => $instance->resumeTemplateLanguage(),
         ] : null;
 
+        // Sin filtro de status: el frontend filtra APPROVED para la lista de envío,
+        // pero también necesita ver PENDING/REJECTED para saber si la plantilla de
+        // reanudación del sistema ya fue creada y en qué estado está.
         $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, [
-            'status' => 'APPROVED',
             'limit'  => 200,
         ]);
 
@@ -328,6 +330,73 @@ class ChatController extends Controller
         return response()->json([
             'data' => $result['data']['data'] ?? [],
             'resume_template' => $resumeTemplate,
+        ]);
+    }
+
+    /**
+     * Crea (si aún no existe) la plantilla de reanudación de conversación del
+     * catálogo por defecto de Integra CRM para la instancia, y la deja
+     * configurada como plantilla de reinicio si la instancia no tenía ninguna.
+     * Endpoint propio del chat (sin permiso de gestión de plantillas): solo
+     * puede crear esta plantilla puntual, nunca una arbitraria.
+     */
+    public function ensureResumeTemplate(Request $request)
+    {
+        $user = auth()->user();
+        $key = 'reanudar_conversacion_cliente';
+
+        $instance = Instance::where('id', $request->instance_id)
+            ->where('company_id', $user->company_id)
+            ->whereNotNull('waba_id')
+            ->whereNotNull('access_token')
+            ->first();
+
+        if (!$instance) {
+            return response()->json(['success' => false, 'message' => 'No hay una instancia activa con WABA configurado.'], 422);
+        }
+
+        $entry = config("whatsapp_default_templates.{$key}");
+        if (!$entry) {
+            return response()->json(['success' => false, 'message' => 'Plantilla por defecto no configurada.'], 500);
+        }
+
+        $payload = [
+            'name' => $key,
+            'language' => $entry['language'],
+            'category' => $entry['category'],
+            'components' => $entry['components'],
+        ];
+        if (!empty($entry['parameter_format'])) {
+            $payload['parameter_format'] = $entry['parameter_format'];
+        }
+
+        $result = $this->metaService->createTemplate($instance->waba_id, $instance->access_token, $payload);
+
+        $alreadyExists = false;
+        if (!$result['success']) {
+            $inner = $result['error']['error'] ?? null;
+            $code = is_array($inner) ? ($inner['code'] ?? null) : null;
+            $subcode = is_array($inner) ? ($inner['error_subcode'] ?? null) : null;
+
+            // Meta: nombre de plantilla duplicado (ya se había creado antes).
+            if ((int) $code === 100 && (int) $subcode === 2388023) {
+                $alreadyExists = true;
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se pudo crear la plantilla en WhatsApp. Intenta de nuevo más tarde.',
+                ], 502);
+            }
+        }
+
+        if (!$instance->resumeTemplateName()) {
+            $instance->setResumeTemplate($key, $entry['language']);
+            $instance->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'already_exists' => $alreadyExists,
         ]);
     }
 
