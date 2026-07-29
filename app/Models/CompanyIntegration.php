@@ -10,6 +10,7 @@ class CompanyIntegration extends Model
     use HasFactory;
 
     public const KEY_INVOICE_PAYMENTS = 'invoice_payments';
+    public const KEY_CONTACTS_SYNC = 'contacts_sync';
 
     protected $fillable = [
         'company_id',
@@ -24,6 +25,8 @@ class CompanyIntegration extends Model
         'trigger_command',
         'last_error',
         'connected_at',
+        'last_synced_at',
+        'sync_status',
     ];
 
     protected $casts = [
@@ -32,6 +35,8 @@ class CompanyIntegration extends Model
         'access_token'     => 'encrypted',
         'token_expires_at' => 'datetime',
         'connected_at'     => 'datetime',
+        'last_synced_at'   => 'datetime',
+        'sync_status'      => 'array',
     ];
 
     // Nunca exponer el token al frontend.

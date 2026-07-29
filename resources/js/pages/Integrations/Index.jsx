@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, Link2, ShieldCheck, ArrowRight, ArrowLeft,
-    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Mail, KeyRound,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Mail, KeyRound, Users,
 } from 'lucide-react';
 
 const SECTIONS = [
     { id: 'webhooks', label: 'Webhooks',          Icon: Webhook },
     { id: 'payments', label: 'Pagos a facturas',  Icon: Wallet },
+    { id: 'contacts', label: 'Contactos',         Icon: Users },
 ];
 
 export default function IntegrationsIndex({ webhooks, eventCatalog }) {
@@ -59,6 +60,7 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
 
                 {section === 'webhooks' && <WebhooksSection webhooks={webhooks} eventCatalog={eventCatalog} can={can} />}
                 {section === 'payments' && <PaymentsSection can={can} />}
+                {section === 'contacts' && <ContactsSection can={can} />}
             </div>
         </>
     );
@@ -563,7 +565,7 @@ function StepConnect({ integration, onUpdated, onDone, showToast }) {
             const payload = mode === 'login'
                 ? { base_url: url, email: email.trim(), password }
                 : { base_url: url, token: token.trim() };
-            const { data } = await axios.post('/api/integrations/invoice-payments/connect', payload);
+            const { data } = await axios.post(`/api/integrations/${integration.key}/connect`, payload);
             onUpdated(data);
             showToast('Conexión establecida con Integra.');
             onDone();
@@ -826,6 +828,221 @@ function StepActivate({ integration, onUpdated, showToast }) {
                     {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Guardar
                 </Button>
             </form>
+        </div>
+    );
+}
+
+/* ───────────────────────── Contactos (software Integra) ───────────────────────── */
+
+function ContactsSection({ can }) {
+    const [integration, setIntegration] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => { load(); }, []);
+
+    async function load() {
+        try {
+            const { data } = await axios.get('/api/integrations');
+            setIntegration((data ?? []).find(i => i.key === 'contacts_sync') ?? null);
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudieron cargar las integraciones.');
+        }
+    }
+
+    if (error) {
+        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
+    }
+    if (!integration) {
+        return (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
+                <Loader2 className="size-4 animate-spin" /> Cargando…
+            </div>
+        );
+    }
+
+    return <ContactsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} />;
+}
+
+const CONTACTS_WIZARD_STEPS = [
+    { n: 1, label: 'Conectar',    Icon: Link2 },
+    { n: 2, label: 'Estado',      Icon: ShieldCheck },
+    { n: 3, label: 'Sincronizar', Icon: RefreshCw },
+];
+
+function ContactsWizard({ integration, onUpdated, canManage }) {
+    const [step, setStep] = useState(integration.connected ? 3 : 1);
+    const [toast, setToast] = useState(null);
+
+    function showToast(text, kind = 'success') {
+        setToast({ text, kind });
+        setTimeout(() => setToast(null), 4000);
+    }
+
+    return (
+        <div className="flex flex-col gap-6 max-w-2xl">
+            <div className="flex items-start gap-3">
+                <div className="size-11 rounded-xl bg-teal-500/10 dark:bg-teal-500/15 flex items-center justify-center shrink-0">
+                    <Users className="size-6 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div>
+                    <h2 className="text-lg font-semibold text-foreground">{integration.name}</h2>
+                    <p className="text-sm text-muted-foreground">{integration.description}</p>
+                </div>
+            </div>
+
+            {/* Stepper */}
+            <div className="flex items-center gap-2">
+                {CONTACTS_WIZARD_STEPS.map((s, idx) => {
+                    const done = step > s.n;
+                    const current = step === s.n;
+                    return (
+                        <div key={s.n} className="flex items-center gap-2 flex-1">
+                            <button
+                                onClick={() => setStep(s.n)}
+                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                                    current ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300'
+                                    : done ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-muted-foreground'
+                                }`}
+                            >
+                                <span className={`flex items-center justify-center size-6 rounded-full text-[11px] font-bold ${
+                                    current ? 'bg-teal-500 text-white'
+                                    : done ? 'bg-emerald-500 text-white'
+                                    : 'bg-muted text-muted-foreground'
+                                }`}>
+                                    {done ? <CheckCircle2 className="size-3.5" /> : s.n}
+                                </span>
+                                <span className="hidden sm:inline">{s.label}</span>
+                            </button>
+                            {idx < CONTACTS_WIZARD_STEPS.length - 1 && <div className="flex-1 h-px bg-border/60" />}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {toast && (
+                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+                    toast.kind === 'error'
+                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                }`}>
+                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
+                    <span>{toast.text}</span>
+                </div>
+            )}
+
+            {!canManage && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                    No tienes permisos para modificar esta integración. Pide a un administrador que la configure.
+                </div>
+            )}
+
+            <fieldset disabled={!canManage} className="contents">
+                {step === 1 && <StepConnect integration={integration} onUpdated={onUpdated} onDone={() => setStep(2)} showToast={showToast} />}
+                {step === 2 && <StepStatus integration={integration} onUpdated={onUpdated} onNext={() => setStep(3)} showToast={showToast} />}
+                {step === 3 && <StepSync integration={integration} onUpdated={onUpdated} showToast={showToast} />}
+            </fieldset>
+        </div>
+    );
+}
+
+function StepSync({ integration, onUpdated, showToast }) {
+    const [syncing, setSyncing] = useState(false);
+    const pollRef = useRef(null);
+
+    const syncStatus = integration.sync_status;
+    const running = syncStatus?.state === 'running';
+
+    useEffect(() => {
+        if (running) startPolling();
+        return () => clearInterval(pollRef.current);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    function startPolling() {
+        setSyncing(true);
+        clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+            try {
+                const { data } = await axios.get(`/api/integrations/${integration.key}/sync-status`);
+                onUpdated(prev => ({ ...prev, sync_status: data.sync_status, last_synced_at: data.last_synced_at }));
+                if (data.sync_status?.state !== 'running') {
+                    clearInterval(pollRef.current);
+                    setSyncing(false);
+                    if (data.sync_status?.state === 'done') {
+                        showToast(`Sincronización completa: ${data.sync_status.created} nuevos, ${data.sync_status.matched} ya existían y se vincularon.`);
+                    } else if (data.sync_status?.state === 'error') {
+                        showToast(data.sync_status.error ?? 'La sincronización falló.', 'error');
+                    }
+                }
+            } catch {
+                clearInterval(pollRef.current);
+                setSyncing(false);
+            }
+        }, 2000);
+    }
+
+    async function sync() {
+        setSyncing(true);
+        try {
+            const { data } = await axios.post(`/api/integrations/${integration.key}/sync`);
+            onUpdated(data);
+            startPolling();
+        } catch (err) {
+            setSyncing(false);
+            showToast(err?.response?.data?.message ?? 'No se pudo iniciar la sincronización.', 'error');
+        }
+    }
+
+    const busy = syncing || running;
+    const progressPct = syncStatus?.total_pages
+        ? Math.min(100, Math.round((syncStatus.page / syncStatus.total_pages) * 100))
+        : null;
+
+    return (
+        <div className="rounded-xl border bg-card p-5 space-y-5">
+            <div className="flex items-start gap-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4">
+                <CheckCircle2 className="size-6 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <div className="min-w-0">
+                    <p className="font-semibold text-emerald-700 dark:text-emerald-300">Conectado a Integra</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        {integration.last_synced_at
+                            ? `Última sincronización: ${new Date(integration.last_synced_at).toLocaleString('es-CO')}`
+                            : 'Todavía no se ha sincronizado.'}
+                    </p>
+                </div>
+            </div>
+
+            {busy && (
+                <div className="space-y-2">
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                            className="h-full bg-teal-500 transition-all"
+                            style={{ width: progressPct !== null ? `${progressPct}%` : '30%' }}
+                        />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Sincronizando… {syncStatus?.processed ?? 0} contactos procesados
+                        {syncStatus?.total_pages ? ` (página ${syncStatus.page}/${syncStatus.total_pages})` : ''}.
+                    </p>
+                </div>
+            )}
+
+            {!busy && syncStatus?.state === 'done' && (
+                <p className="text-xs text-muted-foreground">
+                    Última corrida: {syncStatus.created} contactos nuevos, {syncStatus.matched} ya existían y se vincularon.
+                </p>
+            )}
+
+            <Button onClick={sync} disabled={busy} className="gap-2">
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                {busy ? 'Sincronizando…' : 'Sincronizar contactos'}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+                Trae todos los clientes de Integra y los guarda como contactos. Si un contacto ya existe con el
+                mismo número de teléfono, no se duplica: se conserva su nombre y solo se etiqueta como
+                vinculado a Contactos.
+            </p>
         </div>
     );
 }

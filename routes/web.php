@@ -447,7 +447,7 @@ Route::middleware('auth')->group(function () {
     Route::prefix('api/integrations')->group(function () {
         Route::get('/', [App\Http\Controllers\IntegrationController::class, 'index'])
             ->middleware('permission:integrations.view');
-        Route::post('/invoice-payments/connect', [App\Http\Controllers\IntegrationController::class, 'connect'])
+        Route::post('/{key}/connect', [App\Http\Controllers\IntegrationController::class, 'connect'])
             ->middleware('permission:integrations.update');
         Route::get('/{key}/status', [App\Http\Controllers\IntegrationController::class, 'status'])
             ->middleware('permission:integrations.view');
@@ -455,6 +455,10 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:integrations.update');
         Route::post('/{key}/disconnect', [App\Http\Controllers\IntegrationController::class, 'disconnect'])
             ->middleware('permission:integrations.update');
+        Route::post('/{key}/sync', [App\Http\Controllers\IntegrationController::class, 'syncContacts'])
+            ->middleware('permission:integrations.update');
+        Route::get('/{key}/sync-status', [App\Http\Controllers\IntegrationController::class, 'syncStatus'])
+            ->middleware('permission:integrations.view');
 
         // Acciones usadas desde el chat por los agentes (solo requieren sesión).
         Route::get('/invoice-payments/clients', [App\Http\Controllers\IntegrationController::class, 'searchClients']);

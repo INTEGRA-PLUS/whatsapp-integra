@@ -3,7 +3,7 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2 } from 'lucide-react';
 
 export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered }) {
     const { auth } = usePage().props;
@@ -237,7 +237,19 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                 <tbody>
                     {filtered.map(contact => (
                         <tr key={contact.id} className="border-t hover:bg-muted/30 transition-colors">
-                            <td className="px-4 py-3 align-top font-medium text-foreground">{contact.name}</td>
+                            <td className="px-4 py-3 align-top font-medium text-foreground">
+                                <div className="flex items-center gap-2">
+                                    <span>{contact.name}</span>
+                                    {contact.metadata?.integra_contactos && (
+                                        <span
+                                            title={`Visto en Contactos como "${contact.metadata.integra_contactos.nombre_api}"`}
+                                            className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 px-1.5 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-400"
+                                        >
+                                            <Link2 className="size-3" /> Contactos
+                                        </span>
+                                    )}
+                                </div>
+                            </td>
                             <td className="px-4 py-3 align-top text-muted-foreground">
                                 <div className="flex flex-col gap-1">
                                     <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 text-muted-foreground/60" /> {contact.phone_number}</span>

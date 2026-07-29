@@ -61,18 +61,24 @@ class IntegraClient
      * Acepta el dominio pelado, con /software, o incluso con /api/v1 pegado, y
      * sondea {base} y {base}/software hasta que el API responda con el token.
      *
+     * @param ?callable $ping Verificación a ejecutar contra cada candidato (recibe el
+     *                        cliente, debe lanzar RuntimeException si falla). Por
+     *                        defecto pega a /pagos/catalogos (flujo de pagos); otras
+     *                        integraciones (ej. contactos) pasan una verificación
+     *                        propia para no exigir scopes que su token no tiene.
      * @return self cliente ya apuntando a la base que funcionó.
      * @throws \RuntimeException si ninguna variante responde (mensaje apto para UI).
      */
-    public static function probeBase(string $inputUrl, string $token): self
+    public static function probeBase(string $inputUrl, string $token, ?callable $ping = null): self
     {
         $candidates = self::baseCandidates($inputUrl);
+        $ping ??= fn (self $c) => $c->testConnection();
 
         $lastError = null;
         foreach ($candidates as $candidate) {
             $client = new self($candidate, $token);
             try {
-                $client->testConnection();
+                $ping($client);
 
                 return $client;
             } catch (\RuntimeException $e) {
@@ -312,6 +318,32 @@ class IntegraClient
             'cuentas' => $data['cuentas'] ?? [],
             'metodos_pago' => $data['metodos_pago'] ?? [],
             'formas_pago' => $data['formas_pago'] ?? [],
+        ];
+    }
+
+    /**
+     * Listado paginado del maestro de clientes (GET /api/v1/contactos), usado
+     * para la sincronización masiva de la integración "Contactos". A
+     * diferencia de searchContacts() (autocompletado puntual), este barre
+     * TODAS las páginas — soporta sincronización incremental vía
+     * `actualizado_desde` y deliberadamente no pide `incluir` (mantiene el
+     * tope de página en 100 en vez de 25; el resumen de contratos/facturas no
+     * se persiste en el CRM en esta primera versión).
+     *
+     * @param array $params page, por_pagina, q, identificacion, estado, actualizado_desde
+     * @return array{data: array, meta: array}
+     * @throws \RuntimeException
+     */
+    public function listContacts(array $params = []): array
+    {
+        $res = $this->call('get', '/api/v1/contactos', array_filter(
+            $params,
+            fn ($v) => $v !== null && $v !== ''
+        ));
+
+        return [
+            'data' => $res->json('data') ?? [],
+            'meta' => $res->json('meta') ?? [],
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SyncContactsFromIntegra;
 use App\Models\CompanyIntegration;
 use App\Services\IntegraClient;
 use Illuminate\Http\Request;
@@ -17,6 +18,11 @@ class IntegrationController extends Controller
                 'key'         => CompanyIntegration::KEY_INVOICE_PAYMENTS,
                 'name'        => 'Pagos a facturas',
                 'description' => 'Conecta con el software Integra para registrar pagos a facturas desde el chat.',
+            ],
+            CompanyIntegration::KEY_CONTACTS_SYNC => [
+                'key'         => CompanyIntegration::KEY_CONTACTS_SYNC,
+                'name'        => 'Contactos',
+                'description' => 'Sincroniza el maestro de clientes de Integra con tus contactos de WhatsApp.',
             ],
         ];
     }
@@ -45,6 +51,8 @@ class IntegrationController extends Controller
             'last_error'      => $i->last_error ?? null,
             'connected_at'    => optional($i->connected_at ?? null)->toIso8601String(),
             'token_expired'   => $i ? $i->tokenExpired() : false,
+            'last_synced_at'  => optional($i->last_synced_at ?? null)->toIso8601String(),
+            'sync_status'     => $i->sync_status ?? null,
         ];
     }
 
@@ -66,7 +74,23 @@ class IntegrationController extends Controller
     }
 
     /**
-     * POST /api/integrations/invoice-payments/connect — conecta con el entorno Integra 2.0.
+     * Verificación de conexión que cada integración necesita: pega a un
+     * endpoint liviano cuyo scope el token debería tener. "Pagos a facturas"
+     * valida contra /pagos/catalogos; "Contactos" no requiere ese scope, así
+     * que valida contra /contactos (página de 1) en su lugar.
+     *
+     * @throws \RuntimeException
+     */
+    private function pingForKey(string $key, IntegraClient $client): void
+    {
+        match ($key) {
+            CompanyIntegration::KEY_CONTACTS_SYNC => $client->listContacts(['por_pagina' => 1]),
+            default => $client->testConnection(),
+        };
+    }
+
+    /**
+     * POST /api/integrations/{key}/connect — conecta con el entorno Integra 2.0.
      *
      * La empresa indica la URL de SU entorno (Integra es multi-tenant) y se
      * autentica de una de dos formas:
@@ -77,11 +101,14 @@ class IntegrationController extends Controller
      *    Integra), para entornos sin el endpoint de emisión.
      * En ambos casos se valida la conexión con una llamada real (que además
      * resuelve el prefijo /software) y el token se persiste cifrado (cast
-     * `encrypted` del modelo); nunca vuelve al frontend.
+     * `encrypted` del modelo); nunca vuelve al frontend. Cada integración
+     * (`{key}`, ej. invoice_payments o contacts_sync) guarda su propia fila:
+     * conectar una no conecta automáticamente la otra, aunque apunten al
+     * mismo entorno/usuario de Integra.
      */
-    public function connect(Request $request)
+    public function connect(Request $request, string $key)
     {
-        $key = CompanyIntegration::KEY_INVOICE_PAYMENTS;
+        abort_unless(isset($this->catalog()[$key]), 404);
 
         $data = $request->validate([
             'base_url' => 'required|string|max:255',
@@ -97,13 +124,13 @@ class IntegrationController extends Controller
 
         try {
             if (! empty($data['token'])) {
-                $client = IntegraClient::probeBase($inputUrl, $data['token']);
+                $client = IntegraClient::probeBase($inputUrl, $data['token'], fn (IntegraClient $c) => $this->pingForKey($key, $c));
                 $plainToken = $data['token'];
             } else {
                 [$client, $plainToken] = IntegraClient::connectWithLogin($inputUrl, $data['email'], (string) $data['password']);
-                // El token recién emitido trae los scopes del flujo de pagos;
+                // El token recién emitido trae los scopes de esta integración;
                 // esta llamada valida además que la API responda con él.
-                $client->testConnection();
+                $this->pingForKey($key, $client);
             }
         } catch (\RuntimeException $e) {
             // Recordamos la URL para precargarla en reintentos, pero sin token ni estado conectado.
@@ -144,7 +171,7 @@ class IntegrationController extends Controller
         $client = new IntegraClient($integration->base_url, $integration->access_token);
 
         try {
-            $client->testConnection();
+            $this->pingForKey($key, $client);
             $integration->update([
                 'status'     => 'connected',
                 'last_error' => null,
@@ -154,6 +181,57 @@ class IntegrationController extends Controller
         }
 
         return response()->json($this->present($key, $integration->fresh()));
+    }
+
+    /**
+     * POST /api/integrations/{key}/sync — dispara en background la sincronización
+     * masiva del maestro de clientes de Integra hacia la tabla `contacts`
+     * (solo aplica a la integración "Contactos"). Marca `sync_status` como
+     * `running` de una vez para que un doble clic no despache dos jobs.
+     */
+    public function syncContacts(string $key)
+    {
+        abort_unless($key === CompanyIntegration::KEY_CONTACTS_SYNC, 404);
+
+        $integration = $this->find($key);
+        if (! $integration || ! $integration->isConnected()) {
+            return response()->json(['message' => 'Primero debes conectar la integración.'], 422);
+        }
+
+        if (($integration->sync_status['state'] ?? null) === 'running') {
+            return response()->json(['message' => 'Ya hay una sincronización en curso.'], 422);
+        }
+
+        $integration->update([
+            'sync_status' => [
+                'state'       => 'running',
+                'page'        => 0,
+                'total_pages' => null,
+                'processed'   => 0,
+                'created'     => 0,
+                'matched'     => 0,
+                'error'       => null,
+                'started_at'  => now()->toIso8601String(),
+                'finished_at' => null,
+            ],
+        ]);
+
+        SyncContactsFromIntegra::dispatch($integration->id);
+
+        return response()->json($this->present($key, $integration->fresh()));
+    }
+
+    /** GET /api/integrations/{key}/sync-status — progreso de la sincronización de contactos (para polling). */
+    public function syncStatus(string $key)
+    {
+        abort_unless($key === CompanyIntegration::KEY_CONTACTS_SYNC, 404);
+
+        $integration = $this->find($key);
+
+        return response()->json([
+            'sync_status'    => $integration->sync_status ?? null,
+            'last_synced_at' => optional($integration->last_synced_at ?? null)->toIso8601String(),
+        ]);
     }
 
     /** POST /api/integrations/{key}/activate — define disparador y habilita en el chat. */

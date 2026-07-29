@@ -19,6 +19,9 @@ class Contact extends Model
         'email',
         'notes',
         'metadata',
+        'source',
+        'identificacion',
+        'external_id',
     ];
 
     protected $casts = [
