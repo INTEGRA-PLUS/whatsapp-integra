@@ -5401,6 +5401,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                         </div>
                     </>
                 ) : (
+                    <>
                     <div className="px-4 py-4 space-y-3 overflow-y-auto custom-scrollbar">
                         <button
                             type="button"
@@ -5501,17 +5502,18 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                 <span>{error}</span>
                             </div>
                         )}
-
-                        <div className="flex gap-2 pt-1">
-                            <button type="button" onClick={() => { setSelected(null); setError(null); }} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
-                                Cancelar
-                            </button>
-                            <button type="button" onClick={confirmSend} disabled={sending || header?.uploading} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
-                                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                                Enviar plantilla
-                            </button>
-                        </div>
                     </div>
+
+                    <div className="px-4 py-3 border-t border-border/40 shrink-0 flex gap-2">
+                        <button type="button" onClick={() => { setSelected(null); setError(null); }} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
+                            Cancelar
+                        </button>
+                        <button type="button" onClick={confirmSend} disabled={sending || header?.uploading} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                            Enviar plantilla
+                        </button>
+                    </div>
+                    </>
                 )}
             </div>
         </div>
