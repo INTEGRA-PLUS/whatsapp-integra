@@ -344,6 +344,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/template-media', [ChatController::class, 'uploadTemplateMedia']);
         Route::post('/conversations/{conversationId}/note', [ChatController::class, 'storeNote']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);
+        Route::post('/conversations/{conversationId}/send-document', [ChatController::class, 'sendDocument']);
         Route::post('/conversations/{conversationId}/send-audio', [ChatController::class, 'sendAudio']);
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
         Route::post('/conversations/{conversationId}/reopen', [ChatController::class, 'reopen']);

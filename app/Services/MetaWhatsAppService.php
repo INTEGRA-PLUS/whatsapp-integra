@@ -90,17 +90,36 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function sendDocument(string $phoneNumberId, string $to, string $documentUrl, string $filename = '')
-    {
-        return $this->sendRequest($phoneNumberId, [
+    public function sendDocument(
+        string $phoneNumberId,
+        string $to,
+        string $documentUrl,
+        string $filename = '',
+        string $caption = '',
+        ?string $contextWamid = null
+    ) {
+        $document = [
+            'link' => $documentUrl,
+            'filename' => $filename,
+        ];
+
+        // Meta rechaza el caption vacío en documentos, así que solo va si existe.
+        if ($caption !== '') {
+            $document['caption'] = $caption;
+        }
+
+        $payload = [
             'messaging_product' => 'whatsapp',
             'to' => $to,
             'type' => 'document',
-            'document' => [
-                'link' => $documentUrl,
-                'filename' => $filename
-            ]
-        ]);
+            'document' => $document,
+        ];
+
+        if ($contextWamid) {
+            $payload['context'] = ['message_id' => $contextWamid];
+        }
+
+        return $this->sendRequest($phoneNumberId, $payload);
     }
 
     /**

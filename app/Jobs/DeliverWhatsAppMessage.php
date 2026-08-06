@@ -75,6 +75,14 @@ class DeliverWhatsAppMessage implements ShouldQueue
                 $to,
                 $message->media_url
             ),
+            'document' => $metaService->sendDocument(
+                $phoneNumberId,
+                $to,
+                $message->media_url,
+                $message->filename ?: 'documento',
+                $message->content ?: '',
+                $message->reply_to_wamid ?: null
+            ),
             'template' => $metaService->sendTemplate(
                 $phoneNumberId,
                 $to,

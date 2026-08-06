@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
@@ -831,7 +832,23 @@ class ChatController extends Controller
             ], 422);
         }
 
+        // El disco s3_media está configurado con 'throw' => false: si el bucket
+        // falla, storePublicly() devuelve false en vez de lanzar. Sin esta guarda
+        // se guardaba un mensaje con media_url roto y el envío moría después.
         $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
+
+        if (!$path) {
+            Log::channel('whatsapp')->error('❌ No se pudo subir la imagen al almacenamiento', [
+                'conversation_id' => $conversation->id,
+                'original_name' => $request->file('image')->getClientOriginalName(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo guardar la imagen en el almacenamiento. Intenta de nuevo.',
+            ], 500);
+        }
+
         $imageUrl = Storage::disk('s3_media')->url($path);
 
         $replyToWamid = $request->input('reply_to_wamid') ?: null;
@@ -859,6 +876,98 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Imagen encolada',
             'data' => $message->load('sender')
+        ]));
+    }
+
+    /**
+     * Envía un documento (PDF, Office, ZIP, etc.) al cliente. El archivo se guarda
+     * en nuestro bucket y Meta lo descarga por link.
+     *
+     * Límite: 30 MB. WhatsApp admite hasta 100 MB, pero nginx (client_max_body_size
+     * 32M) y PHP (post_max_size 32M) cortan antes.
+     */
+    public function sendDocument(Request $request, $conversationId)
+    {
+        $validator = Validator::make($request->all(), [
+            'document' => [
+                'required',
+                'file',
+                'max:30720',
+                // Se guarda en un bucket público: nada que un servidor pueda
+                // ejecutar ni SVG (script embebido). Las imágenes se permiten
+                // porque HEIC/WEBP solo viajan bien como documento.
+                'extensions:pdf,doc,docx,xls,xlsx,ppt,pptx,csv,txt,rtf,odt,ods,odp,zip,rar,7z,xml,json,jpg,jpeg,png,gif,bmp,webp,heic,heif',
+            ],
+            'caption' => 'nullable|string|max:1024',
+            'reply_to_wamid' => 'nullable|string|max:500',
+        ], [
+            'document.extensions' => 'Ese tipo de archivo no está permitido.',
+            'document.max' => 'El archivo supera el límite de 30 MB.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        if (!$conversation->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+            ], 422);
+        }
+
+        $file = $request->file('document');
+        $filename = $file->getClientOriginalName() ?: 'documento';
+
+        $path = $file->storePublicly('whatsapp/media', 's3_media');
+
+        if (!$path) {
+            Log::channel('whatsapp')->error('❌ No se pudo subir el documento al almacenamiento', [
+                'conversation_id' => $conversation->id,
+                'original_name' => $filename,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo guardar el archivo en el almacenamiento. Intenta de nuevo.',
+            ], 500);
+        }
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'reply_to_wamid' => $request->input('reply_to_wamid') ?: null,
+            'type' => 'document',
+            'content' => $request->input('caption') ?? '',
+            'media_url' => Storage::disk('s3_media')->url($path),
+            'media_mime_type' => $file->getClientMimeType(),
+            'filename' => $filename,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now(),
+        ]);
+
+        $conversation->update([
+            'last_message' => '📄 ' . $filename,
+            'last_message_at' => now(),
+        ]);
+
+        DeliverWhatsAppMessage::dispatch($message->id);
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'message' => 'Documento encolado',
+            'data' => $message->load('sender'),
         ]));
     }
 

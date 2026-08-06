@@ -6,7 +6,6 @@ import { clsx } from 'clsx';
 import { 
     Search, 
     Send, 
-    Image as ImageIcon,
     MoreVertical,
     MoreHorizontal,
     Phone,
@@ -116,6 +115,63 @@ const HEADER_MEDIA_ACCEPT = {
     DOCUMENT: 'application/pdf',
 };
 const HEADER_MEDIA_LABEL = { IMAGE: 'Imagen', VIDEO: 'Video', DOCUMENT: 'Documento', LOCATION: 'Ubicación' };
+
+// Adjuntos del composer. La lista debe coincidir con la validación de
+// ChatController::sendDocument (regla `extensions`), y el tope de 30 MB con
+// `max:30720` — nginx y PHP cortan en 32 MB.
+const DOCUMENT_EXTENSIONS = [
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'csv', 'txt', 'rtf', 'odt', 'ods', 'odp',
+    'zip', 'rar', '7z', 'xml', 'json',
+    // Imágenes que Meta no entrega como foto (HEIC de iPhone, WEBP…) pero que sí
+    // viajan bien como documento.
+    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic', 'heif',
+];
+const DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
+const ATTACHMENT_ACCEPT = ['image/*', ...DOCUMENT_EXTENSIONS.map(e => `.${e}`)].join(',');
+
+// Meta solo entrega image/jpeg e image/png, y corta las fotos en 5 MB.
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const META_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+const IMAGE_MAX_DIMENSION = 1600;
+
+function formatFileSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Deja la imagen en algo que Meta acepte: JPEG de máximo 5 MB. Las fotos de
+ * celular casi siempre pasan de ese peso, y antes el backend las rechazaba con
+ * un 422 que en la interfaz se veía como "no se puede subir nada".
+ *
+ * Devuelve el archivo listo, o null si ni bajando la calidad cabe en el límite.
+ * Lanza si el navegador no sabe decodificar el formato (HEIC en Chrome).
+ */
+async function normalizeImageForUpload(file) {
+    if (META_IMAGE_TYPES.includes(file.type) && file.size <= IMAGE_MAX_BYTES) {
+        return file;
+    }
+
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+
+    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    for (const quality of [0.85, 0.7, 0.55]) {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+        if (blob && blob.size <= IMAGE_MAX_BYTES) {
+            return new File([blob], name, { type: 'image/jpeg' });
+        }
+    }
+    return null;
+}
 
 // Construye el componente header para el envío. Para IMAGE/VIDEO/DOCUMENT se usa
 // el media_id que Meta devuelve al subir el archivo a /{phone_number_id}/media.
@@ -1082,7 +1138,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
     const [pendingImage, setPendingImage] = useState(null); // { file, url } imagen a previsualizar antes de enviar
-    const [imageCaption, setImageCaption] = useState('');
+    const [pendingDocument, setPendingDocument] = useState(null); // { file } documento a previsualizar antes de enviar
+    const [attachmentCaption, setAttachmentCaption] = useState('');
     const [isDraggingFile, setIsDraggingFile] = useState(false);
     const dragDepthRef = useRef(0); // cuenta dragenter/dragleave para evitar parpadeo del overlay
     const [replyingTo, setReplyingTo] = useState(null); // mensaje al que se está respondiendo (cita)
@@ -2461,30 +2518,78 @@ export default function ChatIndex({ instances, integrations = [] }) {
     function handleFileUpload(e) {
         const file = e.target.files[0];
         e.target.value = '';
-        if (file) openImagePreview(file);
+        if (file) openAttachmentPreview(file);
+    }
+
+    // Enruta el adjunto a la previsualización que corresponde: las imágenes van
+    // como image (con pie de foto) y todo lo demás como document.
+    async function openAttachmentPreview(file) {
+        if (!file) return;
+        if (file.type?.startsWith('image/')) {
+            await openImagePreview(file);
+        } else {
+            openDocumentPreview(file);
+        }
     }
 
     // Muestra la imagen seleccionada (adjunto / arrastrada / pegada) en una
     // previsualización antes de enviarla, con opción a escribir un pie de foto.
-    function openImagePreview(file) {
+    async function openImagePreview(file) {
         if (!file || !file.type?.startsWith('image/')) {
             alert('Solo se pueden adjuntar imágenes.');
             return;
         }
-        // 5 MB es el límite del backend (sendImage: image|max:5120).
-        if (file.size > 5 * 1024 * 1024) {
-            alert('La imagen supera el límite de 5 MB.');
+
+        let prepared = file;
+        try {
+            prepared = await normalizeImageForUpload(file);
+        } catch {
+            // Formato que el navegador no decodifica (típico: HEIC de iPhone en
+            // Chrome). Se puede mandar igual, pero como documento.
+            if (window.confirm('Este navegador no puede procesar esa imagen para enviarla como foto.\n\n¿Enviarla como documento adjunto?')) {
+                openDocumentPreview(file);
+            }
             return;
         }
+
+        if (!prepared) {
+            alert('La imagen es demasiado pesada para enviarla por WhatsApp (límite 5 MB) incluso reduciéndola.');
+            return;
+        }
+
+        closeDocumentPreview();
         if (pendingImage?.url) URL.revokeObjectURL(pendingImage.url);
-        setPendingImage({ file, url: URL.createObjectURL(file) });
-        setImageCaption('');
+        setPendingImage({ file: prepared, url: URL.createObjectURL(prepared) });
+        setAttachmentCaption('');
+    }
+
+    // Previsualiza un documento (PDF, Office, comprimidos…) antes de enviarlo.
+    function openDocumentPreview(file) {
+        if (!file) return;
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (!DOCUMENT_EXTENSIONS.includes(ext)) {
+            alert(`No se pueden enviar archivos .${ext} por WhatsApp.\n\nPermitidos: ${DOCUMENT_EXTENSIONS.join(', ')}.`);
+            return;
+        }
+        // 30 MB es el límite del backend (sendDocument: file|max:30720).
+        if (file.size > DOCUMENT_MAX_BYTES) {
+            alert('El archivo supera el límite de 30 MB.');
+            return;
+        }
+        closeImagePreview();
+        setPendingDocument({ file });
+        setAttachmentCaption('');
     }
 
     function closeImagePreview() {
         if (pendingImage?.url) URL.revokeObjectURL(pendingImage.url);
         setPendingImage(null);
-        setImageCaption('');
+        setAttachmentCaption('');
+    }
+
+    function closeDocumentPreview() {
+        setPendingDocument(null);
+        setAttachmentCaption('');
     }
 
     // Sube y envía la imagen previsualizada con su pie de foto opcional.
@@ -2492,7 +2597,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (!pendingImage || !selectedConversation || sending) return;
         if (windowExpired) { closeImagePreview(); setShowTemplates(true); return; }
         const { file } = pendingImage;
-        const caption = imageCaption;
+        const caption = attachmentCaption;
         const replyWamid = replyingTo?.wamid || null;
         closeImagePreview();
         setReplyingTo(null);
@@ -2530,7 +2635,50 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }
 
-    // --- Arrastrar y soltar imágenes sobre el chat (estilo WhatsApp Web) ---
+    // Sube y envía el documento previsualizado con su descripción opcional.
+    async function confirmSendDocument() {
+        if (!pendingDocument || !selectedConversation || sending) return;
+        if (windowExpired) { closeDocumentPreview(); setShowTemplates(true); return; }
+        const { file } = pendingDocument;
+        const caption = attachmentCaption;
+        const replyWamid = replyingTo?.wamid || null;
+        closeDocumentPreview();
+        setReplyingTo(null);
+
+        const formData = new FormData();
+        formData.append('document', file);
+        if (caption.trim()) formData.append('caption', caption.trim());
+        if (replyWamid) formData.append('reply_to_wamid', replyWamid);
+        setSending(true);
+        try {
+            const res = await axios.post(
+                `/api/chat/conversations/${selectedConversation.id}/send-document`,
+                formData,
+            );
+            if (res.data.success) {
+                setMessages(prev => [...prev, res.data.data]);
+            } else if (res.data.code === 'window_closed') {
+                setShowTemplates(true);
+            } else {
+                alert(res.data.error || 'No se pudo enviar el archivo.');
+            }
+        } catch (err) {
+            console.error('Error enviando documento:', err);
+            if (err?.response?.data?.code === 'window_closed') {
+                setShowTemplates(true);
+            } else if (err?.response?.status === 413) {
+                alert('El archivo es demasiado grande para el servidor.');
+            } else if (!err?.response) {
+                alert('Fallo de conexión al subir el archivo, intenta de nuevo.');
+            } else {
+                alert(err?.response?.data?.error || err?.response?.data?.errors?.document?.[0] || 'No se pudo enviar el archivo.');
+            }
+        } finally {
+            setSending(false);
+        }
+    }
+
+    // --- Arrastrar y soltar archivos sobre el chat (estilo WhatsApp Web) ---
     function handleChatDragEnter(e) {
         if (!selectedConversation || composerMode !== 'reply') return;
         if (!Array.from(e.dataTransfer?.types || []).includes('Files')) return;
@@ -2561,8 +2709,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
         dragDepthRef.current = 0;
         setIsDraggingFile(false);
         if (!selectedConversation || composerMode !== 'reply') return;
-        const file = Array.from(e.dataTransfer?.files || []).find(f => f.type?.startsWith('image/'));
-        if (file) openImagePreview(file);
+        // Antes solo se tomaba el primer archivo de tipo imagen: arrastrar un PDF
+        // no hacía nada. Ahora se acepta cualquier archivo y el tipo decide si va
+        // como imagen o como documento.
+        const file = Array.from(e.dataTransfer?.files || [])[0];
+        if (file) openAttachmentPreview(file);
     }
 
     // --- Responder a un mensaje (cita estilo WhatsApp) ---
@@ -2602,16 +2753,25 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1500);
     }
 
-    // --- Pegar imágenes (Ctrl/Cmd + V) en el área de texto ---
+    // --- Pegar archivos (Ctrl/Cmd + V) en el área de texto ---
     function handleComposerPaste(e) {
         if (composerMode !== 'reply' || !selectedConversation) return;
         const items = Array.from(e.clipboardData?.items || []);
         const imageItem = items.find(it => it.type?.startsWith('image/'));
-        if (!imageItem) return;
-        const file = imageItem.getAsFile();
-        if (file) {
+        if (imageItem) {
+            const file = imageItem.getAsFile();
+            if (file) {
+                e.preventDefault();
+                openImagePreview(file);
+            }
+            return;
+        }
+
+        // Un archivo copiado del explorador llega en `files`, no como item de imagen.
+        const pastedFile = Array.from(e.clipboardData?.files || [])[0];
+        if (pastedFile) {
             e.preventDefault();
-            openImagePreview(file);
+            openAttachmentPreview(pastedFile);
         }
     }
 
@@ -3310,12 +3470,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             {/* Theme Pattern Overlay */}
                             <div className="absolute inset-0 opacity-[0.06] dark:opacity-[0.4] pointer-events-none" />
 
-                            {/* Overlay al arrastrar una imagen sobre el chat */}
+                            {/* Overlay al arrastrar un archivo sobre el chat */}
                             {isDraggingFile && selectedConversation && (
                                 <div className="absolute inset-0 z-30 flex items-center justify-center bg-teal-600/15 dark:bg-teal-500/15 backdrop-blur-sm pointer-events-none">
                                     <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-teal-500 bg-white/90 dark:bg-[#202c33]/90 px-10 py-8 shadow-xl">
-                                        <ImageIcon className="size-10 text-teal-600" />
-                                        <p className="text-sm font-bold text-foreground">Suelta la imagen para enviarla</p>
+                                        <Paperclip className="size-10 text-teal-600" />
+                                        <p className="text-sm font-bold text-foreground">Suelta el archivo para enviarlo</p>
+                                        <p className="text-[11px] text-muted-foreground">Imágenes hasta 5 MB · Documentos hasta 30 MB</p>
                                     </div>
                                 </div>
                             )}
@@ -4089,9 +4250,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         {composerMode === 'reply' ? (
                                                             <>
                                                                 <button title="Insertar emoji" aria-label="Insertar emoji" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Smile className="size-[19px]" /></button>
-                                                                <label title="Adjuntar imagen" aria-label="Adjuntar imagen" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
+                                                                <label title="Adjuntar imagen o documento" aria-label="Adjuntar imagen o documento" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
                                                                     <Paperclip className="size-[19px]" />
-                                                                    <input type="file" onChange={handleFileUpload} accept="image/*" className="hidden" />
+                                                                    <input type="file" onChange={handleFileUpload} accept={ATTACHMENT_ACCEPT} className="hidden" />
                                                                 </label>
                                                                 <button
                                                                     onClick={startRecording}
@@ -4315,8 +4476,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 <input
                                     type="text"
                                     autoFocus
-                                    value={imageCaption}
-                                    onChange={e => setImageCaption(e.target.value)}
+                                    value={attachmentCaption}
+                                    onChange={e => setAttachmentCaption(e.target.value)}
                                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); confirmSendImage(); } }}
                                     placeholder="Añade un pie de foto (opcional)"
                                     maxLength={1024}
@@ -4326,6 +4487,65 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onClick={confirmSendImage}
                                     disabled={sending}
                                     title="Enviar imagen"
+                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors"
+                                >
+                                    <Send className="size-5" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Previsualización de documento antes de enviarlo */}
+                {pendingDocument && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 animate-in fade-in duration-200"
+                        onClick={closeDocumentPreview}
+                    >
+                        <div
+                            className="w-full max-w-lg rounded-2xl bg-[#202c33] shadow-2xl overflow-hidden flex flex-col"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                                <span className="text-sm font-bold text-white">Enviar documento</span>
+                                <button
+                                    onClick={closeDocumentPreview}
+                                    className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+                                    title="Cancelar"
+                                >
+                                    <X className="size-5" />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center gap-3 bg-black/40 p-6">
+                                <div className="size-12 shrink-0 flex items-center justify-center rounded-lg bg-teal-600/20 text-teal-300">
+                                    <FileText className="size-6" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-white break-words">{pendingDocument.file.name}</p>
+                                    <p className="text-xs text-white/50 mt-0.5">
+                                        {formatFileSize(pendingDocument.file.size)}
+                                        {' · '}
+                                        {(pendingDocument.file.name.split('.').pop() || '').toUpperCase()}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 p-3 border-t border-white/10">
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    value={attachmentCaption}
+                                    onChange={e => setAttachmentCaption(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); confirmSendDocument(); } }}
+                                    placeholder="Añade una descripción (opcional)"
+                                    maxLength={1024}
+                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/50"
+                                />
+                                <button
+                                    onClick={confirmSendDocument}
+                                    disabled={sending}
+                                    title="Enviar documento"
                                     className="size-10 shrink-0 flex items-center justify-center rounded-full bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors"
                                 >
                                     <Send className="size-5" />
