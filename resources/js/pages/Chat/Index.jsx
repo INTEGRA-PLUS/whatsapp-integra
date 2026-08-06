@@ -54,7 +54,9 @@ import {
     Mail,
     Reply,
     MapPin,
-    Wand2
+    Wand2,
+    Download,
+    Eye
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -130,6 +132,120 @@ function buildTemplateHeaderComponent(h) {
     const media = { id: h.mediaId };
     if (h.format === 'DOCUMENT') media.filename = h.filename || 'documento.pdf';
     return { type: 'header', parameters: [{ type: kind, [kind]: media }] };
+}
+
+// ── Adjuntos ─────────────────────────────────────────────────────────────────
+// Un mensaje puede tener el archivo ya copiado en nuestro almacenamiento
+// (`media_url`) o solo el media_id de Meta, que el backend resuelve al abrirlo.
+// `media_available` lo resume; los campos sueltos son el respaldo para payloads
+// antiguos que aún no lo traen.
+function hasAttachment(msg) {
+    if (msg?.media_available != null) return !!msg.media_available;
+    return !!(msg?.media_url || msg?.media_id);
+}
+
+function mediaUrlFor(msg, { inline = false } = {}) {
+    return `/api/chat/messages/${msg.id}/media${inline ? '?inline=1' : ''}`;
+}
+
+/**
+ * Tarjeta de documento adjunto. Cuando no hay archivo recuperable no se pinta
+ * un enlace muerto: se dice explícitamente que no está disponible, en vez de
+ * ofrecer un "Descargar" que no hace nada al pulsarlo.
+ */
+function DocumentAttachment({ msg, label, className = '' }) {
+    const [downloading, setDownloading] = useState(false);
+    const [error, setError] = useState('');
+    const available = hasAttachment(msg);
+    const name = msg.filename || 'Documento';
+
+    async function download(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (downloading) return;
+
+        setDownloading(true);
+        setError('');
+        try {
+            const res = await axios.get(mediaUrlFor(msg), { responseType: 'blob' });
+            const objectUrl = URL.createObjectURL(res.data);
+            const a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+        } catch (err) {
+            // El error viaja como blob porque la petición pidió responseType blob.
+            let detail = 'No se pudo descargar el archivo.';
+            const body = err?.response?.data;
+            if (body instanceof Blob) {
+                try { detail = JSON.parse(await body.text())?.error || detail; } catch { /* respuesta no JSON */ }
+            } else if (body?.error) {
+                detail = body.error;
+            }
+            setError(detail);
+        } finally {
+            setDownloading(false);
+        }
+    }
+
+    const icon = (
+        <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+            <Paperclip className="size-5" />
+        </div>
+    );
+
+    if (!available) {
+        return (
+            <div className={`flex items-center gap-3 ${className}`}>
+                {icon}
+                <div className="min-w-0 pr-10">
+                    {label && <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">{label}</p>}
+                    <p className="text-[12.5px] font-semibold truncate">{name}</p>
+                    <p className="text-[10px] opacity-50 uppercase tracking-wide">Archivo no disponible</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={className}>
+            <div className="flex items-center gap-3">
+                {icon}
+                <div className="min-w-0 flex-1 pr-10">
+                    {label && <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">{label}</p>}
+                    <p className="text-[12.5px] font-semibold truncate" title={name}>{name}</p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                        <a
+                            href={mediaUrlFor(msg, { inline: true })}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide opacity-70 hover:opacity-100 hover:underline"
+                        >
+                            <Eye className="size-3" /> Ver
+                        </a>
+                        <button
+                            type="button"
+                            onClick={download}
+                            disabled={downloading}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide opacity-70 hover:opacity-100 hover:underline disabled:opacity-40"
+                        >
+                            {downloading
+                                ? <Loader2 className="size-3 animate-spin" />
+                                : <Download className="size-3" />}
+                            {downloading ? 'Descargando' : 'Descargar'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {error && (
+                <p className="mt-1.5 text-[10.5px] font-semibold text-red-600 dark:text-red-400 pr-10">{error}</p>
+            )}
+        </div>
+    );
 }
 
 // Número de variables distintas {{n}} en el cuerpo de la plantilla.
@@ -3668,20 +3784,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 )}
 
                                                                 {msg.type === 'document' && (
-                                                                    <a
-                                                                        href={msg.media_url}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className={`flex items-center gap-3 p-3 rounded-lg my-1 w-full transition-colors ${isOut ? 'bg-black/5 hover:bg-black/10' : 'bg-[#f0f2f5] dark:bg-[#111b21] hover:bg-black/5'}`}
-                                                                    >
-                                                                        <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                                                                            <Paperclip className="size-5" />
-                                                                        </div>
-                                                                        <div className="min-w-0 pr-10">
-                                                                            <p className="text-[12.5px] font-semibold truncate">{msg.filename || 'Documento'}</p>
-                                                                            <p className="text-[10px] opacity-50 uppercase tracking-wide">Descargar</p>
-                                                                        </div>
-                                                                    </a>
+                                                                    <DocumentAttachment
+                                                                        msg={msg}
+                                                                        className={`p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}
+                                                                    />
                                                                 )}
 
                                                                 {(msg.type === 'location' || (msg.type !== 'contacts' && msg.metadata?.location)) && (() => {
@@ -3741,22 +3847,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                                                 {msg.type === 'template' && (
                                                                     <div className={`flex flex-col gap-2 p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}>
-                                                                        {msg.media_url ? (
-                                                                            <a
-                                                                                href={msg.media_url}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                                className={`flex items-center gap-3 -m-1 p-1 rounded-lg transition-colors ${isOut ? 'hover:bg-black/10' : 'hover:bg-black/5'}`}
-                                                                            >
-                                                                                <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                                                                                    <Paperclip className="size-5" />
-                                                                                </div>
-                                                                                <div className="min-w-0">
-                                                                                    <p className="text-[10px] font-black opacity-40 uppercase tracking-[0.2em]">Plantilla WhatsApp</p>
-                                                                                    <p className="text-[12.5px] font-semibold truncate">{msg.filename || 'Documento'}</p>
-                                                                                    <p className="text-[10px] opacity-50 uppercase tracking-wide">Descargar</p>
-                                                                                </div>
-                                                                            </a>
+                                                                        {hasAttachment(msg) ? (
+                                                                            <DocumentAttachment
+                                                                                msg={msg}
+                                                                                label="Plantilla WhatsApp"
+                                                                                className="-m-1 p-1 rounded-lg"
+                                                                            />
                                                                         ) : (
                                                                             <div className="flex items-center gap-3">
                                                                                 <div className="size-10 rounded bg-[#4f5659] text-white flex items-center justify-center flex-shrink-0 shadow-sm">

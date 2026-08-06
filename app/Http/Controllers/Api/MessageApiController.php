@@ -162,11 +162,36 @@ class MessageApiController extends Controller
         );
 
         if ($result['success']) {
+            // Plantillas con encabezado multimedia: guardamos una copia del
+            // adjunto para que el chat pueda mostrarlo y descargarlo, no solo el
+            // texto. El media_id queda persistido aunque la descarga falle, para
+            // poder reintentarla al abrir el mensaje.
+            $mediaMetadata = ['components' => $components];
+            $headerMediaId = $this->headerMediaId($mediaMetadata);
+            $mediaUrl = null;
+            $filename = $this->headerFilename($mediaMetadata);
+            $mediaMimeType = null;
+
+            if ($headerMediaId && !empty($instance->access_token)) {
+                $mediaInfo = $this->metaService->downloadMedia($headerMediaId, $instance->access_token);
+                if ($mediaInfo) {
+                    $mediaUrl = $mediaInfo['url'];
+                    $filename = $filename ?: $mediaInfo['filename'];
+                    $mediaMimeType = $mediaInfo['mime_type'];
+                }
+            }
+
             $message = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
                 'wamid' => $result['data']['messages'][0]['id'],
-                'type' => 'text', // Or 'template' if we want to be more specific, but 'text' is fine for UI
+                // Solo las plantillas con adjunto necesitan la burbuja de
+                // plantilla; las de texto plano se siguen viendo como texto.
+                'type' => $headerMediaId ? 'template' : 'text',
                 'content' => "[Plantilla: $templateName]",
+                'media_url' => $mediaUrl,
+                'media_id' => $headerMediaId,
+                'media_mime_type' => $mediaMimeType,
+                'filename' => $filename,
                 'direction' => 'outbound',
                 'status' => 'sent',
                 'sent_at' => now(),
@@ -200,6 +225,50 @@ class MessageApiController extends Controller
         ], 500);
     }
 
+    /**
+     * media_id del encabezado multimedia dentro de la metadata que envía el
+     * sistema externo. Acepta tanto el atajo `header_media_id` como los
+     * `components` en el formato de Meta.
+     */
+    private function headerMediaId(?array $metadata): ?string
+    {
+        if (!empty($metadata['header_media_id'])) {
+            return (string) $metadata['header_media_id'];
+        }
+
+        foreach ($metadata['components'] ?? [] as $component) {
+            foreach ($component['parameters'] ?? [] as $param) {
+                $mediaKey = $param['type'] ?? '';
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['id'])) {
+                    return (string) $param[$mediaKey]['id'];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Nombre del archivo declarado en el encabezado multimedia de la plantilla.
+     */
+    private function headerFilename(?array $metadata): ?string
+    {
+        if (!empty($metadata['filename'])) {
+            return (string) $metadata['filename'];
+        }
+
+        foreach ($metadata['components'] ?? [] as $component) {
+            foreach ($component['parameters'] ?? [] as $param) {
+                $mediaKey = $param['type'] ?? '';
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['filename'])) {
+                    return (string) $param[$mediaKey]['filename'];
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function registerMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
@@ -216,6 +285,8 @@ class MessageApiController extends Controller
             'direction' => 'nullable|string|in:inbound,outbound',
             'name' => 'nullable|string', // contact name
             'media_url' => 'nullable|string',
+            'media_id' => 'nullable|string',
+            'media_mime_type' => 'nullable|string',
             'filename' => 'nullable|string',
             'metadata' => 'nullable|array',
             'sent_at' => 'nullable', // ISO8601 timestamp
@@ -240,15 +311,19 @@ class MessageApiController extends Controller
         $metadata = $request->metadata;
         $mediaUrl = $request->media_url;
         $filename = $request->filename;
+        $mediaId = $request->media_id ?: $this->headerMediaId($metadata);
+        $mediaMimeType = $request->media_mime_type;
 
-        // Plantillas con header multimedia (documento/imagen/video): el sistema
-        // externo solo conoce el media_id que subió a Meta. Descargamos una copia
-        // a nuestro S3 para que el archivo quede visible/descargable en el chat.
-        if (!$mediaUrl && !empty($metadata['header_media_id'])) {
-            $mediaInfo = $this->metaService->downloadMedia($metadata['header_media_id'], $instance->access_token);
+        // Documentos y plantillas con header multimedia: el sistema externo solo
+        // conoce el media_id que subió a Meta. Descargamos una copia a nuestro S3
+        // para que el archivo quede visible/descargable en el chat. Si la descarga
+        // falla igual guardamos el media_id: el chat lo reintenta al abrirlo.
+        if (!$mediaUrl && $mediaId && !empty($instance->access_token)) {
+            $mediaInfo = $this->metaService->downloadMedia($mediaId, $instance->access_token);
             if ($mediaInfo) {
                 $mediaUrl = $mediaInfo['url'];
                 $filename = $filename ?: ($metadata['filename'] ?? $mediaInfo['filename']);
+                $mediaMimeType = $mediaMimeType ?: $mediaInfo['mime_type'];
             }
         }
 
@@ -272,6 +347,8 @@ class MessageApiController extends Controller
             'type' => $type,
             'content' => $content,
             'media_url' => $mediaUrl,
+            'media_id' => $mediaId,
+            'media_mime_type' => $mediaMimeType,
             'filename' => $filename,
             'direction' => $direction,
             'status' => $status,

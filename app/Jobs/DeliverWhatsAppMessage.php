@@ -168,10 +168,16 @@ class DeliverWhatsAppMessage implements ShouldQueue
             foreach ($component['parameters'] ?? [] as $param) {
                 $mediaKey = $param['type'] ?? '';
                 if (in_array($mediaKey, ['document', 'image', 'video']) && ! empty($param[$mediaKey]['id'])) {
+                    // El media_id se guarda pase lo que pase: si la copia falla,
+                    // el chat puede reintentar la descarga al abrir el mensaje.
+                    $message->media_id = $param[$mediaKey]['id'];
+                    $message->filename = $param[$mediaKey]['filename'] ?? $message->filename;
+
                     $mediaInfo = $metaService->downloadMedia($param[$mediaKey]['id'], $accessToken);
                     if ($mediaInfo) {
                         $message->media_url = $mediaInfo['url'];
-                        $message->filename = $param[$mediaKey]['filename'] ?? $mediaInfo['filename'];
+                        $message->media_mime_type = $mediaInfo['mime_type'];
+                        $message->filename = $message->filename ?: $mediaInfo['filename'];
                     }
                 }
             }

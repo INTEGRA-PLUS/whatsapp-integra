@@ -175,7 +175,13 @@
       "Bash(xargs -I{} sh -c 'echo ==={}===; cat {}')",
       "Bash(xargs -I{} basename {})",
       "Bash(git check-ignore *)",
-      "Bash(vendor/bin/phpunit --version)"
+      "Bash(vendor/bin/phpunit --version)",
+      "Bash(perl -pi -e 's{require __DIR__ . '\\\\''/../../../../../Users/juan_calle/Desktop/proyects/whatsapp-integra/vendor/autoload.php'\\\\'';}{require '\\\\''/Users/juan_calle/Desktop/proyects/whatsapp-integra/vendor/autoload.php'\\\\'';}' '$SP/probe.php')",
+      "Bash(perl -pi -e 's{require __DIR__ \\\\. '\\\\''/\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./Users/juan_calle/Desktop/proyects/whatsapp-integra/vendor/autoload\\\\.php'\\\\'';}{require '\\\\''/Users/juan_calle/Desktop/proyects/whatsapp-integra/vendor/autoload.php'\\\\'';}' /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/d7d73e6d-2f51-406a-a204-da8b4712b8d1/scratchpad/probe.php)",
+      "Bash(./vendor/bin/phpunit --filter ChatMediaDownloadTest)",
+      "Bash(./vendor/bin/phpunit --filter test_sin_adjunto)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 ./vendor/bin/phpunit --filter ChatMediaDownloadTest)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 ./vendor/bin/phpunit)"
     ]
   }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
@@ -626,6 +627,110 @@ class ChatController extends Controller
             'messages' => $messages,
             'timestamp' => now()->toIso8601String()
         ]));
+    }
+
+    /**
+     * Entrega el adjunto de un mensaje (documento, imagen, video o audio).
+     *
+     * Sirve el archivo a través de la app en vez de enlazar `media_url` directo
+     * por dos motivos: el nombre original del archivo se conserva en la
+     * descarga, y los mensajes que solo tienen `media_id` (plantillas enviadas
+     * por la API externa, que nunca guardaron copia) se resuelven aquí contra
+     * Meta la primera vez que alguien los abre.
+     *
+     * `?inline=1` lo muestra en el navegador (previsualizar PDF/imagen); sin el
+     * parámetro se fuerza la descarga.
+     */
+    public function downloadMedia(Request $request, $messageId)
+    {
+        $user = auth()->user();
+
+        $message = WhatsAppMessage::with('conversation.instance')->findOrFail($messageId);
+        $instance = $message->conversation?->instance;
+
+        if (! $instance || $instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $mediaUrl = $message->media_url;
+
+        // Sin copia propia: la pedimos a Meta y la guardamos, para que la
+        // siguiente apertura (y la de los demás agentes) ya no dependa de ella.
+        if (! $mediaUrl) {
+            $mediaId = $message->resolvableMediaId();
+
+            if (! $mediaId || empty($instance->access_token)) {
+                return $this->mediaError($request, 'Este mensaje no tiene un archivo adjunto disponible.');
+            }
+
+            $mediaInfo = $this->metaService->downloadMedia($mediaId, $instance->access_token);
+
+            if (! $mediaInfo) {
+                return $this->mediaError($request, 'No se pudo recuperar el archivo desde WhatsApp. Los adjuntos caducan 30 días después del envío.');
+            }
+
+            $message->forceFill([
+                'media_url'       => $mediaInfo['url'],
+                'media_id'        => $message->media_id ?: $mediaId,
+                'media_mime_type' => $message->media_mime_type ?: $mediaInfo['mime_type'],
+                'filename'        => $message->resolvableFilename() ?: $mediaInfo['filename'],
+            ])->save();
+
+            $mediaUrl = $mediaInfo['url'];
+        }
+
+        $response = Http::timeout(60)->get($mediaUrl);
+
+        if (! $response->successful()) {
+            return $this->mediaError($request, 'El archivo ya no está disponible en el almacenamiento.');
+        }
+
+        $filename = $this->safeDownloadName(
+            $message->resolvableFilename() ?: basename(parse_url($mediaUrl, PHP_URL_PATH) ?: 'archivo')
+        );
+
+        $disposition = $request->boolean('inline') ? 'inline' : 'attachment';
+
+        return response($response->body(), 200, [
+            'Content-Type' => $message->media_mime_type
+                ?: ($response->header('Content-Type') ?: 'application/octet-stream'),
+            'Content-Disposition' => $disposition . '; filename="' . $filename . '"',
+            'Content-Length' => strlen($response->body()),
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
+    }
+
+    /**
+     * El botón "Descargar" pide el archivo por XHR y muestra el mensaje en la
+     * burbuja; el enlace "Ver" abre una pestaña, donde un JSON crudo no se lee.
+     */
+    private function mediaError(Request $request, string $message)
+    {
+        if ($request->expectsJson() || ! $request->boolean('inline')) {
+            return response()->json(['error' => $message], 404);
+        }
+
+        return response(
+            '<!doctype html><meta charset="utf-8"><title>Archivo no disponible</title>'
+            . '<body style="font-family:system-ui,sans-serif;padding:2rem;color:#111b21">'
+            . '<p>' . e($message) . '</p></body>',
+            404,
+            ['Content-Type' => 'text/html; charset=utf-8']
+        );
+    }
+
+    /**
+     * Deja el nombre del adjunto en algo seguro para la cabecera
+     * Content-Disposition: viene de un tercero (Meta o la API externa) y podría
+     * traer comillas, rutas o saltos de línea.
+     */
+    private function safeDownloadName(string $name): string
+    {
+        $name = basename(str_replace('\\', '/', $name));
+        $name = preg_replace('/[\x00-\x1F\x7F"]/u', '', $name);
+        $name = trim($name);
+
+        return $name !== '' ? mb_substr($name, 0, 200) : 'archivo';
     }
 
     public function sendMessage(Request $request, $conversationId)

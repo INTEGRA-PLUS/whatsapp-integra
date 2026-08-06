@@ -337,6 +337,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/templates', [ChatController::class, 'templates']);
         Route::post('/templates/ensure-resume', [ChatController::class, 'ensureResumeTemplate']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
+        Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);
