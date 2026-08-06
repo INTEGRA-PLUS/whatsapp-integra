@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use App\Models\Instance;
 use Inertia\Inertia;
 
@@ -31,6 +32,29 @@ class InstanceController extends Controller
         ]);
     }
 
+    /**
+     * Un phone_number_id solo puede estar activo en una instancia: el webhook
+     * identifica la empresa por ese campo, así que si dos lo comparten todos los
+     * mensajes entrantes se guardan en la primera y la otra empresa no recibe
+     * nada. El índice único de la tabla es (company_id, phone_number_id), que no
+     * impide el choque entre empresas distintas.
+     */
+    private function assertPhoneNumberIdIsFree(Request $request, ?int $ignoreInstanceId = null): void
+    {
+        $owner = Instance::where('phone_number_id', $request->phone_number_id)
+            ->where('active', true)
+            ->when($ignoreInstanceId, fn ($q) => $q->where('id', '!=', $ignoreInstanceId))
+            ->first();
+
+        if ($owner) {
+            throw ValidationException::withMessages([
+                'phone_number_id' => 'Ese Phone Number ID ya está activo en otra instancia (#' . $owner->id
+                    . '). Desactívala primero: si dos instancias comparten el número, los mensajes entrantes'
+                    . ' solo llegan a una de ellas.',
+            ]);
+        }
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -40,6 +64,8 @@ class InstanceController extends Controller
             'display_phone_number' => 'nullable|string',
             'access_token' => 'nullable|string'
         ]);
+
+        $this->assertPhoneNumberIdIsFree($request);
 
         $user = auth()->user();
 
@@ -76,6 +102,10 @@ class InstanceController extends Controller
             'access_token' => 'nullable|string',
             'active' => 'boolean'
         ]);
+
+        if ($request->boolean('active', true)) {
+            $this->assertPhoneNumberIdIsFree($request, $instance->id);
+        }
 
         $instance->update([
             'name' => $request->name,

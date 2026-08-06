@@ -64,31 +64,50 @@ class WhatsAppWebhookController extends Controller
         return response('Forbidden', 403);
     }
 
+    /**
+     * Nº de eventos que fallaron en esta petición. Si queda en >0 se responde 500
+     * para que Meta reintente el lote: guardar es idempotente por wamid, así que
+     * los mensajes ya procesados no se duplican y los perdidos sí se recuperan.
+     */
+    private int $failedEvents = 0;
+
     public function webhook(Request $request)
     {
         $data = $request->all();
+        $this->failedEvents = 0;
 
         Log::channel('whatsapp')->info('📩 Webhook recibido de Meta', [
             'payload' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
         ]);
 
-        try {
-            if (isset($data['entry'])) {
-                foreach ($data['entry'] as $entry) {
-                    foreach ($entry['changes'] as $change) {
-                        if ($change['field'] === 'messages') {
-                            $this->processChange($change['value']);
-                        } elseif ($change['field'] === 'calls') {
-                            $this->processCallChange($change['value']);
-                        }
+        foreach ($data['entry'] ?? [] as $entry) {
+            foreach ($entry['changes'] ?? [] as $change) {
+                // Cada change se aísla: un payload que reviente no debe tumbar
+                // los demás mensajes del mismo lote.
+                try {
+                    if (($change['field'] ?? null) === 'messages') {
+                        $this->processChange($change['value'] ?? []);
+                    } elseif (($change['field'] ?? null) === 'calls') {
+                        $this->processCallChange($change['value'] ?? []);
                     }
+                } catch (\Throwable $e) {
+                    $this->failedEvents++;
+                    Log::channel('whatsapp')->error('❌ Error procesando webhook', [
+                        'field' => $change['field'] ?? null,
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
                 }
             }
-        } catch (\Exception $e) {
-            Log::channel('whatsapp')->error('❌ Error procesando webhook', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        }
+
+        if ($this->failedEvents > 0) {
+            // 500 => Meta reintenta. Antes se respondía 200 siempre y el mensaje
+            // se perdía para siempre en cuanto algo fallara.
+            return response()->json([
+                'status' => 'retry',
+                'failed_events' => $this->failedEvents,
+            ], 500);
         }
 
         return response()->json(['status' => 'ok'], 200);
@@ -96,22 +115,42 @@ class WhatsAppWebhookController extends Controller
 
     private function processChange($value)
     {
-        $metadata = $value['metadata'];
-        $phoneNumberId = $metadata['phone_number_id'];
+        $metadata = $value['metadata'] ?? [];
+        $phoneNumberId = $metadata['phone_number_id'] ?? null;
 
         Log::channel('whatsapp')->info('🔍 Identificando instancia', [
             'phone_number_id' => $phoneNumberId
         ]);
 
-        $instance = Instance::where('phone_number_id', $phoneNumberId)
+        $candidates = Instance::where('phone_number_id', $phoneNumberId)
             ->where('active', true)
-            ->first();
+            ->orderBy('id')
+            ->get();
+
+        $instance = $candidates->first();
 
         if (!$instance) {
-            Log::channel('whatsapp')->warning('⚠️ No se encontró instancia activa', [
-                'phone_number_id' => $phoneNumberId
+            // Sin instancia activa el mensaje se descarta: queda el remitente en
+            // el log para poder rastrear el reporte de "no me llegan mensajes".
+            Log::channel('whatsapp')->warning('⚠️ No se encontró instancia activa: mensajes descartados', [
+                'phone_number_id' => $phoneNumberId,
+                'display_phone_number' => $metadata['display_phone_number'] ?? null,
+                'from' => array_column($value['messages'] ?? [], 'from'),
+                'inactive_instances' => Instance::where('phone_number_id', $phoneNumberId)
+                    ->pluck('company_id', 'id'),
             ]);
             return;
+        }
+
+        // El índice único de instances es (company_id, phone_number_id): dos
+        // empresas pueden reclamar el mismo número y los mensajes se irían todos
+        // a la primera, que es justo el síntoma de "a esta empresa no le llegan".
+        if ($candidates->count() > 1) {
+            Log::channel('whatsapp')->error('🚨 phone_number_id duplicado en varias empresas activas', [
+                'phone_number_id' => $phoneNumberId,
+                'instances' => $candidates->pluck('company_id', 'id'),
+                'usando_instance_id' => $instance->id,
+            ]);
         }
 
         Log::channel('whatsapp')->info('✅ Instancia identificada', [
@@ -121,13 +160,37 @@ class WhatsAppWebhookController extends Controller
 
         if (isset($value['messages'])) {
             foreach ($value['messages'] as $message) {
-                $this->processInboundMessage($message, $instance, $value);
+                // Aislado por mensaje: si uno falla, los demás del lote se guardan
+                // igual y el 500 final hace que Meta reintente el que falló.
+                try {
+                    $this->processInboundMessage($message, $instance, $value);
+                } catch (\Throwable $e) {
+                    $this->failedEvents++;
+                    Log::channel('whatsapp')->error('❌ Error guardando mensaje entrante', [
+                        'instance_id' => $instance->id,
+                        'from' => $message['from'] ?? null,
+                        'wamid' => $message['id'] ?? null,
+                        'type' => $message['type'] ?? null,
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                }
             }
         }
 
         if (isset($value['statuses'])) {
             foreach ($value['statuses'] as $status) {
-                $this->updateMessageStatus($status, $instance);
+                // Un acuse de recibo que falle no puede impedir que se procesen
+                // los mensajes nuevos del mismo lote.
+                try {
+                    $this->updateMessageStatus($status, $instance);
+                } catch (\Throwable $e) {
+                    Log::channel('whatsapp')->error('❌ Error actualizando estado de mensaje', [
+                        'wamid' => $status['id'] ?? null,
+                        'status' => $status['status'] ?? null,
+                        'message' => $e->getMessage(),
+                    ]);
+                }
             }
         }
     }
@@ -339,8 +402,18 @@ class WhatsAppWebhookController extends Controller
             ]
         );
 
-        // Registrar automáticamente el contacto entrante si aún no está registrado
-        $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+        // Registrar automáticamente el contacto entrante si aún no está registrado.
+        // Es accesorio: si falla (contacto corrupto, choque de datos) el mensaje
+        // se guarda igual — antes una excepción aquí lo hacía desaparecer.
+        try {
+            $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+        } catch (\Throwable $e) {
+            Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
+                'conversation_id' => $conversation->id,
+                'from' => $from,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // Respuesta a una solicitud de permiso de llamada: se procesa aparte y no
         // se guarda como un mensaje normal del chat.
@@ -574,18 +647,36 @@ class WhatsAppWebhookController extends Controller
             $this->applyCustomerNumberChange($instance, $conversation, $message['system'] ?? []);
         }
 
-        // Tiempo real: empuja el mensaje entrante a los agentes conectados.
-        broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
+        // Tiempo real: empuja el mensaje entrante a los agentes conectados. Si
+        // Reverb no responde el mensaje ya está guardado, así que solo se avisa
+        // (el poll del chat lo recogerá igual).
+        try {
+            broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
+        } catch (\Throwable $e) {
+            Log::channel('whatsapp')->warning('⚠️ No se pudo emitir el mensaje en tiempo real', [
+                'message_id' => $savedMessage->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         // El "leído" (doble check azul) para el cliente solo se envía cuando un
         // agente realmente abre la conversación (ver ChatController::messages()
         // y ::startConversation()), no apenas llega el mensaje al webhook.
 
+        // Las respuestas automáticas son un efecto secundario: si fallan, el
+        // mensaje del cliente ya quedó guardado y no se debe reintentar el lote.
         if (!$skipAutoResponse) {
-            $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
+            try {
+                $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
 
-            if (!$handledOutOfHours) {
-                $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+                if (!$handledOutOfHours) {
+                    $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+                }
+            } catch (\Throwable $e) {
+                Log::channel('whatsapp')->error('❌ Falló la respuesta automática', [
+                    'conversation_id' => $conversation->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
