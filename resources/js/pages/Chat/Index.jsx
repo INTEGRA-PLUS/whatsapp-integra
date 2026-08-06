@@ -1925,7 +1925,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
             // hora); el reordenamiento fino lo termina de ajustar el poll de 30s.
             setConversations(prev => prev.map(c => (
                 c.id === e.conversation_id
-                    ? { ...c, last_message: e.message.content, last_message_at: e.message.created_at || new Date().toISOString() }
+                    ? {
+                        ...c,
+                        last_message: (e.message.type === 'system' ? 'ℹ️ ' : '') + (e.message.content || ''),
+                        last_message_at: e.message.created_at || new Date().toISOString(),
+                      }
                     : c
             )));
         });
@@ -2585,6 +2589,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (m.type === 'template') return m.content || 'Plantilla';
         if (m.type === 'location') return '📍 ' + (m.content || 'Ubicación');
         if (m.type === 'contacts') return '👤 ' + (m.content || 'Contacto');
+        if (m.type === 'system') return 'ℹ️ ' + (m.content || 'Aviso del sistema');
         return m.content || '';
     }
 
@@ -3679,6 +3684,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     <span className="ml-auto text-[9px] font-semibold text-amber-700/60 dark:text-amber-300/50 uppercase">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                 </div>
                                                                 <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : msg.type === 'system' ? (
+                                                        /* Aviso de la plataforma (cambio de número, cambio de identidad,
+                                                           mensaje no entregable): pastilla centrada, no es una burbuja. */
+                                                        <div className="flex justify-center my-2 px-2">
+                                                            <div className="max-w-[90%] lg:max-w-[70%] flex items-start gap-2 bg-[#fdf4d8] dark:bg-[#182229] border border-amber-200/70 dark:border-white/10 rounded-lg px-3 py-1.5 shadow-sm">
+                                                                <Info className="size-3.5 mt-[2px] shrink-0 text-amber-600 dark:text-white/50" />
+                                                                <p className="text-[11.5px] leading-[16px] text-center text-[#54656f] dark:text-white/60 break-words">
+                                                                    {msg.content}
+                                                                    <span className="ml-2 text-[9.5px] uppercase tracking-wide opacity-70">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                </p>
                                                             </div>
                                                         </div>
                                                     ) : (

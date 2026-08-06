@@ -371,6 +371,12 @@ class WhatsAppWebhookController extends Controller
             'sent_at' => \Carbon\Carbon::createFromTimestamp($timestamp)
         ];
 
+        // Los avisos del sistema (cambio de número, cambio de identidad) no son
+        // mensajes escritos por el cliente: no cuentan como no leídos ni deben
+        // disparar respuestas automáticas.
+        $isSystemNotice = false;
+        $skipAutoResponse = false;
+
         switch ($message['type']) {
             case 'text':
                 $messageData['type'] = 'text';
@@ -479,9 +485,62 @@ class WhatsAppWebhookController extends Controller
                 $messageData['metadata'] = ['button' => $message['button'] ?? []];
                 break;
 
-            default:
+            case 'system':
+                // Avisos de la propia plataforma: el cliente cambió de número o
+                // reinstaló WhatsApp (cambio de identidad). Llegan en el hilo del
+                // número antiguo y traen el nuevo wa_id.
+                $system = $message['system'] ?? [];
+                $isSystemNotice = true;
+                $skipAutoResponse = true;
+                $messageData['type'] = 'system';
+                $messageData['content'] = $this->describeSystemMessage($system, $from);
+                $messageData['metadata'] = ['system' => $system];
+                break;
+
+            case 'unsupported':
+                // Meta recibió del cliente un tipo que la Cloud API no entrega
+                // (p. ej. encuestas o mensajes efímeros). Deja el detalle del error.
+                $error = $message['errors'][0] ?? [];
+                $detail = $error['title'] ?? ($error['message'] ?? null);
+                $skipAutoResponse = true;
+                $messageData['type'] = 'system';
+                $messageData['content'] = 'El cliente envió un mensaje que WhatsApp no permite recibir'
+                    . ($detail ? " ({$detail})" : '');
+                $messageData['metadata'] = ['errors' => $message['errors'] ?? []];
+                break;
+
+            case 'request_welcome':
+                // El cliente abrió el chat desde un anuncio click-to-WhatsApp y aún
+                // no ha escrito nada.
+                $isSystemNotice = true;
+                $skipAutoResponse = true;
+                $messageData['type'] = 'system';
+                $messageData['content'] = 'El cliente abrió la conversación (aún no ha escrito)';
+                break;
+
+            case 'order':
+                // Pedido creado desde el catálogo.
+                $order = $message['order'] ?? [];
+                $items = $order['product_items'] ?? [];
                 $messageData['type'] = 'text';
-                $messageData['content'] = "Tipo de mensaje no soportado: {$message['type']}";
+                $messageData['content'] = trim('🛒 Pedido con ' . count($items) . ' producto(s)'
+                    . (!empty($order['text']) ? ": {$order['text']}" : ''));
+                $messageData['metadata'] = ['order' => $order];
+                break;
+
+            default:
+                // Tipo desconocido: se guarda el payload íntegro para poder darle
+                // soporte después sin perder el contenido original.
+                $skipAutoResponse = true;
+                $messageData['type'] = 'system';
+                $messageData['content'] = "Mensaje no compatible ({$message['type']})";
+                $messageData['metadata'] = ['unhandled' => $message];
+
+                Log::channel('whatsapp')->warning('⚠️ Tipo de mensaje sin soporte', [
+                    'instance_id' => $instance->id,
+                    'type' => $message['type'],
+                    'wamid' => $wamid,
+                ]);
         }
 
         // Si el cliente respondió a un mensaje, Meta envía el wamid citado en context.
@@ -492,7 +551,7 @@ class WhatsAppWebhookController extends Controller
         $savedMessage = WhatsAppMessage::create($messageData);
 
         $conversationUpdate = [
-            'last_message' => $messageData['content'] ?? 'Media',
+            'last_message' => ($messageData['type'] === 'system' ? 'ℹ️ ' : '') . ($messageData['content'] ?? 'Media'),
             'last_message_at' => now(),
         ];
 
@@ -504,7 +563,16 @@ class WhatsAppWebhookController extends Controller
         }
 
         $conversation->update($conversationUpdate);
-        $conversation->incrementUnread();
+
+        if (!$isSystemNotice) {
+            $conversation->incrementUnread();
+        }
+
+        // Cambio de número: el hilo debe seguir apuntando al número nuevo, si no
+        // los mensajes que enviemos después irían al número que ya no existe.
+        if (($message['type'] ?? null) === 'system') {
+            $this->applyCustomerNumberChange($instance, $conversation, $message['system'] ?? []);
+        }
 
         // Tiempo real: empuja el mensaje entrante a los agentes conectados.
         broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
@@ -513,10 +581,12 @@ class WhatsAppWebhookController extends Controller
         // agente realmente abre la conversación (ver ChatController::messages()
         // y ::startConversation()), no apenas llega el mensaje al webhook.
 
-        $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
+        if (!$skipAutoResponse) {
+            $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
 
-        if (!$handledOutOfHours) {
-            $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+            if (!$handledOutOfHours) {
+                $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
+            }
         }
 
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
@@ -561,6 +631,102 @@ class WhatsAppWebhookController extends Controller
         Log::channel('whatsapp')->info('🙂 Reacción procesada', [
             'target_wamid' => $targetWamid,
             'emoji' => $emoji ?: '(removida)',
+        ]);
+    }
+
+    /**
+     * Texto en español para un aviso `system` de WhatsApp. El `body` que manda
+     * Meta viene en inglés y con marcas de dirección de texto (LRM/RLM), así que
+     * se arma la frase aquí y el original queda guardado en metadata.
+     */
+    private function describeSystemMessage(array $system, string $from): string
+    {
+        $type = $system['type'] ?? '';
+        // v12.0+ manda el número nuevo en `wa_id`; las versiones viejas en `new_wa_id`.
+        $newWaId = $system['wa_id'] ?? $system['new_wa_id'] ?? null;
+
+        return match ($type) {
+            'user_changed_number', 'customer_changed_number' => $newWaId && $newWaId !== $from
+                ? "El cliente cambió su número de WhatsApp: {$from} → {$newWaId}"
+                : 'El cliente cambió su número de WhatsApp',
+            'customer_identity_changed' => 'El cliente cambió su identidad de WhatsApp (cambió de teléfono o reinstaló la app). Verifica con quién hablas antes de compartir información sensible.',
+            default => $this->cleanSystemBody($system['body'] ?? '') ?: 'Aviso del sistema de WhatsApp',
+        };
+    }
+
+    /**
+     * Quita las marcas invisibles de dirección de texto que Meta incluye en el
+     * `body` de los avisos del sistema.
+     */
+    private function cleanSystemBody(string $body): string
+    {
+        return trim(preg_replace('/[\x{200E}\x{200F}]/u', '', $body) ?? '');
+    }
+
+    /**
+     * Mueve la conversación al número nuevo cuando el cliente cambia de línea.
+     * Sin esto el hilo seguiría apuntando al número viejo y los mensajes salientes
+     * no llegarían.
+     */
+    private function applyCustomerNumberChange(Instance $instance, WhatsAppConversation $conversation, array $system): void
+    {
+        $type = $system['type'] ?? '';
+        if (!in_array($type, ['user_changed_number', 'customer_changed_number'], true)) {
+            return;
+        }
+
+        $newWaId = $system['wa_id'] ?? $system['new_wa_id'] ?? null;
+        $oldWaId = $conversation->wa_id;
+
+        if (!$newWaId || $newWaId === $oldWaId) {
+            return;
+        }
+
+        // Si el número nuevo ya tiene su propio hilo, unir historiales es una
+        // decisión de negocio: se deja el aviso y ambos hilos intactos.
+        $existing = WhatsAppConversation::where('instance_id', $instance->id)
+            ->where('wa_id', $newWaId)
+            ->where('id', '!=', $conversation->id)
+            ->first();
+
+        if ($existing) {
+            Log::channel('whatsapp')->warning('⚠️ Cambio de número con conversación ya existente, no se migra', [
+                'instance_id' => $instance->id,
+                'old_wa_id' => $oldWaId,
+                'new_wa_id' => $newWaId,
+                'existing_conversation_id' => $existing->id,
+            ]);
+            return;
+        }
+
+        $metadata = $conversation->metadata ?? [];
+        $metadata['previous_wa_ids'] = array_values(array_unique(array_merge(
+            $metadata['previous_wa_ids'] ?? [],
+            [$oldWaId]
+        )));
+
+        $conversation->update([
+            'wa_id' => $newWaId,
+            'phone_number' => $newWaId,
+            'metadata' => $metadata,
+        ]);
+
+        // El contacto conserva el número viejo como secundario para que el
+        // historial siga siendo rastreable.
+        if ($conversation->contact_id && ($contact = Contact::find($conversation->contact_id))) {
+            if ($contact->phone_number === $oldWaId) {
+                $contact->phone_number = $newWaId;
+                $contact->save();
+                $contact->addNumber($oldWaId);
+            } else {
+                $contact->addNumber($newWaId);
+            }
+        }
+
+        Log::channel('whatsapp')->info('📞 Número del cliente migrado', [
+            'conversation_id' => $conversation->id,
+            'old_wa_id' => $oldWaId,
+            'new_wa_id' => $newWaId,
         ]);
     }
 
