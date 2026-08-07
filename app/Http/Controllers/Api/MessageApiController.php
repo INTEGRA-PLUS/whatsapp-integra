@@ -327,6 +327,15 @@ class MessageApiController extends Controller
             }
         }
 
+        // Un tipo multimedia sin archivo recuperable (ni copia propia ni media_id)
+        // se pinta como una tarjeta de adjunto vacía —"Archivo no disponible"— que
+        // además esconde el texto: los avisos de pago registrado llegaban con
+        // aspecto de archivo roto. Si no hay nada que adjuntar, el mensaje vale
+        // como texto y el agente lee la confirmación.
+        if (!$mediaUrl && !$mediaId && in_array($type, ['document', 'image', 'audio', 'video', 'sticker'], true)) {
+            $type = 'text';
+        }
+
         // Find or create conversation
         $conversation = WhatsAppConversation::firstOrCreate(
             [

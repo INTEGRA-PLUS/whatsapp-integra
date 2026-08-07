@@ -182,7 +182,9 @@
       "Bash(./vendor/bin/phpunit --filter test_sin_adjunto)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 ./vendor/bin/phpunit --filter ChatMediaDownloadTest)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 ./vendor/bin/phpunit)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=RegisterMessageApiTest)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test)"
     ]
   }
 }

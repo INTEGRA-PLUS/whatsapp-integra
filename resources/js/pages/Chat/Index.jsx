@@ -2736,7 +2736,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (m.type === 'image') return '📷 ' + (m.content || 'Foto');
         if (m.type === 'audio') return '🎵 Audio';
         if (m.type === 'video') return '🎥 ' + (m.content || 'Video');
-        if (m.type === 'document') return '📄 ' + (m.filename || 'Documento');
+        if (m.type === 'document') return '📄 ' + (m.filename || m.content || 'Documento');
         if (m.type === 'template') return m.content || 'Plantilla';
         if (m.type === 'location') return '📍 ' + (m.content || 'Ubicación');
         if (m.type === 'contacts') return '👤 ' + (m.content || 'Contacto');
@@ -3961,11 +3961,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     </div>
                                                                 )}
 
+                                                                {/* Documento: la tarjeta de adjunto solo tiene sentido si hay archivo.
+                                                                    Cuando no lo hay pero sí texto (avisos registrados por la API
+                                                                    externa, p. ej. el pago procesado), se lee como un mensaje normal
+                                                                    en vez de como un archivo roto. */}
                                                                 {msg.type === 'document' && (
-                                                                    <DocumentAttachment
-                                                                        msg={msg}
-                                                                        className={`p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}
-                                                                    />
+                                                                    hasAttachment(msg) || !msg.content ? (
+                                                                        <div className="w-full">
+                                                                            <DocumentAttachment
+                                                                                msg={msg}
+                                                                                className={`p-3 rounded-lg my-1 w-full ${isOut ? 'bg-black/5' : 'bg-[#f0f2f5] dark:bg-[#111b21]'}`}
+                                                                            />
+                                                                            {msg.content && (
+                                                                                <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words px-1 pr-10 mb-6">{msg.content}</p>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
+                                                                    )
                                                                 )}
 
                                                                 {(msg.type === 'location' || (msg.type !== 'contacts' && msg.metadata?.location)) && (() => {
