@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     LayoutGrid,
     MessageSquare,
+    MessageSquareX,
     Settings,
     Briefcase,
     Package,
@@ -45,6 +46,7 @@ export function AppSidebar() {
             { title: 'Panel Master', href: route('master.index'), icon: LayoutGrid },
             { title: 'Empresas', href: route('master.index', { tab: 'companies' }), icon: Briefcase },
             { title: 'Planes', href: route('master.index', { tab: 'plans' }), icon: Package },
+            { title: 'Mensajes no entregados', href: route('master.messages.index'), icon: MessageSquareX },
             { title: 'Logs', href: route('master.logs.index'), icon: FileText },
         ];
     } else {
@@ -66,6 +68,9 @@ export function AppSidebar() {
             { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
             { title: 'Integraciones', href: route('integrations.index'), icon: Webhook, show: hasPermission('integrations.view') },
             { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },
+            // Auditoría de no entregados dentro de la empresa: solo la ve quien
+            // llegó suplantando desde Master, nunca el personal de la empresa.
+            { title: 'Mensajes no entregados', href: route('master.messages.index'), icon: MessageSquareX, show: !!auth?.fromMaster },
         ].filter(item => item.show !== false);
     }
 

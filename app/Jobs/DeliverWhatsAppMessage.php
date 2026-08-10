@@ -148,6 +148,7 @@ class DeliverWhatsAppMessage implements ShouldQueue
     {
         $message->update([
             'status'        => 'failed',
+            'failed_at'     => now(),
             'error_message' => mb_substr($error, 0, 2000),
             'error_code'    => $errorCode,
             'error_details' => $errorDetails,

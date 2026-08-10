@@ -893,6 +893,7 @@ class WhatsAppWebhookController extends Controller
             $errorMessage = $primaryError['message'] ?? 'Error desconocido';
             $errorDetails = $primaryError['error_data']['details'] ?? null;
 
+            $updateData['failed_at'] = now();
             $updateData['error_message'] = $errorMessage;
             $updateData['error_code'] = $errorCode;
             $updateData['error_details'] = $errorDetails;

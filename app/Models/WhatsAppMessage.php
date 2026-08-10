@@ -29,9 +29,14 @@ class WhatsAppMessage extends Model
         'sent_at',
         'delivered_at',
         'read_at',
+        'failed_at',
         'error_message',
         'error_code',
         'error_details',
+        'retry_of_message_id',
+        'retry_count',
+        'last_retried_at',
+        'last_retried_by',
         'metadata',
         'incoming_invoice_id',
         'incoming_contract_id',
@@ -44,6 +49,9 @@ class WhatsAppMessage extends Model
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
+        'failed_at' => 'datetime',
+        'last_retried_at' => 'datetime',
+        'retry_count' => 'integer',
         'metadata' => 'array',
         'mentions' => 'array',
         'is_internal' => 'boolean',
@@ -160,5 +168,77 @@ class WhatsAppMessage extends Model
     public function scopeOutbound($query)
     {
         return $query->where('direction', 'outbound');
+    }
+
+    /**
+     * Tipos que `DeliverWhatsAppMessage` sabe volver a poner en el aire. El
+     * resto (sticker, location, contacts…) llega por webhook y no se reenvía.
+     */
+    public const RETRYABLE_TYPES = ['text', 'image', 'audio', 'document', 'template'];
+
+    /**
+     * Minutos que un saliente puede quedarse en "pending" antes de considerarlo
+     * atascado (cola caída, worker muerto) y no simplemente en vuelo.
+     */
+    public const PENDING_STUCK_MINUTES = 5;
+
+    /**
+     * Horas que un "sent" puede pasar sin que Meta confirme la entrega antes de
+     * tratarlo como no entregado (teléfono apagado, número inexistente…).
+     */
+    public const SENT_UNCONFIRMED_HOURS = 1;
+
+    /**
+     * El mensaje original del que este es un reintento.
+     */
+    public function retryOf()
+    {
+        return $this->belongsTo(self::class, 'retry_of_message_id');
+    }
+
+    /**
+     * Reintentos generados a partir de este mensaje.
+     */
+    public function retries()
+    {
+        return $this->hasMany(self::class, 'retry_of_message_id');
+    }
+
+    public function retriedBy()
+    {
+        return $this->belongsTo(User::class, 'last_retried_by');
+    }
+
+    /**
+     * Salientes reales (no notas internas) que el cliente nunca recibió:
+     * fallidos, atascados en cola, o aceptados por Meta sin confirmación.
+     */
+    public function scopeUndelivered($query)
+    {
+        // Columnas calificadas: el panel Master cruza esta consulta con
+        // `whatsapp_conversations` e `instances`, que también tienen `status`.
+        return $query
+            ->where('whatsapp_messages.direction', 'outbound')
+            ->where('whatsapp_messages.type', '!=', 'note')
+            ->where(function ($q) {
+                $q->where('whatsapp_messages.status', 'failed')
+                    ->orWhere(function ($q2) {
+                        $q2->where('whatsapp_messages.status', 'pending')
+                            ->where('whatsapp_messages.created_at', '<=', now()->subMinutes(self::PENDING_STUCK_MINUTES));
+                    })
+                    ->orWhere(function ($q2) {
+                        $q2->where('whatsapp_messages.status', 'sent')
+                            ->where('whatsapp_messages.created_at', '<=', now()->subHours(self::SENT_UNCONFIRMED_HOURS));
+                    });
+            });
+    }
+
+    /**
+     * Momento en el que el mensaje se dio por no entregado. `failed_at` solo
+     * existe en fallos; para los atascados el hito es cuando se creó.
+     */
+    public function getFailureMomentAttribute(): ?\Illuminate\Support\Carbon
+    {
+        return $this->failed_at ?? $this->sent_at ?? $this->created_at;
     }
 }

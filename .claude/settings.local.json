@@ -184,7 +184,9 @@
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 ./vendor/bin/phpunit)",
       "WebFetch(domain:github.com)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=RegisterMessageApiTest)",
-      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test)"
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test)",
+      "Bash(python3 -c \"import json,sys; m=json.load\\(sys.stdin\\); print\\([k for k in m if 'Master/Messages' in k]\\)\")",
+      "Bash(python3 -c \"import json,sys; [print\\(r['method'], r['uri'], '|', r['middleware']\\) for r in json.load\\(sys.stdin\\)]\")"
     ]
   }
 }

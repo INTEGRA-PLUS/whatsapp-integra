@@ -262,6 +262,17 @@ Route::middleware('auth')->group(function () {
         Route::put('/companies/{company}', [App\Http\Controllers\MasterController::class, 'update'])->name('companies.update');
         Route::post('/impersonate/{company}', [App\Http\Controllers\MasterController::class, 'impersonate'])->name('impersonate');
 
+        // Mensajes no entregados de todas las empresas (auditoría + reintento)
+        Route::prefix('messages')->name('messages.')->group(function () {
+            Route::get('/', [App\Http\Controllers\Master\MessagesController::class, 'index'])->name('index');
+            Route::get('/{message}', [App\Http\Controllers\Master\MessagesController::class, 'show'])
+                ->whereNumber('message')->name('show');
+            Route::get('/{message}/media', [App\Http\Controllers\Master\MessagesController::class, 'media'])
+                ->whereNumber('message')->name('media');
+            Route::post('/{message}/retry', [App\Http\Controllers\Master\MessagesController::class, 'retry'])
+                ->whereNumber('message')->name('retry');
+        });
+
         Route::prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [App\Http\Controllers\Master\LogsController::class, 'index'])->name('index');
             Route::get('/{file}', [App\Http\Controllers\Master\LogsController::class, 'show'])
