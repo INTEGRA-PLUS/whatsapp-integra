@@ -4,6 +4,7 @@ import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-
 import axios from 'axios';
 import { clsx } from 'clsx';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { useNotificationRefresh } from '@/lib/notifications';
 
 /**
  * Antigüedad en lenguaje corto ("hace 5 min"). Pasado un día se muestra la
@@ -45,6 +46,20 @@ export default function NotificationBell() {
         load();
         const id = setInterval(load, 25000);
         return () => clearInterval(id);
+    }, [load]);
+
+    // Recarga inmediata cuando una acción del usuario acaba de generar una
+    // notificación, en vez de esperar al siguiente poll.
+    useNotificationRefresh(load);
+
+    // Al volver a la pestaña, lo que muestre la campana puede llevar hasta 25
+    // segundos de retraso; se refresca en cuanto vuelve a estar visible.
+    useEffect(() => {
+        function onVisible() {
+            if (document.visibilityState === 'visible') load();
+        }
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
     }, [load]);
 
     // Close on outside click

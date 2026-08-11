@@ -77,6 +77,7 @@ import {
 } from '@/components/ui/sheet';
 import QuickReplyPicker from '@/components/quick-reply-picker';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { refreshNotifications } from '@/lib/notifications';
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
@@ -1740,6 +1741,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 setConversations(prev => prev.map(c => c.id === convId ? { ...c, ...patch } : c));
                 setSelectedConversation(prev => (prev?.id === convId ? { ...prev, ...patch } : prev));
                 loadFolderCounts();
+                // Cerrar avisa a los administradores: la campana lo muestra ya,
+                // sin esperar su poll.
+                if (action === 'close') refreshNotifications();
             }
         } catch (err) {
             console.error('Error cambiando estado de la conversación:', err);
@@ -2277,10 +2281,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 setSelectedConversation(prev => (prev && closed.has(prev.id) ? { ...prev, status: 'closed' } : prev));
                 loadFolderCounts();
                 exitSelection();
+                refreshNotifications();
                 return res.data.closed_count;
             }
         } catch (err) {
             console.error('Error cerrando en lote:', err);
+            // Sigue siendo un alert nativo a propósito: el banner de error del
+            // chat solo se pinta con una conversación abierta, y un cierre en
+            // lote puede ocurrir sin ninguna seleccionada. Cambiarlo pide un
+            // toast global, que todavía no existe.
             alert(err?.response?.data?.error || 'No se pudieron cerrar los chats.');
         }
         return 0;
