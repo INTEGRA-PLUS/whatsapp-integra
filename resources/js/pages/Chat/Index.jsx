@@ -1740,6 +1740,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 };
                 setConversations(prev => prev.map(c => c.id === convId ? { ...c, ...patch } : c));
                 setSelectedConversation(prev => (prev?.id === convId ? { ...prev, ...patch } : prev));
+
+                // Pastilla "Conversación cerrada por X" en el hilo abierto, sin
+                // esperar al poll. El poll la deduplica por id si llega dos veces.
+                if (res.data.notice && selectedConversationRef.current?.id === convId) {
+                    setMessages(prev => prev.some(m => m.id === res.data.notice.id)
+                        ? prev
+                        : [...prev, res.data.notice]);
+                }
+
                 loadFolderCounts();
                 // Cerrar avisa a los administradores: la campana lo muestra ya,
                 // sin esperar su poll.

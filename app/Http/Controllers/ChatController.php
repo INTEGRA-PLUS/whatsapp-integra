@@ -1056,6 +1056,7 @@ class ChatController extends Controller
             'closed_at' => now(),
         ]);
 
+        $notice = $this->recordConversationNotice($conversation, "Conversación cerrada por {$user->name}");
         $this->notifyAdminsOfClosure($user, $conversation);
 
         WebhookDispatcher::emit(
@@ -1070,7 +1071,45 @@ class ChatController extends Controller
             'status'  => 'closed',
             'closed_by_user' => $conversation->load('closedByUser:id,name')->closedByUser,
             'closed_at' => $conversation->closed_at?->toIso8601String(),
+            // El hilo abierto lo pinta al instante, sin esperar al poll.
+            'notice'    => $notice,
         ]);
+    }
+
+    /**
+     * Deja constancia en el propio hilo de que el chat se cerró o se reabrió.
+     *
+     * Se guarda como mensaje `system`, que el chat pinta como pastilla centrada
+     * en vez de burbuja, así que el equipo ve el hito en su sitio cronológico
+     * sin tener que abrir el panel de detalles.
+     *
+     * `direction` es 'internal' a propósito: con 'inbound' el aviso abriría
+     * falsamente la ventana de 24h de Meta (isWindowOpen cuenta entrantes), y
+     * con 'outbound' el panel de no entregados lo tomaría por un envío atascado
+     * (scopeUndelivered mira los salientes sin confirmar). Nunca sale a
+     * WhatsApp: el cliente no lo ve.
+     */
+    private function recordConversationNotice(WhatsAppConversation $conversation, string $text): ?WhatsAppMessage
+    {
+        try {
+            return WhatsAppMessage::create([
+                'conversation_id' => $conversation->id,
+                'type'            => 'system',
+                'content'         => $text,
+                'direction'       => 'internal',
+                'is_internal'     => false,
+                'status'          => 'sent',
+                'sent_at'         => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // El aviso es informativo: si falla, el cierre ya ocurrió.
+            Log::warning('No se pudo registrar el aviso en el hilo', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
@@ -1153,6 +1192,22 @@ class ChatController extends Controller
                 'closed_at' => now(),
             ]);
 
+            // El aviso sí va en cada hilo —quien abra uno concreto tiene que ver
+            // por qué está cerrado—, pero en un solo INSERT: cerrar "todas"
+            // puede tocar cientos de conversaciones.
+            $now = now();
+            WhatsAppMessage::insert($ids->map(fn ($id) => [
+                'conversation_id' => $id,
+                'type'            => 'system',
+                'content'         => "Conversación cerrada por {$user->name} (cierre masivo)",
+                'direction'       => 'internal',
+                'is_internal'     => false,
+                'status'          => 'sent',
+                'sent_at'         => $now,
+                'created_at'      => $now,
+                'updated_at'      => $now,
+            ])->all());
+
             // Una sola notificación por el lote, no una por conversación: se
             // manda con la primera como referencia y el total del cierre.
             $first = WhatsAppConversation::find($ids->first());
@@ -1224,6 +1279,10 @@ class ChatController extends Controller
             'closed_at' => null,
         ]);
 
+        // Sin este aviso el hilo mostraría dos "cerrada" seguidas sin nada en
+        // medio cuando un chat se cierra, se reabre y se vuelve a cerrar.
+        $notice = $this->recordConversationNotice($conversation, "Conversación reabierta por {$user->name}");
+
         WebhookDispatcher::emit(
             $user->company_id,
             'conversation.reopened',
@@ -1234,6 +1293,7 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Conversación reabierta',
             'status'  => 'open',
+            'notice'  => $notice,
         ]);
     }
 
