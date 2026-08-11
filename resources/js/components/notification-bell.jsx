@@ -3,6 +3,7 @@ import { router, usePage } from '@inertiajs/react';
 import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-react';
 import axios from 'axios';
 import { clsx } from 'clsx';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 /**
  * Antigüedad en lenguaje corto ("hace 5 min"). Pasado un día se muestra la
@@ -28,6 +29,7 @@ export default function NotificationBell() {
     const ref = useRef(null);
     // Para redactar en primera persona los avisos de acciones propias.
     const currentUserId = usePage().props?.auth?.user?.id;
+    const { confirm, confirmDialog } = useConfirm();
 
     const load = useCallback(async () => {
         try {
@@ -72,7 +74,12 @@ export default function NotificationBell() {
     }
 
     async function deleteAll() {
-        if (!confirm('¿Eliminar todas las notificaciones?')) return;
+        const ok = await confirm({
+            title: '¿Eliminar todas las notificaciones?',
+            description: `Se borrarán las ${items.length} notificaciones de la lista. Esta acción no se puede deshacer.`,
+            confirmLabel: 'Eliminar todas',
+        });
+        if (!ok) return;
         try {
             await axios.delete('/api/notifications');
             setItems([]);
@@ -95,6 +102,7 @@ export default function NotificationBell() {
 
     return (
         <div className="relative" ref={ref}>
+            {confirmDialog}
             <button
                 onClick={() => setOpen(o => !o)}
                 className="relative p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

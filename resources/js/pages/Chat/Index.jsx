@@ -76,6 +76,7 @@ import {
     SheetContent,
 } from '@/components/ui/sheet';
 import QuickReplyPicker from '@/components/quick-reply-picker';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
@@ -1163,6 +1164,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const can = (permission) => auth.user.permissions.includes(permission);
     const isAdmin = can('chat.update');
 
+    const { confirm, confirmDialog } = useConfirm();
+
     const [selectedInstanceId, setSelectedInstanceId] = useState('');
     const [conversations, setConversations] = useState([]);
     const [messages, setMessages] = useState([]);
@@ -1743,6 +1746,28 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }, [loadFolderCounts]);
 
+    // Cerrar y eliminar se ofrecen desde varios sitios (cabecera, menú, panel
+    // de contacto); la confirmación vive aquí para que el texto sea el mismo
+    // en todos y no haya que repetirla en cada botón.
+    async function confirmCloseConversation(convId) {
+        const ok = await confirm({
+            title: '¿Cerrar esta conversación?',
+            description: 'Saldrá de la bandeja de chats abiertos y se avisará a los administradores. Podrás reabrirla cuando quieras.',
+            confirmLabel: 'Cerrar conversación',
+            variant: 'default',
+        });
+        if (ok) setConversationStatus(convId, 'close');
+    }
+
+    async function confirmDeleteConversation(convId) {
+        const ok = await confirm({
+            title: '¿Eliminar esta conversación?',
+            description: 'Se borrarán también TODOS sus mensajes y adjuntos. Esta acción no se puede deshacer.',
+            confirmLabel: 'Eliminar definitivamente',
+        });
+        if (ok) deleteConversation(convId);
+    }
+
     // Abre el modo edición del panel de contacto, precargando los datos actuales.
     const openContactEdit = useCallback(() => {
         const c = selectedConversation?.contact;
@@ -1915,7 +1940,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
     }, [editingTag, newTagName, newTagColor]);
 
     const deleteTag = useCallback(async (tag) => {
-        if (!window.confirm(`¿Eliminar la etiqueta "${tag.name}"? Se quitará de todas las conversaciones.`)) return;
+        const ok = await confirm({
+            title: `¿Eliminar la etiqueta "${tag.name}"?`,
+            description: 'Se quitará de todas las conversaciones que la tengan. Las conversaciones no se borran.',
+            confirmLabel: 'Eliminar etiqueta',
+        });
+        if (!ok) return;
         try {
             await axios.delete(`/api/tags/${tag.id}`);
             setTags(prev => prev.filter(t => t.id !== tag.id));
@@ -2258,12 +2288,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     const closeSelected = useCallback(async () => {
         if (selectedIds.size === 0) return;
-        if (!window.confirm(`¿Cerrar ${selectedIds.size} conversación(es) seleccionada(s)?`)) return;
+        const ok = await confirm({
+            title: `¿Cerrar ${selectedIds.size} conversación(es)?`,
+            description: 'Saldrán de la bandeja de chats abiertos y se avisará a los administradores. Podrás reabrirlas cuando quieras.',
+            confirmLabel: 'Cerrar seleccionadas',
+            variant: 'default',
+        });
+        if (!ok) return;
         await runCloseBulk({ ids: Array.from(selectedIds) });
     }, [selectedIds, runCloseBulk]);
 
     const closeAllOpen = useCallback(async () => {
-        if (!window.confirm('¿Cerrar TODAS las conversaciones abiertas de esta instancia? Podrás reabrirlas luego.')) return;
+        const ok = await confirm({
+            title: '¿Cerrar TODAS las conversaciones abiertas?',
+            description: 'Afecta a todos los chats abiertos de esta instancia, no solo a los que ves en pantalla. Podrás reabrirlos luego.',
+            confirmLabel: 'Cerrar todas',
+        });
+        if (!ok) return;
         const n = await runCloseBulk({ scope: 'all', instance_id: selectedInstanceId });
         if (n === 0) alert('No había conversaciones abiertas para cerrar.');
     }, [runCloseBulk, selectedInstanceId]);
@@ -2610,7 +2651,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
         } catch {
             // Formato que el navegador no decodifica (típico: HEIC de iPhone en
             // Chrome). Se puede mandar igual, pero como documento.
-            if (window.confirm('Este navegador no puede procesar esa imagen para enviarla como foto.\n\n¿Enviarla como documento adjunto?')) {
+            if (await confirm({
+                title: 'No se puede enviar como foto',
+                description: 'Este navegador no puede procesar esa imagen. ¿Quieres enviarla como documento adjunto?',
+                confirmLabel: 'Enviar como documento',
+                variant: 'default',
+            })) {
                 openDocumentPreview(file);
             }
             return;
@@ -3135,6 +3181,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     return (
         <>
             <Head title="Chat WhatsApp Business" />
+            {confirmDialog}
             <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {/* Clean Header */}
                 <div className="bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/10 px-3 sm:px-4 py-2 flex justify-between items-center gap-2 z-20 shadow-sm">
@@ -3922,11 +3969,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </button>
                                             ) : (
                                                 <button
-                                                    onClick={() => {
-                                                        if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
-                                                            setConversationStatus(selectedConversation.id, 'close');
-                                                        }
-                                                    }}
+                                                    onClick={() => confirmCloseConversation(selectedConversation.id)}
                                                     title="Cerrar conversación"
                                                     className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-sm shadow-emerald-600/25 transition-colors"
                                                 >
@@ -3957,11 +4000,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         </DropdownMenuItem>
                                                     ) : (
                                                         <DropdownMenuItem
-                                                            onClick={() => {
-                                                                if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
-                                                                    setConversationStatus(selectedConversation.id, 'close');
-                                                                }
-                                                            }}
+                                                            onClick={() => confirmCloseConversation(selectedConversation.id)}
                                                             className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
                                                         >
                                                             <CheckCircle2 className="size-4 text-emerald-600" />
@@ -3970,11 +4009,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     )}
                                                     <DropdownMenuSeparator className="bg-border/5" />
                                                     <DropdownMenuItem
-                                                        onClick={() => {
-                                                            if (window.confirm('¿Eliminar esta conversación y TODOS sus mensajes? Esta acción es irreversible.')) {
-                                                                deleteConversation(selectedConversation.id);
-                                                            }
-                                                        }}
+                                                        onClick={() => confirmDeleteConversation(selectedConversation.id)}
                                                         className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-rose-600 focus:text-rose-600"
                                                     >
                                                         <Trash2 className="size-4" />
@@ -5337,11 +5372,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </button>
                                             ) : (
                                                 <button
-                                                    onClick={() => {
-                                                        if (window.confirm('¿Cerrar esta conversación? Podrás reabrirla cuando quieras.')) {
-                                                            setConversationStatus(selectedConversation.id, 'close');
-                                                            setShowContactPanel(false);
-                                                        }
+                                                    onClick={async () => {
+                                                        await confirmCloseConversation(selectedConversation.id);
+                                                        setShowContactPanel(false);
                                                     }}
                                                     className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
                                                 >
