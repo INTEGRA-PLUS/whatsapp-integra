@@ -77,7 +77,7 @@ import {
 } from '@/components/ui/sheet';
 import QuickReplyPicker from '@/components/quick-reply-picker';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { refreshNotifications } from '@/lib/notifications';
+import { refreshNotifications, useConversationsRefresh } from '@/lib/notifications';
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
@@ -1214,6 +1214,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [editingNote, setEditingNote] = useState(null); // { id, content } nota interna en edición
     const [savingNote, setSavingNote] = useState(false);
     const [reactingId, setReactingId] = useState(null); // id del mensaje con una reacción en vuelo
+    // Resultado de pedir la eliminación de un chat sin permiso para borrarlo:
+    // { conversationId, message, error? }
+    const [deletionPending, setDeletionPending] = useState(null);
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
@@ -1773,10 +1776,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
     }
 
     async function confirmDeleteConversation(convId) {
+        // Sin permiso para borrar, el botón no borra: pide autorización. El
+        // texto lo dice para que nadie crea que acaba de destruir el historial.
+        const puedeBorrar = can('chat.delete');
+
         const ok = await confirm({
-            title: '¿Eliminar esta conversación?',
-            description: 'Se borrarán también TODOS sus mensajes y adjuntos. Esta acción no se puede deshacer.',
-            confirmLabel: 'Eliminar definitivamente',
+            title: puedeBorrar ? '¿Eliminar esta conversación?' : '¿Pedir la eliminación de este chat?',
+            description: puedeBorrar
+                ? 'Se borrarán también TODOS sus mensajes y adjuntos. Esta acción no se puede deshacer.'
+                : 'No tienes permiso para eliminar chats, así que se enviará una petición a un administrador. La conversación seguirá disponible hasta que la apruebe.',
+            confirmLabel: puedeBorrar ? 'Eliminar definitivamente' : 'Enviar petición',
+            variant: puedeBorrar ? 'danger' : 'default',
         });
         if (ok) deleteConversation(convId);
     }
@@ -1834,17 +1844,51 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const deleteConversation = useCallback(async (convId) => {
         try {
             const res = await axios.delete(`/api/chat/conversations/${convId}`);
-            if (res.data.success) {
-                setConversations(prev => prev.filter(c => c.id !== convId));
-                setSelectedConversation(prev => (prev?.id === convId ? null : prev));
-                setMessages(prev => (selectedConversation?.id === convId ? [] : prev));
-                loadFolderCounts();
+            if (!res.data.success) return;
+
+            // Sin permiso para borrar, el servidor no elimina: deja una petición
+            // pendiente de aprobación y la conversación sigue ahí.
+            if (res.data.status === 'pending') {
+                setDeletionPending({ conversationId: convId, message: res.data.message });
+                if (res.data.notice && selectedConversationRef.current?.id === convId) {
+                    setMessages(prev => prev.some(m => m.id === res.data.notice.id)
+                        ? prev
+                        : [...prev, res.data.notice]);
+                }
+                refreshNotifications();
+                return;
             }
+
+            setConversations(prev => prev.filter(c => c.id !== convId));
+            setSelectedConversation(prev => (prev?.id === convId ? null : prev));
+            setMessages(prev => (selectedConversationRef.current?.id === convId ? [] : prev));
+            loadFolderCounts();
         } catch (err) {
             console.error('Error eliminando conversación:', err);
-            alert('No se pudo eliminar la conversación.');
+            setDeletionPending({
+                conversationId: convId,
+                error: true,
+                message: err?.response?.data?.error || 'No se pudo eliminar la conversación.',
+            });
         }
-    }, [loadFolderCounts, selectedConversation]);
+    }, [loadFolderCounts]);
+
+    // Aprobar una eliminación desde la campana borra un chat que puede estar
+    // abierto en esta pantalla; la lista se recarga para no dejarlo colgado.
+    const reloadAfterExternalChange = useCallback(() => {
+        setPage(1);
+        setConversations([]);
+        setSelectedConversation(prev => {
+            if (!prev) return prev;
+            // Se comprueba si sigue existiendo; si no, se cierra el panel.
+            axios.get(`/api/chat/conversations/${prev.id}/messages`)
+                .catch(() => { setSelectedConversation(null); setMessages([]); });
+            return prev;
+        });
+        loadFolderCounts();
+    }, [loadFolderCounts]);
+
+    useConversationsRefresh(reloadAfterExternalChange);
 
     const attachTag = useCallback(async (convId, tagId) => {
         try {
@@ -3200,6 +3244,47 @@ export default function ChatIndex({ instances, integrations = [] }) {
         <>
             <Head title="Chat WhatsApp Business" />
             {confirmDialog}
+
+            {/* Resultado de pedir la eliminación: sin esto el agente pulsa
+                "Eliminar", no pasa nada visible y cree que falló. */}
+            {deletionPending && (
+                <div
+                    className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4 animate-in fade-in duration-150"
+                    onClick={() => setDeletionPending(null)}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#202c33] shadow-2xl overflow-hidden animate-in zoom-in-105 duration-150"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-start gap-3 px-5 pt-5">
+                            <div className={clsx(
+                                'size-10 rounded-full flex items-center justify-center shrink-0',
+                                deletionPending.error
+                                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+                            )}>
+                                {deletionPending.error ? <AlertTriangle className="size-5" /> : <Clock className="size-5" />}
+                            </div>
+                            <div className="min-w-0 flex-1 pt-0.5">
+                                <h2 className="text-[15px] font-bold text-foreground leading-snug">
+                                    {deletionPending.error ? 'No se pudo eliminar' : 'Petición enviada'}
+                                </h2>
+                                <p className="text-[13px] text-muted-foreground leading-relaxed mt-1.5">
+                                    {deletionPending.message}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex justify-end px-5 py-4 mt-2">
+                            <button
+                                onClick={() => setDeletionPending(null)}
+                                className="h-9 px-4 rounded-lg text-[13px] font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
+                            >
+                                Entendido
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {/* Clean Header */}
                 <div className="bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/10 px-3 sm:px-4 py-2 flex justify-between items-center gap-2 z-20 shadow-sm">

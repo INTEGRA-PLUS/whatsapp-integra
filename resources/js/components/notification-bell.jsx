@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-react';
+import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive, ShieldCheck, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { useNotificationRefresh } from '@/lib/notifications';
+import { useNotificationRefresh, refreshConversations } from '@/lib/notifications';
 
 /**
  * Antigüedad en lenguaje corto ("hace 5 min"). Pasado un día se muestra la
@@ -31,6 +31,8 @@ export default function NotificationBell() {
     // Para redactar en primera persona los avisos de acciones propias.
     const currentUserId = usePage().props?.auth?.user?.id;
     const { confirm, confirmDialog } = useConfirm();
+    const [resolving, setResolving] = useState(null); // id de la notificación en curso
+    const [error, setError] = useState(null);
 
     const load = useCallback(async () => {
         try {
@@ -102,6 +104,32 @@ export default function NotificationBell() {
         } catch (_) {}
     }
 
+    /**
+     * Resuelve una petición de eliminación sin salir de la campana.
+     *
+     * Al terminar se borra la notificación: ya está resuelta y dejarla ahí
+     * invitaría a pulsar otra vez sobre algo que ya no existe.
+     */
+    async function resolveDeletion(n, action, e) {
+        e?.stopPropagation();
+        const requestId = n.data?.request_id;
+        if (!requestId || resolving) return;
+
+        setResolving(n.id);
+        try {
+            await axios.post(`/api/chat/deletion-requests/${requestId}/resolve`, { action });
+            await axios.delete(`/api/notifications/${n.id}`).catch(() => {});
+            await load();
+            // La conversación pudo desaparecer: el chat abierto debe enterarse.
+            refreshConversations();
+        } catch (err) {
+            setError(err?.response?.data?.error || 'No se pudo resolver la petición.');
+            setTimeout(() => setError(null), 4000);
+        } finally {
+            setResolving(null);
+        }
+    }
+
     async function openNotification(n) {
         try {
             await axios.post(`/api/notifications/${n.id}/read`);
@@ -164,6 +192,12 @@ export default function NotificationBell() {
                         )}
                     </div>
 
+                    {error && (
+                        <div className="mx-3 mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                            {error}
+                        </div>
+                    )}
+
                     {items.length === 0 ? (
                         <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
                             <Bell className="size-7 text-muted-foreground/30" />
@@ -173,6 +207,8 @@ export default function NotificationBell() {
                         items.map(n => {
                             const isSystem = n.data?.type === 'system';
                             const isClosed = n.data?.type === 'conversation_closed';
+                            const isRequest = n.data?.type === 'deletion_request';
+                            const isResolved = n.data?.type === 'deletion_resolved';
                             return (
                                 <div
                                     key={n.id}
@@ -185,20 +221,80 @@ export default function NotificationBell() {
                                             ? "opacity-60 hover:bg-muted"
                                             : isSystem
                                                 ? "bg-sky-50/60 dark:bg-sky-900/10 hover:bg-sky-50 dark:hover:bg-sky-900/20"
-                                                : isClosed
+                                                : isRequest
+                                                ? "bg-rose-50/70 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                : isClosed || isResolved
                                                     ? "bg-slate-100/70 dark:bg-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-800/50"
                                                     : "bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                                     )}
                                 >
                                     {isSystem ? (
                                         <Megaphone className="size-4 text-sky-600 shrink-0 mt-0.5" />
+                                    ) : isRequest ? (
+                                        <Trash2 className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                                    ) : isResolved ? (
+                                        n.data?.approved
+                                            ? <Trash2 className="size-4 text-slate-500 shrink-0 mt-0.5" />
+                                            : <ShieldCheck className="size-4 text-emerald-600 shrink-0 mt-0.5" />
                                     ) : isClosed ? (
                                         <Archive className="size-4 text-slate-500 shrink-0 mt-0.5" />
                                     ) : (
                                         <AtSign className="size-4 text-amber-600 shrink-0 mt-0.5" />
                                     )}
                                     <div className="min-w-0 flex-1">
-                                        {isClosed ? (
+                                        {isRequest ? (
+                                            <>
+                                                <p className="text-[13px] leading-snug">
+                                                    <span className="font-bold">{n.data?.by_name}</span>
+                                                    {' pide eliminar un chat'}
+                                                </p>
+                                                {n.data?.contact_name && (
+                                                    <p className="text-[12px] text-muted-foreground truncate mt-0.5">
+                                                        {n.data.contact_name}
+                                                    </p>
+                                                )}
+                                                {n.data?.reason && (
+                                                    <p className="text-[12px] text-muted-foreground/80 italic line-clamp-2 mt-0.5">
+                                                        “{n.data.reason}”
+                                                    </p>
+                                                )}
+                                                {/* Resolver aquí evita ir a buscar la conversación,
+                                                    que además desaparece si se aprueba. */}
+                                                <div className="flex items-center gap-1.5 mt-2">
+                                                    <button
+                                                        onClick={(e) => resolveDeletion(n, 'approve', e)}
+                                                        disabled={resolving === n.id}
+                                                        className="h-7 px-2.5 rounded-md text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-60 inline-flex items-center gap-1.5 transition-colors"
+                                                    >
+                                                        {resolving === n.id
+                                                            ? <Loader2 className="size-3 animate-spin" />
+                                                            : <Trash2 className="size-3" />}
+                                                        Aprobar y eliminar
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => resolveDeletion(n, 'reject', e)}
+                                                        disabled={resolving === n.id}
+                                                        className="h-7 px-2.5 rounded-md text-[11px] font-bold text-foreground hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-60 transition-colors"
+                                                    >
+                                                        Rechazar
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : isResolved ? (
+                                            <>
+                                                <p className="text-[13px] leading-snug">
+                                                    <span className="font-bold">{n.data?.by_name}</span>
+                                                    {n.data?.approved
+                                                        ? ' aprobó eliminar el chat'
+                                                        : ' rechazó tu petición de eliminar el chat'}
+                                                </p>
+                                                {n.data?.contact_name && (
+                                                    <p className="text-[12px] text-muted-foreground truncate mt-0.5">
+                                                        {n.data.contact_name}
+                                                    </p>
+                                                )}
+                                            </>
+                                        ) : isClosed ? (
                                             <>
                                                 <p className="text-[13px] leading-snug">
                                                     {n.data?.by_id && n.data.by_id === currentUserId

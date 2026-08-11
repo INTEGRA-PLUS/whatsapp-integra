@@ -29,3 +29,21 @@ export function useNotificationRefresh(onRefresh) {
         return () => window.removeEventListener(REFRESH_EVENT, onRefresh);
     }, [onRefresh]);
 }
+
+const CONVERSATIONS_EVENT = 'conversations:refresh';
+
+/**
+ * Avisa de que la lista de conversaciones cambió por algo ocurrido fuera del
+ * chat: aprobar una eliminación desde la campana, por ejemplo, borra un chat
+ * que el agente puede tener abierto en ese momento.
+ */
+export function refreshConversations() {
+    window.dispatchEvent(new CustomEvent(CONVERSATIONS_EVENT));
+}
+
+export function useConversationsRefresh(onRefresh) {
+    useEffect(() => {
+        window.addEventListener(CONVERSATIONS_EVENT, onRefresh);
+        return () => window.removeEventListener(CONVERSATIONS_EVENT, onRefresh);
+    }, [onRefresh]);
+}

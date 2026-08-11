@@ -189,7 +189,9 @@
       "Bash(python3 -c \"import json,sys; [print\\(r['method'], r['uri'], '|', r['middleware']\\) for r in json.load\\(sys.stdin\\)]\")",
       "Read(//dev/**)",
       "Bash(node -e \"const l=require\\('lucide-react'\\); console.log\\('Copy:', !!l.Copy, 'Forward:', !!l.Forward\\);\")",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=ConversationDeletionRequestTest)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_permiso_se_crea_una_peticion)"
     ]
   }
 }

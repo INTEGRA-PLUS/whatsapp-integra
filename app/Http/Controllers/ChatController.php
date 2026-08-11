@@ -11,6 +11,7 @@ use App\Models\Instance;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Models\ConversationDeletionRequest;
 use App\Models\User;
 use App\Services\MetaWhatsAppService;
 use App\Services\WebhookDispatcher;
@@ -1230,10 +1231,13 @@ class ChatController extends Controller
     }
 
     /**
-     * Elimina por completo una conversación y sus mensajes (cascade) de la
-     * empresa del usuario. Acción destructiva e irreversible.
+     * Elimina la conversación, o deja una petición si quien lo pide no puede.
+     *
+     * Borrar arrastra todos los mensajes y adjuntos y no se puede deshacer, así
+     * que solo lo hace directamente quien tiene el permiso `chat.delete`. El
+     * resto deja una petición que un aprobador resuelve.
      */
-    public function destroy($conversationId)
+    public function destroy(Request $request, $conversationId)
     {
         $user = auth()->user();
 
@@ -1244,6 +1248,105 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
+        if (! $user->can('chat.delete')) {
+            return $this->requestConversationDeletion($user, $conversation, $request->input('reason'));
+        }
+
+        return $this->deleteConversationNow($user, $conversation);
+    }
+
+    /**
+     * Registra la petición y avisa a quienes pueden resolverla.
+     *
+     * Si ya hay una en curso no se crea otra: dos agentes pidiendo lo mismo
+     * llenarían la campana de los aprobadores con la misma decisión repetida.
+     */
+    private function requestConversationDeletion($user, WhatsAppConversation $conversation, ?string $reason)
+    {
+        $existing = ConversationDeletionRequest::pending()
+            ->where('conversation_id', $conversation->id)
+            ->with('requester:id,name')
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'success' => true,
+                'status'  => 'pending',
+                'message' => $existing->requested_by === $user->id
+                    ? 'Ya pediste la eliminación de este chat. Está pendiente de aprobación.'
+                    : "{$existing->requester?->name} ya pidió eliminar este chat. Está pendiente de aprobación.",
+                'request' => $existing,
+            ]);
+        }
+
+        $deletionRequest = ConversationDeletionRequest::create([
+            'conversation_id' => $conversation->id,
+            'company_id'      => $user->company_id,
+            'requested_by'    => $user->id,
+            'status'          => ConversationDeletionRequest::STATUS_PENDING,
+            'reason'          => $reason ? mb_substr($reason, 0, 500) : null,
+        ]);
+
+        $notice = $this->recordConversationNotice(
+            $conversation,
+            "{$user->name} pidió eliminar esta conversación. Pendiente de aprobación."
+        );
+
+        $this->notifyDeletionApprovers($user, $deletionRequest);
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'status'  => 'pending',
+            'message' => 'No tienes permiso para eliminar chats, así que se envió la petición a un administrador.',
+            'request' => $deletionRequest->load('requester:id,name'),
+            'notice'  => $notice,
+        ]));
+    }
+
+    /**
+     * Usuarios de la empresa que pueden resolver una petición: los mismos que
+     * podrían haber borrado el chat directamente.
+     */
+    private function deletionApprovers(int $companyId)
+    {
+        setPermissionsTeamId($companyId);
+
+        return User::where('company_id', $companyId)
+            ->where('active', true)
+            ->get()
+            ->filter(fn ($u) => $u->can('chat.delete'));
+    }
+
+    private function notifyDeletionApprovers($user, ConversationDeletionRequest $deletionRequest): void
+    {
+        try {
+            $approvers = $this->deletionApprovers($user->company_id);
+
+            foreach ($approvers as $approver) {
+                $approver->notify(new \App\Notifications\ConversationDeletionRequestedNotification(
+                    $deletionRequest->load(['requester:id,name', 'conversation'])
+                ));
+            }
+
+            if ($approvers->isEmpty()) {
+                Log::warning('Petición de eliminación sin aprobadores posibles', [
+                    'company_id' => $user->company_id,
+                    'request_id' => $deletionRequest->id,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo avisar de la petición de eliminación', [
+                'request_id' => $deletionRequest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Borrado efectivo. Se llama desde destroy() con permiso, o al aprobar.
+     */
+    private function deleteConversationNow($user, WhatsAppConversation $conversation)
+    {
         WebhookDispatcher::emit(
             $user->company_id,
             'conversation.deleted',
@@ -1257,7 +1360,126 @@ class ChatController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversación eliminada',
+            'deleted' => true,
         ]);
+    }
+
+    /**
+     * Peticiones de eliminación pendientes de la empresa, para quien puede
+     * resolverlas.
+     */
+    public function deletionRequests()
+    {
+        $user = auth()->user();
+
+        if (! $user->can('chat.delete')) {
+            abort(403, 'No autorizado');
+        }
+
+        $requests = ConversationDeletionRequest::pending()
+            ->where('company_id', $user->company_id)
+            ->with(['requester:id,name', 'conversation:id,name,phone_number,instance_id'])
+            ->latest()
+            ->get();
+
+        return response()->json($this->sanitizeUtf8(['requests' => $requests]));
+    }
+
+    /**
+     * Aprueba la petición y borra la conversación, o la rechaza dejándola
+     * intacta. En ambos casos se avisa a quien la pidió.
+     */
+    public function resolveDeletionRequest(Request $request, $requestId)
+    {
+        $validator = Validator::make($request->all(), [
+            'action' => 'required|in:approve,reject',
+            'note'   => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+
+        if (! $user->can('chat.delete')) {
+            abort(403, 'No tienes permiso para resolver peticiones de eliminación');
+        }
+
+        $deletionRequest = ConversationDeletionRequest::with(['conversation.instance', 'requester'])
+            ->findOrFail($requestId);
+
+        if ($deletionRequest->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        if (! $deletionRequest->isPending()) {
+            return response()->json([
+                'success' => false,
+                'status'  => $deletionRequest->status,
+                'error'   => 'Esta petición ya fue resuelta.',
+            ], 422);
+        }
+
+        $approved = $request->action === 'approve';
+        $conversation = $deletionRequest->conversation;
+
+        // El nombre se guarda antes de borrar: después la conversación ya no
+        // existe y el aviso al solicitante se quedaría sin a qué referirse.
+        $contactName = $conversation?->name ?: ($conversation?->phone_number ?? 'la conversación');
+
+        $deletionRequest->update([
+            'status'      => $approved
+                ? ConversationDeletionRequest::STATUS_APPROVED
+                : ConversationDeletionRequest::STATUS_REJECTED,
+            'reviewed_by' => $user->id,
+            'reviewed_at' => now(),
+            'review_note' => $request->note ? mb_substr($request->note, 0, 500) : null,
+        ]);
+
+        if ($approved && $conversation) {
+            $this->deleteConversationNow($user, $conversation);
+        } elseif ($conversation) {
+            $this->recordConversationNotice(
+                $conversation,
+                "{$user->name} rechazó la petición de eliminar esta conversación."
+            );
+        }
+
+        $this->notifyDeletionRequester($deletionRequest, $contactName);
+
+        return response()->json([
+            'success' => true,
+            'status'  => $deletionRequest->status,
+            'deleted' => $approved,
+            'message' => $approved
+                ? 'Petición aprobada: la conversación fue eliminada.'
+                : 'Petición rechazada: la conversación sigue disponible.',
+            'conversation_id' => $deletionRequest->conversation_id,
+        ]);
+    }
+
+    private function notifyDeletionRequester(ConversationDeletionRequest $deletionRequest, string $contactName): void
+    {
+        try {
+            $requester = $deletionRequest->requester;
+
+            // Puede no existir si el usuario se dio de baja entre la petición y
+            // la resolución (requested_by es nullOnDelete).
+            if (! $requester) {
+                return;
+            }
+
+            $requester->notify(new \App\Notifications\ConversationDeletionResolvedNotification(
+                $deletionRequest->load('reviewer:id,name'),
+                $contactName
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo avisar al solicitante de la eliminación', [
+                'request_id' => $deletionRequest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function reopen($conversationId)

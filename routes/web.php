@@ -365,6 +365,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/conversations/{conversationId}/close', [ChatController::class, 'close']);
         Route::post('/conversations/{conversationId}/reopen', [ChatController::class, 'reopen']);
         Route::delete('/conversations/{conversationId}', [ChatController::class, 'destroy']);
+
+        // Peticiones de eliminación: sin chat.delete el borrado se convierte en
+        // una petición que resuelve alguien que sí lo tiene.
+        Route::get('/deletion-requests', [ChatController::class, 'deletionRequests']);
+        Route::post('/deletion-requests/{requestId}/resolve', [ChatController::class, 'resolveDeletionRequest']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
         Route::post('/conversations/{conversationId}/assign-me', [ChatController::class, 'assignToMe']);
         Route::post('/conversations/{conversationId}/attach-contact', [App\Http\Controllers\ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
