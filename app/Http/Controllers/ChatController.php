@@ -256,6 +256,18 @@ class ChatController extends Controller
             return response()->json(['success' => false, 'error' => 'Número de teléfono inválido. Incluye el código de país.'], 422);
         }
 
+        // Un celular colombiano sin el 57 (10 dígitos empezando por 3) crea un
+        // hilo que Meta nunca va a reconocer: el webhook siempre trae el número
+        // con indicativo, así que el chat se queda vacío para siempre y nadie
+        // entiende por qué. Ningún indicativo real produce un número de 10
+        // dígitos que empiece por 3, así que se puede rechazar sin ambigüedad.
+        if (strlen($phone) === 10 && str_starts_with($phone, '3')) {
+            return response()->json([
+                'success' => false,
+                'error' => "Falta el código de país. Escribe 57{$phone} en vez de {$phone}.",
+            ], 422);
+        }
+
         $conversation = WhatsAppConversation::resolveFor(
             $instance->id,
             $phone,
