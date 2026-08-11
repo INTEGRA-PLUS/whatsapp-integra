@@ -4,6 +4,23 @@ import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-
 import axios from 'axios';
 import { clsx } from 'clsx';
 
+/**
+ * Antigüedad en lenguaje corto ("hace 5 min"). Pasado un día se muestra la
+ * fecha, que a esa distancia dice más que "hace 3 d".
+ */
+function timeAgo(iso) {
+    if (!iso) return '';
+    const date = new Date(iso);
+    const mins = Math.floor((Date.now() - date.getTime()) / 60000);
+
+    if (mins < 1) return 'ahora mismo';
+    if (mins < 60) return `hace ${mins} min`;
+    if (mins < 1440) return `hace ${Math.floor(mins / 60)} h`;
+    if (mins < 2880) return 'ayer';
+
+    return date.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+}
+
 export default function NotificationBell() {
     const [open, setOpen] = useState(false);
     const [unread, setUnread] = useState(0);
@@ -92,32 +109,42 @@ export default function NotificationBell() {
             </button>
 
             {open && (
-                <div className="absolute right-0 mt-2 w-80 max-h-[420px] overflow-y-auto bg-white dark:bg-[#2a3942] border border-border rounded-lg shadow-xl z-50">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-white dark:bg-[#2a3942]">
-                        <span className="text-sm font-bold">Notificaciones</span>
-                        <div className="flex items-center gap-3">
+                <div className="absolute right-0 mt-2 w-[23rem] max-w-[calc(100vw-1.5rem)] max-h-[440px] overflow-y-auto bg-white dark:bg-[#2a3942] border border-border rounded-xl shadow-xl z-50">
+                    {/* Encabezado en dos filas: el título y las acciones no se
+                        disputan el ancho, así que las etiquetas no se parten. */}
+                    <div className="sticky top-0 z-10 bg-white dark:bg-[#2a3942] border-b border-border">
+                        <div className="flex items-center gap-2 px-4 pt-3">
+                            <span className="text-sm font-bold">Notificaciones</span>
                             {unread > 0 && (
-                                <button
-                                    onClick={markAllRead}
-                                    className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 flex items-center gap-1"
-                                >
-                                    <CheckCheck className="size-3.5" /> Marcar leídas
-                                </button>
-                            )}
-                            {items.length > 0 && (
-                                <button
-                                    onClick={deleteAll}
-                                    className="text-[11px] font-semibold text-destructive hover:text-destructive/80 flex items-center gap-1"
-                                >
-                                    <Trash2 className="size-3.5" /> Eliminar todas
-                                </button>
+                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                    {unread > 99 ? '99+' : unread}
+                                </span>
                             )}
                         </div>
+                        {items.length > 0 && (
+                            <div className="flex items-center justify-between gap-2 px-2 pt-1.5 pb-2">
+                                {unread > 0 ? (
+                                    <button
+                                        onClick={markAllRead}
+                                        className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 hover:bg-teal-600/10 rounded-md px-2 py-1 flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                                    >
+                                        <CheckCheck className="size-3.5 shrink-0" /> Marcar leídas
+                                    </button>
+                                ) : <span />}
+                                <button
+                                    onClick={deleteAll}
+                                    className="text-[11px] font-semibold text-destructive hover:bg-destructive/10 rounded-md px-2 py-1 flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                                >
+                                    <Trash2 className="size-3.5 shrink-0" /> Eliminar todas
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     {items.length === 0 ? (
-                        <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                            Sin notificaciones
+                        <div className="px-4 py-10 flex flex-col items-center gap-2 text-center">
+                            <Bell className="size-7 text-muted-foreground/30" />
+                            <p className="text-sm text-muted-foreground">Sin notificaciones</p>
                         </div>
                     ) : (
                         items.map(n => {
@@ -130,7 +157,7 @@ export default function NotificationBell() {
                                     tabIndex={0}
                                     onClick={() => openNotification(n)}
                                     className={clsx(
-                                        "group w-full text-left px-3 py-2.5 border-b border-border/50 transition-colors flex gap-2 cursor-pointer",
+                                        "group w-full text-left px-4 py-3 border-b border-border/50 last:border-b-0 transition-colors flex gap-2.5 cursor-pointer",
                                         n.read_at
                                             ? "opacity-60 hover:bg-muted"
                                             : isSystem
@@ -149,17 +176,21 @@ export default function NotificationBell() {
                                     )}
                                     <div className="min-w-0 flex-1">
                                         {isClosed ? (
-                                            <p className="text-[13px] leading-snug">
-                                                {n.data?.by_id && n.data.by_id === currentUserId
-                                                    ? <span className="font-bold">Cerraste</span>
-                                                    : <><span className="font-bold">{n.data?.by_name}</span> cerró</>}
-                                                {n.data?.total > 1
-                                                    ? ` ${n.data.total} conversaciones`
-                                                    : ' una conversación'}
-                                                {n.data?.contact_name && n.data?.total <= 1
-                                                    ? <span className="text-muted-foreground"> · {n.data.contact_name}</span>
-                                                    : null}
-                                            </p>
+                                            <>
+                                                <p className="text-[13px] leading-snug">
+                                                    {n.data?.by_id && n.data.by_id === currentUserId
+                                                        ? <span className="font-bold">Cerraste</span>
+                                                        : <><span className="font-bold">{n.data?.by_name}</span> cerró</>}
+                                                    {n.data?.total > 1
+                                                        ? ` ${n.data.total} conversaciones`
+                                                        : ' una conversación'}
+                                                </p>
+                                                {n.data?.contact_name && n.data?.total <= 1 && (
+                                                    <p className="text-[12px] text-muted-foreground truncate mt-0.5">
+                                                        {n.data.contact_name}
+                                                    </p>
+                                                )}
+                                            </>
                                         ) : isSystem ? (
                                             <>
                                                 <p className="text-[13px] leading-snug font-bold">{n.data?.title}</p>
@@ -182,6 +213,12 @@ export default function NotificationBell() {
                                                 )}
                                             </>
                                         )}
+                                        <p
+                                            className="text-[10.5px] text-muted-foreground/70 mt-1"
+                                            title={n.created_at ? new Date(n.created_at).toLocaleString('es-CO') : ''}
+                                        >
+                                            {timeAgo(n.created_at)}
+                                        </p>
                                     </div>
                                     <button
                                         onClick={(e) => deleteOne(n, e)}
