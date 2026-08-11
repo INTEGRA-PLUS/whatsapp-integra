@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class AutoResponse extends Model
 {
@@ -122,9 +123,24 @@ class AutoResponse extends Model
         return $gapMinutes >= $thresholdHours * 60;
     }
 
+    /**
+     * Deja el texto en la forma con la que se comparan disparador y mensaje.
+     *
+     * Además de bajar a minúsculas, quita las tildes y colapsa los espacios
+     * repetidos: el cliente escribe "cómo pago" —el teclado del móvil pone la
+     * tilde solo— y el disparador está guardado como "COMO PAGO". Comparando en
+     * crudo eso no casaba y la respuesta automática no salía.
+     */
+    private static function normalizeForMatch(string $value): string
+    {
+        $value = Str::ascii(mb_strtolower(trim($value)));
+
+        return preg_replace('/\s+/', ' ', $value);
+    }
+
     private function keywordMatches(string $type, string $incoming): bool
     {
-        $haystack = mb_strtolower(trim($incoming));
+        $haystack = self::normalizeForMatch($incoming);
 
         if ($haystack === '') {
             return false;
@@ -154,8 +170,9 @@ class AutoResponse extends Model
     public function keywords(): array
     {
         return collect(explode(',', (string) $this->trigger_text))
-            ->map(fn ($k) => mb_strtolower(trim($k)))
+            ->map(fn ($k) => self::normalizeForMatch((string) $k))
             ->filter(fn ($k) => $k !== '')
+            ->unique()
             ->values()
             ->all();
     }
