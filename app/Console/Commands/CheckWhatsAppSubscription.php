@@ -19,7 +19,8 @@ use Illuminate\Console\Command;
 class CheckWhatsAppSubscription extends Command
 {
     protected $signature = 'whatsapp:check-subscription
-        {--instance= : Revisa solo esta instancia (id)}';
+        {--instance= : Revisa solo esta instancia (id)}
+        {--last=0 : Lista los últimos N entrantes con su remitente}';
 
     protected $description = 'Comprueba contra Meta que las instancias reciban mensajes entrantes';
 
@@ -97,14 +98,55 @@ class CheckWhatsAppSubscription extends Command
         $hours = $last->created_at->diffInHours(now());
         $when = "{$last->created_at->format('Y-m-d H:i')} (hace " . $last->created_at->diffForHumans(null, true) . ')';
 
-        if ($hours >= 24) {
-            $this->warn("  ⚠️  Último entrante: {$when}");
-            return 1;
+        $stale = $hours >= 24;
+
+        $stale
+            ? $this->warn("  ⚠️  Último entrante: {$when}")
+            : $this->line("  Último entrante: {$when}");
+
+        // La lista sirve igual (o más) cuando la instancia lleva rato sin
+        // recibir: dice quién fue el último en escribir.
+        $this->listRecentInbound($instance);
+
+        return $stale ? 1 : 0;
+    }
+
+    /**
+     * Quién escribió de verdad, con su número tal como está guardado.
+     *
+     * Resuelve la confusión de buscar por un número y no encontrar nada: si el
+     * remitente real es otro (el cliente escribe desde una línea distinta, o el
+     * número que se estaba buscando era el equivocado), aquí se ve enseguida.
+     */
+    private function listRecentInbound(Instance $instance): void
+    {
+        $limit = (int) $this->option('last');
+
+        if ($limit <= 0) {
+            return;
         }
 
-        $this->line("  Último entrante: {$when}");
+        $messages = WhatsAppMessage::with('conversation:id,wa_id,name')
+            ->whereHas('conversation', fn ($q) => $q->where('instance_id', $instance->id))
+            ->where('direction', 'inbound')
+            ->latest('created_at')
+            ->limit($limit)
+            ->get();
 
-        return 0;
+        if ($messages->isEmpty()) {
+            return;
+        }
+
+        $this->table(
+            ['cuándo', 'de', 'nombre', 'conv', 'contenido'],
+            $messages->map(fn ($m) => [
+                $m->created_at->format('m-d H:i'),
+                $m->conversation?->wa_id ?? '—',
+                mb_substr((string) ($m->conversation?->name ?? ''), 0, 18),
+                $m->conversation_id,
+                mb_substr((string) ($m->content ?? "[{$m->type}]"), 0, 40),
+            ])->all()
+        );
     }
 
     /**
