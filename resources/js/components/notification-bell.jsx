@@ -245,8 +245,9 @@ export default function NotificationBell() {
                                         {isRequest ? (
                                             <>
                                                 <p className="text-[13px] leading-snug">
-                                                    <span className="font-bold">{n.data?.by_name}</span>
-                                                    {' pide eliminar un chat'}
+                                                    {n.data?.can_resolve === false
+                                                        ? <><span className="font-bold">Pediste eliminar un chat</span> · pendiente de aprobación</>
+                                                        : <><span className="font-bold">{n.data?.by_name}</span> pide eliminar un chat</>}
                                                 </p>
                                                 {n.data?.contact_name && (
                                                     <p className="text-[12px] text-muted-foreground truncate mt-0.5">
@@ -259,8 +260,10 @@ export default function NotificationBell() {
                                                     </p>
                                                 )}
                                                 {/* Resolver aquí evita ir a buscar la conversación,
-                                                    que además desaparece si se aprueba. */}
-                                                <div className="flex items-center gap-1.5 mt-2">
+                                                    que además desaparece si se aprueba. Al
+                                                    solicitante se le muestra la misma tarjeta sin
+                                                    botones: puede seguirla, no autorizarla. */}
+                                                <div className={clsx('flex items-center gap-1.5 mt-2', n.data?.can_resolve === false && 'hidden')}>
                                                     <button
                                                         onClick={(e) => resolveDeletion(n, 'approve', e)}
                                                         disabled={resolving === n.id}

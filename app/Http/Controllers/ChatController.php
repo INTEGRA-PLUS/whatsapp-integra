@@ -1292,14 +1292,19 @@ class ChatController extends Controller
             "{$user->name} pidió eliminar esta conversación. Pendiente de aprobación."
         );
 
-        $this->notifyDeletionApprovers($user, $deletionRequest);
+        $approvers = $this->notifyDeletionApprovers($user, $deletionRequest);
 
         return response()->json($this->sanitizeUtf8([
-            'success' => true,
-            'status'  => 'pending',
-            'message' => 'No tienes permiso para eliminar chats, así que se envió la petición a un administrador.',
-            'request' => $deletionRequest->load('requester:id,name'),
-            'notice'  => $notice,
+            'success'   => true,
+            'status'    => 'pending',
+            'approvers' => $approvers,
+            // Sin nadie que pueda aprobarla la petición no avanzaría nunca, y
+            // callarlo dejaría al agente esperando una respuesta que no llega.
+            'message'   => $approvers > 0
+                ? 'No tienes permiso para eliminar chats, así que se envió la petición a un administrador. La verás en tus notificaciones.'
+                : 'Se registró la petición, pero nadie en tu empresa tiene el permiso para aprobarla. Pide que activen "Delete" en el módulo Chat de algún rol de administrador.',
+            'request'   => $deletionRequest->load('requester:id,name'),
+            'notice'    => $notice,
         ]));
     }
 
@@ -1317,16 +1322,32 @@ class ChatController extends Controller
             ->filter(fn ($u) => $u->can('chat.delete'));
     }
 
-    private function notifyDeletionApprovers($user, ConversationDeletionRequest $deletionRequest): void
+    /**
+     * Avisa de la petición y devuelve cuántos pueden resolverla.
+     *
+     * Quien la pidió también recibe el aviso, sin botones: sin él su campana se
+     * queda vacía y no tiene forma de saber que la petición existe ni en qué
+     * estado está.
+     */
+    private function notifyDeletionApprovers($user, ConversationDeletionRequest $deletionRequest): int
     {
         try {
+            $deletionRequest->load(['requester:id,name', 'conversation']);
             $approvers = $this->deletionApprovers($user->company_id);
 
             foreach ($approvers as $approver) {
                 $approver->notify(new \App\Notifications\ConversationDeletionRequestedNotification(
-                    $deletionRequest->load(['requester:id,name', 'conversation'])
+                    $deletionRequest,
+                    true
                 ));
             }
+
+            // El solicitante nunca está entre los aprobadores (si pudiera
+            // resolverla habría borrado directamente), así que no se duplica.
+            $user->notify(new \App\Notifications\ConversationDeletionRequestedNotification(
+                $deletionRequest,
+                false
+            ));
 
             if ($approvers->isEmpty()) {
                 Log::warning('Petición de eliminación sin aprobadores posibles', [
@@ -1334,11 +1355,15 @@ class ChatController extends Controller
                     'request_id' => $deletionRequest->id,
                 ]);
             }
+
+            return $approvers->count();
         } catch (\Throwable $e) {
             Log::warning('No se pudo avisar de la petición de eliminación', [
                 'request_id' => $deletionRequest->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return 0;
         }
     }
 

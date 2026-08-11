@@ -190,4 +190,51 @@ class ConversationDeletionRequestTest extends TestCase
         $this->assertNotNull(WhatsAppConversation::find($conversation->id), 'El chat NO debía borrarse.');
         $this->assertSame('pending', $request->refresh()->status);
     }
+
+    public function test_los_aprobadores_reciben_la_notificacion(): void
+    {
+        $admin  = $this->user(true, 'Admin');
+        $agente = $this->user(false, 'Agente');
+        $conversation = $this->conversation();
+
+        $this->actingAs($agente)->deleteJson("/api/chat/conversations/{$conversation->id}");
+
+        $notificaciones = \DB::table('notifications')->get();
+
+        $this->assertGreaterThan(0, $notificaciones->count(), 'No se creó ninguna notificación.');
+
+        $paraAdmin = $notificaciones->firstWhere('notifiable_id', $admin->id);
+        $this->assertNotNull($paraAdmin, 'El aprobador no recibió la notificación.');
+
+        $data = json_decode($paraAdmin->data, true);
+        $this->assertSame('deletion_request', $data['type']);
+        $this->assertSame('Agente', $data['by_name']);
+        $this->assertNotNull($data['request_id'], 'Sin request_id no se puede aprobar desde la campana.');
+
+        // El solicitante también la recibe, para poder seguirla, pero sin
+        // capacidad de resolverla.
+        $paraAgente = $notificaciones->firstWhere('notifiable_id', $agente->id);
+        $this->assertNotNull($paraAgente, 'El solicitante debía ver su propia petición.');
+        $this->assertFalse(json_decode($paraAgente->data, true)['can_resolve']);
+        $this->assertTrue($data['can_resolve'], 'El aprobador sí debe poder resolverla.');
+    }
+
+    public function test_sin_nadie_que_pueda_aprobar_se_avisa_al_solicitante(): void
+    {
+        // El usuario de relleno de setUp es admin con todos los permisos; se le
+        // quitan los roles para dejar la empresa sin ningún aprobador posible.
+        setPermissionsTeamId($this->company->id);
+        User::where('company_id', $this->company->id)->get()
+            ->each(fn ($u) => $u->syncRoles([]));
+
+        $agente = $this->user(false, 'Agente');
+        $conversation = $this->conversation();
+
+        $response = $this->actingAs($agente)
+            ->deleteJson("/api/chat/conversations/{$conversation->id}");
+
+        $response->assertOk()->assertJson(['status' => 'pending', 'approvers' => 0]);
+        $this->assertStringContainsString('nadie en tu empresa', $response->json('message'));
+        $this->assertNotNull(WhatsAppConversation::find($conversation->id));
+    }
 }

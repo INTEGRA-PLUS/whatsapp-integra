@@ -191,7 +191,9 @@
       "Bash(node -e \"const l=require\\('lucide-react'\\); console.log\\('Copy:', !!l.Copy, 'Forward:', !!l.Forward\\);\")",
       "Bash(git branch *)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=ConversationDeletionRequestTest)",
-      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_permiso_se_crea_una_peticion)"
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_permiso_se_crea_una_peticion)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_los_aprobadores_reciben)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_nadie_que_pueda_aprobar)"
     ]
   }
 }

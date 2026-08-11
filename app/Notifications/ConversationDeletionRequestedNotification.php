@@ -16,8 +16,15 @@ class ConversationDeletionRequestedNotification extends Notification
 {
     use Queueable;
 
-    public function __construct(public ConversationDeletionRequest $request)
-    {
+    /**
+     * @param bool $canResolve Si el destinatario puede aprobarla. A quien la
+     *                         pidió se le manda también, para que la vea en su
+     *                         campana y pueda seguirla, pero sin botones.
+     */
+    public function __construct(
+        public ConversationDeletionRequest $request,
+        public bool $canResolve = true
+    ) {
     }
 
     public function via(object $notifiable): array
@@ -37,6 +44,7 @@ class ConversationDeletionRequestedNotification extends Notification
             'by_name'         => $this->request->requester?->name ?? 'Un agente',
             'contact_name'    => $conversation?->name ?: $conversation?->phone_number,
             'reason'          => $this->request->reason,
+            'can_resolve'     => $this->canResolve,
         ];
     }
 }
