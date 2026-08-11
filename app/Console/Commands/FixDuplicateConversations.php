@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Models\WhatsAppCall;
+use App\Models\WhatsAppCallPermission;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use Illuminate\Console\Command;
@@ -138,6 +140,12 @@ class FixDuplicateConversations extends Command
             WhatsAppMessage::where('conversation_id', $loser->id)
                 ->update(['conversation_id' => $survivor->id]);
 
+            // El historial de llamadas cuelga del hilo con ON DELETE SET NULL:
+            // si no se reasigna antes de borrar, las llamadas no dan error pero
+            // quedan sin conversación y desaparecen del chat para siempre.
+            WhatsAppCall::where('conversation_id', $loser->id)
+                ->update(['conversation_id' => $survivor->id]);
+
             // Las etiquetas del hilo absorbido se conservan, sin duplicar las que
             // el superviviente ya tenía. Se hace por la relación para no depender
             // del nombre de las columnas de la tabla pivote.
@@ -187,6 +195,41 @@ class FixDuplicateConversations extends Command
             'phone_number'    => $digits,
             'last_message'    => $last?->content ?: $survivor->last_message,
             'last_message_at' => $last?->created_at ?? $survivor->last_message_at,
+        ])->save();
+
+        $this->syncCallPermissions($survivor->instance_id, $digits, $survivor->id);
+    }
+
+    /**
+     * Deja un único permiso de llamada para el número, con el wa_id canónico.
+     *
+     * Los permisos se buscan por `(instance_id, wa_id)`, no por conversación:
+     * al reescribir el número del hilo, un permiso guardado bajo la forma con
+     * espacios dejaría de encontrarse y el botón de llamar desaparecería aunque
+     * el cliente sí hubiera dado permiso.
+     */
+    private function syncCallPermissions(int $instanceId, string $digits, ?int $conversationId): void
+    {
+        $permissions = WhatsAppCallPermission::where('instance_id', $instanceId)
+            ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') = ?", [$digits])
+            ->get();
+
+        if ($permissions->isEmpty()) {
+            return;
+        }
+
+        // Se conserva el permiso más útil: uno vigente manda sobre uno caducado
+        // y, a igualdad, el más reciente. Los demás sobran y además chocarían
+        // con el índice único (instance_id, wa_id).
+        $keep = $permissions
+            ->sortByDesc(fn ($p) => [$p->isActive() ? 1 : 0, $p->requested_at?->getTimestamp() ?? 0])
+            ->first();
+
+        $permissions->reject(fn ($p) => $p->id === $keep->id)->each->delete();
+
+        $keep->forceFill([
+            'wa_id'           => $digits,
+            'conversation_id' => $conversationId ?? $keep->conversation_id,
         ])->save();
     }
 
@@ -253,6 +296,10 @@ class FixDuplicateConversations extends Command
                     'wa_id'        => $digits,
                     'phone_number' => WhatsAppConversation::normalizePhone($conversation->phone_number) ?: $digits,
                 ]);
+
+            // El permiso de llamada se busca por wa_id, así que tiene que seguir
+            // al hilo cuando le cambia el número.
+            $this->syncCallPermissions($conversation->instance_id, $digits, $conversation->id);
 
             $count++;
         }
