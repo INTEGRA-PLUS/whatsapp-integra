@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Jobs\DeliverWhatsAppMessage;
 use App\Models\Company;
 use App\Models\Instance;
-use App\Models\User;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use App\Services\WhatsAppFailureTranslator;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,24 +17,26 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 /**
- * Auditoría global de mensajes no entregados, solo para Master.
+ * Mensajes que el cliente nunca recibió, con el motivo explicado y un botón
+ * para volver a enviarlos.
  *
- * Un agente ve el fallo de su propia burbuja en el chat, pero nadie tenía una
- * vista transversal: qué empresas están fallando, con qué código de Meta y con
- * qué frecuencia. Este módulo cruza todas las empresas, explica el motivo y
- * permite volver a poner el mensaje en la cola sin suplantar al usuario.
+ * Un agente ve el fallo de su propia burbuja en el chat, pero nadie tenía la
+ * lista completa: qué se quedó sin entregar, por qué y con qué frecuencia. Lo
+ * usa cualquier usuario de la empresa —viendo solo lo suyo— y un Master ve el
+ * cruce de todas las empresas.
  */
 class MessagesController extends Controller
 {
     /** Buckets de "no entregado" que el filtro de estado sabe interpretar. */
     private const BUCKETS = ['all', 'failed', 'pending', 'sent'];
 
-    public function __construct(private MetaWhatsAppService $metaService) {}
+    public function __construct(
+        private MetaWhatsAppService $metaService,
+        private WhatsAppFailureTranslator $translator,
+    ) {}
 
     public function index(Request $request)
     {
-        $this->authorizeMaster();
-
         $filters = $this->resolveFilters($request);
 
         $messages = $this->buildQuery($filters)
@@ -79,7 +81,6 @@ class MessagesController extends Controller
      */
     public function show(Request $request, WhatsAppMessage $message)
     {
-        $this->authorizeMaster();
         $this->authorizeMessageScope($message);
 
         $message->load([
@@ -113,11 +114,13 @@ class MessagesController extends Controller
                     'created_at' => $this->formatDate($message->retryOf->created_at),
                 ] : null,
                 'retries'           => $message->retries->map(fn ($retry) => [
-                    'id'            => $retry->id,
-                    'status'        => $retry->status,
-                    'created_at'    => $this->formatDate($retry->created_at),
-                    'error_message' => $retry->error_message,
-                    'error_code'    => $retry->error_code,
+                    'id'         => $retry->id,
+                    'status'     => $retry->status,
+                    'created_at' => $this->formatDate($retry->created_at),
+                    // También traducido: el historial lo lee la misma persona.
+                    'reason'     => in_array($retry->status, ['delivered', 'read'], true)
+                        ? null
+                        : $this->translator->explain($retry)['title'],
                 ])->values(),
                 'conversation'      => $conversation ? [
                     'id'              => $conversation->id,
@@ -153,33 +156,31 @@ class MessagesController extends Controller
      */
     public function retry(Request $request, WhatsAppMessage $message)
     {
-        $this->authorizeMaster();
         $this->authorizeMessageScope($message);
 
         if ($message->direction !== 'outbound' || $message->type === 'note') {
-            return back()->with('error', 'Solo se pueden reenviar mensajes salientes.');
-        }
-
-        if (! in_array($message->type, WhatsAppMessage::RETRYABLE_TYPES, true)) {
-            return back()->with('error', "Los mensajes de tipo \"{$message->type}\" no se pueden reenviar.");
+            return back()->with('error', 'Solo se pueden volver a enviar los mensajes que la empresa mandó al cliente.');
         }
 
         if (in_array($message->status, ['delivered', 'read'], true)) {
-            return back()->with('error', 'Este mensaje ya fue entregado.');
+            return back()->with('error', 'Este mensaje sí le llegó al cliente, no hace falta enviarlo otra vez.');
         }
 
         $conversation = $message->conversation;
         $instance = $conversation?->instance;
 
-        if (! $instance || ! $instance->isMetaConfigured()) {
-            return back()->with('error', 'La instancia de esta empresa no tiene la configuración de Meta completa.');
+        // Mismo criterio que apaga el botón en la interfaz, para no prometer un
+        // reenvío que el backend va a rechazar. Rechazar aquí también evita crear
+        // una copia condenada que solo ensuciaría el chat con otra burbuja roja.
+        if ($blocked = $this->retryBlockedReason($message, $instance)) {
+            return back()->with('error', $blocked);
         }
 
-        // El job manda los adjuntos a Meta como enlace, así que sin `media_url`
-        // no hay nada que enviar: se intenta recuperar la copia antes de rendirse.
+        // El envío manda los adjuntos a WhatsApp como enlace, así que sin copia
+        // propia no hay nada que enviar: se intenta recuperarla antes de rendirse.
         if (in_array($message->type, ['image', 'audio', 'document'], true) && empty($message->media_url)) {
             if (! $this->restoreMediaUrl($message, $instance)) {
-                return back()->with('error', 'El adjunto ya no está disponible (los archivos de Meta caducan a los 30 días), así que no se puede reenviar.');
+                return back()->with('error', 'El archivo adjunto ya no está disponible (WhatsApp los borra a los 30 días), así que este mensaje no se puede volver a enviar.');
             }
         }
 
@@ -211,24 +212,23 @@ class MessagesController extends Controller
 
         DeliverWhatsAppMessage::dispatch($clone->id);
 
-        Log::info('Reintento de mensaje desde el panel Master', [
+        Log::info('Reenvío de mensaje no entregado', [
             'original_message_id' => $message->id,
             'new_message_id'      => $clone->id,
             'company_id'          => $instance->company_id,
-            'master_user_id'      => Auth::id(),
+            'user_id'             => Auth::id(),
         ]);
 
-        return back()->with('success', "Mensaje #{$message->id} reencolado como #{$clone->id}. El resultado aparecerá en unos segundos.");
+        return back()->with('success', 'Mensaje enviado de nuevo. En unos segundos verás aquí si esta vez sí llegó.');
     }
 
     /**
-     * Sirve el adjunto de cualquier empresa. `ChatController::downloadMedia`
-     * exige que el mensaje sea de la empresa del usuario, condición que un
-     * Master nunca cumple, de modo que aquí se autoriza por rol.
+     * Sirve el adjunto para verlo o descargarlo. `ChatController::downloadMedia`
+     * ata el archivo a la empresa del usuario, condición que un Master nunca
+     * cumple; aquí el alcance lo pone `authorizeMessageScope`.
      */
     public function media(Request $request, WhatsAppMessage $message)
     {
-        $this->authorizeMaster();
         $this->authorizeMessageScope($message);
 
         $instance = $message->conversation?->instance;
@@ -297,7 +297,8 @@ class MessagesController extends Controller
                 ?? ($request->filled('company_id') ? (int) $request->input('company_id') : null),
             'instance_id' => $request->filled('instance_id') ? (int) $request->input('instance_id') : null,
             'type'        => $request->input('type') ?: null,
-            'error_code'  => $request->filled('error_code') ? (string) $request->input('error_code') : null,
+            // El resumen filtra por explicación, no por código de WhatsApp.
+            'reason'      => $request->filled('reason') ? (string) $request->input('reason') : null,
             'search'      => trim((string) $request->input('search')) ?: null,
             'range'       => $range,
             'start_date'  => $startDate->format('Y-m-d'),
@@ -324,8 +325,39 @@ class MessagesController extends Controller
             $query->where('whatsapp_messages.type', $filters['type']);
         }
 
-        if ($filters['error_code']) {
-            $query->where('whatsapp_messages.error_code', $filters['error_code']);
+        // Un motivo agrupa varios códigos y varias redacciones del mismo error,
+        // así que el filtro se recompone a partir del titular.
+        if ($filters['reason'] === WhatsAppFailureTranslator::OTHER_TITLE) {
+            // El cajón de lo no reconocido se acota por exclusión: todo lo que no
+            // encaja en ningún motivo conocido.
+            $known = $this->translator->allMatchers();
+
+            $query->whereNotNull('whatsapp_messages.error_message')
+                ->where(function ($q) use ($known) {
+                    $q->whereNull('whatsapp_messages.error_code')
+                        ->orWhereNotIn('whatsapp_messages.error_code', $known['codes']);
+                });
+
+            foreach ($known['needles'] as $needle) {
+                $query->where('whatsapp_messages.error_message', 'not like', '%' . $needle . '%');
+            }
+        } elseif ($filters['reason']) {
+            $matchers = $this->translator->matchersForTitle($filters['reason']);
+
+            $query->where(function ($q) use ($matchers) {
+                if ($matchers['codes']) {
+                    $q->whereIn('whatsapp_messages.error_code', $matchers['codes']);
+                }
+
+                foreach ($matchers['needles'] as $needle) {
+                    $q->orWhere('whatsapp_messages.error_message', 'like', '%' . $needle . '%');
+                }
+
+                // Un titular desconocido no debe abrir la consulta a todo.
+                if (! $matchers['codes'] && ! $matchers['needles']) {
+                    $q->whereRaw('1 = 0');
+                }
+            });
         }
 
         // Los dos filtros se acumulan a propósito: cuando la vista está confinada
@@ -398,25 +430,34 @@ class MessagesController extends Controller
      */
     private function errorBreakdown(array $filters): array
     {
-        return $this->buildQuery($filters)
-            ->selectRaw('whatsapp_messages.error_code, MIN(whatsapp_messages.error_message) as error_message, COUNT(*) as total')
+        // Se agrupa por código Y texto porque en el histórico el código llega
+        // vacío; luego se suman en PHP por explicación, que es lo que se lee.
+        // Son pocas combinaciones distintas, así que el coste es despreciable.
+        $rows = $this->buildQuery($filters)
+            ->selectRaw('whatsapp_messages.error_code, whatsapp_messages.error_message, COUNT(*) as total')
             ->whereNotNull('whatsapp_messages.error_message')
-            ->groupBy('whatsapp_messages.error_code')
-            ->orderByDesc('total')
-            ->limit(8)
-            ->get()
-            ->map(fn ($row) => [
-                'error_code'    => $row->error_code,
-                'error_message' => $row->error_message,
-                'total'         => (int) $row->total,
-            ])
-            ->all();
+            ->groupBy('whatsapp_messages.error_code', 'whatsapp_messages.error_message')
+            ->get();
+
+        $grouped = [];
+
+        foreach ($rows as $row) {
+            $title = $this->translator->titleFor($row->error_code, $row->error_message);
+
+            $grouped[$title] ??= ['title' => $title, 'total' => 0, 'raw' => $row->error_message];
+            $grouped[$title]['total'] += (int) $row->total;
+        }
+
+        usort($grouped, fn ($a, $b) => $b['total'] <=> $a['total']);
+
+        return array_slice($grouped, 0, 8);
     }
 
     private function listPayload(WhatsAppMessage $message): array
     {
         $conversation = $message->conversation;
         $instance = $conversation?->instance;
+        $explanation = $this->translator->explain($message);
 
         return [
             'id'              => $message->id,
@@ -425,10 +466,18 @@ class MessagesController extends Controller
             'content'         => $message->content,
             'filename'        => $message->resolvableFilename(),
             'media_available' => $message->isMediaAvailable(),
-            'error_message'   => $message->error_message,
-            'error_code'      => $message->error_code,
-            'error_details'   => $message->error_details,
-            'reason'          => $this->humanReason($message),
+            // Lo que lee cualquiera: titular, explicación y qué hacer.
+            'reason'          => $explanation['title'],
+            'explanation'     => $explanation['detail'],
+            'advice'          => $explanation['action'],
+            'severity'        => $explanation['severity'],
+            // Y lo que necesita soporte, aparte y replegado en la interfaz.
+            'technical'       => [
+                'status'        => $message->status,
+                'error_code'    => $message->error_code,
+                'error_message' => $message->error_message,
+                'error_details' => $message->error_details,
+            ],
             'created_at'      => $this->formatDate($message->created_at),
             'sent_at'         => $this->formatDate($message->sent_at),
             'failed_at'       => $this->formatDate($message->failed_at),
@@ -436,8 +485,8 @@ class MessagesController extends Controller
             'retry_count'     => (int) $message->retry_count,
             'last_retried_at' => $this->formatDate($message->last_retried_at),
             'last_retried_by' => $message->retriedBy?->name,
-            'retryable'       => in_array($message->type, WhatsAppMessage::RETRYABLE_TYPES, true)
-                && (bool) $instance?->isMetaConfigured(),
+            'retryable'       => $this->retryBlockedReason($message, $instance) === null,
+            'retry_blocked'   => $this->retryBlockedReason($message, $instance),
             'sender'          => $message->sender?->name,
             'company'         => [
                 'id'   => $instance?->company_id,
@@ -457,59 +506,64 @@ class MessagesController extends Controller
     }
 
     /**
-     * Traduce el estado técnico al motivo por el que el cliente no lo recibió.
+     * Por qué el botón de reintentar está apagado, o null si se puede reenviar.
+     * Es el mismo criterio que aplica `retry()`, para que el botón nunca ofrezca
+     * algo que el backend va a rechazar.
      */
-    private function humanReason(WhatsAppMessage $message): string
+    private function retryBlockedReason(WhatsAppMessage $message, ?Instance $instance): ?string
     {
-        if ($message->status === 'failed') {
-            return $message->error_message
-                ?: 'Meta rechazó el mensaje sin devolver un motivo.';
+        if (! in_array($message->type, WhatsAppMessage::RETRYABLE_TYPES, true)) {
+            return 'Este tipo de mensaje no se puede volver a enviar desde aquí.';
         }
 
-        if ($message->status === 'pending') {
-            return 'Nunca salió de la cola de envío: el worker no lo procesó (cola detenida o job perdido).';
+        if (! $instance || ! $instance->isMetaConfigured()) {
+            return 'La línea de WhatsApp de la empresa está sin configurar, así que no se puede enviar nada.';
         }
 
-        return 'Meta lo aceptó pero no ha confirmado la entrega: el destinatario puede tener el teléfono apagado, sin datos o el número no existe en WhatsApp.';
+        if ($message->type === 'template' && ! $message->templatePayload()) {
+            return 'Este mensaje lo envió un sistema externo y aquí no quedaron los datos necesarios para repetirlo. Hay que relanzarlo desde ese sistema.';
+        }
+
+        if (in_array($message->type, ['image', 'audio', 'document'], true) && ! $message->isMediaAvailable()) {
+            return 'El archivo adjunto ya no está disponible (WhatsApp los borra a los 30 días), así que no se puede volver a enviar.';
+        }
+
+        return null;
     }
 
     /**
-     * Pistas accionables para el modal de detalle. Son heurísticas sobre el
-     * estado actual del sistema, no datos guardados con el fallo.
+     * Avisos sobre el estado actual, en lenguaje llano: qué encontrará quien
+     * pulse "Reintentar" antes de pulsarlo.
      */
     private function diagnose(WhatsAppMessage $message, ?Instance $instance): array
     {
         $hints = [];
 
-        if (! $instance) {
-            $hints[] = 'La conversación no tiene instancia asociada; el mensaje no puede salir.';
-        } elseif (! $instance->isMetaConfigured()) {
-            $hints[] = 'La instancia no tiene phone_number_id o waba_id configurados.';
+        if (! $instance || ! $instance->isMetaConfigured()) {
+            $hints[] = 'La línea de WhatsApp de esta empresa está sin terminar de configurar, así que ningún mensaje puede salir. Debe revisarla un administrador.';
         }
 
         $conversation = $message->conversation;
         if ($conversation && ! $conversation->isWindowOpen() && $message->type !== 'template') {
-            $hints[] = 'La ventana de 24 horas está cerrada: un mensaje libre volverá a fallar, hay que reabrir con una plantilla.';
+            $hints[] = 'Pasaron más de 24 horas desde el último mensaje del cliente, así que un mensaje escrito libremente volverá a fallar. Para retomar el contacto hay que enviarle una plantilla desde el chat.';
         }
 
         if (in_array($message->type, ['image', 'audio', 'document'], true) && ! $message->isMediaAvailable()) {
-            $hints[] = 'El adjunto no es recuperable (sin copia propia y sin media_id vigente), así que no se puede reenviar.';
+            $hints[] = 'El archivo adjunto ya no está disponible, así que este mensaje no se puede volver a enviar. Vuelve a adjuntar el archivo desde el chat.';
         }
 
-        if ((string) $message->error_code === '131026') {
-            $hints[] = 'Código 131026: el número no está registrado en WhatsApp o no puede recibir mensajes.';
-        }
+        if ($message->type === 'template') {
+            $template = $message->templatePayload();
 
-        if ((string) $message->error_code === '131047') {
-            $hints[] = 'Código 131047: pasaron más de 24 horas desde el último mensaje del cliente; se requiere plantilla.';
-        }
-
-        if ((string) $message->error_code === '470') {
-            $hints[] = 'Código 470: la ventana de conversación expiró.';
+            if (! $template) {
+                $hints[] = 'Este mensaje lo envió un sistema externo y aquí solo quedó constancia de él, sin los datos que WhatsApp necesita para repetirlo. Hay que relanzarlo desde ese sistema.';
+            } elseif ($template['reconstructed']) {
+                $hints[] = "Del mensaje original solo se conserva el nombre de la plantilla (\"{$template['name']}\"), no los datos que llevaba rellenos. Si la plantilla usa datos variables, el reenvío volverá a fallar: mejor enviarla de nuevo desde el chat.";
+            }
         }
 
         if ($message->status === 'pending') {
-            $hints[] = 'Revisa que el worker de colas esté corriendo (queue:work) antes de reintentar en lote.';
+            $hints[] = 'Si ves varios mensajes en este mismo estado, es probable que el envío esté detenido en el sistema: avisa a soporte en lugar de reintentarlos uno por uno.';
         }
 
         return $hints;
@@ -577,56 +631,11 @@ class MessagesController extends Controller
     }
 
     /**
-     * El módulo es de Master, pero también se entra desde dentro de una empresa
-     * mientras se la suplanta: ahí la sesión es de un admin y `isMaster()` da
-     * false, aunque quien está al mando sigue siendo el Master original.
-     */
-    private function authorizeMaster(): void
-    {
-        $user = Auth::user();
-
-        if ($user && $user->isMaster()) {
-            return;
-        }
-
-        if ($user && $this->impersonatingMaster()) {
-            return;
-        }
-
-        abort(403, 'Acceso denegado. Solo usuarios Master.');
-    }
-
-    /**
-     * ¿La sesión actual es una suplantación iniciada por un Master de verdad?
+     * Empresa a la que queda confinado el módulo. Cualquier usuario ve solo los
+     * mensajes de su propia empresa; un Master en su sesión ve todas (null).
      *
-     * No basta con `from_master` en sesión: se comprueba que el usuario que la
-     * inició tenga el rol. El rol "master" está scoped a su empresa, así que hay
-     * que mover el team scope de Spatie y devolverlo a su sitio, porque el resto
-     * del request (permisos compartidos con Inertia) depende de él.
-     */
-    private function impersonatingMaster(): bool
-    {
-        if (! session('from_master') || ! session('impersonated_by')) {
-            return false;
-        }
-
-        $original = User::find(session('impersonated_by'));
-
-        if (! $original) {
-            return false;
-        }
-
-        setPermissionsTeamId($original->company_id);
-        $isMaster = $original->isMaster();
-        setPermissionsTeamId(Auth::user()->company_id);
-
-        return $isMaster;
-    }
-
-    /**
-     * Empresa a la que queda confinado el módulo. Un Master en su propia sesión
-     * ve todas (null); suplantando ve solo la empresa en la que está metido, que
-     * es lo que la pantalla dice estar mostrando.
+     * El aislamiento entre empresas no es negociable aunque el módulo esté
+     * abierto a todo el mundo: son datos de clientes de terceros.
      */
     private function scopedCompanyId(): ?int
     {

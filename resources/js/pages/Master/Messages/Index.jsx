@@ -56,9 +56,17 @@ const TYPE_LABELS = {
 
 // Cada bucket es un motivo distinto de "no entregado", con su propio color.
 const STATUS_META = {
-    failed: { label: 'Fallido', color: 'rose', icon: AlertTriangle, help: 'Meta rechazó el envío o la entrega falló.' },
-    pending: { label: 'En cola', color: 'amber', icon: Clock, help: 'Nunca salió de la cola de envío.' },
-    sent: { label: 'Sin confirmar', color: 'sky', icon: HelpCircle, help: 'Meta lo aceptó pero no confirmó la entrega.' },
+    failed: { label: 'No llegó', color: 'rose', icon: AlertTriangle, help: 'WhatsApp no pudo entregarlo.' },
+    pending: { label: 'Sin enviar', color: 'amber', icon: Clock, help: 'Se quedó sin salir del sistema.' },
+    sent: { label: 'Sin confirmar', color: 'sky', icon: HelpCircle, help: 'Salió, pero WhatsApp no confirma que llegara.' },
+};
+
+// Qué se puede hacer con el fallo, que es lo primero que quiere saber quien lee.
+const SEVERITY_LABELS = {
+    temporary: { label: 'Puede reintentarse', tone: 'emerald' },
+    permanent: { label: 'Reintentar no ayudará', tone: 'rose' },
+    window: { label: 'Requiere plantilla', tone: 'amber' },
+    config: { label: 'Requiere un administrador', tone: 'indigo' },
 };
 
 const TONES = {
@@ -72,8 +80,8 @@ const TONES = {
 
 const BUCKETS = [
     { key: 'all', label: 'Todos', statKey: 'total' },
-    { key: 'failed', label: 'Fallidos', statKey: 'failed' },
-    { key: 'pending', label: 'En cola', statKey: 'pending' },
+    { key: 'failed', label: 'No llegaron', statKey: 'failed' },
+    { key: 'pending', label: 'Sin enviar', statKey: 'pending' },
     { key: 'sent', label: 'Sin confirmar', statKey: 'sent_unconfirmed' },
 ];
 
@@ -127,7 +135,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
             company_id: filters.company_id ?? '',
             instance_id: filters.instance_id ?? '',
             type: filters.type ?? '',
-            error_code: filters.error_code ?? '',
+            reason: filters.reason ?? '',
             search: filters.search ?? '',
             range: filters.range,
             start_date: filters.start_date,
@@ -167,7 +175,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
 
     return (
         <>
-            <Head title="Mensajes no entregados · Master" />
+            <Head title="Mensajes no entregados" />
 
             <div className="flex flex-col min-h-screen bg-muted/10">
                 <div className="bg-card/40 backdrop-blur-3xl px-8 py-8 sticky top-0 z-40 border-b border-border/20 shadow-sm">
@@ -179,7 +187,10 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                             <div>
                                 <h1 className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-3">
                                     Mensajes no entregados
-                                    <span className="text-[10px] font-black bg-indigo-500/10 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-500/20 tracking-widest hidden sm:inline-block">MASTER</span>
+                                    {/* La insignia solo tiene sentido en la vista global, que es la del Master. */}
+                                    {!company_locked && (
+                                        <span className="text-[10px] font-black bg-indigo-500/10 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-500/20 tracking-widest hidden sm:inline-block">TODAS LAS EMPRESAS</span>
+                                    )}
                                 </h1>
                                 <p className="text-sm font-medium text-muted-foreground mt-1">
                                     {messages.total?.toLocaleString?.() ?? rows.length} mensajes que el cliente nunca recibió
@@ -202,11 +213,11 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                 <div className="p-8 max-w-[1700px] mx-auto w-full space-y-8">
                     {/* KPIs */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-                        <KPICard label="Fallidos" value={stats.failed} tone="rose" icon={<AlertTriangle className="size-5" />} sub={`${stats.failed_last_24h} en las últimas 24 h`} />
-                        <KPICard label="Atascados en cola" value={stats.pending} tone="amber" icon={<Clock className="size-5" />} sub="El worker no los procesó" />
-                        <KPICard label="Sin confirmar" value={stats.sent_unconfirmed} tone="sky" icon={<HelpCircle className="size-5" />} sub="Meta no confirmó entrega" />
-                        <KPICard label="Con adjunto" value={stats.with_attachment} tone="indigo" icon={<Paperclip className="size-5" />} sub="Imagen, documento o audio" />
-                        <KPICard label="Ya reintentados" value={stats.retried} tone="emerald" icon={<Repeat className="size-5" />} sub="Al menos un reenvío" />
+                        <KPICard label="No llegaron" value={stats.failed} tone="rose" icon={<AlertTriangle className="size-5" />} sub={`${stats.failed_last_24h} en las últimas 24 h`} />
+                        <KPICard label="Sin enviar" value={stats.pending} tone="amber" icon={<Clock className="size-5" />} sub="Se quedaron en el sistema" />
+                        <KPICard label="Sin confirmar" value={stats.sent_unconfirmed} tone="sky" icon={<HelpCircle className="size-5" />} sub="WhatsApp no confirma entrega" />
+                        <KPICard label="Con archivo adjunto" value={stats.with_attachment} tone="indigo" icon={<Paperclip className="size-5" />} sub="Imagen, documento o audio" />
+                        <KPICard label="Ya reenviados" value={stats.retried} tone="emerald" icon={<Repeat className="size-5" />} sub="Se intentó al menos una vez" />
                     </div>
 
                     {/* Motivos más frecuentes */}
@@ -214,25 +225,25 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                         <div className="bg-card border border-border/40 rounded-[2.5rem] p-8 shadow-sm">
                             <div className="flex items-center gap-3 mb-6">
                                 <Info className="size-4 text-indigo-600" />
-                                <h2 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Motivos más frecuentes en este recorte</h2>
+                                <h2 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Por qué no llegaron · toca para filtrar</h2>
                             </div>
                             <div className="flex flex-wrap gap-3">
                                 {error_breakdown.map(item => {
-                                    const active = String(filters.error_code ?? '') === String(item.error_code ?? '');
+                                    const active = filters.reason === item.title;
                                     return (
                                         <button
-                                            key={item.error_code ?? 'sin-codigo'}
+                                            key={item.title}
                                             type="button"
-                                            onClick={() => applyFilters({ error_code: active ? '' : (item.error_code ?? '') })}
+                                            onClick={() => applyFilters({ reason: active ? '' : item.title })}
                                             className={`text-left rounded-2xl border px-5 py-4 transition-all max-w-md ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-muted/20 border-border/40 hover:border-indigo-500/40'}`}
                                         >
                                             <div className="flex items-center gap-3">
                                                 <span className={`text-xl font-black ${active ? 'text-white' : 'text-rose-600'}`}>{item.total}</span>
                                                 <div className="min-w-0">
-                                                    {item.error_code && (
-                                                        <p className={`text-[10px] font-black uppercase tracking-widest ${active ? 'text-white/70' : 'text-muted-foreground'}`}>Código {item.error_code}</p>
-                                                    )}
-                                                    <p className="text-[12.5px] font-semibold truncate" title={item.error_message}>{truncate(item.error_message, 60)}</p>
+                                                    <p className="text-[12.5px] font-semibold" title={item.raw ?? ''}>{item.title}</p>
+                                                    <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${active ? 'text-white/60' : 'text-muted-foreground/70'}`}>
+                                                        {item.total === 1 ? '1 mensaje' : `${item.total} mensajes`}
+                                                    </p>
                                                 </div>
                                             </div>
                                         </button>
@@ -271,7 +282,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     type="text"
                                     value={search}
                                     onChange={e => handleSearch(e.target.value)}
-                                    placeholder="Buscar por contenido, teléfono, error, wamid o ID…"
+                                    placeholder="Buscar por texto del mensaje, teléfono o nombre del cliente…"
                                     className="w-full h-12 pl-11 pr-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-indigo-500/60 transition-colors"
                                 />
                             </div>
@@ -382,13 +393,13 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                                 {hasAttachment && (
                                                                     <Badge tone={row.media_available ? 'indigo' : 'slate'}>
                                                                         <Paperclip className="size-3 inline mr-1" />
-                                                                        {row.media_available ? 'Adjunto' : 'Adjunto perdido'}
+                                                                        {row.media_available ? 'Adjunto' : 'Adjunto ya no disponible'}
                                                                     </Badge>
                                                                 )}
                                                                 {row.retry_count > 0 && (
                                                                     <Badge tone="emerald">
                                                                         <Repeat className="size-3 inline mr-1" />
-                                                                        {row.retry_count} {row.retry_count === 1 ? 'reintento' : 'reintentos'}
+                                                                        {row.retry_count === 1 ? 'reenviado 1 vez' : `reenviado ${row.retry_count} veces`}
                                                                     </Badge>
                                                                 )}
                                                             </div>
@@ -419,13 +430,13 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                 </td>
 
                                                 <td className="px-8 py-6">
-                                                    <div className="max-w-xs">
-                                                        {row.error_code && (
-                                                            <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-1">Código {row.error_code}</p>
-                                                        )}
-                                                        <p className="text-[12.5px] font-semibold text-foreground break-words">{truncate(row.reason, 120)}</p>
-                                                        {row.error_details && (
-                                                            <p className="text-[11px] text-muted-foreground mt-1 break-words">{truncate(row.error_details, 90)}</p>
+                                                    <div className="max-w-sm">
+                                                        <p className="text-[13px] font-bold text-foreground break-words">{row.reason}</p>
+                                                        <p className="text-[11.5px] text-muted-foreground mt-1 break-words">{truncate(row.explanation, 130)}</p>
+                                                        {SEVERITY_LABELS[row.severity] && (
+                                                            <span className="inline-block mt-2">
+                                                                <Badge tone={SEVERITY_LABELS[row.severity].tone}>{SEVERITY_LABELS[row.severity].label}</Badge>
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </td>
@@ -435,7 +446,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{relativeFrom(row.failure_moment)}</p>
                                                     {row.last_retried_at && (
                                                         <p className="text-[10px] text-emerald-600 font-semibold mt-1.5">
-                                                            Reintentado {relativeFrom(row.last_retried_at)}
+                                                            Reenviado {relativeFrom(row.last_retried_at)}
                                                             {row.last_retried_by && ` por ${row.last_retried_by}`}
                                                         </p>
                                                     )}
@@ -456,13 +467,13 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                             size="sm"
                                                             disabled={!row.retryable || retrying === row.id}
                                                             onClick={() => handleRetry(row.id)}
-                                                            title={row.retryable ? 'Volver a enviar este mensaje' : 'Este mensaje no se puede reenviar'}
+                                                            title={row.retryable ? 'Volver a enviar este mensaje al cliente' : (row.retry_blocked ?? 'Este mensaje no se puede volver a enviar')}
                                                             className="rounded-xl h-10 px-4 gap-2 font-black uppercase tracking-widest text-[10px] text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-40"
                                                         >
                                                             {retrying === row.id
                                                                 ? <Loader2 className="size-4 animate-spin" />
                                                                 : <Send className="size-4" />}
-                                                            Reintentar
+                                                            Enviar de nuevo
                                                         </Button>
                                                     </div>
                                                 </td>
@@ -574,48 +585,48 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                     {detail && (
                         <div className="p-8 sm:p-10 space-y-8">
                             {/* Motivo */}
-                            <Section title="Motivo del fallo" icon={<AlertTriangle className="size-4" />}>
+                            <Section title="Por qué no le llegó" icon={<AlertTriangle className="size-4" />}>
                                 <div className={`rounded-2xl border p-6 ${TONES[meta.color]}`}>
-                                    <p className="text-[13.5px] font-bold leading-relaxed">{detail.reason}</p>
-                                    {detail.error_details && (
-                                        <p className="text-[12.5px] mt-3 opacity-80 leading-relaxed">{detail.error_details}</p>
+                                    <p className="text-[15px] font-black leading-snug">{detail.reason}</p>
+                                    <p className="text-[13px] mt-2.5 opacity-90 leading-relaxed">{detail.explanation}</p>
+                                    {SEVERITY_LABELS[detail.severity] && (
+                                        <span className="inline-block mt-4">
+                                            <Badge tone={SEVERITY_LABELS[detail.severity].tone}>{SEVERITY_LABELS[detail.severity].label}</Badge>
+                                        </span>
                                     )}
-                                    <div className="flex flex-wrap gap-x-8 gap-y-2 mt-4 pt-4 border-t border-current/10">
-                                        <Field label="Código Meta" value={detail.error_code ?? '—'} mono />
-                                        <Field label="Estado" value={detail.status} mono />
-                                        <Field label="Reintentos" value={detail.retry_count} mono />
-                                    </div>
                                 </div>
                             </Section>
 
-                            {/* Diagnóstico */}
-                            {detail.diagnosis?.length > 0 && (
-                                <Section title="Qué revisar antes de reintentar" icon={<Info className="size-4" />}>
-                                    <ul className="space-y-2.5">
-                                        {detail.diagnosis.map((hint, index) => (
-                                            <li key={index} className="flex items-start gap-3 text-[13px] font-medium text-foreground">
-                                                <ChevronRight className="size-4 mt-0.5 text-indigo-600 flex-shrink-0" />
-                                                <span>{hint}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </Section>
-                            )}
+                            {/* Qué hacer */}
+                            <Section title="Qué puedes hacer" icon={<Info className="size-4" />}>
+                                <ul className="space-y-2.5">
+                                    <li className="flex items-start gap-3 text-[13.5px] font-semibold text-foreground">
+                                        <ChevronRight className="size-4 mt-0.5 text-indigo-600 flex-shrink-0" />
+                                        <span>{detail.advice}</span>
+                                    </li>
+                                    {detail.diagnosis?.map((hint, index) => (
+                                        <li key={index} className="flex items-start gap-3 text-[13px] font-medium text-muted-foreground">
+                                            <ChevronRight className="size-4 mt-0.5 text-indigo-600/60 flex-shrink-0" />
+                                            <span>{hint}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </Section>
 
                             {/* Cronología */}
-                            <Section title="Cronología" icon={<Clock className="size-4" />}>
+                            <Section title="Cuándo pasó" icon={<Clock className="size-4" />}>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                                    <Field label="Creado" value={detail.created_at ?? '—'} mono />
-                                    <Field label="Enviado a Meta" value={detail.sent_at ?? '—'} mono />
-                                    <Field label="Marcado como fallido" value={detail.failed_at ?? '—'} mono />
-                                    <Field label="Entregado" value={detail.delivered_at ?? '—'} mono />
-                                    <Field label="Leído" value={detail.read_at ?? '—'} mono />
-                                    <Field label="Último cambio" value={detail.updated_at ?? '—'} mono />
+                                    <Field label="Se escribió" value={detail.created_at ?? '—'} mono />
+                                    <Field label="Salió hacia WhatsApp" value={detail.sent_at ?? 'No salió'} mono />
+                                    <Field label="Se dio por no entregado" value={detail.failed_at ?? '—'} mono />
+                                    <Field label="Llegó al teléfono" value={detail.delivered_at ?? 'Nunca'} mono />
+                                    <Field label="El cliente lo leyó" value={detail.read_at ?? 'Nunca'} mono />
+                                    <Field label="Intentos de reenvío" value={detail.retry_count} mono />
                                 </div>
                             </Section>
 
                             {/* Contenido */}
-                            <Section title="Contenido del mensaje" icon={<MessageSquare className="size-4" />}>
+                            <Section title="Qué decía el mensaje" icon={<MessageSquare className="size-4" />}>
                                 <div className="rounded-2xl bg-muted/30 border border-border/40 p-6">
                                     <p className="text-[13.5px] font-medium text-foreground whitespace-pre-wrap break-words">
                                         {detail.content || <span className="italic text-muted-foreground">Este mensaje no tiene texto.</span>}
@@ -623,9 +634,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                 </div>
                                 <div className="flex flex-wrap gap-x-8 gap-y-3 mt-4">
                                     <Field label="Tipo" value={TYPE_LABELS[detail.type] ?? detail.type} />
-                                    <Field label="Enviado por" value={detail.sender ?? 'Sistema'} />
-                                    <Field label="wamid" value={detail.wamid ?? 'No asignado'} mono />
-                                    {detail.reply_to_wamid && <Field label="Responde a" value={detail.reply_to_wamid} mono />}
+                                    <Field label="Lo envió" value={detail.sender ?? 'El sistema'} />
                                 </div>
                             </Section>
 
@@ -638,7 +647,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                                 <p className="text-[13.5px] font-bold text-foreground truncate">{detail.filename || 'Archivo adjunto'}</p>
                                                 <p className="text-[11px] font-mono text-muted-foreground mt-1">
                                                     {detail.media_mime_type || 'tipo desconocido'}
-                                                    {detail.has_own_copy ? ' · copia propia' : ' · se recupera de Meta'}
+                                                    {detail.has_own_copy ? ' · guardado en el sistema' : ' · se descarga de WhatsApp al abrirlo'}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-3">
@@ -654,7 +663,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                     ) : (
                                         <div className="rounded-2xl bg-muted/30 border border-border/40 p-6">
                                             <p className="text-[13px] font-semibold text-muted-foreground">
-                                                El archivo ya no es recuperable: no hay copia propia y el media_id de Meta caducó (los adjuntos expiran a los 30 días).
+                                                El archivo ya no está disponible: WhatsApp borra los adjuntos 30 días después del envío.
                                             </p>
                                         </div>
                                     )}
@@ -662,63 +671,84 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                             )}
 
                             {/* Destino */}
-                            <Section title="Destino" icon={<Building2 className="size-4" />}>
+                            <Section title="A quién iba" icon={<Building2 className="size-4" />}>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                                    <Field label="Cliente" value={detail.conversation?.contact_name || detail.conversation?.name || 'Sin nombre'} />
+                                    <Field label="Su teléfono" value={detail.conversation?.phone_number ?? '—'} mono />
+                                    <Field label="Agente a cargo" value={detail.conversation?.assigned_agent ?? 'Sin asignar'} />
                                     <Field label="Empresa" value={detail.instance?.company_name ?? '—'} />
-                                    <Field label="Instancia" value={detail.instance?.name ?? '—'} />
-                                    <Field label="Número emisor" value={detail.instance?.phone_number ?? '—'} mono />
-                                    <Field label="Destinatario" value={detail.conversation?.contact_name || detail.conversation?.name || 'Sin nombre'} />
-                                    <Field label="Teléfono" value={detail.conversation?.phone_number ?? '—'} mono />
-                                    <Field label="Agente asignado" value={detail.conversation?.assigned_agent ?? 'Sin asignar'} />
-                                    <Field label="Estado de la conversación" value={detail.conversation?.status ?? '—'} />
-                                    <Field label="Ventana 24 h" value={detail.conversation?.window_open ? 'Abierta' : 'Cerrada'} />
-                                    <Field label="Meta configurada" value={detail.instance?.meta_configured ? 'Sí' : 'No'} />
+                                    <Field label="Línea de envío" value={detail.instance?.phone_number || detail.instance?.name || '—'} mono />
+                                    <Field
+                                        label="Se le puede escribir libremente"
+                                        value={detail.conversation?.window_open
+                                            ? 'Sí, respondió hace menos de 24 h'
+                                            : 'No, hay que enviarle una plantilla'}
+                                    />
                                 </div>
                             </Section>
 
-                            {/* Historial de reintentos */}
+                            {/* Historial de reenvíos */}
                             {(detail.retries?.length > 0 || detail.retry_of) && (
-                                <Section title="Historial de reintentos" icon={<Repeat className="size-4" />}>
+                                <Section title="Intentos de reenvío" icon={<Repeat className="size-4" />}>
                                     <div className="space-y-2.5">
                                         {detail.retry_of && (
                                             <div className="rounded-2xl bg-muted/30 border border-border/40 px-5 py-4 text-[12.5px] font-semibold">
-                                                Este mensaje es un reintento del original <span className="font-mono">#{detail.retry_of.id}</span> ({detail.retry_of.created_at})
+                                                Este es un reenvío de un mensaje anterior, del {detail.retry_of.created_at}.
                                             </div>
                                         )}
-                                        {detail.retries?.map(retry => (
-                                            <div key={retry.id} className="rounded-2xl bg-muted/30 border border-border/40 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-                                                <div>
-                                                    <p className="text-[12.5px] font-bold">
-                                                        <span className="font-mono">#{retry.id}</span> · {retry.created_at}
-                                                    </p>
-                                                    {retry.error_message && (
-                                                        <p className="text-[11.5px] text-rose-600 mt-1">
-                                                            {retry.error_code && `[${retry.error_code}] `}{retry.error_message}
-                                                        </p>
-                                                    )}
+                                        {detail.retries?.map(retry => {
+                                            const delivered = retry.status === 'delivered' || retry.status === 'read';
+                                            return (
+                                                <div key={retry.id} className="rounded-2xl bg-muted/30 border border-border/40 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+                                                    <div className="min-w-0">
+                                                        <p className="text-[12.5px] font-bold">Reenviado el {retry.created_at}</p>
+                                                        {retry.reason && (
+                                                            <p className="text-[11.5px] text-rose-600 mt-1">{retry.reason}</p>
+                                                        )}
+                                                    </div>
+                                                    <Badge tone={delivered ? 'emerald' : (STATUS_META[retry.status]?.color ?? 'slate')}>
+                                                        {delivered ? 'Sí llegó' : (STATUS_META[retry.status]?.label ?? retry.status)}
+                                                    </Badge>
                                                 </div>
-                                                <Badge tone={retry.status === 'delivered' || retry.status === 'read' ? 'emerald' : (STATUS_META[retry.status]?.color ?? 'slate')}>
-                                                    {STATUS_META[retry.status]?.label ?? retry.status}
-                                                </Badge>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </Section>
                             )}
 
-                            {/* Metadata cruda */}
-                            {detail.metadata && (
-                                <Section title="Metadata técnica" icon={<FileText className="size-4" />}>
-                                    <details className="rounded-2xl bg-muted/30 border border-border/40 overflow-hidden">
-                                        <summary className="px-6 py-4 cursor-pointer text-[11px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground">
-                                            Ver JSON completo
-                                        </summary>
-                                        <pre className="px-6 pb-6 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">
-                                            {JSON.stringify(detail.metadata, null, 2)}
-                                        </pre>
-                                    </details>
-                                </Section>
-                            )}
+                            {/* Detalle técnico: todo lo que soporte necesita, fuera del camino */}
+                            <details className="rounded-2xl bg-muted/20 border border-border/40 overflow-hidden group">
+                                <summary className="px-6 py-4 cursor-pointer text-[11px] font-black uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground flex items-center gap-2">
+                                    <FileText className="size-3.5" /> Detalle técnico (para soporte)
+                                </summary>
+                                <div className="px-6 pb-6 space-y-5">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
+                                        <Field label="ID del mensaje" value={detail.id} mono />
+                                        <Field label="Estado interno" value={detail.technical?.status ?? '—'} mono />
+                                        <Field label="Código WhatsApp" value={detail.technical?.error_code ?? '—'} mono />
+                                        <Field label="ID de envío (wamid)" value={detail.wamid ?? 'No asignado'} mono />
+                                        <Field label="Línea (phone_number_id)" value={detail.instance?.phone_number_id ?? '—'} mono />
+                                        <Field label="Conversación" value={detail.conversation?.id ?? '—'} mono />
+                                    </div>
+                                    {detail.technical?.error_message && (
+                                        <div>
+                                            <p className="text-[9.5px] font-black opacity-60 uppercase tracking-[0.2em] mb-1">Respuesta original de WhatsApp</p>
+                                            <p className="text-[12px] font-mono break-words text-muted-foreground">{detail.technical.error_message}</p>
+                                            {detail.technical.error_details && (
+                                                <p className="text-[11.5px] font-mono break-words text-muted-foreground/80 mt-1">{detail.technical.error_details}</p>
+                                            )}
+                                        </div>
+                                    )}
+                                    {detail.metadata && (
+                                        <div>
+                                            <p className="text-[9.5px] font-black opacity-60 uppercase tracking-[0.2em] mb-1">Datos del envío</p>
+                                            <pre className="text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">
+                                                {JSON.stringify(detail.metadata, null, 2)}
+                                            </pre>
+                                        </div>
+                                    )}
+                                </div>
+                            </details>
 
                             {/* Acciones */}
                             <div className="flex items-center gap-3 pt-4 border-t border-border/30 flex-wrap">
@@ -730,14 +760,14 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                     {retrying === detail.id
                                         ? <Loader2 className="size-4 animate-spin" />
                                         : <Send className="size-4" />}
-                                    Reintentar envío
+                                    Enviar de nuevo
                                 </Button>
                                 <Button variant="ghost" onClick={onClose} className="h-14 px-7 rounded-2xl font-black uppercase tracking-widest text-[10px]">
                                     Cerrar
                                 </Button>
                                 {!detail.retryable && (
-                                    <p className="text-[11.5px] font-semibold text-muted-foreground">
-                                        No se puede reenviar: el tipo no es reenviable o la instancia no tiene Meta configurada.
+                                    <p className="text-[11.5px] font-semibold text-muted-foreground max-w-md">
+                                        {detail.retry_blocked ?? 'Este mensaje no se puede volver a enviar.'}
                                     </p>
                                 )}
                             </div>

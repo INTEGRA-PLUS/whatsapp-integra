@@ -152,6 +152,47 @@ class WhatsAppMessage extends Model
     }
 
     /**
+     * Payload que Meta exige para enviar una plantilla: nombre, idioma y las
+     * variables. Devuelve null cuando el mensaje no lo guarda, y entonces la
+     * plantilla no se puede (re)enviar desde aquí.
+     *
+     * No todos los productores dejan lo mismo: el chat y el envío por API sí
+     * guardan el payload completo, pero `/api/messages/register` lo acepta vacío
+     * porque el sistema externo ya envió la plantilla por su cuenta y solo nos
+     * pide dejar constancia. De esos mensajes lo único que queda del nombre es
+     * el texto de la burbuja, "[Plantilla: nombre]".
+     */
+    public function templatePayload(): ?array
+    {
+        $metadata = $this->metadata ?? [];
+
+        $name = $metadata['template']
+            ?? $metadata['template_name']
+            ?? $metadata['name']
+            ?? null;
+
+        $reconstructed = false;
+
+        if (! $name && preg_match('/^\[\s*Plantilla:\s*(.+?)\s*\]$/u', (string) $this->content, $matches)) {
+            $name = $matches[1];
+            $reconstructed = true;
+        }
+
+        if (! $name) {
+            return null;
+        }
+
+        return [
+            'name'          => (string) $name,
+            'language'      => (string) ($metadata['language'] ?? 'es'),
+            'components'    => $metadata['components'] ?? [],
+            // El nombre salió de la burbuja, no del payload: las variables que
+            // llevaba la plantilla original se perdieron.
+            'reconstructed' => $reconstructed,
+        ];
+    }
+
+    /**
      * ¿El chat puede ofrecer el archivo? Hay copia propia o todavía queda el
      * media_id para pedírselo a Meta.
      */

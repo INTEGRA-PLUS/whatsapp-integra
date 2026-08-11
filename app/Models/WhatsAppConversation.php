@@ -34,6 +34,109 @@ class WhatsAppConversation extends Model
 
     protected $appends = ['initials'];
 
+    /**
+     * Forma canónica de un teléfono: solo dígitos.
+     *
+     * Meta siempre manda el número limpio, pero los demás caminos (la API de
+     * Integra, un agente escribiendo a mano, una importación) aceptaban lo que
+     * llegara: "57300 825 3303", "57 +1 (386) 7957322", "1-5993172978920".
+     */
+    public static function normalizePhone(?string $phone): string
+    {
+        return preg_replace('/\D+/', '', (string) $phone) ?: '';
+    }
+
+    /**
+     * Hilo de una instancia para un teléfono, creándolo si no existe.
+     *
+     * Sustituye al `firstOrCreate(['wa_id' => $phone])` que había repartido por
+     * media docena de sitios. Ese patrón partía en dos la conversación de un
+     * mismo cliente: si el hilo se creó con el número escrito de una forma y el
+     * webhook llegaba con otra, el mensaje entrante abría un hilo nuevo y la
+     * respuesta del cliente quedaba invisible en el chat y en el CRM.
+     */
+    public static function resolveFor(int $instanceId, ?string $phone, array $defaults = []): self
+    {
+        $digits = self::normalizePhone($phone);
+
+        if ($digits === '') {
+            // Nada que normalizar: se conserva el comportamiento antiguo para no
+            // perder el mensaje, pero queda el rastro de quién manda basura.
+            \Illuminate\Support\Facades\Log::warning('Teléfono sin dígitos al resolver conversación', [
+                'instance_id' => $instanceId,
+                'phone'       => $phone,
+            ]);
+            $digits = (string) $phone;
+        }
+
+        $conversation = static::where('instance_id', $instanceId)->where('wa_id', $digits)->first();
+
+        if ($conversation) {
+            return $conversation;
+        }
+
+        // Esto corre dentro del webhook: si la búsqueda de variantes falla por
+        // cualquier motivo, es preferible abrir un hilo nuevo que perder el
+        // mensaje del cliente.
+        try {
+            if ($variant = self::findVariant($instanceId, $digits)) {
+                return $variant;
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('No se pudo buscar variantes del número', [
+                'instance_id' => $instanceId,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            return static::create(array_merge($defaults, [
+                'instance_id'  => $instanceId,
+                'wa_id'        => $digits,
+                'phone_number' => $defaults['phone_number'] ?? $digits,
+            ]));
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Un lote del webhook puede traer dos mensajes del mismo número nuevo
+            // y competir por el índice único (instance_id, wa_id).
+            return static::where('instance_id', $instanceId)->where('wa_id', $digits)->firstOrFail();
+        }
+    }
+
+    /**
+     * Hilo ya existente del mismo abonado escrito de otra forma: con espacios,
+     * sin indicativo o con el indicativo repetido ("57573012146547").
+     *
+     * Se busca por los últimos 10 dígitos —que en la práctica identifican al
+     * abonado— y se exige además que un número sea sufijo del otro, para no unir
+     * jamás dos clientes distintos que casualmente terminen igual.
+     */
+    private static function findVariant(int $instanceId, string $digits): ?self
+    {
+        if (strlen($digits) < 10) {
+            return null;
+        }
+
+        $candidates = static::where('instance_id', $instanceId)
+            ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') LIKE ?", ['%' . substr($digits, -10)])
+            ->orderByDesc('last_message_at')
+            ->limit(5)
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            $candidateDigits = self::normalizePhone($candidate->wa_id);
+
+            if ($candidateDigits === '') {
+                continue;
+            }
+
+            if (str_ends_with($candidateDigits, $digits) || str_ends_with($digits, $candidateDigits)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
     public function instance()
     {
         return $this->belongsTo(Instance::class);

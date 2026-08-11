@@ -25,7 +25,14 @@ class KanbanController extends Controller
         $user   = auth()->user();
         $column = KanbanColumn::where('company_id', $user->company_id)->findOrFail($columnId);
 
+        // La primera columna es la primera *visible*: el tablero solo pinta las
+        // que tienen etiqueta. Sin este filtro, una columna sin etiqueta en una
+        // posición anterior hacía que ninguna columna se considerara la primera,
+        // y las conversaciones sin columna —todas las nuevas— no salían en
+        // ninguna parte del CRM, aunque el contador de la columna sí las sumaba
+        // (columnCounts sí filtra por etiqueta).
         $isFirst = !KanbanColumn::where('company_id', $user->company_id)
+            ->whereNotNull('tag_id')
             ->where('position', '<', $column->position)
             ->exists();
 
@@ -296,8 +303,9 @@ class KanbanController extends Controller
 
         $phone = preg_replace('/[^0-9]/', '', $validated['phone_number']);
 
-        $conversation = WhatsAppConversation::firstOrCreate(
-            ['instance_id' => $instance->id, 'wa_id' => $phone],
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $phone,
             [
                 'phone_number'    => $phone,
                 'name'            => $validated['name'] ?? null,

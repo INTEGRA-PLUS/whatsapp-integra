@@ -251,8 +251,9 @@ class WhatsAppWebhookController extends Controller
 
         $conversation = null;
         if ($counterpart) {
-            $conversation = WhatsAppConversation::firstOrCreate(
-                ['instance_id' => $instance->id, 'wa_id' => $counterpart],
+            $conversation = WhatsAppConversation::resolveFor(
+                $instance->id,
+                $counterpart,
                 [
                     'phone_number' => $counterpart,
                     'name' => $counterpart,
@@ -389,11 +390,13 @@ class WhatsAppWebhookController extends Controller
             $contactName = $metadata['contacts'][0]['profile']['name'] ?? $from;
         }
 
-        $conversation = WhatsAppConversation::firstOrCreate(
-            [
-                'instance_id' => $instance->id,
-                'wa_id' => $from
-            ],
+        // resolveFor reconoce el hilo aunque se haya creado con el número escrito
+        // de otra forma (con espacios, sin indicativo o con el indicativo
+        // repetido): antes se abría un hilo nuevo y la respuesta del cliente
+        // quedaba invisible en el chat que el agente estaba mirando.
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $from,
             [
                 'phone_number' => $from,
                 'name' => $contactName,
@@ -766,17 +769,22 @@ class WhatsAppWebhookController extends Controller
             return;
         }
 
-        $newWaId = $system['wa_id'] ?? $system['new_wa_id'] ?? null;
+        // Se compara y se guarda en forma canónica: si el hilo se creó con el
+        // número escrito con espacios, un `===` en crudo no reconocería que el
+        // número nuevo es el mismo y volvería a partir la conversación.
+        $newWaId = WhatsAppConversation::normalizePhone(
+            $system['wa_id'] ?? $system['new_wa_id'] ?? null
+        );
         $oldWaId = $conversation->wa_id;
 
-        if (!$newWaId || $newWaId === $oldWaId) {
+        if ($newWaId === '' || $newWaId === WhatsAppConversation::normalizePhone($oldWaId)) {
             return;
         }
 
         // Si el número nuevo ya tiene su propio hilo, unir historiales es una
         // decisión de negocio: se deja el aviso y ambos hilos intactos.
         $existing = WhatsAppConversation::where('instance_id', $instance->id)
-            ->where('wa_id', $newWaId)
+            ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') = ?", [$newWaId])
             ->where('id', '!=', $conversation->id)
             ->first();
 

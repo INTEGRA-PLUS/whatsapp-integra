@@ -52,6 +52,8 @@ import {
     DollarSign,
     Mail,
     Reply,
+    Copy,
+    Forward,
     MapPin,
     Wand2,
     Download,
@@ -64,6 +66,9 @@ import {
     DropdownMenuTrigger,
     DropdownMenuSeparator,
     DropdownMenuLabel,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
 } from '@/components/ui/dropdown-menu';
 import {
     Sheet,
@@ -335,6 +340,38 @@ function detectQuickReplyToken(value, cursor) {
     const match = before.match(QUICK_REPLY_TOKEN);
     if (!match) return null;
     return { query: match[1], tokenStart: cursor - match[1].length - 1 };
+}
+
+// Emojis del acceso rápido de reacciones, en el mismo orden que WhatsApp.
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+/** Fecha y hora completas, para el detalle de un mensaje. */
+function formatFullDateTime(value) {
+    if (!value) return null;
+    return new Date(value).toLocaleString('es-CO', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/** Fila de emojis del selector de reacciones. `current` se resalta. */
+function ReactionRow({ current, onPick }) {
+    return REACTION_EMOJIS.map(emoji => (
+        <button
+            key={emoji}
+            type="button"
+            onClick={() => onPick(emoji)}
+            title={current === emoji ? 'Quitar reacción' : `Reaccionar con ${emoji}`}
+            className={`size-8 rounded-full text-[17px] leading-none flex items-center justify-center transition-transform hover:scale-125 ${
+                current === emoji ? 'bg-teal-500/25' : 'hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+        >
+            {emoji}
+        </button>
+    ));
 }
 
 const MENTION_TOKEN = /(?:^|\s)@([a-zA-Z0-9_.À-ſ-]*)$/;
@@ -1160,6 +1197,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [selectedImage, setSelectedImage] = useState(null);
     const [selectedLocation, setSelectedLocation] = useState(null); // { latitude, longitude, name, address }
     const [failedMessage, setFailedMessage] = useState(null); // mensaje saliente 'failed' cuyo motivo de error se está mostrando
+    // Acciones del menú de la burbuja (aparece al pasar el cursor por el mensaje)
+    const [messageInfo, setMessageInfo] = useState(null); // mensaje cuyo "Info. del mensaje" está abierto
+    const [forwardSource, setForwardSource] = useState(null); // mensaje que se está reenviando
+    const [forwardQuery, setForwardQuery] = useState('');
+    const [forwardSending, setForwardSending] = useState(false);
+    const [forwardError, setForwardError] = useState(null);
+    const [forwardDone, setForwardDone] = useState(null); // nombre del chat destino tras reenviar
+    const [forwardResults, setForwardResults] = useState([]);
+    const [forwardLoading, setForwardLoading] = useState(false);
+    const [editingNote, setEditingNote] = useState(null); // { id, content } nota interna en edición
+    const [savingNote, setSavingNote] = useState(false);
+    const [reactingId, setReactingId] = useState(null); // id del mensaje con una reacción en vuelo
     const [filterMyAssignments, setFilterMyAssignments] = useState(false);
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
@@ -1626,7 +1675,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
     useEffect(() => {
         function handleEscape(e) {
             if (e.key !== 'Escape') return;
-            const overlayOpen = selectedImage || selectedLocation || failedMessage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen;
+            // Los modales del menú de la burbuja se cierran solos con ESC.
+            if (messageInfo || forwardSource) {
+                e.preventDefault();
+                setMessageInfo(null);
+                setForwardSource(null);
+                return;
+            }
+            const overlayOpen = selectedImage || selectedLocation || failedMessage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen || editingNote;
             if (overlayOpen) return;
             if (selectedConversation) {
                 e.preventDefault();
@@ -1635,7 +1691,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [selectedConversation, selectedImage, selectedLocation, failedMessage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen]);
+    }, [selectedConversation, selectedImage, selectedLocation, failedMessage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen, messageInfo, forwardSource, editingNote]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -2753,6 +2809,138 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1500);
     }
 
+    // --- Menú de la burbuja: acciones sobre un mensaje concreto ---
+
+    // Sustituye un mensaje en la lista por la versión que devolvió el servidor.
+    const replaceMessage = useCallback((updated) => {
+        setMessages(prev => prev.map(m => (m.id === updated.id ? { ...m, ...updated } : m)));
+    }, []);
+
+    function startReply(msg) {
+        setReplyingTo(msg);
+        setTimeout(() => messageInputRef.current?.focus(), 0);
+    }
+
+    // Texto que tiene sentido copiar de cada tipo de mensaje.
+    function copyableText(msg) {
+        if (msg.type === 'document' && !msg.content) return msg.filename || '';
+        if (msg.type === 'location') {
+            const loc = msg.metadata?.location || {};
+            if (loc.latitude != null && loc.longitude != null) {
+                return `${loc.latitude}, ${loc.longitude}`;
+            }
+        }
+        return msg.content || '';
+    }
+
+    async function copyMessage(msg) {
+        const text = copyableText(msg);
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch {
+            // Sin permiso de portapapeles (o sin HTTPS): se cae al método viejo.
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            document.execCommand('copy');
+            document.body.removeChild(area);
+        }
+    }
+
+    // Reacciona con un emoji, o lo quita si ya era el mismo (como WhatsApp).
+    async function reactToMessage(msg, emoji) {
+        const next = msg.metadata?.own_reaction === emoji ? '' : emoji;
+        setReactingId(msg.id);
+        setSendError(null);
+        try {
+            const res = await axios.post(`/api/chat/messages/${msg.id}/react`, { emoji: next });
+            if (res.data?.data) replaceMessage(res.data.data);
+        } catch (err) {
+            setSendError(err.response?.data?.error || 'No se pudo enviar la reacción.');
+        } finally {
+            setReactingId(null);
+        }
+    }
+
+    function openForward(msg) {
+        setForwardSource(msg);
+        setForwardQuery('');
+        setForwardError(null);
+        setForwardDone(null);
+    }
+
+    async function confirmForward(targetConversation) {
+        if (!forwardSource) return;
+        setForwardSending(true);
+        setForwardError(null);
+        try {
+            await axios.post(`/api/chat/messages/${forwardSource.id}/forward`, {
+                conversation_id: targetConversation.id,
+            });
+            setForwardDone(targetConversation.contact?.name || targetConversation.name || targetConversation.phone_number);
+            // Si el destino es el chat abierto, el mensaje reenviado se ve al
+            // instante en vez de esperar al siguiente poll.
+            if (selectedConversation?.id === targetConversation.id) {
+                openConversationById(targetConversation.id);
+            }
+            setTimeout(() => { setForwardSource(null); setForwardDone(null); }, 1200);
+        } catch (err) {
+            setForwardError(err.response?.data?.error || 'No se pudo reenviar el mensaje.');
+        } finally {
+            setForwardSending(false);
+        }
+    }
+
+    // Chats candidatos del selector de reenvío. Se consulta al servidor para no
+    // limitar la búsqueda a la página de conversaciones ya cargada en la lista.
+    useEffect(() => {
+        if (!forwardSource || !selectedInstanceId) return;
+
+        let cancelled = false;
+        setForwardLoading(true);
+        const timer = setTimeout(async () => {
+            try {
+                const res = await axios.get('/api/chat/conversations', {
+                    params: {
+                        instance_id: selectedInstanceId,
+                        search: forwardQuery || undefined,
+                        status: 'open',
+                    },
+                });
+                if (!cancelled) {
+                    const items = res.data?.data ?? res.data?.conversations ?? [];
+                    setForwardResults(Array.isArray(items) ? items : []);
+                }
+            } catch {
+                if (!cancelled) setForwardResults([]);
+            } finally {
+                if (!cancelled) setForwardLoading(false);
+            }
+        }, forwardQuery ? 300 : 0);
+
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [forwardSource, forwardQuery, selectedInstanceId]);
+
+    async function saveNoteEdit() {
+        if (!editingNote || !editingNote.content.trim()) return;
+        setSavingNote(true);
+        try {
+            const res = await axios.put(`/api/chat/messages/${editingNote.id}/note`, {
+                content: editingNote.content.trim(),
+            });
+            if (res.data?.data) replaceMessage(res.data.data);
+            setEditingNote(null);
+        } catch (err) {
+            setSendError(err.response?.data?.error || 'No se pudo guardar la nota.');
+        } finally {
+            setSavingNote(false);
+        }
+    }
+
     // --- Pegar archivos (Ctrl/Cmd + V) en el área de texto ---
     function handleComposerPaste(e) {
         if (composerMode !== 'reply' || !selectedConversation) return;
@@ -3817,13 +4005,102 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             const isOut = msg.direction === 'outbound';
                                             const quoted = msg.reply_to_wamid ? messagesByWamid.get(msg.reply_to_wamid) : null;
                                             const canReply = !!msg.wamid && !msg.is_internal;
+                                            // Reaccionar y reenviar solo tienen sentido sobre mensajes que ya
+                                            // están en WhatsApp; reenviar además necesita el archivo a mano.
+                                            const canReact = canReply;
+                                            const canForward = msg.type === 'text'
+                                                ? !!msg.content
+                                                : ['image', 'audio', 'document'].includes(msg.type) && !!msg.media_url;
+                                            const canCopy = !!copyableText(msg);
 
                                             // Handle Date Separator
                                             const prevMsg = i > 0 ? messages[i-1] : null;
                                             const currDate = new Date(msg.created_at).toDateString();
                                             const prevDate = prevMsg ? new Date(prevMsg.created_at).toDateString() : null;
                                             const showDateSeparator = currDate !== prevDate;
-                                            
+
+                                            // Acciones que aparecen al pasar el cursor por el mensaje:
+                                            // reaccionar (emoji) y el menú con el resto de opciones.
+                                            const actionBtnBase = 'opacity-0 group-hover/msg:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100 transition-opacity size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10';
+                                            const messageActions = (
+                                                <div className="flex items-center gap-0.5 shrink-0">
+                                                    {/* Acceso rápido a las reacciones. En móvil se oculta y queda
+                                                        solo el menú, que ya trae "Reaccionar": así el hueco junto a
+                                                        la burbuja no crece en pantallas estrechas, donde además no
+                                                        existe el hover. */}
+                                                    {canReact && (
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <button
+                                                                    type="button"
+                                                                    title="Reaccionar"
+                                                                    disabled={reactingId === msg.id}
+                                                                    className={`hidden sm:flex ${actionBtnBase}`}
+                                                                >
+                                                                    {reactingId === msg.id
+                                                                        ? <Loader2 className="size-4 animate-spin" />
+                                                                        : <Smile className="size-4" />}
+                                                                </button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="center" className="flex gap-0.5 p-1.5 rounded-full w-auto min-w-0">
+                                                                <ReactionRow
+                                                                    current={msg.metadata?.own_reaction}
+                                                                    onPick={(emoji) => reactToMessage(msg, emoji)}
+                                                                />
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    )}
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <button type="button" title="Opciones del mensaje" className={`flex ${actionBtnBase}`}>
+                                                                <ChevronDown className="size-4" />
+                                                            </button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent
+                                                            align={isOut ? 'start' : 'end'}
+                                                            className="w-56 rounded-xl border-border/10 shadow-2xl"
+                                                        >
+                                                            <DropdownMenuItem onClick={() => setMessageInfo(msg)} className="gap-2.5 text-[13px]">
+                                                                <Info className="size-4 text-muted-foreground" />
+                                                                Info. del mensaje
+                                                            </DropdownMenuItem>
+                                                            {canReply && (
+                                                                <DropdownMenuItem onClick={() => startReply(msg)} className="gap-2.5 text-[13px]">
+                                                                    <Reply className="size-4 text-muted-foreground" />
+                                                                    Responder
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {canCopy && (
+                                                                <DropdownMenuItem onClick={() => copyMessage(msg)} className="gap-2.5 text-[13px]">
+                                                                    <Copy className="size-4 text-muted-foreground" />
+                                                                    Copiar
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {canReact && (
+                                                                <DropdownMenuSub>
+                                                                    <DropdownMenuSubTrigger className="gap-2.5 text-[13px]">
+                                                                        <Smile className="size-4 text-muted-foreground" />
+                                                                        Reaccionar
+                                                                    </DropdownMenuSubTrigger>
+                                                                    <DropdownMenuSubContent className="flex gap-0.5 p-1.5 rounded-full w-auto min-w-0">
+                                                                        <ReactionRow
+                                                                            current={msg.metadata?.own_reaction}
+                                                                            onPick={(emoji) => reactToMessage(msg, emoji)}
+                                                                        />
+                                                                    </DropdownMenuSubContent>
+                                                                </DropdownMenuSub>
+                                                            )}
+                                                            {canForward && (
+                                                                <DropdownMenuItem onClick={() => openForward(msg)} className="gap-2.5 text-[13px]">
+                                                                    <Forward className="size-4 text-muted-foreground" />
+                                                                    Reenviar
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
+                                            );
+
                                             return (
                                                 <Fragment key={msg.id}>
                                                     {showDateSeparator && (
@@ -3835,16 +4112,67 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     )}
                                                     
                                                     {msg.is_internal ? (
-                                                        <div className="flex justify-center my-2 px-2">
+                                                        <div className="flex justify-center my-2 px-2 group/msg">
                                                             <div className="w-full max-w-[90%] lg:max-w-[75%] bg-amber-50 dark:bg-amber-900/20 border border-amber-300/60 dark:border-amber-700/40 rounded-lg px-3 py-2 shadow-sm">
                                                                 <div className="flex items-center gap-1.5 mb-1">
                                                                     <StickyNote className="size-3.5 text-amber-600 dark:text-amber-400" />
                                                                     <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
                                                                         Nota interna · {msg.sender?.name || 'Agente'}
                                                                     </span>
+                                                                    {msg.metadata?.edited_at && (
+                                                                        <span className="text-[9px] font-semibold italic text-amber-700/60 dark:text-amber-300/50" title={`Editada el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}`}>
+                                                                            (editada)
+                                                                        </span>
+                                                                    )}
                                                                     <span className="ml-auto text-[9px] font-semibold text-amber-700/60 dark:text-amber-300/50 uppercase">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                    {/* Solo el autor puede corregir su nota. */}
+                                                                    {msg.sent_by === auth.user.id && editingNote?.id !== msg.id && (
+                                                                        <button
+                                                                            type="button"
+                                                                            title="Editar nota"
+                                                                            onClick={() => setEditingNote({ id: msg.id, content: msg.content || '' })}
+                                                                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity p-1 -my-1 rounded-full text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+                                                                        >
+                                                                            <PencilIcon className="size-3" />
+                                                                        </button>
+                                                                    )}
                                                                 </div>
-                                                                <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                                {editingNote?.id === msg.id ? (
+                                                                    <div className="space-y-1.5">
+                                                                        <textarea
+                                                                            autoFocus
+                                                                            rows={3}
+                                                                            value={editingNote.content}
+                                                                            onChange={e => setEditingNote({ ...editingNote, content: e.target.value })}
+                                                                            onKeyDown={e => {
+                                                                                if (e.key === 'Escape') setEditingNote(null);
+                                                                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNoteEdit(); }
+                                                                            }}
+                                                                            maxLength={4096}
+                                                                            className="w-full rounded-md bg-white/70 dark:bg-black/20 border border-amber-400/50 px-2 py-1.5 text-[13px] leading-[18px] text-amber-950 dark:text-amber-100 outline-none focus:ring-2 focus:ring-amber-500/40 resize-y"
+                                                                        />
+                                                                        <div className="flex items-center justify-end gap-1.5">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setEditingNote(null)}
+                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 transition-colors"
+                                                                            >
+                                                                                Cancelar
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={saveNoteEdit}
+                                                                                disabled={savingNote || !editingNote.content.trim()}
+                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                                                                            >
+                                                                                {savingNote && <Loader2 className="size-3 animate-spin" />}
+                                                                                Guardar
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     ) : msg.type === 'system' ? (
@@ -3863,16 +4191,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <div
                                                         className={`flex mb-2 sm:mb-3 items-center gap-1 group/msg ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
                                                     >
-                                                        {isOut && canReply && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => { setReplyingTo(msg); setTimeout(() => messageInputRef.current?.focus(), 0); }}
-                                                                title="Responder"
-                                                                className="opacity-0 group-hover/msg:opacity-100 transition-opacity size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10"
-                                                            >
-                                                                <Reply className="size-4" />
-                                                            </button>
-                                                        )}
+                                                        {isOut && messageActions}
                                                         <div
                                                             id={`msg-${msg.id}`}
                                                             className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[80%] lg:max-w-[65%] group rounded-lg transition-shadow ${
@@ -4077,24 +4396,28 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     )}
                                                                 </div>
 
-                                                                {/* Reacción (emoji) del contacto a este mensaje */}
-                                                                {msg.metadata?.reaction && (
-                                                                    <span className={`absolute -bottom-3 ${isOut ? 'right-1' : 'left-1'} text-[13px] leading-none bg-white dark:bg-[#202c33] border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm`}>
-                                                                        {msg.metadata.reaction}
+                                                                {/* Reacciones al mensaje: la del contacto (webhook) y la
+                                                                    nuestra, que son independientes entre sí. */}
+                                                                {(msg.metadata?.reaction || msg.metadata?.own_reaction) && (
+                                                                    <span className={`absolute -bottom-3 ${isOut ? 'right-1' : 'left-1'} flex items-center gap-0.5 text-[13px] leading-none bg-white dark:bg-[#202c33] border border-border/40 rounded-full px-1.5 py-0.5 shadow-sm`}>
+                                                                        {msg.metadata?.reaction && (
+                                                                            <span title="Reacción del contacto">{msg.metadata.reaction}</span>
+                                                                        )}
+                                                                        {msg.metadata?.own_reaction && (
+                                                                            <button
+                                                                                type="button"
+                                                                                title="Quitar tu reacción"
+                                                                                onClick={() => reactToMessage(msg, msg.metadata.own_reaction)}
+                                                                                className="hover:scale-125 transition-transform"
+                                                                            >
+                                                                                {msg.metadata.own_reaction}
+                                                                            </button>
+                                                                        )}
                                                                     </span>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        {!isOut && canReply && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => { setReplyingTo(msg); setTimeout(() => messageInputRef.current?.focus(), 0); }}
-                                                                title="Responder"
-                                                                className="opacity-0 group-hover/msg:opacity-100 transition-opacity size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10"
-                                                            >
-                                                                <Reply className="size-4" />
-                                                            </button>
-                                                        )}
+                                                        {!isOut && messageActions}
                                                     </div>
                                                     )}
                                                 </Fragment>
@@ -4452,6 +4775,214 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     </p>
                                 ) : null}
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Info. del mensaje: cuándo se envió, se entregó y se leyó */}
+                {messageInfo && (() => {
+                    const isOut = messageInfo.direction === 'outbound';
+                    // El hito se da por alcanzado si tiene fecha o si el `status`
+                    // ya lo dejó atrás: los checks de la burbuja se guían por
+                    // `status`, así que ambos tienen que contar lo mismo aunque
+                    // falte la marca de tiempo.
+                    const STATUS_RANK = { pending: 0, sent: 1, delivered: 2, read: 3 };
+                    const rank = STATUS_RANK[messageInfo.status] ?? 0;
+                    // Los hitos de entrega solo existen para los salientes: de un
+                    // entrante lo único que sabemos es cuándo nos llegó.
+                    const steps = isOut
+                        ? [
+                            { key: 'read', label: 'Leído', at: messageInfo.read_at, reached: rank >= 3, icon: CheckCheck, tone: 'text-sky-500' },
+                            { key: 'delivered', label: 'Entregado', at: messageInfo.delivered_at, reached: rank >= 2, icon: CheckCheck, tone: 'text-muted-foreground' },
+                            { key: 'sent', label: 'Enviado', at: messageInfo.sent_at || messageInfo.created_at, reached: rank >= 1, icon: Check, tone: 'text-muted-foreground' },
+                        ]
+                        : [
+                            { key: 'received', label: 'Recibido', at: messageInfo.created_at, reached: true, icon: Check, tone: 'text-muted-foreground' },
+                        ];
+
+                    return (
+                        <div
+                            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 animate-in fade-in duration-200"
+                            onClick={() => setMessageInfo(null)}
+                        >
+                            <div
+                                className="w-full max-w-md rounded-2xl bg-white dark:bg-[#202c33] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-105 duration-200"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                            <Info className="size-4.5" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-foreground truncate">Info. del mensaje</p>
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {isOut ? `Enviado por ${messageInfo.sender?.name || 'un agente'}` : 'Mensaje del contacto'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setMessageInfo(null)}
+                                        className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-muted-foreground"
+                                    >
+                                        <XIcon className="size-5" />
+                                    </button>
+                                </div>
+
+                                {/* Recordatorio de qué mensaje se está inspeccionando */}
+                                <div className="px-4 pt-3">
+                                    <div className={`rounded-lg px-3 py-2 text-[12.5px] leading-[17px] break-words max-h-24 overflow-y-auto custom-scrollbar ${
+                                        isOut ? 'bg-[#dcf8c6] dark:bg-[#005c4b]' : 'bg-[#f0f2f5] dark:bg-[#111b21]'
+                                    }`}>
+                                        {quotedSnippet(messageInfo) || 'Mensaje sin contenido'}
+                                    </div>
+                                </div>
+
+                                <div className="px-4 py-4 space-y-3">
+                                    {steps.map(step => {
+                                        const StepIcon = step.icon;
+                                        const stamp = formatFullDateTime(step.at);
+                                        const done = step.reached || !!stamp;
+                                        return (
+                                            <div key={step.key} className="flex items-center gap-3">
+                                                <StepIcon className={`size-4 shrink-0 ${done ? step.tone : 'text-muted-foreground/30'}`} />
+                                                <span className={`text-[13px] font-semibold w-24 shrink-0 ${done ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                                                    {step.label}
+                                                </span>
+                                                <span className={`text-[12.5px] ml-auto text-right ${stamp ? 'text-muted-foreground' : 'text-muted-foreground/50 italic'}`}>
+                                                    {stamp
+                                                        || (done ? 'Confirmado, sin hora registrada'
+                                                            : messageInfo.status === 'failed' ? '—' : 'Pendiente')}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+
+                                    {messageInfo.status === 'failed' && (
+                                        <div className="flex items-start gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2">
+                                            <AlertTriangle className="size-4 mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />
+                                            <div className="min-w-0 text-[12.5px] text-rose-700 dark:text-rose-300">
+                                                <p className="font-semibold">No se pudo enviar{formatFullDateTime(messageInfo.failed_at) ? ` · ${formatFullDateTime(messageInfo.failed_at)}` : ''}</p>
+                                                <p className="leading-snug break-words">
+                                                    {messageInfo.error_details || messageInfo.error_message || 'WhatsApp no reportó un motivo específico.'}
+                                                    {messageInfo.error_code ? ` (código ${messageInfo.error_code})` : ''}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {isOut && messageInfo.status !== 'failed' && rank < 3 && (
+                                        <p className="text-[11.5px] text-muted-foreground/70 leading-snug pt-1 border-t border-border/40">
+                                            WhatsApp solo confirma la lectura si el contacto tiene activadas las
+                                            confirmaciones de lectura.
+                                        </p>
+                                    )}
+
+                                    {messageInfo.metadata?.forwarded_from && (
+                                        <p className="text-[11.5px] text-muted-foreground/70 flex items-center gap-1.5 pt-1 border-t border-border/40">
+                                            <Forward className="size-3.5 shrink-0" /> Reenviado desde otro chat
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Reenviar un mensaje a otra conversación */}
+                {forwardSource && (
+                    <div
+                        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 animate-in fade-in duration-200"
+                        onClick={() => setForwardSource(null)}
+                    >
+                        <div
+                            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#202c33] shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-in zoom-in-105 duration-200"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                        <Forward className="size-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-foreground truncate">Reenviar mensaje</p>
+                                        <p className="text-xs text-muted-foreground truncate">{quotedSnippet(forwardSource) || 'Mensaje'}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setForwardSource(null)}
+                                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-muted-foreground"
+                                >
+                                    <XIcon className="size-5" />
+                                </button>
+                            </div>
+
+                            {forwardDone ? (
+                                <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
+                                    <CheckCircle2 className="size-10 text-teal-600" />
+                                    <p className="text-sm font-semibold text-foreground">Reenviado a {forwardDone}</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="px-4 pt-3">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                autoFocus
+                                                value={forwardQuery}
+                                                onChange={e => setForwardQuery(e.target.value)}
+                                                placeholder="Buscar chat por nombre o número"
+                                                className="w-full h-10 rounded-lg bg-black/5 dark:bg-white/5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {forwardError && (
+                                        <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                                            <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                                            <span className="leading-snug">{forwardError}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2 min-h-[120px]">
+                                        {forwardLoading && forwardResults.length === 0 ? (
+                                            <div className="flex items-center justify-center py-8 text-muted-foreground">
+                                                <Loader2 className="size-5 animate-spin" />
+                                            </div>
+                                        ) : forwardResults.length === 0 ? (
+                                            <p className="text-center text-[12.5px] text-muted-foreground py-8 px-4">
+                                                No hay chats abiertos que coincidan. Solo se puede reenviar a
+                                                conversaciones con la ventana de 24h activa.
+                                            </p>
+                                        ) : (
+                                            forwardResults
+                                                .filter(c => c.id !== forwardSource.conversation_id)
+                                                .map(conv => {
+                                                    const name = conv.contact?.name || conv.name || conv.phone_number;
+                                                    return (
+                                                        <button
+                                                            key={conv.id}
+                                                            type="button"
+                                                            disabled={forwardSending}
+                                                            onClick={() => confirmForward(conv)}
+                                                            className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left disabled:opacity-50"
+                                                        >
+                                                            <div className="size-9 rounded-full bg-teal-600/15 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 text-[13px] font-bold uppercase">
+                                                                {(name || '?').charAt(0)}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-[13px] font-semibold text-foreground truncate">{name}</p>
+                                                                <p className="text-[11.5px] text-muted-foreground truncate">{conv.phone_number}</p>
+                                                            </div>
+                                                            <Forward className="size-4 text-muted-foreground shrink-0" />
+                                                        </button>
+                                                    );
+                                                })
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}

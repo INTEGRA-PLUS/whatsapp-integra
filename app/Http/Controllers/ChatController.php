@@ -256,8 +256,9 @@ class ChatController extends Controller
             return response()->json(['success' => false, 'error' => 'Número de teléfono inválido. Incluye el código de país.'], 422);
         }
 
-        $conversation = WhatsAppConversation::firstOrCreate(
-            ['instance_id' => $instance->id, 'wa_id' => $phone],
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $phone,
             [
                 'phone_number'    => $phone,
                 'name'            => $request->name ?: $phone,
@@ -1299,6 +1300,249 @@ class ChatController extends Controller
         return response()->json($this->sanitizeUtf8([
             'success' => true,
             'data'    => $note->load('sender:id,name'),
+        ]));
+    }
+
+    /**
+     * Localiza un mensaje del chat comprobando que pertenece a la empresa del
+     * usuario. Todas las acciones sobre un mensaje concreto (reaccionar,
+     * reenviar, editar) empiezan por aquí.
+     */
+    private function findMessageForUser($messageId): WhatsAppMessage
+    {
+        $message = WhatsAppMessage::with('conversation.instance')->findOrFail($messageId);
+        $instance = $message->conversation?->instance;
+
+        if (! $instance || $instance->company_id !== auth()->user()->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        return $message;
+    }
+
+    /**
+     * Reacciona (o quita la reacción) con un emoji a un mensaje del chat.
+     *
+     * Nuestra reacción se guarda en `metadata.own_reaction` y no en
+     * `metadata.reaction`, que es donde el webhook deja la del cliente: son dos
+     * reacciones independientes sobre el mismo mensaje y la UI muestra ambas.
+     */
+    public function reactToMessage(Request $request, $messageId)
+    {
+        $validator = Validator::make($request->all(), [
+            // Cadena vacía = quitar la reacción (así lo documenta Meta).
+            'emoji' => 'present|string|max:8',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $message = $this->findMessageForUser($messageId);
+        $conversation = $message->conversation;
+        $instance = $conversation->instance;
+
+        if ($message->is_internal || ! $message->wamid) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Solo se puede reaccionar a mensajes que ya están en WhatsApp.',
+            ], 422);
+        }
+
+        if (! $instance->isMetaConfigured()) {
+            return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
+        }
+
+        // Una reacción es un mensaje saliente más, así que también la bloquea la
+        // ventana de 24h.
+        if (! $conversation->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h expiró, así que no se puede reaccionar a este mensaje.',
+            ], 422);
+        }
+
+        $emoji = (string) $request->input('emoji');
+
+        $result = $this->metaService->sendReaction(
+            $instance->phone_number_id,
+            $conversation->phone_number,
+            $message->wamid,
+            $emoji
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'error' => $this->metaError($result, 'No se pudo enviar la reacción'),
+            ], 422);
+        }
+
+        $metadata = $message->metadata ?? [];
+        if ($emoji === '') {
+            unset($metadata['own_reaction']);
+        } else {
+            $metadata['own_reaction'] = $emoji;
+        }
+        $message->metadata = $metadata;
+        $message->save();
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'data' => $message->load('sender:id,name'),
+        ]));
+    }
+
+    /**
+     * Tipos que se pueden reenviar: son los que `DeliverWhatsAppMessage` sabe
+     * poner en el aire a partir de la fila guardada. El resto (sticker, video,
+     * ubicación, contactos, plantillas) llega por webhook o necesita un payload
+     * que no siempre conservamos.
+     */
+    private const FORWARDABLE_TYPES = ['text', 'image', 'audio', 'document'];
+
+    /**
+     * Reenvía un mensaje a otra conversación de la misma empresa.
+     *
+     * No se llama a Meta aquí: se crea la fila "pending" en la conversación
+     * destino y el job de entrega hace el envío, igual que un mensaje normal.
+     */
+    public function forwardMessage(Request $request, $messageId)
+    {
+        $validator = Validator::make($request->all(), [
+            'conversation_id' => 'required|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+        $message = $this->findMessageForUser($messageId);
+
+        if (! in_array($message->type, self::FORWARDABLE_TYPES, true)) {
+            return response()->json([
+                'success' => false,
+                'error' => "Los mensajes de tipo \"{$message->type}\" no se pueden reenviar.",
+            ], 422);
+        }
+
+        if ($message->type !== 'text' && empty($message->media_url)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'El archivo de este mensaje ya no está disponible, así que no se puede reenviar.',
+            ], 422);
+        }
+
+        $target = WhatsAppConversation::with('instance')->findOrFail($request->conversation_id);
+
+        if ($target->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        if (! $target->instance->isMetaConfigured()) {
+            return response()->json(['success' => false, 'error' => 'La instancia del chat destino no está configurada'], 400);
+        }
+
+        if (! $target->isWindowOpen()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'La ventana de 24h del chat destino expiró. Ahí hay que enviar primero una plantilla aprobada.',
+            ], 422);
+        }
+
+        $metadata = $message->metadata ?? [];
+        // Rastro del origen: de qué mensaje y de qué chat salió este reenvío.
+        $metadata['forwarded_from'] = [
+            'message_id' => $message->id,
+            'conversation_id' => $message->conversation_id,
+            'forwarded_by' => $user->id,
+            'forwarded_at' => now()->toIso8601String(),
+        ];
+
+        $forwarded = WhatsAppMessage::create([
+            'conversation_id' => $target->id,
+            'type' => $message->type,
+            'content' => $message->content,
+            'media_url' => $message->media_url,
+            'media_mime_type' => $message->media_mime_type,
+            'filename' => $message->filename,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now(),
+            'metadata' => $metadata,
+        ]);
+
+        $target->update([
+            'last_message' => $message->content ?: '[' . $message->type . ']',
+            'last_message_at' => now(),
+        ]);
+
+        DeliverWhatsAppMessage::dispatch($forwarded->id);
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'message' => 'Mensaje reenviado',
+            'data' => $forwarded->load('sender:id,name'),
+            'conversation_id' => $target->id,
+        ]));
+    }
+
+    /**
+     * Edita el texto de una nota interna.
+     *
+     * Solo notas internas: la Cloud API de Meta no expone ninguna forma de
+     * editar un mensaje que ya salió a WhatsApp, así que cambiar aquí el texto
+     * de un saliente dejaría el CRM diciendo una cosa y el teléfono del cliente
+     * otra. Las notas nunca salieron, así que ahí sí se puede editar de verdad.
+     */
+    public function updateNote(Request $request, $messageId)
+    {
+        $validator = Validator::make($request->all(), [
+            'content' => 'required|string|max:4096',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+        $message = $this->findMessageForUser($messageId);
+
+        if (! $message->is_internal) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Solo se pueden editar las notas internas: WhatsApp no permite modificar un mensaje ya enviado al cliente.',
+            ], 422);
+        }
+
+        if ($message->sent_by !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Solo el autor puede editar su nota.',
+            ], 403);
+        }
+
+        $metadata = $message->metadata ?? [];
+        // Se conserva el texto anterior para que quede claro qué decía la nota
+        // antes de la corrección.
+        $metadata['edit_history'][] = [
+            'content' => $message->content,
+            'edited_at' => now()->toIso8601String(),
+        ];
+        $metadata['edited_at'] = now()->toIso8601String();
+
+        $message->update([
+            'content' => $request->content,
+            'metadata' => $metadata,
+        ]);
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'data' => $message->load('sender:id,name'),
         ]));
     }
 

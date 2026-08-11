@@ -54,15 +54,22 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $to = $request->to;
+        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
+        // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
+        // que el que abre el webhook partía la conversación en dos.
+        $to = WhatsAppConversation::normalizePhone($request->to);
+
+        if ($to === '') {
+            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+        }
+
         $messageContent = $request->message;
 
         // Find or create conversation
-        $conversation = WhatsAppConversation::firstOrCreate(
-            [
-                'instance_id' => $instance->id,
-                'wa_id' => $to
-            ],
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $to,
             [
                 'phone_number' => $to,
                 'name' => $to, // Fallback to phone number
@@ -134,17 +141,24 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $to = $request->to;
+        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
+        // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
+        // que el que abre el webhook partía la conversación en dos.
+        $to = WhatsAppConversation::normalizePhone($request->to);
+
+        if ($to === '') {
+            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+        }
+
         $templateName = $request->template_name;
         $languageCode = $request->language_code ?? 'es';
         $components = $request->components ?? [];
 
         // Find or create conversation
-        $conversation = WhatsAppConversation::firstOrCreate(
-            [
-                'instance_id' => $instance->id,
-                'wa_id' => $to
-            ],
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $to,
             [
                 'phone_number' => $to,
                 'name' => $to,
@@ -301,7 +315,16 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $to = $request->to;
+        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
+        // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
+        // que el que abre el webhook partía la conversación en dos.
+        $to = WhatsAppConversation::normalizePhone($request->to);
+
+        if ($to === '') {
+            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+        }
+
         $wamid = $request->wamid;
         $content = $request->content;
         $type = $request->type ?? 'text';
@@ -337,11 +360,9 @@ class MessageApiController extends Controller
         }
 
         // Find or create conversation
-        $conversation = WhatsAppConversation::firstOrCreate(
-            [
-                'instance_id' => $instance->id,
-                'wa_id' => $to
-            ],
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $to,
             [
                 'phone_number' => $to,
                 'name' => $request->name ?? $to,

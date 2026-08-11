@@ -349,6 +349,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/templates/ensure-resume', [ChatController::class, 'ensureResumeTemplate']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
+
+        // Acciones sobre un mensaje concreto (menú de la burbuja)
+        Route::post('/messages/{messageId}/react', [ChatController::class, 'reactToMessage']);
+        Route::post('/messages/{messageId}/forward', [ChatController::class, 'forwardMessage']);
+        Route::put('/messages/{messageId}/note', [ChatController::class, 'updateNote']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);

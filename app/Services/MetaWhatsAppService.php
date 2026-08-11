@@ -43,6 +43,27 @@ class MetaWhatsAppService
         return $this->sendRequest($phoneNumberId, $payload);
     }
 
+    /**
+     * Reacciona con un emoji a un mensaje del chat.
+     *
+     * Meta trata la reacción como un mensaje más (`type: reaction`), así que
+     * sale por el mismo endpoint que el texto. Un `emoji` vacío es la forma
+     * documentada de quitar la reacción anterior.
+     */
+    public function sendReaction(string $phoneNumberId, string $to, string $targetWamid, string $emoji = '')
+    {
+        return $this->sendRequest($phoneNumberId, [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $to,
+            'type' => 'reaction',
+            'reaction' => [
+                'message_id' => $targetWamid,
+                'emoji' => $emoji,
+            ],
+        ]);
+    }
+
     public function sendImage(string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
     {
         $payload = [

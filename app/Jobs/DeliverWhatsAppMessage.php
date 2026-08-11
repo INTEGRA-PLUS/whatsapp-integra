@@ -56,6 +56,21 @@ class DeliverWhatsAppMessage implements ShouldQueue
         $to = $conversation->phone_number;
         $phoneNumberId = $instance->phone_number_id;
 
+        // Sin el payload de la plantilla, Meta devuelve un "template.name is
+        // required" que no dice nada. Se corta antes de gastar la llamada.
+        $template = null;
+        if ($message->type === 'template') {
+            $template = $message->templatePayload();
+
+            if (! $template) {
+                $this->markFailed(
+                    $message,
+                    'El mensaje no guarda el nombre de la plantilla de Meta, así que no se puede enviar.'
+                );
+                return;
+            }
+        }
+
         $result = match ($message->type) {
             'text' => $metaService->sendMessage(
                 $phoneNumberId,
@@ -86,9 +101,9 @@ class DeliverWhatsAppMessage implements ShouldQueue
             'template' => $metaService->sendTemplate(
                 $phoneNumberId,
                 $to,
-                $message->metadata['template'] ?? '',
-                $message->metadata['language'] ?? 'es',
-                $message->metadata['components'] ?? []
+                $template['name'],
+                $template['language'],
+                $template['components']
             ),
             default => ['success' => false, 'error' => "Tipo no soportado: {$message->type}"],
         };

@@ -68,9 +68,7 @@ export function AppSidebar() {
             { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
             { title: 'Integraciones', href: route('integrations.index'), icon: Webhook, show: hasPermission('integrations.view') },
             { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },
-            // Auditoría de no entregados dentro de la empresa: solo la ve quien
-            // llegó suplantando desde Master, nunca el personal de la empresa.
-            { title: 'Mensajes no entregados', href: route('master.messages.index'), icon: MessageSquareX, show: !!auth?.fromMaster },
+            { title: 'Mensajes no entregados', href: route('master.messages.index'), icon: MessageSquareX },
         ].filter(item => item.show !== false);
     }
 
