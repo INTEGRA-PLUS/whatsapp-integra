@@ -636,6 +636,10 @@ class WhatsAppWebhookController extends Controller
         // bandeja normal de chats abiertos.
         if ($conversation->status === 'closed') {
             $conversationUpdate['status'] = 'open';
+            // El rastro del cierre se limpia con la reapertura: si no, el panel
+            // mostraría "cerrada por X" en un chat que está abierto otra vez.
+            $conversationUpdate['closed_by'] = null;
+            $conversationUpdate['closed_at'] = null;
         }
 
         $conversation->update($conversationUpdate);

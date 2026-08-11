@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { router } from '@inertiajs/react';
-import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X } from 'lucide-react';
+import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-react';
 import axios from 'axios';
 import { clsx } from 'clsx';
 
@@ -120,6 +120,7 @@ export default function NotificationBell() {
                     ) : (
                         items.map(n => {
                             const isSystem = n.data?.type === 'system';
+                            const isClosed = n.data?.type === 'conversation_closed';
                             return (
                                 <div
                                     key={n.id}
@@ -132,16 +133,30 @@ export default function NotificationBell() {
                                             ? "opacity-60 hover:bg-muted"
                                             : isSystem
                                                 ? "bg-sky-50/60 dark:bg-sky-900/10 hover:bg-sky-50 dark:hover:bg-sky-900/20"
-                                                : "bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                                : isClosed
+                                                    ? "bg-slate-100/70 dark:bg-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                                                    : "bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20"
                                     )}
                                 >
                                     {isSystem ? (
                                         <Megaphone className="size-4 text-sky-600 shrink-0 mt-0.5" />
+                                    ) : isClosed ? (
+                                        <Archive className="size-4 text-slate-500 shrink-0 mt-0.5" />
                                     ) : (
                                         <AtSign className="size-4 text-amber-600 shrink-0 mt-0.5" />
                                     )}
                                     <div className="min-w-0 flex-1">
-                                        {isSystem ? (
+                                        {isClosed ? (
+                                            <p className="text-[13px] leading-snug">
+                                                <span className="font-bold">{n.data?.by_name}</span>
+                                                {n.data?.total > 1
+                                                    ? ` cerró ${n.data.total} conversaciones`
+                                                    : ' cerró una conversación'}
+                                                {n.data?.contact_name && n.data?.total <= 1
+                                                    ? <span className="text-muted-foreground"> · {n.data.contact_name}</span>
+                                                    : null}
+                                            </p>
+                                        ) : isSystem ? (
                                             <>
                                                 <p className="text-[13px] leading-snug font-bold">{n.data?.title}</p>
                                                 {n.data?.body && (

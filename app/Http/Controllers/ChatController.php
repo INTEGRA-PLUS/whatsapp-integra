@@ -111,7 +111,7 @@ class ChatController extends Controller
             ->firstOrFail();
 
         $conversations = WhatsAppConversation::forInstance($instanceId)
-            ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
+            ->with(['assignedAgent:id,name', 'closedByUser:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
             ->when($request->search, function ($query, $search) {
                 $query->search($search);
             })
@@ -300,7 +300,7 @@ class ChatController extends Controller
 
         return response()->json($this->sanitizeUtf8([
             'success'      => true,
-            'conversation' => $conversation->load(['assignedAgent:id,name', 'tags']),
+            'conversation' => $conversation->load(['assignedAgent:id,name', 'closedByUser:id,name', 'tags']),
             'messages'     => $messages,
             'session_open' => $sessionOpen,
             'timestamp'    => now()->toIso8601String(),
@@ -569,7 +569,7 @@ class ChatController extends Controller
         $updatedConversations = [];
         if ($sinceTs) {
             $updatedConversations = WhatsAppConversation::forInstance($instanceId)
-                ->with(['assignedAgent:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
+                ->with(['assignedAgent:id,name', 'closedByUser:id,name', 'tags', 'contact:id,name,phone_number,email,notes'])
                 ->where('updated_at', '>', $sinceTs)
                 ->when($request->filter, function ($query, $filter) use ($user) {
                     $this->applyFolderFilter($query, $filter, $user);
@@ -1050,7 +1050,13 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $conversation->update(['status' => 'closed']);
+        $conversation->update([
+            'status'    => 'closed',
+            'closed_by' => $user->id,
+            'closed_at' => now(),
+        ]);
+
+        $this->notifyAdminsOfClosure($user, $conversation);
 
         WebhookDispatcher::emit(
             $user->company_id,
@@ -1062,7 +1068,47 @@ class ChatController extends Controller
             'success' => true,
             'message' => 'Conversación cerrada',
             'status'  => 'closed',
+            'closed_by_user' => $conversation->load('closedByUser:id,name')->closedByUser,
+            'closed_at' => $conversation->closed_at?->toIso8601String(),
         ]);
+    }
+
+    /**
+     * Avisa a los administradores de la empresa de que se cerró una conversación.
+     *
+     * Cerrar un chat lo saca de la bandeja de todo el equipo, así que quien
+     * supervisa necesita enterarse sin tener que revisar la lista de cerradas.
+     * No se avisa a quien la cerró: ya lo sabe.
+     *
+     * Es un efecto secundario del cierre: si falla, la conversación ya quedó
+     * cerrada y no se debe romper la respuesta al agente.
+     */
+    private function notifyAdminsOfClosure($user, WhatsAppConversation $conversation, int $total = 1): void
+    {
+        try {
+            // Los roles de Spatie están particionados por empresa; sin fijar el
+            // equipo, hasRole('admin') no encuentra nada.
+            setPermissionsTeamId($user->company_id);
+
+            $admins = User::where('company_id', $user->company_id)
+                ->where('id', '!=', $user->id)
+                ->where('active', true)
+                ->get()
+                ->filter(fn ($u) => $u->hasRole('admin'));
+
+            foreach ($admins as $admin) {
+                $admin->notify(new \App\Notifications\ConversationClosedNotification(
+                    $conversation,
+                    $user->name,
+                    $total
+                ));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo notificar el cierre de la conversación', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -1098,7 +1144,18 @@ class ChatController extends Controller
         $ids = $query->pluck('id');
 
         if ($ids->isNotEmpty()) {
-            WhatsAppConversation::whereIn('id', $ids)->update(['status' => 'closed']);
+            WhatsAppConversation::whereIn('id', $ids)->update([
+                'status'    => 'closed',
+                'closed_by' => $user->id,
+                'closed_at' => now(),
+            ]);
+
+            // Una sola notificación por el lote, no una por conversación: se
+            // manda con la primera como referencia y el total del cierre.
+            $first = WhatsAppConversation::find($ids->first());
+            if ($first) {
+                $this->notifyAdminsOfClosure($user, $first, $ids->count());
+            }
 
             WebhookDispatcher::emit(
                 $user->company_id,
@@ -1156,7 +1213,13 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $conversation->update(['status' => 'open']);
+        // Al reabrir se limpia el rastro del cierre: si no, el panel seguiría
+        // mostrando "cerrada por X" en un chat que está abierto.
+        $conversation->update([
+            'status'    => 'open',
+            'closed_by' => null,
+            'closed_at' => null,
+        ]);
 
         WebhookDispatcher::emit(
             $user->company_id,

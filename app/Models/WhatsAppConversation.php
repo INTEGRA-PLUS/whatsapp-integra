@@ -23,12 +23,15 @@ class WhatsAppConversation extends Model
         'status',
         'kanban_column_id',
         'assigned_to',
+        'closed_by',
+        'closed_at',
         'unread_count',
         'metadata'
     ];
 
     protected $casts = [
         'last_message_at' => 'datetime',
+        'closed_at' => 'datetime',
         'metadata' => 'array',
     ];
 
@@ -150,6 +153,18 @@ class WhatsAppConversation extends Model
     public function assignedAgent()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Quién cerró la conversación por última vez.
+     *
+     * Se llama `closedByUser` y no `closedBy` a propósito: al serializar, la
+     * relación toma el nombre en snake_case y `closed_by` chocaría con la
+     * columna del mismo nombre, sobrescribiendo el id con el objeto usuario.
+     */
+    public function closedByUser()
+    {
+        return $this->belongsTo(User::class, 'closed_by');
     }
 
     public function contact()

@@ -54,6 +54,7 @@ import {
     Reply,
     Copy,
     Forward,
+    Archive,
     MapPin,
     Wand2,
     Download,
@@ -1726,8 +1727,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
             const res = await axios.post(`/api/chat/conversations/${convId}/${action}`);
             if (res.data.success) {
                 const status = res.data.status || (action === 'close' ? 'closed' : 'open');
-                setConversations(prev => prev.map(c => c.id === convId ? { ...c, status } : c));
-                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, status } : prev));
+                // Al cerrar viene quién lo hizo; al reabrir se limpia, que es lo
+                // que devuelve el backend (null en ambos campos).
+                const patch = {
+                    status,
+                    closed_by_user: res.data.closed_by_user ?? null,
+                    closed_at: res.data.closed_at ?? null,
+                };
+                setConversations(prev => prev.map(c => c.id === convId ? { ...c, ...patch } : c));
+                setSelectedConversation(prev => (prev?.id === convId ? { ...prev, ...patch } : prev));
                 loadFolderCounts();
             }
         } catch (err) {
@@ -5139,6 +5147,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <span className={clsx("size-1.5 rounded-full", selectedConversation.status === 'closed' ? "bg-slate-400" : "bg-emerald-500")} />
                                         {selectedConversation.status === 'closed' ? 'Cerrada' : 'Abierta'}
                                     </span>
+
+                                    {/* Quién cerró el chat. Solo aparece en las cerradas: al
+                                        reabrirlas el backend limpia el rastro. */}
+                                    {selectedConversation.status === 'closed' && selectedConversation.closed_by_user && (
+                                        <p className="text-[11.5px] text-muted-foreground flex items-center gap-1.5">
+                                            <Archive className="size-3.5 shrink-0" />
+                                            Cerrada por <span className="font-semibold text-foreground">{selectedConversation.closed_by_user.name}</span>
+                                            {formatFullDateTime(selectedConversation.closed_at)
+                                                ? <span className="text-muted-foreground/70">· {formatFullDateTime(selectedConversation.closed_at)}</span>
+                                                : null}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {editingContact ? (
