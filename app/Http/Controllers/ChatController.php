@@ -1078,7 +1078,10 @@ class ChatController extends Controller
      *
      * Cerrar un chat lo saca de la bandeja de todo el equipo, así que quien
      * supervisa necesita enterarse sin tener que revisar la lista de cerradas.
-     * No se avisa a quien la cerró: ya lo sabe.
+     *
+     * Se avisa también a quien cerró, aunque ya lo sepa: muchas empresas tienen
+     * un solo administrador y, si se le excluyera, sus propios cierres no
+     * dejarían ningún aviso y la campana no serviría de registro.
      *
      * Es un efecto secundario del cierre: si falla, la conversación ya quedó
      * cerrada y no se debe romper la respuesta al agente.
@@ -1091,7 +1094,6 @@ class ChatController extends Controller
             setPermissionsTeamId($user->company_id);
 
             $admins = User::where('company_id', $user->company_id)
-                ->where('id', '!=', $user->id)
                 ->where('active', true)
                 ->get()
                 ->filter(fn ($u) => $u->hasRole('admin'));
@@ -1100,7 +1102,8 @@ class ChatController extends Controller
                 $admin->notify(new \App\Notifications\ConversationClosedNotification(
                     $conversation,
                     $user->name,
-                    $total
+                    $total,
+                    $user->id
                 ));
             }
         } catch (\Throwable $e) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { Bell, AtSign, CheckCheck, Megaphone, Trash2, X, Archive } from 'lucide-react';
 import axios from 'axios';
 import { clsx } from 'clsx';
@@ -9,6 +9,8 @@ export default function NotificationBell() {
     const [unread, setUnread] = useState(0);
     const [items, setItems] = useState([]);
     const ref = useRef(null);
+    // Para redactar en primera persona los avisos de acciones propias.
+    const currentUserId = usePage().props?.auth?.user?.id;
 
     const load = useCallback(async () => {
         try {
@@ -148,10 +150,12 @@ export default function NotificationBell() {
                                     <div className="min-w-0 flex-1">
                                         {isClosed ? (
                                             <p className="text-[13px] leading-snug">
-                                                <span className="font-bold">{n.data?.by_name}</span>
+                                                {n.data?.by_id && n.data.by_id === currentUserId
+                                                    ? <span className="font-bold">Cerraste</span>
+                                                    : <><span className="font-bold">{n.data?.by_name}</span> cerró</>}
                                                 {n.data?.total > 1
-                                                    ? ` cerró ${n.data.total} conversaciones`
-                                                    : ' cerró una conversación'}
+                                                    ? ` ${n.data.total} conversaciones`
+                                                    : ' una conversación'}
                                                 {n.data?.contact_name && n.data?.total <= 1
                                                     ? <span className="text-muted-foreground"> · {n.data.contact_name}</span>
                                                     : null}

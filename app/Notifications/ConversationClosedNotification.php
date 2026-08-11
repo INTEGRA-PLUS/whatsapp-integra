@@ -20,7 +20,8 @@ class ConversationClosedNotification extends Notification
     public function __construct(
         public WhatsAppConversation $conversation,
         public string $byName,
-        public int $total = 1
+        public int $total = 1,
+        public ?int $byId = null
     ) {
     }
 
@@ -42,6 +43,9 @@ class ConversationClosedNotification extends Notification
             'conversation_id' => $this->conversation->id,
             'instance_id'     => $this->conversation->instance_id,
             'by_name'         => $this->byName,
+            // Permite que la campana lo diga en primera persona cuando quien
+            // lee es quien cerró ("Cerraste" en vez de "Fulano cerró").
+            'by_id'           => $this->byId,
             'contact_name'    => $this->conversation->name ?: $this->conversation->phone_number,
             // Cierre masivo: cuántas se cerraron en la misma acción. La campana
             // lo menciona para que no parezca que solo se cerró una.
