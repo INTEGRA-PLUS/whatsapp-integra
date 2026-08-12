@@ -138,10 +138,6 @@ const DOCUMENT_EXTENSIONS = [
 const DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
 const ATTACHMENT_ACCEPT = ['image/*', ...DOCUMENT_EXTENSIONS.map(e => `.${e}`)].join(',');
 
-// Marca la corrección de un mensaje ya enviado. Los asteriscos son el negrita de
-// WhatsApp: el cliente lo lee resaltado, no como literal.
-const CORRECTION_PREFIX = '*Corrección:* ';
-
 // Meta solo entrega image/jpeg e image/png, y corta las fotos en 5 MB.
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const META_IMAGE_TYPES = ['image/jpeg', 'image/png'];
@@ -1194,11 +1190,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [isDraggingFile, setIsDraggingFile] = useState(false);
     const dragDepthRef = useRef(0); // cuenta dragenter/dragleave para evitar parpadeo del overlay
     const [replyingTo, setReplyingTo] = useState(null); // mensaje al que se está respondiendo (cita)
-    // Id del mensaje que se está corrigiendo. Se compara contra replyingTo en vez
-    // de limpiarse a mano: así cancelar la cita o responder a otro mensaje
-    // desactiva el modo corrección sin tener que acordarse en cada sitio.
-    const [correctingId, setCorrectingId] = useState(null);
-    const isCorrecting = !!replyingTo && correctingId === replyingTo.id;
     const [showLinkContact, setShowLinkContact] = useState(false);
     const [showContactPanel, setShowContactPanel] = useState(false);
     const [editingContact, setEditingContact] = useState(false);
@@ -3165,32 +3156,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setTimeout(() => messageInputRef.current?.focus(), 0);
     }
 
-    /**
-     * Corrige un mensaje ya enviado.
-     *
-     * La Cloud API de Meta no expone editar ni borrar lo que ya salió (la
-     * edición de 15 minutos es de la app de consumo, no de la API), así que lo
-     * más cerca que se puede estar es mandar un mensaje nuevo citando el
-     * original. El cliente ve a qué corrige porque WhatsApp pinta la cita.
-     */
-    function startCorrection(msg) {
-        // La corrección siempre va al cliente, nunca como nota interna.
-        setComposerMode('reply');
-        setReplyingTo(msg);
-        setCorrectingId(msg.id);
-        // El texto original va precargado para editarlo en vez de reescribirlo.
-        const draft = CORRECTION_PREFIX + (msg.content || '');
-        setNewMessage(draft);
-        setTimeout(() => {
-            const el = messageInputRef.current;
-            if (!el) return;
-            el.focus();
-            // Cursor al final: si no, queda al principio y el agente escribe
-            // encima del prefijo.
-            el.setSelectionRange(draft.length, draft.length);
-        }, 0);
-    }
-
     // Texto que tiene sentido copiar de cada tipo de mensaje.
     function copyableText(msg) {
         if (msg.type === 'document' && !msg.content) return msg.filename || '';
@@ -4452,10 +4417,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 ? !!msg.content
                                                 : ['image', 'audio', 'document'].includes(msg.type) && !!msg.media_url;
                                             const canCopy = !!copyableText(msg);
-                                            // Corregir solo un texto propio que ya llegó a WhatsApp: sobre un
-                                            // adjunto la corrección sería reenviar el archivo, y sobre un
-                                            // mensaje del cliente no tiene sentido.
-                                            const canCorrect = isOut && canReply && msg.type === 'text' && !!msg.content;
 
                                             // Handle Date Separator
                                             const prevMsg = i > 0 ? messages[i-1] : null;
@@ -4512,12 +4473,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 <DropdownMenuItem onClick={() => startReply(msg)} className="gap-2.5 text-[13px]">
                                                                     <Reply className="size-4 text-muted-foreground" />
                                                                     Responder
-                                                                </DropdownMenuItem>
-                                                            )}
-                                                            {canCorrect && (
-                                                                <DropdownMenuItem onClick={() => startCorrection(msg)} className="gap-2.5 text-[13px]">
-                                                                    <PencilIcon className="size-4 text-muted-foreground" />
-                                                                    Corregir
                                                                 </DropdownMenuItem>
                                                             )}
                                                             {canCopy && (
@@ -4978,20 +4933,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             <div className="flex-1 flex flex-col gap-2 min-w-0">
                                                 {/* Barra de cita: mensaje al que se está respondiendo */}
                                                 {replyingTo && (
-                                                    <div className={clsx(
-                                                        "flex items-stretch gap-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-4 pl-2 pr-1 py-1.5",
-                                                        isCorrecting ? "border-amber-500" : "border-teal-500"
-                                                    )}>
+                                                    <div className="flex items-stretch gap-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-4 border-teal-500 pl-2 pr-1 py-1.5">
                                                         <div className="min-w-0 flex-1">
-                                                            <p className={clsx(
-                                                                "text-[11px] font-bold truncate",
-                                                                isCorrecting
-                                                                    ? "text-amber-700 dark:text-amber-300"
-                                                                    : "text-teal-700 dark:text-teal-300"
-                                                            )}>
-                                                                {isCorrecting
-                                                                    ? 'Corrigiendo este mensaje — sale como mensaje nuevo citándolo'
-                                                                    : `Respondiendo a ${quotedAuthor(replyingTo)}`}
+                                                            <p className="text-[11px] font-bold text-teal-700 dark:text-teal-300 truncate">
+                                                                Respondiendo a {quotedAuthor(replyingTo)}
                                                             </p>
                                                             <p className="text-[11.5px] text-muted-foreground truncate">{quotedSnippet(replyingTo) || 'Mensaje'}</p>
                                                         </div>
