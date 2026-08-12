@@ -1218,6 +1218,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [forwardLoading, setForwardLoading] = useState(false);
     const [editingNote, setEditingNote] = useState(null); // { id, content } nota interna en edición
     const [savingNote, setSavingNote] = useState(false);
+    // { id, content } mensaje ya enviado que se está corrigiendo en el panel.
+    // Ojo: corrige nuestro registro, no lo que el cliente tiene en el teléfono.
+    const [editingSent, setEditingSent] = useState(null);
+    const [savingSent, setSavingSent] = useState(false);
     const [reactingId, setReactingId] = useState(null); // id del mensaje con una reacción en vuelo
     // Resultado de pedir la eliminación de un chat sin permiso para borrarlo:
     // { conversationId, message, error? }
@@ -1734,7 +1738,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 setForwardSource(null);
                 return;
             }
-            const overlayOpen = selectedImage || selectedLocation || failedMessage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen || editingNote;
+            const overlayOpen = selectedImage || selectedLocation || failedMessage || newChatOpen || showLinkContact || isCreatingTag || qrOpen || mentionOpen || editingNote || editingSent;
             if (overlayOpen) return;
             if (selectedConversation) {
                 e.preventDefault();
@@ -1743,7 +1747,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         document.addEventListener('keydown', handleEscape);
         return () => document.removeEventListener('keydown', handleEscape);
-    }, [selectedConversation, selectedImage, selectedLocation, failedMessage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen, messageInfo, forwardSource, editingNote]);
+    }, [selectedConversation, selectedImage, selectedLocation, failedMessage, newChatOpen, showLinkContact, isCreatingTag, qrOpen, mentionOpen, messageInfo, forwardSource, editingNote, editingSent]);
 
     const assignConversation = useCallback(async (convId, userId) => {
         try {
@@ -2080,6 +2084,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         // El adjunto pertenece a la nota de este chat: arrastrarlo al siguiente
         // haría que se guardara en la conversación equivocada.
         clearNoteImage();
+        setEditingSent(null);
         try {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
             forceScrollRef.current = true;
@@ -2148,6 +2153,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
             if (!e?.message) return;
 
             if (e.action === 'status') {
+                setMessages(prev => prev.map(m => (m.id === e.message.id ? { ...m, ...e.message } : m)));
+                return;
+            }
+
+            // Corrección de un mensaje ya enviado: se parchea la burbuja que ya
+            // está en pantalla. No puede tratarse como 'new' porque ahí un id
+            // conocido se descarta y la corrección no llegaría a nadie más.
+            if (e.action === 'edited') {
                 setMessages(prev => prev.map(m => (m.id === e.message.id ? { ...m, ...e.message } : m)));
                 return;
             }
@@ -3273,6 +3286,30 @@ export default function ChatIndex({ instances, integrations = [] }) {
             setSendError(err.response?.data?.error || 'No se pudo guardar la nota.');
         } finally {
             setSavingNote(false);
+        }
+    }
+
+    /**
+     * Guarda la corrección de un mensaje ya enviado.
+     *
+     * Corrige el registro del panel, no el teléfono del cliente: la Cloud API de
+     * Meta no expone editar lo que ya salió. El texto original queda guardado y
+     * la burbuja lo advierte, para que nadie dé por hecho que el cliente vio la
+     * versión corregida.
+     */
+    async function saveSentEdit() {
+        if (!editingSent || !editingSent.content.trim()) return;
+        setSavingSent(true);
+        try {
+            const res = await axios.put(`/api/chat/messages/${editingSent.id}/content`, {
+                content: editingSent.content.trim(),
+            });
+            if (res.data?.data) replaceMessage(res.data.data);
+            setEditingSent(null);
+        } catch (err) {
+            setSendError(err.response?.data?.error || 'No se pudo guardar la corrección.');
+        } finally {
+            setSavingSent(false);
         }
     }
 
@@ -4417,6 +4454,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 ? !!msg.content
                                                 : ['image', 'audio', 'document'].includes(msg.type) && !!msg.media_url;
                                             const canCopy = !!copyableText(msg);
+                                            // Corregir el texto de un mensaje que ya enviamos. Solo texto:
+                                            // un adjunto equivocado se arregla mandando el correcto.
+                                            const canEditSent = isOut && !msg.is_internal && msg.type === 'text' && !!msg.content;
 
                                             // Handle Date Separator
                                             const prevMsg = i > 0 ? messages[i-1] : null;
@@ -4473,6 +4513,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 <DropdownMenuItem onClick={() => startReply(msg)} className="gap-2.5 text-[13px]">
                                                                     <Reply className="size-4 text-muted-foreground" />
                                                                     Responder
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                            {canEditSent && (
+                                                                <DropdownMenuItem onClick={() => setEditingSent({ id: msg.id, content: msg.content || '' })} className="gap-2.5 text-[13px]">
+                                                                    <PencilIcon className="size-4 text-muted-foreground" />
+                                                                    Editar
                                                                 </DropdownMenuItem>
                                                             )}
                                                             {canCopy && (
@@ -4648,7 +4694,48 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     </span>
                                                                 )}
                                                                 {msg.type === 'text' && (
-                                                                    <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
+                                                                    editingSent?.id === msg.id ? (
+                                                                        /* Corrección en línea. El aviso es lo importante: sin él,
+                                                                           el asesor da por hecho que el cliente ve el cambio. */
+                                                                        <div className="space-y-1.5 py-1 min-w-[240px]">
+                                                                            <textarea
+                                                                                autoFocus
+                                                                                rows={3}
+                                                                                value={editingSent.content}
+                                                                                onChange={e => setEditingSent({ ...editingSent, content: e.target.value })}
+                                                                                onKeyDown={e => {
+                                                                                    if (e.key === 'Escape') setEditingSent(null);
+                                                                                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSentEdit(); }
+                                                                                }}
+                                                                                maxLength={4096}
+                                                                                className="w-full rounded-md bg-white/80 dark:bg-black/25 border border-black/10 dark:border-white/15 px-2 py-1.5 text-[12.5px] leading-[17px] outline-none focus:ring-2 focus:ring-teal-500/40 resize-y"
+                                                                            />
+                                                                            <p className="flex items-start gap-1 text-[10px] leading-[13px] opacity-70">
+                                                                                <AlertTriangle className="size-3 mt-px shrink-0" />
+                                                                                Corrige el registro del panel. El cliente seguirá viendo el texto original en su WhatsApp.
+                                                                            </p>
+                                                                            <div className="flex items-center justify-end gap-1.5">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setEditingSent(null)}
+                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                                                                >
+                                                                                    Cancelar
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={saveSentEdit}
+                                                                                    disabled={savingSent || !editingSent.content.trim()}
+                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                                                                                >
+                                                                                    {savingSent && <Loader2 className="size-3 animate-spin" />}
+                                                                                    Guardar
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
+                                                                    )
                                                                 )}
                                                                 
                                                                 {msg.type === 'image' && (
@@ -4805,6 +4892,16 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                                                 {/* Internal timestamp inside bubble - ALWAYS HH:mm */}
                                                                 <div className="absolute bottom-[0px] right-[0px] flex items-center gap-1.5 p-1">
+                                                                    {/* Marca de corrección. El título deja claro el alcance:
+                                                                        el cliente conserva el texto que se le envió. */}
+                                                                    {msg.metadata?.edited_at && !msg.is_internal && (
+                                                                        <span
+                                                                            className="text-[9px] font-bold italic text-muted-foreground/60 dark:text-white/30 whitespace-nowrap"
+                                                                            title={`Corregido en el panel${msg.metadata.edited_by?.name ? ` por ${msg.metadata.edited_by.name}` : ''} el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}.\nEl cliente recibió: "${msg.metadata.delivered_content ?? ''}"`}
+                                                                        >
+                                                                            editado
+                                                                        </span>
+                                                                    )}
                                                                     <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && (
                                                                         <StatusIcons

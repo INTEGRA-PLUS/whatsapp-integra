@@ -16,6 +16,8 @@ use Illuminate\Queue\SerializesModels;
  *                      confirmado por Meta) en la conversación.
  *   - action "status": cambio de estado de un mensaje saliente (sent/delivered/
  *                      read/failed).
+ *   - action "edited": se corrigió el texto de un mensaje en el panel (el
+ *                      cliente conserva el original: Meta no permite editarlo).
  *
  * Se emite en el mismo canal privado por instancia que las llamadas, así que
  * solo lo reciben los agentes de la empresa dueña de la instancia.
@@ -63,8 +65,11 @@ class WhatsAppMessageEvent implements ShouldBroadcastNow
             ];
         }
 
+        // "edited" reusa este payload completo (el frontend parchea la burbuja
+        // por id); mandarlo como "new" no serviría, porque ahí un id ya conocido
+        // se descarta y la corrección no llegaría a los demás agentes.
         return [
-            'action' => 'new',
+            'action' => $this->action === 'edited' ? 'edited' : 'new',
             'conversation_id' => $m->conversation_id,
             'message' => [
                 'id' => $m->id,

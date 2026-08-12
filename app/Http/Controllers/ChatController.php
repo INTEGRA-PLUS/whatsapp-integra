@@ -2034,6 +2034,86 @@ class ChatController extends Controller
     }
 
     /**
+     * Corrige el texto de un mensaje ya enviado al cliente.
+     *
+     * IMPORTANTE: esto NO cambia lo que el cliente tiene en su teléfono. La
+     * Cloud API de Meta solo expone `POST /{PHONE_NUMBER_ID}/messages` (crear);
+     * no hay PATCH, ni DELETE, ni parámetro `edit`, así que el mensaje que ya
+     * salió es inmutable del lado del cliente. Lo que se corrige aquí es el
+     * registro del panel, para que el historial que lee el equipo sea fiel.
+     *
+     * Por eso se guarda el texto original en `metadata.edit_history` y quién
+     * editó: si alguien reclama por lo que se le dijo, la versión que el cliente
+     * vio de verdad tiene que seguir siendo recuperable.
+     */
+    public function editSentMessage(Request $request, $messageId)
+    {
+        $validator = Validator::make($request->all(), [
+            'content' => 'required|string|max:4096',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $user = auth()->user();
+        $message = $this->findMessageForUser($messageId);
+
+        // Las notas tienen su propio editor (updateNote), que sí las cambia de
+        // verdad porque nunca salieron a WhatsApp.
+        if ($message->is_internal) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Las notas internas se editan desde su propio botón.',
+            ], 422);
+        }
+
+        if ($message->direction !== 'outbound') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Solo se pueden corregir los mensajes que enviamos nosotros, no los del cliente.',
+            ], 422);
+        }
+
+        if ($message->type !== 'text') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Solo se puede corregir el texto. Para un adjunto equivocado, envía el correcto.',
+            ], 422);
+        }
+
+        $metadata = $message->metadata ?? [];
+        $metadata['edit_history'][] = [
+            'content'   => $message->content,
+            'edited_at' => now()->toIso8601String(),
+            'edited_by' => ['id' => $user->id, 'name' => $user->name],
+        ];
+        $metadata['edited_at'] = now()->toIso8601String();
+        $metadata['edited_by'] = ['id' => $user->id, 'name' => $user->name];
+        // El primer texto es el que el cliente recibió: se fija una sola vez para
+        // que no se pierda tras la segunda corrección.
+        $metadata['delivered_content'] ??= $message->content;
+
+        $message->update([
+            'content'  => $request->content,
+            'metadata' => $metadata,
+        ]);
+
+        // El resto de agentes con el hilo abierto tiene que ver la corrección sin
+        // esperar al poll: si no, dos personas leen textos distintos.
+        Realtime::push(new \App\Events\WhatsAppMessageEvent(
+            $message->load('sender:id,name'),
+            (int) $message->conversation->instance_id,
+            'edited',
+        ));
+
+        return response()->json($this->sanitizeUtf8([
+            'success' => true,
+            'data' => $message->load('sender:id,name'),
+        ]));
+    }
+
+    /**
      * Extrae un mensaje de error legible de la respuesta de error de Meta,
      * incluyendo el detalle específico (error_data.details) que suele explicar
      * la causa real detrás de un "(#100) Invalid parameter".

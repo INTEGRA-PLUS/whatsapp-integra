@@ -354,6 +354,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/messages/{messageId}/react', [ChatController::class, 'reactToMessage']);
         Route::post('/messages/{messageId}/forward', [ChatController::class, 'forwardMessage']);
         Route::put('/messages/{messageId}/note', [ChatController::class, 'updateNote']);
+        Route::put('/messages/{messageId}/content', [ChatController::class, 'editSentMessage']);
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);
