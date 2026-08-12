@@ -13,6 +13,7 @@ use App\Models\WhatsAppCallPermission;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
+use App\Support\ConversationNotice;
 
 class WhatsAppWebhookController extends Controller
 {
@@ -642,6 +643,20 @@ class WhatsAppWebhookController extends Controller
             $messageData['reply_to_wamid'] = $message['context']['id'];
         }
 
+        // El aviso de reapertura se registra ANTES del mensaje del cliente: el
+        // hilo se ordena por created_at, así que al revés la pastilla saldría
+        // después del mensaje que la provocó.
+        $reopenedByCustomer = $conversation->status === 'closed';
+
+        if ($reopenedByCustomer) {
+            // Sin esta constancia el hilo mostraba dos "cerrada" seguidas sin
+            // nada en medio, y nadie entendía por qué el chat volvía a estar
+            // abierto. El botón "Reabrir" sí dejaba rastro; esta rama, no.
+            ConversationNotice::record($conversation, $isSystemNotice
+                ? 'Conversación reabierta: llegó un aviso de WhatsApp en este chat'
+                : 'Conversación reabierta: el cliente volvió a escribir');
+        }
+
         $savedMessage = WhatsAppMessage::create($messageData);
 
         $conversationUpdate = [
@@ -652,7 +667,7 @@ class WhatsAppWebhookController extends Controller
         // Si el cliente vuelve a escribir, una conversación cerrada se reabre
         // automáticamente para que no quede oculta en "Cerradas" y vuelva a la
         // bandeja normal de chats abiertos.
-        if ($conversation->status === 'closed') {
+        if ($reopenedByCustomer) {
             $conversationUpdate['status'] = 'open';
             // El rastro del cierre se limpia con la reapertura: si no, el panel
             // mostraría "cerrada por X" en un chat que está abierto otra vez.

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Events\ConversationEvent;
+use App\Support\ConversationNotice;
 use App\Support\Realtime;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
@@ -1060,6 +1061,20 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
+        // Cerrar lo ya cerrado no es un hito nuevo: sin esta guarda, un doble
+        // clic o dos agentes pulsando "Cerrar" a la vez apilaban pastillas
+        // repetidas en el hilo, y encima se perdía quién lo cerró de verdad.
+        if ($conversation->status === 'closed') {
+            return response()->json([
+                'success' => true,
+                'message' => 'La conversación ya estaba cerrada',
+                'status'  => 'closed',
+                'closed_by_user' => $conversation->load('closedByUser:id,name')->closedByUser,
+                'closed_at' => $conversation->closed_at?->toIso8601String(),
+                'notice'    => null,
+            ]);
+        }
+
         $conversation->update([
             'status'    => 'closed',
             'closed_by' => $user->id,
@@ -1103,36 +1118,7 @@ class ChatController extends Controller
      */
     private function recordConversationNotice(WhatsAppConversation $conversation, string $text): ?WhatsAppMessage
     {
-        try {
-            $notice = WhatsAppMessage::create([
-                'conversation_id' => $conversation->id,
-                'type'            => 'system',
-                'content'         => $text,
-                'direction'       => 'internal',
-                'is_internal'     => false,
-                'status'          => 'sent',
-                'sent_at'         => now(),
-            ]);
-
-            // Quien tenga el hilo abierto ve la pastilla al instante. Sin esto,
-            // solo la vería quien ejecutó la acción (su respuesta trae `notice`)
-            // y el resto tendría que esperar al poll.
-            Realtime::push(new \App\Events\WhatsAppMessageEvent(
-                $notice,
-                (int) $conversation->instance_id,
-                'new',
-            ));
-
-            return $notice;
-        } catch (\Throwable $e) {
-            // El aviso es informativo: si falla, el cierre ya ocurrió.
-            Log::warning('No se pudo registrar el aviso en el hilo', [
-                'conversation_id' => $conversation->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
+        return ConversationNotice::record($conversation, $text);
     }
 
     /**
@@ -1560,6 +1546,17 @@ class ChatController extends Controller
 
         if ($conversation->instance->company_id !== $user->company_id) {
             abort(403, 'No autorizado');
+        }
+
+        // Misma guarda que en close(): reabrir un chat que ya está abierto no es
+        // un hito, y repetirlo llenaba el hilo de pastillas iguales.
+        if ($conversation->status !== 'closed') {
+            return response()->json([
+                'success' => true,
+                'message' => 'La conversación ya estaba abierta',
+                'status'  => 'open',
+                'notice'  => null,
+            ]);
         }
 
         // Al reabrir se limpia el rastro del cierre: si no, el panel seguiría

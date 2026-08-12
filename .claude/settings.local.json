@@ -200,7 +200,8 @@
       "Bash(perl -pi -e \"s{^     \\\\* Delivery channels\\\\. In-app only \\\\\\(database\\\\\\).*\\\\$}{     * Canales: se guarda en la tabla de notificaciones y se empuja a la campana\\\\n     * por websocket, para que aparezca sin esperar al poll de 25s.}\" ConversationClosedNotification.php MentionNotification.php SystemNotification.php)",
       "Bash(lsof -i :8080 -sTCP:LISTEN)",
       "Bash(perl -pi -e \"s{__DIR__ \\\\. '/\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./Users/juan_calle/Desktop/proyects/whatsapp-integra}{'/Users/juan_calle/Desktop/proyects/whatsapp-integra}g\" /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/392d456d-d240-4bf5-a0c4-2237228c37f0/scratchpad/smoke.php)",
-      "Bash(pkill -f \"reverb:start\")"
+      "Bash(pkill -f \"reverb:start\")",
+      "Bash(git fsck *)"
     ]
   }
 }
