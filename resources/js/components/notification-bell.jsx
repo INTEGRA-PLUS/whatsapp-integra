@@ -28,6 +28,8 @@ export default function NotificationBell() {
     const [unread, setUnread] = useState(0);
     const [items, setItems] = useState([]);
     const ref = useRef(null);
+    // Ids ya recibidos por websocket, para no contarlos dos veces.
+    const seenNotificationIds = useRef(new Set());
     // Para redactar en primera persona los avisos de acciones propias.
     const currentUserId = usePage().props?.auth?.user?.id;
     const { confirm, confirmDialog } = useConfirm();
@@ -49,6 +51,32 @@ export default function NotificationBell() {
         const id = setInterval(load, 25000);
         return () => clearInterval(id);
     }, [load]);
+
+    // Tiempo real (Reverb): las notificaciones llegan por el canal privado del
+    // propio usuario, así que la campana suma sin esperar al poll de 25s (que
+    // queda de respaldo por si el websocket se cae).
+    //
+    // El payload viene con la misma forma que /api/notifications —{id, data,
+    // read_at, created_at}— y el id es el mismo de la fila en base de datos, así
+    // que cuando el poll la devuelva luego no se duplica.
+    useEffect(() => {
+        if (!currentUserId || !window.Echo) return;
+
+        const channelName = `App.Models.User.${currentUserId}`;
+
+        window.Echo.private(channelName).notification((n) => {
+            // El contador se lleva aparte de la lista, así que la deduplicación
+            // tiene que decidirse ANTES de tocar ninguno de los dos: si no, un
+            // aviso repetido sumaría un no leído que no existe.
+            if (!n?.id || seenNotificationIds.current.has(n.id)) return;
+            seenNotificationIds.current.add(n.id);
+
+            setItems(prev => [n, ...prev].slice(0, 30));
+            setUnread(u => u + 1);
+        });
+
+        return () => window.Echo.leave(channelName);
+    }, [currentUserId]);
 
     // Recarga inmediata cuando una acción del usuario acaba de generar una
     // notificación, en vez de esperar al siguiente poll.

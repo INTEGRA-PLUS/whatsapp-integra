@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\WhatsAppConversation;
+use App\Notifications\Concerns\BroadcastsToBell;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
@@ -16,6 +17,7 @@ use Illuminate\Notifications\Notification;
 class ConversationClosedNotification extends Notification
 {
     use Queueable;
+    use BroadcastsToBell;
 
     public function __construct(
         public WhatsAppConversation $conversation,
@@ -26,11 +28,12 @@ class ConversationClosedNotification extends Notification
     }
 
     /**
-     * Delivery channels. In-app only (database), igual que el resto.
+     * Canales: se guarda en la tabla de notificaciones y se empuja a la campana
+     * por websocket, para que aparezca sin esperar al poll de 25s.
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return ['database', 'broadcast'];
     }
 
     /**

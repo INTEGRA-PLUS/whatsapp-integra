@@ -193,7 +193,14 @@
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=ConversationDeletionRequestTest)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_permiso_se_crea_una_peticion)",
       "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_los_aprobadores_reciben)",
-      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_nadie_que_pueda_aprobar)"
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=test_sin_nadie_que_pueda_aprobar)",
+      "Bash(perl -pi -e 's/^\\(\\\\s*\\)broadcast\\\\\\(ConversationEvent::/$1Realtime::push\\(ConversationEvent::/' app/Http/Controllers/ChatController.php app/Http/Controllers/TagController.php app/Http/Controllers/KanbanController.php)",
+      "Bash(perl -pi -e 's/^use App\\\\\\\\Events\\\\\\\\ConversationEvent;$/use App\\\\\\\\Events\\\\\\\\ConversationEvent;\\\\nuse App\\\\\\\\Support\\\\\\\\Realtime;/' app/Http/Controllers/ChatController.php app/Http/Controllers/TagController.php app/Http/Controllers/KanbanController.php)",
+      "Bash(perl -pi -e \"s/^\\(\\\\s*\\)use Queueable;$/\\\\$1use Queueable;\\\\n\\\\$1use \\\\\\\\\\\\\\\\App\\\\\\\\\\\\\\\\Notifications\\\\\\\\\\\\\\\\Concerns\\\\\\\\\\\\\\\\BroadcastsToBell;/; s/return \\\\['database'\\\\];/return ['database', 'broadcast'];/\" ConversationClosedNotification.php ConversationDeletionRequestedNotification.php ConversationDeletionResolvedNotification.php MentionNotification.php SystemNotification.php)",
+      "Bash(perl -pi -e \"s{^     \\\\* Delivery channels\\\\. In-app only \\\\\\(database\\\\\\).*\\\\$}{     * Canales: se guarda en la tabla de notificaciones y se empuja a la campana\\\\n     * por websocket, para que aparezca sin esperar al poll de 25s.}\" ConversationClosedNotification.php MentionNotification.php SystemNotification.php)",
+      "Bash(lsof -i :8080 -sTCP:LISTEN)",
+      "Bash(perl -pi -e \"s{__DIR__ \\\\. '/\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./Users/juan_calle/Desktop/proyects/whatsapp-integra}{'/Users/juan_calle/Desktop/proyects/whatsapp-integra}g\" /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/392d456d-d240-4bf5-a0c4-2237228c37f0/scratchpad/smoke.php)",
+      "Bash(pkill -f \"reverb:start\")"
     ]
   }
 }

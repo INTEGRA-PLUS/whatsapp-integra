@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Events\ConversationEvent;
+use App\Support\Realtime;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
 use App\Models\Instance;
@@ -267,6 +269,11 @@ class KanbanController extends Controller
                 'to_column'   => ['id' => $column->id, 'name' => $column->name],
             ])
         );
+
+        // Mueve la tarjeta en el tablero de todos los que lo tengan abierto, y
+        // de paso repinta las etiquetas en la lista del chat (moverla las
+        // sincroniza).
+        Realtime::push(ConversationEvent::updated($conversation, 'column_changed'));
 
         return response()->json(['success' => true]);
     }

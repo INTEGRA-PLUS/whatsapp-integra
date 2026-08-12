@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ConversationEvent;
+use App\Support\Realtime;
 use App\Models\Tag;
 use App\Models\WhatsAppConversation;
 use Illuminate\Http\Request;
@@ -92,6 +94,8 @@ class TagController extends Controller
             ])
         );
 
+        Realtime::push(ConversationEvent::updated($conversation, 'tag_added'));
+
         return response()->json(['success' => true, 'tags' => $conversation->tags()->get()]);
     }
 
@@ -135,6 +139,9 @@ class TagController extends Controller
 
             $conversation->update(['kanban_column_id' => $fallback?->id]);
         }
+
+        // Al final del todo: el evento debe llevar ya la columna recolocada.
+        Realtime::push(ConversationEvent::updated($conversation, 'tag_removed'));
 
         return response()->json(['success' => true, 'tags' => $conversation->tags()->get()]);
     }

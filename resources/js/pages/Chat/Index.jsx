@@ -1172,6 +1172,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [messages, setMessages] = useState([]);
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [newMessage, setNewMessage] = useState('');
+    // Presencia del chat abierto: otros agentes que lo tienen delante ahora
+    // mismo, y cuáles de ellos están escribiendo. Ambos llegan por el canal de
+    // presencia de la conversación, no por la base de datos.
+    const [viewers, setViewers] = useState([]);
+    const [typingUsers, setTypingUsers] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [page, setPage] = useState(1);
@@ -1293,6 +1298,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // Espejo de selectedConversation para leerlo dentro del listener de Reverb
     // sin recrear la suscripción cada vez que cambia la conversación abierta.
     const selectedConversationRef = useRef(null);
+    // Canal de presencia de la conversación abierta, para poder soltar por él
+    // los avisos de "escribiendo" desde el composer.
+    const presenceChannelRef = useRef(null);
+    const lastTypingWhisperRef = useRef(0);
 
     // ── Callbacks for Performance ──────────────────────────────────────────
 
@@ -1601,9 +1610,28 @@ export default function ChatIndex({ instances, integrations = [] }) {
         setMentionIndex(0);
     }, [mentionOpen, closeMentions]);
 
+    // Avisa al resto de que se está escribiendo, como mucho una vez cada 2s: el
+    // indicador dura 4s en pantalla, así que se mantiene encendido sin inundar
+    // el canal (los client events de Reverb tienen límite por conexión).
+    const notifyTyping = useCallback(() => {
+        const channel = presenceChannelRef.current;
+        if (!channel) return;
+
+        const now = Date.now();
+        if (now - lastTypingWhisperRef.current < 2000) return;
+        lastTypingWhisperRef.current = now;
+
+        try {
+            channel.whisper('typing', { id: auth.user.id, name: auth.user.name });
+        } catch (_) {
+            // El whisper es decorativo: si la conexión aún no está lista, se ignora.
+        }
+    }, [auth.user.id, auth.user.name]);
+
     const handleComposerChange = useCallback((e) => {
         const value = e.target.value;
         const cursor = e.target.selectionStart ?? value.length;
+        notifyTyping();
         if (composerMode === 'note') {
             setNewMessage(value);
             updateMentionState(value, cursor);
@@ -1622,7 +1650,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
         setNewMessage(value);
         updateQuickReplyState(value, cursor);
-    }, [composerMode, updateQuickReplyState, updateMentionState, integrations, closeQuickReplies]);
+    }, [composerMode, updateQuickReplyState, updateMentionState, integrations, closeQuickReplies, notifyTyping]);
 
     const handleComposerKeyDown = useCallback((e) => {
         if (mentionOpen && mentionMatches.length > 0) {
@@ -2142,10 +2170,123 @@ export default function ChatIndex({ instances, integrations = [] }) {
             )));
         });
 
+        // Cambios de la conversación en sí (no de sus mensajes): asignación,
+        // cierre/reapertura, etiquetas, movimiento en el kanban, hilos nuevos y
+        // borrados. El payload viene con la misma forma que devuelve el poll, así
+        // que se reutiliza `mergeConversations` tal cual.
+        //
+        // Los contadores de carpetas son otra petición: se agrupan las ráfagas
+        // (un cierre masivo, una tanda de entrantes) en una sola llamada.
+        let folderCountsTimer = null;
+        const scheduleFolderCounts = () => {
+            clearTimeout(folderCountsTimer);
+            folderCountsTimer = setTimeout(loadFolderCounts, 1500);
+        };
+
+        channel.listen('.conversation.event', (e) => {
+            if (e?.action === 'deleted') {
+                setConversations(prev => prev.filter(c => c.id !== e.conversation_id));
+                if (selectedConversationRef.current?.id === e.conversation_id) {
+                    setSelectedConversation(null);
+                    setMessages([]);
+                }
+                scheduleFolderCounts();
+                return;
+            }
+
+            if (e?.action === 'bulk_closed') {
+                const ids = new Set(e.ids ?? []);
+                if (ids.size === 0) return;
+                // Solo se marca el estado: con el filtro "Abiertas" salen de la
+                // lista por sí solas, y con "Todas" siguen ahí ya como cerradas.
+                setConversations(prev => prev.map(c => (ids.has(c.id) ? { ...c, status: 'closed' } : c)));
+                setSelectedConversation(prev => (prev && ids.has(prev.id) ? { ...prev, status: 'closed' } : prev));
+                scheduleFolderCounts();
+                return;
+            }
+
+            if (e?.action !== 'updated' || !e.conversation) return;
+
+            const incoming = { ...e.conversation };
+
+            // Si es la conversación que el agente tiene abierta, se respeta el
+            // contador local en 0: la está leyendo ahora mismo y pintarle una
+            // pastilla de "no leídos" encima sería mentira.
+            if (selectedConversationRef.current?.id === e.conversation_id) {
+                incoming.unread_count = 0;
+            }
+
+            mergeConversations([incoming]);
+            setSelectedConversation(prev => (prev?.id === e.conversation_id ? { ...prev, ...incoming } : prev));
+            scheduleFolderCounts();
+        });
+
         return () => {
+            clearTimeout(folderCountsTimer);
             window.Echo.leave(channelName);
         };
-    }, [selectedInstanceId]);
+    }, [selectedInstanceId, loadFolderCounts]);
+
+    // Presencia por conversación: quién más tiene este chat abierto y quién está
+    // escribiendo. Evita el clásico "dos agentes contestando lo mismo".
+    //
+    // El "escribiendo" viaja como whisper (cliente a cliente): no toca PHP ni la
+    // base de datos, así que puede ir a la velocidad de las teclas sin coste.
+    useEffect(() => {
+        const conversationId = selectedConversation?.id;
+
+        setViewers([]);
+        setTypingUsers([]);
+
+        if (!conversationId || !window.Echo) return;
+
+        const channelName = `conversation.${conversationId}`;
+        const me = Number(auth.user.id);
+        const withoutMe = (users) => users.filter(u => Number(u.id) !== me);
+
+        const channel = window.Echo.join(channelName)
+            .here(users => setViewers(withoutMe(users)))
+            .joining(user => setViewers(prev => (
+                Number(user.id) === me || prev.some(u => u.id === user.id) ? prev : [...prev, user]
+            )))
+            .leaving(user => {
+                setViewers(prev => prev.filter(u => u.id !== user.id));
+                setTypingUsers(prev => prev.filter(u => u.id !== user.id));
+            })
+            .error(() => {
+                // Sin autorización o con Reverb caído el chat funciona igual,
+                // solo que sin presencia.
+                setViewers([]);
+            });
+
+        channel.listenForWhisper('typing', (e) => {
+            if (!e?.id || Number(e.id) === me) return;
+            setTypingUsers(prev => [
+                ...prev.filter(u => Number(u.id) !== Number(e.id)),
+                { id: e.id, name: e.name, at: Date.now() },
+            ]);
+        });
+
+        presenceChannelRef.current = channel;
+
+        return () => {
+            presenceChannelRef.current = null;
+            window.Echo.leave(channelName);
+        };
+    }, [selectedConversation?.id, auth.user.id]);
+
+    // El whisper de "escribiendo" no trae un "dejó de escribir": cada aviso vale
+    // unos segundos y se cae solo si el otro para.
+    useEffect(() => {
+        if (typingUsers.length === 0) return;
+
+        const timer = setInterval(() => {
+            setTypingUsers(prev => prev.filter(u => Date.now() - u.at < 4000));
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [typingUsers.length]);
+
 
     // ── Logic ──────────────────────────────────────────────────────────────
 
@@ -3895,6 +4036,34 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     {selectedConversation.assigned_agent && (
                                                         <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 min-w-0 max-w-[130px]">
                                                             <span className="size-1.5 rounded-full bg-teal-500 shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
+                                                        </span>
+                                                    )}
+
+                                                    {/* Quién más está en este chat ahora mismo. Escribir
+                                                        manda el aviso, así que tiene prioridad sobre el
+                                                        simple "está viendo". */}
+                                                    {typingUsers.length > 0 ? (
+                                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 min-w-0">
+                                                            <span className="flex items-center gap-0.5 shrink-0" aria-hidden="true">
+                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.3s]" />
+                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.15s]" />
+                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce" />
+                                                            </span>
+                                                            <span className="truncate">
+                                                                {typingUsers.length === 1
+                                                                    ? `${typingUsers[0].name} está escribiendo…`
+                                                                    : `${typingUsers.length} agentes están escribiendo…`}
+                                                            </span>
+                                                        </span>
+                                                    ) : viewers.length > 0 && (
+                                                        <span
+                                                            title={`${viewers.map(v => v.name).join(', ')} ${viewers.length === 1 ? 'tiene' : 'tienen'} este chat abierto`}
+                                                            className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 min-w-0 max-w-[170px]"
+                                                        >
+                                                            <Eye className="size-3 shrink-0" />
+                                                            <span className="truncate">
+                                                                {viewers.length === 1 ? viewers[0].name : `${viewers.length} agentes viendo`}
+                                                            </span>
                                                         </span>
                                                     )}
                                                 </div>

@@ -2,12 +2,14 @@
 
 namespace App\Notifications;
 
+use App\Notifications\Concerns\BroadcastsToBell;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
 class SystemNotification extends Notification
 {
     use Queueable;
+    use BroadcastsToBell;
 
     public function __construct(
         public string $title,
@@ -17,11 +19,12 @@ class SystemNotification extends Notification
     }
 
     /**
-     * Delivery channels. In-app only (database) for now.
+     * Canales: se guarda en la tabla de notificaciones y se empuja a la campana
+     * por websocket, para que aparezca sin esperar al poll de 25s.
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return ['database', 'broadcast'];
     }
 
     /**

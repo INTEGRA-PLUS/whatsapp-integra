@@ -6,6 +6,7 @@ use App\Models\SystemAnnouncement;
 use App\Models\User;
 use App\Notifications\SystemNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 
@@ -57,10 +58,19 @@ class SystemNotificationController extends Controller
             ], 422);
         }
 
-        Notification::send(
-            $recipients,
-            new SystemNotification($validated['title'], $validated['body'], $user->name)
-        );
+        // El anuncio se guarda igual aunque el empujón por websocket falle: si
+        // Reverb no responde, las campanas lo recogerán en su siguiente poll.
+        try {
+            Notification::send(
+                $recipients,
+                new SystemNotification($validated['title'], $validated['body'], $user->name)
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Fallo al entregar el anuncio del sistema', [
+                'company_id' => $companyId,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $announcement = SystemAnnouncement::create([
             'company_id'       => $companyId,

@@ -478,6 +478,95 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         columns.forEach(col => loadColumnCards(col.id, 1, '', true));
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // ── Tiempo real ────────────────────────────────────────────────────────
+    //
+    // El tablero se mueve solo: si otro agente arrastra una tarjeta, etiqueta un
+    // chat o entra un mensaje nuevo, la tarjeta salta de columna sin recargar.
+    // El canal es por instancia, así que hay que suscribirse a todas las de la
+    // empresa (el tablero no filtra por instancia, a diferencia del chat).
+    useEffect(() => {
+        const instances = initialInstances ?? [];
+        if (!window.Echo || instances.length === 0 || columns.length === 0) return;
+
+        // Las conversaciones sin columna asignada viven en la primera columna
+        // (mismo criterio que usa el backend en columnCards).
+        const firstColumnId = columns[0]?.id;
+
+        // Recontar es una petición aparte: se agrupan las ráfagas (una tanda de
+        // mensajes entrantes) en una sola llamada.
+        let countsTimer = null;
+        const scheduleCounts = () => {
+            clearTimeout(countsTimer);
+            countsTimer = setTimeout(loadCounts, 1500);
+        };
+
+        const removeCard = (id) => {
+            setBoardData(prev => {
+                const next = {};
+                for (const [colId, cards] of Object.entries(prev)) {
+                    next[colId] = cards.filter(c => c.id !== id);
+                }
+                return next;
+            });
+        };
+
+        const upsertCard = (conv) => {
+            const targetKey = String(conv.kanban_column_id ?? firstColumnId);
+
+            setBoardData(prev => {
+                // La columna destino puede no estar en el tablero (una columna
+                // creada por otro agente en esta misma sesión); ahí no hay nada
+                // que pintar hasta que se recargue.
+                if (!(targetKey in prev)) return prev;
+
+                const next = {};
+                for (const [colId, cards] of Object.entries(prev)) {
+                    next[colId] = cards.filter(c => c.id !== conv.id);
+                }
+
+                // Conserva lo que ya tenía la tarjeta y le encima lo que llega:
+                // el payload del evento es un superconjunto de lo que pide el
+                // tablero, pero así no se pierde nada si eso cambia.
+                const previous = Object.values(prev).flat().find(c => c.id === conv.id);
+                const card = { ...(previous ?? {}), ...conv };
+
+                // Se inserta respetando el orden del tablero (last_message_at desc).
+                const list = next[targetKey];
+                const at = list.findIndex(
+                    c => new Date(c.last_message_at ?? 0) < new Date(card.last_message_at ?? 0),
+                );
+                next[targetKey] = at === -1 ? [...list, card] : [...list.slice(0, at), card, ...list.slice(at)];
+
+                return next;
+            });
+        };
+
+        const channels = instances.map(inst => {
+            const name = `instance.${inst.id}`;
+
+            window.Echo.private(name).listen('.conversation.event', (e) => {
+                if (e?.action === 'deleted') {
+                    removeCard(e.conversation_id);
+                    scheduleCounts();
+                    return;
+                }
+                if (e?.action === 'updated' && e.conversation) {
+                    upsertCard(e.conversation);
+                    scheduleCounts();
+                }
+                // 'bulk_closed' no toca el tablero: el kanban muestra las
+                // conversaciones estén abiertas o cerradas.
+            });
+
+            return name;
+        });
+
+        return () => {
+            clearTimeout(countsTimer);
+            channels.forEach(name => window.Echo.leave(name));
+        };
+    }, [initialInstances, columns, loadCounts]);
+
     // Debounce search
     useEffect(() => {
         const t = setTimeout(() => setDebouncedSearch(searchQuery), 350);

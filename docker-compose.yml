@@ -35,20 +35,31 @@ x-app-env: &app-env
   SESSION_DRIVER: ${SESSION_DRIVER:-redis}
   SESSION_LIFETIME: ${SESSION_LIFETIME:-120}
   QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
-  BROADCAST_CONNECTION: ${BROADCAST_CONNECTION:-log}
+  # Por defecto `reverb`: el stack levanta su propio contenedor de websockets,
+  # así que el tiempo real del chat funciona sin configurar nada más. Con `log`
+  # el chat sigue funcionando, pero solo se refresca con el poll de respaldo.
+  BROADCAST_CONNECTION: ${BROADCAST_CONNECTION:-reverb}
   FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
 
-  # Reverb (websockets para llamadas en tiempo real).
+  # Reverb (websockets: mensajes, cambios de conversación, presencia,
+  # notificaciones y llamadas en tiempo real).
   # - REVERB_HOST/PORT/SCHEME: cómo el BACKEND publica eventos → apunta al
   #   contenedor `reverb` por la red interna (no al dominio público).
   # - REVERB_SERVER_HOST/PORT: dónde escucha el daemon dentro del contenedor.
   # - El navegador se conecta vía nginx (/app) usando las VITE_* del build.
-  REVERB_APP_ID: ${REVERB_APP_ID:-}
-  REVERB_APP_KEY: ${REVERB_APP_KEY:-}
-  REVERB_APP_SECRET: ${REVERB_APP_SECRET:-}
-  REVERB_HOST: ${REVERB_HOST:-reverb}
-  REVERB_PORT: ${REVERB_PORT:-8080}
-  REVERB_SCHEME: ${REVERB_SCHEME:-http}
+  #
+  # Requeridas a propósito: sin ellas el daemon arranca sin app registrada y
+  # cada evento se pierde en silencio. Mejor que el stack no levante.
+  REVERB_APP_ID: ${REVERB_APP_ID:?Falta REVERB_APP_ID en el .env de este directorio}
+  REVERB_APP_KEY: ${REVERB_APP_KEY:?Falta REVERB_APP_KEY en el .env de este directorio}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET:?Falta REVERB_APP_SECRET en el .env de este directorio}
+  # Fijos, no configurables por .env: dentro del stack el backend SIEMPRE
+  # publica contra el contenedor `reverb` por la red interna. El .env de
+  # desarrollo local trae REVERB_HOST=localhost, y dejarlo pasar aquí haría que
+  # el contenedor `app` se publicara los eventos a sí mismo.
+  REVERB_HOST: reverb
+  REVERB_PORT: 8080
+  REVERB_SCHEME: http
   REVERB_SERVER_HOST: 0.0.0.0
   REVERB_SERVER_PORT: 8080
 
@@ -75,6 +86,8 @@ x-app-build: &app-build
       BUILDKIT_INLINE_CACHE: "1"
       # Valores PÚBLICOS del cliente Reverb, incrustados en el bundle por Vite.
       # VITE_REVERB_HOST debe ser tu dominio (el navegador se conecta a wss://dominio/app).
+      # En local son host y puerto por los que TÚ abres la app (localhost y el
+      # APP_PORT publicado), porque el websocket entra por el mismo nginx.
       # Requeridos a propósito: si faltan, el bundle se hornea sin host y el
       # tiempo real muere en silencio. Mejor que el build falle aquí, de una.
       VITE_REVERB_APP_KEY: ${REVERB_APP_KEY:?Falta REVERB_APP_KEY en el .env de este directorio}

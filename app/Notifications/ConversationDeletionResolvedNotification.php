@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\ConversationDeletionRequest;
+use App\Notifications\Concerns\BroadcastsToBell;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
@@ -15,6 +16,7 @@ use Illuminate\Notifications\Notification;
 class ConversationDeletionResolvedNotification extends Notification
 {
     use Queueable;
+    use BroadcastsToBell;
 
     public function __construct(
         public ConversationDeletionRequest $request,
@@ -24,7 +26,7 @@ class ConversationDeletionResolvedNotification extends Notification
 
     public function via(object $notifiable): array
     {
-        return ['database'];
+        return ['database', 'broadcast'];
     }
 
     public function toDatabase(object $notifiable): array

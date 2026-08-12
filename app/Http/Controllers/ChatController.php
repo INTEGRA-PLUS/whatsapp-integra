@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Events\ConversationEvent;
+use App\Support\Realtime;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
 use App\Models\WhatsAppConversation;
@@ -284,6 +286,13 @@ class ChatController extends Controller
         if ($conversation->status !== 'open') {
             $conversation->update(['status' => 'open']);
         }
+
+        // El hilo aparece al instante en la lista del resto del equipo, en vez
+        // de esperar hasta 30s a que el poll lo descubra.
+        Realtime::push(ConversationEvent::updated(
+            $conversation,
+            $conversation->wasRecentlyCreated ? 'created' : 'reopened',
+        ));
 
         $sessionOpen = $conversation->isWindowOpen();
 
@@ -1066,6 +1075,8 @@ class ChatController extends Controller
             WebhookDispatcher::conversationPayload($conversation, ['closed_by' => $user->id])
         );
 
+        Realtime::push(ConversationEvent::updated($conversation, 'closed'));
+
         return response()->json([
             'success' => true,
             'message' => 'Conversación cerrada',
@@ -1093,7 +1104,7 @@ class ChatController extends Controller
     private function recordConversationNotice(WhatsAppConversation $conversation, string $text): ?WhatsAppMessage
     {
         try {
-            return WhatsAppMessage::create([
+            $notice = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
                 'type'            => 'system',
                 'content'         => $text,
@@ -1102,6 +1113,17 @@ class ChatController extends Controller
                 'status'          => 'sent',
                 'sent_at'         => now(),
             ]);
+
+            // Quien tenga el hilo abierto ve la pastilla al instante. Sin esto,
+            // solo la vería quien ejecutó la acción (su respuesta trae `notice`)
+            // y el resto tendría que esperar al poll.
+            Realtime::push(new \App\Events\WhatsAppMessageEvent(
+                $notice,
+                (int) $conversation->instance_id,
+                'new',
+            ));
+
+            return $notice;
         } catch (\Throwable $e) {
             // El aviso es informativo: si falla, el cierre ya ocurrió.
             Log::warning('No se pudo registrar el aviso en el hilo', [
@@ -1221,6 +1243,20 @@ class ChatController extends Controller
                 'conversations.bulk_closed',
                 ['closed_by' => $user->id, 'ids' => $ids->all(), 'count' => $ids->count()]
             );
+
+            // Un evento por instancia (no por conversación): el canal es por
+            // instancia y `scope=all` puede abarcar varias de la empresa.
+            WhatsAppConversation::whereIn('id', $ids)
+                ->select('id', 'instance_id')
+                ->get()
+                ->groupBy('instance_id')
+                ->each(function ($rows, $instanceId) use ($user) {
+                    Realtime::push(ConversationEvent::bulkClosed(
+                        (int) $instanceId,
+                        $rows->pluck('id')->all(),
+                        $user->name,
+                    ));
+                });
         }
 
         return response()->json([
@@ -1378,9 +1414,17 @@ class ChatController extends Controller
             WebhookDispatcher::conversationPayload($conversation, ['deleted_by' => $user->id])
         );
 
+        // El evento se arma ANTES del delete: después no queda de dónde sacar el
+        // instance_id con el que se elige el canal.
+        $event = ConversationEvent::deleted($conversation);
+
         // Quita relaciones de etiquetas; los mensajes caen por FK onDelete cascade.
         $conversation->tags()->detach();
         $conversation->delete();
+
+        // Y se emite DESPUÉS: si el delete falla, nadie debe haber quitado la
+        // conversación de su lista.
+        Realtime::push($event);
 
         return response()->json([
             'success' => true,
@@ -1536,6 +1580,8 @@ class ChatController extends Controller
             WebhookDispatcher::conversationPayload($conversation, ['reopened_by' => $user->id])
         );
 
+        Realtime::push(ConversationEvent::updated($conversation, 'reopened'));
+
         return response()->json([
             'success' => true,
             'message' => 'Conversación reabierta',
@@ -1572,6 +1618,8 @@ class ChatController extends Controller
             'conversation.assigned',
             WebhookDispatcher::conversationPayload($conversation, ['assigned_to' => $validated['user_id']])
         );
+
+        Realtime::push(ConversationEvent::updated($conversation, 'assigned'));
 
         return response()->json([
             'success' => true,
@@ -1610,6 +1658,11 @@ class ChatController extends Controller
             'conversation.assigned',
             WebhookDispatcher::conversationPayload($conversation, ['assigned_to' => $user->id])
         );
+
+        // `$conversation` se leyó antes del claim atómico, así que todavía tiene
+        // assigned_to = null; sin refrescar, el resto del equipo recibiría la
+        // conversación como si siguiera libre y volvería a ofrecer "Asignarme".
+        Realtime::push(ConversationEvent::updated($conversation->refresh(), 'assigned'));
 
         return response()->json([
             'success' => true,
@@ -1674,11 +1727,23 @@ class ChatController extends Controller
                 ->where('id', '!=', $user->id)
                 ->get();
             foreach ($recipients as $recipient) {
-                $recipient->notify(new \App\Notifications\MentionNotification(
-                    $note,
-                    $conversation,
-                    $user->name
-                ));
+                // Avisar es un efecto secundario de la nota, que ya está
+                // guardada: ni un Reverb caído (el aviso también va por
+                // websocket) ni un destinatario raro deben tumbar la respuesta
+                // ni impedir que se avise a los demás mencionados.
+                try {
+                    $recipient->notify(new \App\Notifications\MentionNotification(
+                        $note,
+                        $conversation,
+                        $user->name
+                    ));
+                } catch (\Throwable $e) {
+                    Log::warning('No se pudo notificar la mención', [
+                        'conversation_id' => $conversation->id,
+                        'user_id' => $recipient->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         }
 
