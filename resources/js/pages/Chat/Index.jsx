@@ -1280,6 +1280,22 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [composerMode, setComposerMode] = useState('reply'); // 'reply' | 'note'
     const [paymentModal, setPaymentModal] = useState(null);
     const [noteMentions, setNoteMentions] = useState([]); // [{id, name}]
+    // Imagen adjunta a la nota que se está escribiendo: {file, url}. La url es un
+    // objectURL solo para la vista previa; se revoca al soltar el adjunto.
+    const [noteImage, setNoteImage] = useState(null);
+    // objectURLs que ya está pintando una burbuja del chat. Revocarlos dejaría la
+    // miniatura rota en la nota que falló, así que esos se quedan vivos.
+    const noteImageUrlsInUse = useRef(new Set());
+    // Suelta la imagen adjunta a la nota y libera su objectURL. Se declara aquí
+    // porque selectConversation la usa y ese callback se define más arriba.
+    const clearNoteImage = useCallback(() => {
+        setNoteImage(prev => {
+            if (prev?.url && !noteImageUrlsInUse.current.has(prev.url)) {
+                URL.revokeObjectURL(prev.url);
+            }
+            return null;
+        });
+    }, []);
     const [mentionOpen, setMentionOpen] = useState(false);
     const [mentionQuery, setMentionQuery] = useState('');
     const [mentionTokenStart, setMentionTokenStart] = useState(0);
@@ -2061,6 +2077,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const selectConversation = useCallback(async (conv) => {
         setSelectedConversation(conv);
         setReplyingTo(null);
+        // El adjunto pertenece a la nota de este chat: arrastrarlo al siguiente
+        // haría que se guardara en la conversación equivocada.
+        clearNoteImage();
         try {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
             forceScrollRef.current = true;
@@ -2072,7 +2091,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
         } catch (err) {
             console.error('Error cargando mensajes:', err);
         }
-    }, []);
+    }, [clearNoteImage]);
 
     const openConversationById = useCallback(async (id) => {
         try {
@@ -2777,14 +2796,45 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }
 
+    // Adjunta una imagen a la nota interna (botón, pegar o arrastrar). Se reusa
+    // normalizeImageForUpload para no subir fotos de 12 MB recién salidas del
+    // celular; el límite del backend es el mismo 5 MB que en los mensajes.
+    async function attachNoteImage(file) {
+        if (!file) return;
+        if (!file.type?.startsWith('image/')) {
+            setSendError('En una nota interna solo se pueden adjuntar imágenes.');
+            return;
+        }
+
+        let prepared;
+        try {
+            prepared = await normalizeImageForUpload(file);
+        } catch {
+            // Formato que el navegador no decodifica (típico: HEIC de iPhone).
+            setSendError('Este navegador no puede procesar esa imagen. Conviértela a JPG o PNG.');
+            return;
+        }
+
+        if (!prepared) {
+            setSendError('La imagen es demasiado grande incluso al comprimirla (máximo 5 MB).');
+            return;
+        }
+
+        clearNoteImage();
+        setNoteImage({ file: prepared, url: URL.createObjectURL(prepared) });
+    }
+
     async function sendNote() {
-        if (!newMessage.trim() || sending) return;
+        // Una nota vale con solo la imagen, así que el texto ya no es obligatorio.
+        if ((!newMessage.trim() && !noteImage) || sending) return;
         const content = newMessage;
+        const image = noteImage;
         const mentions = noteMentions
             .filter(m => content.includes(`@${m.name}`))
             .map(m => m.id);
         setNewMessage('');
         setNoteMentions([]);
+        setNoteImage(null); // sin revocar: la vista optimista sigue usando la url
         setSending(true);
 
         // Optimistic UI for internal notes too.
@@ -2792,31 +2842,57 @@ export default function ChatIndex({ instances, integrations = [] }) {
         const optimistic = {
             id: tempId,
             conversation_id: selectedConversation.id,
-            type: 'text',
+            type: 'note',
             content,
+            media_url: image?.url || null,
             direction: 'outbound',
             is_internal: true,
             status: 'sending',
             sender: { name: auth.user.name },
             created_at: new Date().toISOString(),
         };
+        if (image?.url) noteImageUrlsInUse.current.add(image.url);
         setMessages(prev => [...prev, optimistic]);
 
+        const restore = () => {
+            setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
+            setNewMessage(content);
+            if (image) setNoteImage(image);
+        };
+
         try {
+            let payload = { content, mentions };
+            // Con adjunto hay que ir por multipart; los ids de mención viajan
+            // como mentions[] para que Laravel los reciba como array.
+            if (image) {
+                payload = new FormData();
+                payload.append('content', content);
+                payload.append('image', image.file, image.file.name);
+                mentions.forEach(id => payload.append('mentions[]', id));
+            }
+
             const res = await axios.post(
                 `/api/chat/conversations/${selectedConversation.id}/note`,
-                { content, mentions },
+                payload,
             );
             if (res.data.success) {
                 setMessages(prev => prev.map(m => (m.id === tempId ? res.data.data : m)));
+                // La burbuja ya apunta a la url definitiva del bucket.
+                if (image?.url) {
+                    noteImageUrlsInUse.current.delete(image.url);
+                    URL.revokeObjectURL(image.url);
+                }
             } else {
-                setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
-                setNewMessage(content);
+                restore();
             }
         } catch (err) {
             console.error('Error guardando nota:', err);
-            setMessages(prev => prev.map(m => (m.id === tempId ? { ...m, status: 'failed' } : m)));
-            setNewMessage(content);
+            setSendError(
+                err.response?.data?.errors?.image?.[0]
+                || err.response?.data?.error
+                || 'No se pudo guardar la nota.'
+            );
+            restore();
         } finally {
             setSending(false);
         }
@@ -3021,12 +3097,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
         e.preventDefault();
         dragDepthRef.current = 0;
         setIsDraggingFile(false);
-        if (!selectedConversation || composerMode !== 'reply') return;
+        if (!selectedConversation) return;
         // Antes solo se tomaba el primer archivo de tipo imagen: arrastrar un PDF
         // no hacía nada. Ahora se acepta cualquier archivo y el tipo decide si va
         // como imagen o como documento.
         const file = Array.from(e.dataTransfer?.files || [])[0];
-        if (file) openAttachmentPreview(file);
+        if (!file) return;
+        if (composerMode === 'note') attachNoteImage(file);
+        else openAttachmentPreview(file);
     }
 
     // --- Responder a un mensaje (cita estilo WhatsApp) ---
@@ -3200,9 +3278,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     // --- Pegar archivos (Ctrl/Cmd + V) en el área de texto ---
     function handleComposerPaste(e) {
-        if (composerMode !== 'reply' || !selectedConversation) return;
+        if (!selectedConversation) return;
         const items = Array.from(e.clipboardData?.items || []);
         const imageItem = items.find(it => it.type?.startsWith('image/'));
+
+        // En modo nota la captura pegada se adjunta a la nota; solo imágenes,
+        // así que un documento pegado aquí se deja pasar como texto.
+        if (composerMode === 'note') {
+            const file = imageItem?.getAsFile();
+            if (file) {
+                e.preventDefault();
+                attachNoteImage(file);
+            }
+            return;
+        }
+
         if (imageItem) {
             const file = imageItem.getAsFile();
             if (file) {
@@ -4486,7 +4576,20 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                         </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                                    <>
+                                                                        {msg.media_url && (
+                                                                            <img
+                                                                                src={msg.media_url}
+                                                                                onLoad={handleMediaLoad}
+                                                                                onClick={() => setSelectedImage(msg.media_url)}
+                                                                                alt={msg.filename || 'Adjunto de la nota'}
+                                                                                className="mb-1.5 max-h-[260px] max-w-full w-auto rounded-md object-contain bg-black/5 cursor-pointer hover:opacity-90 transition-opacity"
+                                                                            />
+                                                                        )}
+                                                                        {msg.content && (
+                                                                            <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                                        )}
+                                                                    </>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -4775,7 +4878,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {!isRecording && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2.5 flex items-center gap-1.5 z-10">
                                             <button
-                                                onClick={() => { setComposerMode('reply'); closeMentions(); }}
+                                                onClick={() => { setComposerMode('reply'); closeMentions(); clearNoteImage(); }}
                                                 className={clsx(
                                                     "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1",
                                                     composerMode === 'reply'
@@ -4842,6 +4945,32 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             onClick={() => setReplyingTo(null)}
                                                             title="Cancelar respuesta"
                                                             className="self-center size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                                                        >
+                                                            <X className="size-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {/* Imagen adjunta a la nota: miniatura con opción a quitarla
+                                                    antes de guardar. Solo existe en modo nota. */}
+                                                {composerMode === 'note' && noteImage && (
+                                                    <div className="flex items-center gap-2.5 rounded-lg bg-white dark:bg-[#2a3942] ring-1 ring-amber-300/70 dark:ring-amber-700/50 px-2 py-1.5">
+                                                        <img
+                                                            src={noteImage.url}
+                                                            alt="Adjunto de la nota"
+                                                            className="size-11 rounded-md object-cover shrink-0"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[11.5px] font-semibold text-foreground truncate">{noteImage.file.name}</p>
+                                                            <p className="text-[10.5px] text-muted-foreground">
+                                                                {formatFileSize(noteImage.file.size)} · solo la verá el equipo
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={clearNoteImage}
+                                                            title="Quitar imagen"
+                                                            aria-label="Quitar imagen"
+                                                            className="size-7 shrink-0 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
                                                         >
                                                             <X className="size-4" />
                                                         </button>
@@ -4923,19 +5052,40 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 </button>
                                                             </>
                                                         ) : (
-                                                            <button
-                                                                disabled
-                                                                title="Programar nota (próximamente)"
-                                                                className="size-9 flex items-center justify-center rounded-lg text-amber-400/70 cursor-not-allowed"
-                                                            >
-                                                                <Clock className="size-[19px]" />
-                                                            </button>
+                                                            <>
+                                                                <label
+                                                                    title="Adjuntar imagen a la nota"
+                                                                    aria-label="Adjuntar imagen a la nota"
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-amber-400"
+                                                                >
+                                                                    <Paperclip className="size-[19px]" />
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="image/*"
+                                                                        className="hidden"
+                                                                        onChange={e => {
+                                                                            const file = e.target.files[0];
+                                                                            e.target.value = '';
+                                                                            attachNoteImage(file);
+                                                                        }}
+                                                                    />
+                                                                </label>
+                                                                <button
+                                                                    disabled
+                                                                    title="Programar nota (próximamente)"
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-amber-400/70 cursor-not-allowed"
+                                                                >
+                                                                    <Clock className="size-[19px]" />
+                                                                </button>
+                                                            </>
                                                         )}
                                                     </div>
 
                                                     <button
                                                         onClick={composerMode === 'note' ? sendNote : sendMessage}
-                                                        disabled={!newMessage.trim() || sending}
+                                                        disabled={sending || (composerMode === 'note'
+                                                            ? (!newMessage.trim() && !noteImage)
+                                                            : !newMessage.trim())}
                                                         title={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
                                                         aria-label={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
                                                         className={clsx(

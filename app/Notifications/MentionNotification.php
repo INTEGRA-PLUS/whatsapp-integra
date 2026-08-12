@@ -34,7 +34,10 @@ class MentionNotification extends Notification
      */
     public function toDatabase(object $notifiable): array
     {
-        $excerpt = mb_substr((string) $this->note->content, 0, 140);
+        // Una nota puede ser solo una imagen: sin este respaldo la campana
+        // mostraría una mención con el texto en blanco.
+        $excerpt = mb_substr(trim((string) $this->note->content), 0, 140)
+            ?: ($this->note->media_url ? '📎 Imagen' : '');
 
         return [
             'type'            => 'mention',

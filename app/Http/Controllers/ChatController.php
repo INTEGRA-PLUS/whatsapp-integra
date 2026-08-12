@@ -1675,13 +1675,24 @@ class ChatController extends Controller
      * Store an internal note on a conversation. Notes are never sent to the
      * customer (no Meta call) and can @-mention other agents, who get an in-app
      * notification.
+     *
+     * La nota admite una imagen adjunta. Como nunca sale hacia Meta, no aplican
+     * ni los formatos que exige la Cloud API ni la ventana de 24 h: basta con
+     * dejar el archivo en nuestro bucket y guardar la URL.
      */
     public function storeNote(Request $request, $conversationId)
     {
         $validator = Validator::make($request->all(), [
-            'content'    => 'required|string|max:4096',
+            // Una nota vale con solo la imagen: exigir texto obligaría a
+            // escribir un relleno para poder adjuntar una captura.
+            'content'    => 'required_without:image|nullable|string|max:4096',
+            'image'      => 'nullable|image|mimes:jpeg,jpg,png,gif,webp|max:5120',
             'mentions'   => 'nullable|array',
             'mentions.*' => 'integer',
+        ], [
+            'content.required_without' => 'Escribe la nota o adjunta una imagen.',
+            'image.image' => 'El archivo adjunto debe ser una imagen.',
+            'image.max'   => 'La imagen supera el límite de 5 MB.',
         ]);
 
         if ($validator->fails()) {
@@ -1706,16 +1717,45 @@ class ChatController extends Controller
                 ->all();
         }
 
+        $media = ['media_url' => null, 'media_mime_type' => null, 'filename' => null];
+
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+
+            // El disco s3_media va con 'throw' => false: sin esta guarda la nota
+            // se guardaría con una media_url rota y la imagen no cargaría nunca.
+            $path = $file->storePublicly('whatsapp/notes', 's3_media');
+
+            if (!$path) {
+                Log::channel('whatsapp')->error('❌ No se pudo subir la imagen de la nota interna', [
+                    'conversation_id' => $conversation->id,
+                    'original_name' => $file->getClientOriginalName(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se pudo guardar la imagen en el almacenamiento. Intenta de nuevo.',
+                ], 500);
+            }
+
+            $media = [
+                'media_url'       => Storage::disk('s3_media')->url($path),
+                'media_mime_type' => $file->getClientMimeType(),
+                'filename'        => $file->getClientOriginalName() ?: 'imagen',
+            ];
+        }
+
         $note = WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
             'type'            => 'note',
-            'content'         => $request->content,
+            'content'         => $request->input('content') ?? '',
             'direction'       => 'internal',
             'is_internal'     => true,
             'mentions'        => $mentionIds ?: null,
             'status'          => 'sent',
             'sent_by'         => $user->id,
             'sent_at'         => now(),
+            ...$media,
         ]);
 
         // Surface the conversation in the updates() poll without polluting the
