@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\Contact;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -135,6 +136,34 @@ class BsuidIdentityTest extends TestCase
         $this->assertSame(1, WhatsAppConversation::count());
         $this->assertSame(self::PHONE, $conversation->phone_number, 'En cuanto Meta revela el número hay que guardarlo: es lo que permite llamar y facturar.');
         $this->assertSame(self::BSUID, $conversation->wa_id, 'La clave del hilo no se reescribe: rompería el historial ya enlazado.');
+    }
+
+    public function test_un_cliente_conocido_que_empieza_a_ocultar_su_numero_no_ensucia_la_agenda(): void
+    {
+        $instance = $this->metaInstance();
+
+        // Hilo abierto por el ERP para un aviso de pago: tiene número, pero
+        // todavía no tiene ficha en la agenda.
+        WhatsAppConversation::create([
+            'instance_id'  => $instance->id,
+            'wa_id'        => self::PHONE,
+            'bsuid'        => self::BSUID,
+            'phone_number' => self::PHONE,
+            'name'         => 'Katherine',
+            'status'       => 'open',
+        ]);
+
+        // El cliente responde, ya con el número oculto: sólo llega el BSUID.
+        $this->postJson('/webhooks/whatsapp', $this->webhook(
+            [['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID]],
+            [$this->mensaje(['from_user_id' => self::BSUID])]
+        ))->assertOk();
+
+        $contact = Contact::first();
+
+        $this->assertNotNull($contact, 'El hilo tiene número: la ficha debe crearse igual.');
+        $this->assertSame(self::PHONE, $contact->phone_number, 'La agenda se indexa por número: un BSUID ahí no casa con ningún abonado de Integra.');
+        $this->assertSame(1, Contact::count());
     }
 
     // ─── Crítico 3: un lote con varios clientes ──────────────────────────────

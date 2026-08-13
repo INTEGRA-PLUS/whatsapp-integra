@@ -262,7 +262,16 @@ class WhatsAppWebhookController extends Controller
                     'last_message_at' => now(),
                 ]
             );
-            $this->ensureContactRegistered($conversation, $instance, $counterpart, $conversation->name ?? $counterpart);
+            // Igual que en los mensajes: si quien llama oculta su número, el
+            // contraparte es un BSUID y no hay ficha de agenda que crear.
+            if ($conversation->hasPhone()) {
+                $this->ensureContactRegistered(
+                    $conversation,
+                    $instance,
+                    $conversation->phone_number,
+                    $conversation->name ?? $counterpart
+                );
+            }
         }
 
         $record = WhatsAppCall::firstOrNew(['wacid' => $callId]);
@@ -462,9 +471,14 @@ class WhatsAppWebhookController extends Controller
         // Los clientes sin teléfono se saltan este paso: la agenda de contactos
         // se indexa por número y se sincroniza con Integra, así que meter ahí un
         // BSUID crearía fichas basura que no casan con ningún abonado.
+        //
+        // El número sale del hilo y no de `$from`: cuando un cliente ya conocido
+        // empieza a ocultar su teléfono, este webhook llega sólo con el BSUID
+        // mientras el hilo sigue teniendo el número guardado. Pasar `$from` metía
+        // el BSUID en la agenda como si fuera un teléfono.
         try {
             if (!$isBsuid) {
-                $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+                $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName);
             }
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
