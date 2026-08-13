@@ -4700,6 +4700,23 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             )}
 
                                                             <div className="flex flex-col relative">
+                                                                {/* Aviso de entrega tardía. Va como línea propia y no en el pie
+                                                                    de la hora: ese pie es absolute + nowrap, así que un texto
+                                                                    largo se desbordaba fuera de la burbuja y se encimaba al
+                                                                    mensaje. */}
+                                                                {(() => {
+                                                                    const tardio = lateArrivalNote(msg);
+                                                                    if (!tardio) return null;
+                                                                    return (
+                                                                        <span
+                                                                            className="mb-1 inline-flex items-center gap-1 self-start rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-700 dark:text-amber-300"
+                                                                            title={tardio.detalle}
+                                                                        >
+                                                                            <Clock className="size-2.5 shrink-0" />
+                                                                            {tardio.texto}
+                                                                        </span>
+                                                                    );
+                                                                })()}
                                                                 {quoted && (
                                                                     <button
                                                                         type="button"
@@ -4929,17 +4946,6 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                             editado
                                                                         </span>
                                                                     )}
-                                                                    {(() => {
-                                                                        const tardio = lateArrivalNote(msg);
-                                                                        return tardio ? (
-                                                                            <span
-                                                                                className="text-[9px] font-bold italic text-amber-700/70 dark:text-amber-300/60 whitespace-nowrap"
-                                                                                title={tardio.detalle}
-                                                                            >
-                                                                                {tardio.texto}
-                                                                            </span>
-                                                                        ) : null;
-                                                                    })()}
                                                                     <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && (
                                                                         <StatusIcons
