@@ -49,6 +49,12 @@ class MessageApiController extends Controller
             'incoming_payment_id' => 'nullable|integer',
             'incoming_company_nit' => 'nullable|integer',
             'template_id' => 'nullable|integer',
+            // Plantilla de respaldo: si el destinatario está fuera de la ventana
+            // de 24h se envía ésta en vez de perder el aviso. Quien llama no
+            // tiene que saber en qué lado de la ventana está cada cliente.
+            'template_name' => 'nullable|string',
+            'language_code' => 'nullable|string',
+            'components' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -85,13 +91,29 @@ class MessageApiController extends Controller
         // aviso salió y el cliente final nunca lo recibe.
         $windowClosed = !$conversation->isWindowOpen();
 
+        // Camino bueno: si nos dieron una plantilla de respaldo, el aviso sale
+        // como plantilla en vez de morir. Es lo que convierte una notificación
+        // perdida en una entregada, y evita que quien llama tenga que llevar la
+        // cuenta de las 24h de cada cliente.
+        if ($windowClosed && $request->filled('template_name')) {
+            Log::channel('whatsapp')->info('🔁 Ventana de 24h cerrada: se envía la plantilla de respaldo', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template' => $request->template_name,
+            ]);
+
+            return $this->sendTemplate($request);
+        }
+
         if ($windowClosed && $this->windowGuardEnforced($instance)) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
                 'error' => 'El destinatario no escribe desde hace más de 24 horas. '
-                    . 'WhatsApp no permite texto libre fuera de esa ventana: '
-                    . 'envía una plantilla aprobada con POST /api/v1/messages/template.',
+                    . 'WhatsApp no permite texto libre fuera de esa ventana. '
+                    . 'Añade "template_name" (y sus "components") a esta misma llamada '
+                    . 'para que el aviso salga como plantilla, o usa '
+                    . 'POST /api/v1/messages/template.',
             ], 422);
         }
 

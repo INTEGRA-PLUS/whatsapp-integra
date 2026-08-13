@@ -156,6 +156,54 @@ class ServiceWindowTest extends TestCase
             ])->assertStatus(422)->assertJson(['code' => 'window_closed']);
     }
 
+    public function test_fuera_de_ventana_el_aviso_sale_como_plantilla_de_respaldo(): void
+    {
+        config(['whatsapp.window_guard.mode' => 'enforce']);
+        Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.TPL']]], 200)]);
+
+        $instance = $this->metaInstance();
+        $this->conversationWithInbound($instance, now()->subDays(2)->toDateTimeString());
+
+        // Aun en modo enforce: si hay plantilla de respaldo el aviso se entrega
+        // en vez de rechazarse. Entregar es mejor que avisar del error.
+        $this->withHeader('X-Instance-Token', $instance->phone_number_id)
+            ->postJson('/api/v1/messages/send', [
+                'to' => '573007852081',
+                'message' => 'CMNET le informa que su soporte de pago ha sido generado.',
+                'template_name' => 'tirillas',
+                'components' => [],
+            ])->assertOk();
+
+        $message = WhatsAppMessage::where('direction', 'outbound')->firstOrFail();
+
+        $this->assertSame('[Plantilla: tirillas]', $message->content);
+        $this->assertSame('tirillas', $message->metadata['template'] ?? null);
+
+        Http::assertSent(fn ($request) => ($request['type'] ?? null) === 'template');
+    }
+
+    public function test_dentro_de_ventana_se_usa_el_texto_y_no_la_plantilla(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.OK']]], 200)]);
+
+        $instance = $this->metaInstance();
+        $this->conversationWithInbound($instance, now()->subHour()->toDateTimeString());
+
+        // La plantilla es un respaldo, no un reemplazo: dentro de la ventana el
+        // texto libre es más barato y más natural para el cliente.
+        $this->withHeader('X-Instance-Token', $instance->phone_number_id)
+            ->postJson('/api/v1/messages/send', [
+                'to' => '573007852081',
+                'message' => 'Su soporte de pago ha sido generado.',
+                'template_name' => 'tirillas',
+            ])->assertOk();
+
+        $message = WhatsAppMessage::where('direction', 'outbound')->firstOrFail();
+
+        $this->assertSame('Su soporte de pago ha sido generado.', $message->content);
+        Http::assertSent(fn ($request) => ($request['type'] ?? null) === 'text');
+    }
+
     public function test_el_informe_del_guardarrail_cuenta_los_marcados_en_sombra(): void
     {
         config(['whatsapp.window_guard.mode' => 'shadow', 'whatsapp.window_guard.enforce_companies' => []]);
