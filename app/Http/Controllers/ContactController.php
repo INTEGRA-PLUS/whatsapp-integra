@@ -192,10 +192,22 @@ class ContactController extends Controller
                 ->firstOrFail();
 
             // Sync this conversation's number into the existing contact so both
-            // numbers live under a single record.
-            $contact->addNumber($conversation->phone_number);
+            // numbers live under a single record. Un cliente que oculta su
+            // número no aporta ninguno: se vincula igual, sin tocar la ficha.
+            if ($conversation->hasPhone()) {
+                $contact->addNumber($conversation->phone_number);
+            }
         } else {
-            $phone = $validated['phone_number'] ?? $conversation->phone_number;
+            $phone = $validated['phone_number'] ?: ($conversation->hasPhone() ? $conversation->phone_number : null);
+
+            // La agenda se indexa por número —unique(company_id, phone_number)—
+            // así que una ficha sin él chocaría con la del siguiente cliente que
+            // oculte el suyo, y no casaría con ningún abonado de Integra.
+            if (!$phone) {
+                return response()->json([
+                    'message' => 'Este cliente oculta su número de WhatsApp. Vincúlalo a un contacto existente en vez de crear uno nuevo.',
+                ], 422);
+            }
 
             $contact = Contact::firstOrCreate(
                 ['company_id' => $user->company_id, 'phone_number' => $phone],

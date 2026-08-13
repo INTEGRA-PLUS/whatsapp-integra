@@ -61,14 +61,17 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // El destinatario se normaliza aquí, en la frontera: el sistema externo lo
         // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
-        // que el que abre el webhook partía la conversación en dos.
-        $to = WhatsAppConversation::normalizePhone($request->to);
+        // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
+        // intacto: quitarle las letras lo convertiría en un teléfono inventado.
+        $to = WhatsAppConversation::normalizeRecipient($request->to);
 
         if ($to === '') {
-            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+            return response()->json(['errors' => ['to' => [
+                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+            ]]], 422);
         }
 
         $messageContent = $request->message;
@@ -196,14 +199,17 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // El destinatario se normaliza aquí, en la frontera: el sistema externo lo
         // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
-        // que el que abre el webhook partía la conversación en dos.
-        $to = WhatsAppConversation::normalizePhone($request->to);
+        // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
+        // intacto: quitarle las letras lo convertiría en un teléfono inventado.
+        $to = WhatsAppConversation::normalizeRecipient($request->to);
 
         if ($to === '') {
-            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+            return response()->json(['errors' => ['to' => [
+                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+            ]]], 422);
         }
 
         $templateName = $request->template_name;
@@ -370,14 +376,17 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // El número se normaliza aquí, en la frontera: el sistema externo lo
+        // El destinatario se normaliza aquí, en la frontera: el sistema externo lo
         // manda como lo tenga guardado ("57300 825 3303", "+57 300...") y así
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
-        // que el que abre el webhook partía la conversación en dos.
-        $to = WhatsAppConversation::normalizePhone($request->to);
+        // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
+        // intacto: quitarle las letras lo convertiría en un teléfono inventado.
+        $to = WhatsAppConversation::normalizeRecipient($request->to);
 
         if ($to === '') {
-            return response()->json(['errors' => ['to' => ['El número de destino no contiene dígitos.']]], 422);
+            return response()->json(['errors' => ['to' => [
+                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+            ]]], 422);
         }
 
         $wamid = $request->wamid;

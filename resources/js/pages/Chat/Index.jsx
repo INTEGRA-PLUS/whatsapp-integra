@@ -710,6 +710,34 @@ function normalizePhoneForIntegra(phone) {
     return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+/**
+ * ¿Este cliente tiene número de teléfono?
+ *
+ * Desde que WhatsApp permite ocultarlo tras un nombre de usuario, Meta deja de
+ * mandarlo y el hilo se guarda sin número. Todo lo que exige uno —llamar,
+ * vincularlo a un contacto de Integra, registrar un pago— hay que esconderlo en
+ * vez de dejar que falle con un campo vacío.
+ */
+function hasPhone(conv) {
+    return Boolean(conv?.phone_number);
+}
+
+/**
+ * Con quién se está hablando, en una línea.
+ *
+ * El teléfono cuando se conoce; si no, el nombre de usuario, que es lo único
+ * legible que queda. El identificador crudo es el último recurso: no dice nada,
+ * pero es mejor que el hueco en blanco que la UI pintaba antes.
+ */
+function contactIdentity(conv) {
+    if (!conv) return '';
+    if (conv.phone_number) return conv.phone_number;
+    if (conv.metadata?.username) return '@' + conv.metadata.username;
+
+    const id = conv.bsuid || conv.wa_id || '';
+    return id ? `ID ${String(id).slice(0, 14)}…` : 'Sin número';
+}
+
 function formatCOP(value) {
     if (value == null || isNaN(Number(value))) return null;
     return '$' + Number(value).toLocaleString('es-CO');
@@ -1881,6 +1909,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 });
                 contact = res.data;
             } else {
+                // La agenda se indexa por número: crear una ficha sin él daría un
+                // contacto que no casa con ningún abonado de Integra y que además
+                // choca con el de cualquier otro cliente sin teléfono.
+                if (!hasPhone(selectedConversation)) {
+                    setContactError('Este cliente oculta su número de WhatsApp, así que no se puede crear una ficha de contacto. Vincúlalo a un contacto existente desde "Vincular contacto".');
+                    return;
+                }
+
                 const res = await axios.post(`/api/chat/conversations/${selectedConversation.id}/attach-contact`, {
                     name,
                     phone_number: selectedConversation.phone_number,
@@ -2457,7 +2493,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (!searchQuery) return items;
         const q = searchQuery.toLowerCase();
         return items.filter(
-            c => (c.name || '').toLowerCase().includes(q) || (c.phone_number || '').includes(q) || (c.last_message || '').toLowerCase().includes(q),
+            // El nombre de usuario y el identificador entran en la búsqueda: para
+            // un cliente sin teléfono son lo único por lo que se le puede buscar.
+            c => (c.name || '').toLowerCase().includes(q)
+                || (c.phone_number || '').includes(q)
+                || (c.metadata?.username || '').toLowerCase().includes(q)
+                || (c.bsuid || '').toLowerCase().includes(q)
+                || (c.last_message || '').toLowerCase().includes(q),
         );
     }, [conversations, searchQuery, filterMyAssignments, selectedTagIds, selectedAgentId, auth.user.id]);
 
@@ -4169,7 +4211,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2.5 mt-0.5 min-w-0">
-                                                    <span className="text-[11px] text-muted-foreground leading-tight shrink-0">{selectedConversation.phone_number}</span>
+                                                    <span className="text-[11px] text-muted-foreground leading-tight shrink-0">{contactIdentity(selectedConversation)}</span>
                                                     {selectedConversation.contact ? (
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
@@ -5579,7 +5621,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             </div>
                                                             <div className="min-w-0 flex-1">
                                                                 <p className="text-[13px] font-semibold text-foreground truncate">{name}</p>
-                                                                <p className="text-[11.5px] text-muted-foreground truncate">{conv.phone_number}</p>
+                                                                <p className="text-[11.5px] text-muted-foreground truncate">{contactIdentity(conv)}</p>
                                                             </div>
                                                             <Forward className="size-4 text-muted-foreground shrink-0" />
                                                         </button>
@@ -5734,7 +5776,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     </div>
                                     <div className="min-w-0 w-full">
                                         <h2 className="text-lg font-bold text-foreground truncate">{selectedConversation.contact?.name || selectedConversation.name}</h2>
-                                        <p className="text-sm text-muted-foreground">{selectedConversation.phone_number}</p>
+                                        <p className="text-sm text-muted-foreground">{contactIdentity(selectedConversation)}</p>
                                     </div>
                                     <span className={clsx(
                                         "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full",
@@ -5776,14 +5818,20 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         </div>
 
                                         <div className="space-y-1.5">
-                                            <label className="text-sm font-medium text-foreground">Teléfono</label>
+                                            <label className="text-sm font-medium text-foreground">
+                                                {hasPhone(selectedConversation) ? 'Teléfono' : 'Identificador'}
+                                            </label>
                                             <input
                                                 type="text"
-                                                value={selectedConversation.phone_number}
+                                                value={contactIdentity(selectedConversation)}
                                                 disabled
                                                 className="flex h-9 w-full rounded-md border border-input bg-muted/40 px-3 py-1 text-sm text-muted-foreground cursor-not-allowed"
                                             />
-                                            <p className="text-[11px] text-muted-foreground">El número de WhatsApp no se puede cambiar.</p>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                {hasPhone(selectedConversation)
+                                                    ? 'El número de WhatsApp no se puede cambiar.'
+                                                    : 'Este cliente oculta su número tras un nombre de usuario de WhatsApp.'}
+                                            </p>
                                         </div>
 
                                         <div className="space-y-1.5">
@@ -5846,8 +5894,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     </button>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">
-                                                    <Phone className="size-4 text-muted-foreground shrink-0" />
-                                                    <span className="text-foreground truncate">{selectedConversation.phone_number}</span>
+                                                    {hasPhone(selectedConversation)
+                                                        ? <Phone className="size-4 text-muted-foreground shrink-0" />
+                                                        : <AtSign className="size-4 text-muted-foreground shrink-0" />}
+                                                    <span className="text-foreground truncate">{contactIdentity(selectedConversation)}</span>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <Mail className="size-4 text-muted-foreground shrink-0" />
@@ -5974,7 +6024,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 {showCallHistory && selectedConversation && (
                     <CallHistoryModal
                         conversationId={selectedConversation.id}
-                        contactName={selectedConversation.name || selectedConversation.phone_number}
+                        contactName={selectedConversation.name || contactIdentity(selectedConversation)}
                         onClose={() => setShowCallHistory(false)}
                     />
                 )}

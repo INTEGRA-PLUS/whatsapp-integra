@@ -202,7 +202,14 @@
       "Bash(perl -pi -e \"s{__DIR__ \\\\. '/\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./\\\\.\\\\./Users/juan_calle/Desktop/proyects/whatsapp-integra}{'/Users/juan_calle/Desktop/proyects/whatsapp-integra}g\" /private/tmp/claude-501/-Users-juan-calle-Desktop-proyects-whatsapp-integra/392d456d-d240-4bf5-a0c4-2237228c37f0/scratchpad/smoke.php)",
       "Bash(pkill -f \"reverb:start\")",
       "Bash(git fsck *)",
-      "WebFetch(domain:support.whapi.cloud)"
+      "WebFetch(domain:support.whapi.cloud)",
+      "WebFetch(domain:docs.kapso.ai)",
+      "WebFetch(domain:www.infobip.com)",
+      "Artifact",
+      "Bash(echo \"exit=$?\")",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --testsuite=Feature)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=BsuidIdentityTest)",
+      "Bash(DB_CONNECTION=mysql DB_DATABASE=wpp_test DB_HOST=127.0.0.1 DB_USERNAME=root DB_PASSWORD=JUANMANUEL663312 php artisan test --filter=ExampleTest)"
     ]
   }
 }

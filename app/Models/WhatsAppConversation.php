@@ -15,6 +15,7 @@ class WhatsAppConversation extends Model
         'instance_id',
         'contact_id',
         'wa_id',
+        'bsuid',
         'phone_number',
         'name',
         'profile_pic_url',
@@ -50,6 +51,22 @@ class WhatsAppConversation extends Model
     }
 
     /**
+     * Destinatario tal y como lo manda un sistema externo, en forma canónica.
+     *
+     * Un teléfono se limpia a dígitos; un BSUID se devuelve intacto. Pasarlo por
+     * `normalizePhone` a secas convertía "CO.1402615141764490" en
+     * "1402615141764490": se abría un hilo fantasma, el envío iba a un número
+     * inexistente y el ERP se quedaba sin poder avisar a ningún cliente que
+     * oculte su número.
+     */
+    public static function normalizeRecipient(?string $value): string
+    {
+        $value = trim((string) $value);
+
+        return self::isBsuid($value) ? $value : self::normalizePhone($value);
+    }
+
+    /**
      * ¿Es un BSUID (Business-Scoped User ID) en vez de un teléfono?
      *
      * Desde que Meta permite ocultar el número tras un nombre de usuario, el
@@ -61,20 +78,45 @@ class WhatsAppConversation extends Model
      */
     public static function isBsuid(?string $value): bool
     {
-        return (bool) preg_match('/^[A-Za-z]{2}\.[A-Za-z0-9]+$/', (string) $value);
+        // Los BSUID de cartera llevan "ENT" entre el país y el número
+        // ("US.ENT.11815799212886844830"), así que el punto entra en el cuerpo.
+        return (bool) preg_match('/^[A-Za-z]{2}\.[A-Za-z0-9.]+$/', (string) $value);
     }
 
     /**
      * Identificador con el que se le responde a este hilo.
      *
-     * Casi siempre es el teléfono, pero a un cliente que lo oculta hay que
-     * devolverle su BSUID, que vive en `wa_id` porque no cabe en `phone_number`.
+     * Se prefiere el teléfono cuando se conoce: Meta le da precedencia si se
+     * mandan los dos, y hay envíos que sólo funcionan con número (las plantillas
+     * de autenticación). El BSUID es el respaldo para quien oculta el suyo.
      * Todos los envíos deben pasar por aquí: leer `phone_number` a pelo deja sin
      * destinatario a esos clientes.
      */
     public function recipientId(): string
     {
+        $phone = self::normalizePhone($this->phone_number);
+
+        if ($phone !== '') {
+            return $phone;
+        }
+
+        if ($this->bsuid) {
+            return $this->bsuid;
+        }
+
+        // Hilos anteriores a la columna `bsuid`, que lo guardaron en `wa_id`.
         return self::isBsuid($this->wa_id) ? $this->wa_id : (string) $this->phone_number;
+    }
+
+    /**
+     * ¿Se puede alcanzar a este cliente por teléfono?
+     *
+     * Lo que decide si un envío que exige número (plantilla de autenticación,
+     * llamada, alta de contacto en Integra) tiene sentido siquiera intentarlo.
+     */
+    public function hasPhone(): bool
+    {
+        return self::normalizePhone($this->phone_number) !== '';
     }
 
     /**
@@ -86,17 +128,23 @@ class WhatsAppConversation extends Model
      * webhook llegaba con otra, el mensaje entrante abría un hilo nuevo y la
      * respuesta del cliente quedaba invisible en el chat y en el CRM.
      */
-    public static function resolveFor(int $instanceId, ?string $phone, array $defaults = []): self
-    {
-        // Un BSUID ya es canónico: se guarda tal cual y no pasa por la búsqueda
-        // de variantes, que razona en dígitos y uniría clientes distintos.
-        if (self::isBsuid($phone)) {
-            return self::resolveByIdentity($instanceId, (string) $phone, $defaults);
+    public static function resolveFor(
+        int $instanceId,
+        ?string $phone,
+        array $defaults = [],
+        ?string $bsuid = null
+    ): self {
+        // Hay llamantes que no distinguen: reciben "el identificador del cliente"
+        // y lo pasan como teléfono. Si resulta ser un BSUID se trata como tal en
+        // vez de intentar normalizarlo a dígitos.
+        if ($bsuid === null && self::isBsuid($phone)) {
+            $bsuid = $phone;
+            $phone = null;
         }
 
         $digits = self::normalizePhone($phone);
 
-        if ($digits === '') {
+        if ($digits === '' && $phone !== null && $phone !== '' && !$bsuid) {
             // Nada que normalizar: se conserva el comportamiento antiguo para no
             // perder el mensaje, pero queda el rastro de quién manda basura.
             \Illuminate\Support\Facades\Log::warning('Teléfono sin dígitos al resolver conversación', [
@@ -106,65 +154,104 @@ class WhatsAppConversation extends Model
             $digits = (string) $phone;
         }
 
-        $conversation = static::where('instance_id', $instanceId)->where('wa_id', $digits)->first();
+        // 1. Por BSUID. Es la única identidad que Meta garantiza en todos los
+        //    webhooks y la única que sobrevive a que el cliente oculte su número,
+        //    así que se busca primero: si el hilo ya existe se reconoce aunque
+        //    esta vez el teléfono no venga (o venga y antes no viniera).
+        if ($bsuid) {
+            $conversation = static::where('instance_id', $instanceId)
+                ->where('bsuid', $bsuid)
+                ->first();
 
-        if ($conversation) {
-            return $conversation;
-        }
-
-        // Esto corre dentro del webhook: si la búsqueda de variantes falla por
-        // cualquier motivo, es preferible abrir un hilo nuevo que perder el
-        // mensaje del cliente.
-        try {
-            if ($variant = self::findVariant($instanceId, $digits)) {
-                return $variant;
+            if ($conversation) {
+                return $conversation->absorbIdentity($bsuid, $digits);
             }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('No se pudo buscar variantes del número', [
-                'instance_id' => $instanceId,
-                'error'       => $e->getMessage(),
-            ]);
         }
+
+        // 2. Por teléfono. `phone_number` entra en la búsqueda porque un hilo
+        //    creado por BSUID guarda el número ahí en cuanto Meta lo revela, sin
+        //    tocar `wa_id` (que es la clave única y no se reescribe).
+        if ($digits !== '') {
+            $conversation = static::where('instance_id', $instanceId)
+                ->where(function ($q) use ($digits) {
+                    $q->where('wa_id', $digits)->orWhere('phone_number', $digits);
+                })
+                ->first();
+
+            if ($conversation) {
+                return $conversation->absorbIdentity($bsuid, $digits);
+            }
+
+            // Esto corre dentro del webhook: si la búsqueda de variantes falla por
+            // cualquier motivo, es preferible abrir un hilo nuevo que perder el
+            // mensaje del cliente.
+            try {
+                if ($variant = self::findVariant($instanceId, $digits)) {
+                    return $variant->absorbIdentity($bsuid, $digits);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('No se pudo buscar variantes del número', [
+                    'instance_id' => $instanceId,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // `wa_id` es la clave única del hilo: el teléfono cuando se conoce, y el
+        // BSUID cuando el cliente lo oculta. `phone_number` se deja vacío en ese
+        // caso en vez de repetir el BSUID: la columna es varchar(20) y un BSUID
+        // llega a 131 caracteres, así que copiarlo ahí reventaría el insert
+        // además de fingir un número que no existe.
+        $waId = $digits !== '' ? $digits : (string) $bsuid;
 
         try {
             return static::create(array_merge($defaults, [
                 'instance_id'  => $instanceId,
-                'wa_id'        => $digits,
-                'phone_number' => $defaults['phone_number'] ?? $digits,
+                'wa_id'        => $waId,
+                'bsuid'        => $bsuid,
+                'phone_number' => $digits !== '' ? ($defaults['phone_number'] ?? $digits) : '',
             ]));
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            // Un lote del webhook puede traer dos mensajes del mismo número nuevo
+            // Un lote del webhook puede traer dos mensajes del mismo cliente nuevo
             // y competir por el índice único (instance_id, wa_id).
-            return static::where('instance_id', $instanceId)->where('wa_id', $digits)->firstOrFail();
+            return static::where('instance_id', $instanceId)
+                ->where('wa_id', $waId)
+                ->firstOrFail()
+                ->absorbIdentity($bsuid, $digits);
         }
     }
 
     /**
-     * Hilo de un cliente identificado por BSUID, sin teléfono que normalizar.
+     * Completa la identidad del hilo con lo que traiga este webhook.
      *
-     * Se separa de la ruta de teléfonos a propósito: aquí no hay variantes que
-     * reconciliar (Meta emite un único BSUID por cliente y negocio) y
-     * `phone_number` se deja vacío en vez de repetir el BSUID: la columna es
-     * varchar(20) y un BSUID llega hasta 128 caracteres, así que copiarlo ahí
-     * reventaría el insert además de fingir un número que no existe.
+     * Meta revela el teléfono de forma intermitente (sólo si hubo contacto en los
+     * últimos 30 días) y el BSUID empezó a llegar después de que muchos hilos ya
+     * existieran. Cada mensaje es una oportunidad de rellenar lo que falte, y es
+     * lo que evita que el mismo cliente acabe con dos hilos cuando una de las dos
+     * identidades deja de venir.
+     *
+     * Sólo rellena huecos: nunca sobrescribe un dato ya guardado, para que un
+     * payload raro no reescriba la identidad de un hilo con historial.
      */
-    private static function resolveByIdentity(int $instanceId, string $bsuid, array $defaults = []): self
+    public function absorbIdentity(?string $bsuid, string $digits = ''): self
     {
-        $conversation = static::where('instance_id', $instanceId)->where('wa_id', $bsuid)->first();
+        $cambios = [];
 
-        if ($conversation) {
-            return $conversation;
+        if ($bsuid && !$this->bsuid) {
+            $cambios['bsuid'] = $bsuid;
         }
 
-        try {
-            return static::create(array_merge($defaults, [
-                'instance_id'  => $instanceId,
-                'wa_id'        => $bsuid,
-                'phone_number' => '',
-            ]));
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            return static::where('instance_id', $instanceId)->where('wa_id', $bsuid)->firstOrFail();
+        // La columna admite 20 caracteres: un teléfono real cabe de sobra, pero
+        // no se arriesga el insert con un valor inesperado.
+        if ($digits !== '' && !$this->hasPhone() && strlen($digits) <= 20) {
+            $cambios['phone_number'] = $digits;
         }
+
+        if ($cambios) {
+            $this->update($cambios);
+        }
+
+        return $this;
     }
 
     /**
@@ -188,6 +275,13 @@ class WhatsAppConversation extends Model
             ->get();
 
         foreach ($candidates as $candidate) {
+            // Un BSUID reducido a dígitos parece un teléfono larguísimo y puede
+            // terminar en los mismos diez: unirlo aquí mezclaría dos clientes.
+            // Esos hilos sólo se reconocen por su identidad, nunca por parecido.
+            if (self::isBsuid($candidate->wa_id)) {
+                continue;
+            }
+
             $candidateDigits = self::normalizePhone($candidate->wa_id);
 
             if ($candidateDigits === '') {

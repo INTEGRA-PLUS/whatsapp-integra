@@ -389,9 +389,28 @@ class WhatsAppWebhookController extends Controller
         // lanzaba "Undefined array key", el webhook respondía 500 y Meta acababa
         // descartando el mensaje: el cliente veía sus dos chulos y en el CRM no
         // aparecía nada.
-        $from = $message['from'] ?? $message['from_user_id'] ?? null;
+        // El BSUID viaja en todos los webhooks de mensajes, tenga o no el cliente
+        // el número oculto. Se lee siempre —no sólo cuando falta el teléfono—
+        // porque es lo único que sigue identificando al cliente el día que Meta
+        // deje de mandar su número: sin guardarlo antes, ese día se le abre un
+        // hilo nuevo y el historial queda partido en dos.
+        $bsuid = $message['from_user_id']
+            ?? $message['user_id']
+            ?? null;
+
+        $phone = $message['from'] ?? null;
+
+        // Identidad para logs y para el nombre por defecto del hilo.
+        $from = $phone ?? $bsuid;
         $wamid = $message['id'] ?? null;
         $timestamp = $message['timestamp'] ?? null;
+
+        // El teléfono nunca es un BSUID, pero un payload de transición puede
+        // meterlo en `from`; se recoloca para no normalizarlo a dígitos.
+        if ($phone !== null && WhatsAppConversation::isBsuid($phone)) {
+            $bsuid = $bsuid ?: $phone;
+            $phone = null;
+        }
 
         if (!$from || !$wamid) {
             // Reintentar no lo va a arreglar: sin identidad o sin wamid el
@@ -407,13 +426,11 @@ class WhatsAppWebhookController extends Controller
             return;
         }
 
-        $profile = $metadata['contacts'][0] ?? [];
+        $profile = $this->matchContact($metadata['contacts'] ?? [], $bsuid, $phone);
         $contactName = $profile['profile']['name'] ?? $from;
         // El nombre de usuario es lo único legible que queda de un cliente sin
         // teléfono; sin él el agente sólo vería "CO.1402615141764490".
-        $username = $profile['profile']['username'] ?? null;
-
-        $isBsuid = WhatsAppConversation::isBsuid($from);
+        $username = $this->extractUsername($profile);
 
         // resolveFor reconoce el hilo aunque se haya creado con el número escrito
         // de otra forma (con espacios, sin indicativo o con el indicativo
@@ -421,21 +438,23 @@ class WhatsAppWebhookController extends Controller
         // quedaba invisible en el chat que el agente estaba mirando.
         $conversation = WhatsAppConversation::resolveFor(
             $instance->id,
-            $from,
+            $phone,
             [
-                'phone_number' => $isBsuid ? '' : $from,
-                'name' => $isBsuid && $username ? '@' . $username : $contactName,
+                'name' => $phone === null && $username ? '@' . $username : $contactName,
                 'status' => 'open',
                 'last_message_at' => now()
-            ]
+            ],
+            $bsuid
         );
 
         // El BSUID y el nombre de usuario se guardan en el hilo: son el único
         // rastro de identidad de un cliente sin teléfono, y el agente los
         // necesita para reconocerlo entre una conversación y la siguiente.
-        if ($isBsuid) {
-            $this->rememberIdentity($conversation, $from, $username, $contactName);
+        if ($bsuid) {
+            $this->rememberIdentity($conversation, $bsuid, $username, $contactName);
         }
+
+        $isBsuid = !$conversation->hasPhone();
 
         // Registrar automáticamente el contacto entrante si aún no está registrado.
         // Es accesorio: si falla (contacto corrupto, choque de datos) el mensaje
@@ -967,6 +986,54 @@ class WhatsAppWebhookController extends Controller
             'old_wa_id' => $oldWaId,
             'new_wa_id' => $newWaId,
         ]);
+    }
+
+    /**
+     * Entrada de `contacts[]` que corresponde a este remitente.
+     *
+     * Meta agrupa en un mismo evento los mensajes de varios clientes, y `contacts`
+     * trae uno por cada uno. Coger `contacts[0]` para todos hacía que el perfil
+     * del primero titulara los hilos de los demás; con nombres de usuario eso es
+     * permanente, porque para un cliente sin teléfono el nombre de usuario es la
+     * única identidad visible y ya no se corrige sola en el mensaje siguiente.
+     */
+    private function matchContact(array $contacts, ?string $bsuid, ?string $phone): array
+    {
+        foreach ($contacts as $contact) {
+            $candidatos = array_filter([
+                $contact['user_id'] ?? null,
+                $contact['wa_id'] ?? null,
+            ]);
+
+            foreach ($candidatos as $candidato) {
+                if (($bsuid && $candidato === $bsuid) || ($phone && $candidato === $phone)) {
+                    return $contact;
+                }
+            }
+        }
+
+        // Un único contacto en el lote no puede ser de otro cliente. Con varios,
+        // es preferible quedarse sin nombre que ponerle el de otra persona.
+        return count($contacts) === 1 ? ($contacts[0] ?? []) : [];
+    }
+
+    /**
+     * Nombre de usuario del perfil, mirando las dos formas en que llega.
+     *
+     * La referencia de Meta lo documenta al nivel del contacto, junto a `wa_id`,
+     * y hay payloads que lo entregan colgando de `profile`. Leer sólo una deja al
+     * agente mirando un BSUID crudo. La arroba se quita aquí porque unas veces
+     * viene incluida y otras no, y al anteponerla salía "@@juan".
+     */
+    private function extractUsername(array $contact): ?string
+    {
+        $username = $contact['username']
+            ?? $contact['profile']['username']
+            ?? null;
+
+        $username = ltrim(trim((string) $username), '@');
+
+        return $username !== '' ? $username : null;
     }
 
     /**
