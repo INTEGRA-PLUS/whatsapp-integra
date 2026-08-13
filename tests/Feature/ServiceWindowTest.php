@@ -66,6 +66,41 @@ class ServiceWindowTest extends TestCase
         return $conversation->fresh();
     }
 
+    public function test_el_sent_at_del_entrante_se_guarda_en_la_hora_de_la_app(): void
+    {
+        config(['app.timezone' => 'America/Bogota']);
+        date_default_timezone_set('America/Bogota');
+
+        $instance = $this->metaInstance();
+        $timestamp = 1786590653; // instante fijo, para que la aserción no dependa de "ahora"
+
+        $this->postJson('/webhooks/whatsapp', [
+            'object' => 'whatsapp_business_account',
+            'entry' => [['id' => '1', 'changes' => [['field' => 'messages', 'value' => [
+                'messaging_product' => 'whatsapp',
+                'metadata' => ['phone_number_id' => $instance->phone_number_id],
+                'contacts' => [['profile' => ['name' => 'Cliente'], 'wa_id' => '573007852081']],
+                'messages' => [[
+                    'from' => '573007852081',
+                    'id' => 'wamid.' . Str::random(10),
+                    'timestamp' => (string) $timestamp,
+                    'type' => 'text',
+                    'text' => ['body' => 'Buenas'],
+                ]],
+            ]]]]],
+        ])->assertOk();
+
+        $message = WhatsAppMessage::where('direction', 'inbound')->firstOrFail();
+
+        // Carbon 3 devuelve UTC en createFromTimestamp; sin zona explícita esto
+        // quedaba cinco horas por delante del resto de fechas y la ventana de
+        // 24h se daba por abierta de más.
+        $this->assertSame(
+            \Carbon\Carbon::createFromTimestamp($timestamp, 'America/Bogota')->format('Y-m-d H:i:s'),
+            $message->sent_at->format('Y-m-d H:i:s')
+        );
+    }
+
     public function test_la_ventana_esta_abierta_si_el_cliente_escribio_hace_poco(): void
     {
         $instance = $this->metaInstance();

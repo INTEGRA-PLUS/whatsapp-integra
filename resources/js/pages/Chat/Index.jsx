@@ -2762,7 +2762,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (!selectedConversation) return false;
         const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
         if (!lastInbound) return true;
-        return (Date.now() - new Date(lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
+        // Cuenta desde que el cliente pulsó enviar (sent_at), no desde que
+        // nosotros guardamos el mensaje: cuando Meta entrega un webhook con días
+        // de retraso, created_at es de hoy y la ventana ya está cerrada. Mirar
+        // created_at dejaba escribir al asesor para que el envío muriera después.
+        return (Date.now() - new Date(lastInbound.sent_at || lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
     }, [messages, selectedConversation]);
 
     async function sendMessage() {
@@ -3504,6 +3508,31 @@ export default function ChatIndex({ instances, integrations = [] }) {
         if (date.toDateString() === yesterday.toDateString()) return 'AYER';
 
         return date.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
+    }
+
+    /**
+     * Cuándo lo escribió el cliente, si no coincide con cuándo nos llegó.
+     *
+     * Meta puede reintentar un webhook durante días y entregarlo de golpe: el
+     * chat muestra la hora en que lo guardamos y el asesor cree que el cliente
+     * acaba de escribir. Luego no entiende por qué se le pide una plantilla, si
+     * WhatsApp cuenta las 24 horas desde el envío real y la ventana ya expiró.
+     */
+    function lateArrivalNote(msg) {
+        if (!msg || msg.direction !== 'inbound' || !msg.sent_at) return null;
+
+        const enviado = new Date(msg.sent_at);
+        const recibido = new Date(msg.created_at);
+        const horas = (recibido - enviado) / 36e5;
+
+        // Por debajo de dos horas es ruido de reloj, no un retraso real.
+        if (!(horas >= 2)) return null;
+
+        return {
+            texto: `enviado ${enviado.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} ${formatMessageTimeOnly(msg.sent_at)}`,
+            detalle: `El cliente lo envió el ${enviado.toLocaleString('es-CO')} y WhatsApp nos lo entregó el ${recibido.toLocaleString('es-CO')}.`
+                + (horas >= 24 ? '\nPor eso la ventana de 24 horas ya está cerrada y hace falta una plantilla.' : ''),
+        };
     }
 
     function formatDuration(seconds) {
@@ -4900,6 +4929,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                             editado
                                                                         </span>
                                                                     )}
+                                                                    {(() => {
+                                                                        const tardio = lateArrivalNote(msg);
+                                                                        return tardio ? (
+                                                                            <span
+                                                                                className="text-[9px] font-bold italic text-amber-700/70 dark:text-amber-300/60 whitespace-nowrap"
+                                                                                title={tardio.detalle}
+                                                                            >
+                                                                                {tardio.texto}
+                                                                            </span>
+                                                                        ) : null;
+                                                                    })()}
                                                                     <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && (
                                                                         <StatusIcons

@@ -358,7 +358,9 @@ class WhatsAppWebhookController extends Controller
 
         $expiresAt = null;
         if (!empty($reply['expiration_timestamp'])) {
-            $expiresAt = \Carbon\Carbon::createFromTimestamp($reply['expiration_timestamp']);
+            // Misma razón que en sent_at: sin zona explícita esto queda en UTC y
+            // el permiso parecería válido cinco horas de más.
+            $expiresAt = \Carbon\Carbon::createFromTimestamp($reply['expiration_timestamp'], config('app.timezone'));
         }
 
         WhatsAppCallPermission::updateOrCreate(
@@ -479,7 +481,13 @@ class WhatsAppWebhookController extends Controller
             'wamid' => $wamid,
             'direction' => 'inbound',
             'status' => 'delivered',
-            'sent_at' => \Carbon\Carbon::createFromTimestamp($timestamp)
+            // La zona horaria es explícita a propósito: Carbon 3 devuelve UTC en
+            // createFromTimestamp, así que el `sent_at` de los entrantes quedaba
+            // cinco horas por delante del resto de fechas (que van en la hora de
+            // la app). Eso hacía que la ventana de 24h se diera por abierta cinco
+            // horas de más, y que comparar "cuándo lo mandó" con "cuándo llegó"
+            // saliera mal.
+            'sent_at' => \Carbon\Carbon::createFromTimestamp($timestamp, config('app.timezone')),
         ];
 
         // Los avisos del sistema (cambio de número, cambio de identidad) no son
