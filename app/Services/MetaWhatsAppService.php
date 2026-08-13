@@ -288,7 +288,7 @@ class MetaWhatsAppService
 
             $response = Http::withToken($accessToken)
                 ->timeout(30)
-                ->post($url, [
+                ->post($url, $this->withRecipient([
                     'messaging_product' => 'whatsapp',
                     'recipient_type' => 'individual',
                     'to' => $to,
@@ -298,7 +298,7 @@ class MetaWhatsAppService
                         'body' => ['text' => $bodyText],
                         'action' => ['name' => 'call_permission_request'],
                     ],
-                ]);
+                ]));
 
             if ($response->successful()) {
                 return ['success' => true, 'data' => $response->json()];
@@ -530,8 +530,30 @@ class MetaWhatsAppService
         return $mimeMap[$mimeType] ?? 'bin';
     }
 
+    /**
+     * Destinatario en la forma que espera Meta.
+     *
+     * A un cliente que oculta su número se le responde con su BSUID, y Meta lo
+     * exige en `recipient`, no en `to` (comprobado contra la API real: con sólo
+     * `recipient` deja de pedir `to`). Se resuelve aquí, en el único punto por
+     * el que pasan todos los envíos, para no repetirlo en cada tipo de mensaje.
+     */
+    protected function withRecipient(array $data): array
+    {
+        $to = $data['to'] ?? null;
+
+        if ($to !== null && \App\Models\WhatsAppConversation::isBsuid($to)) {
+            unset($data['to']);
+            $data['recipient'] = $to;
+        }
+
+        return $data;
+    }
+
     protected function sendRequest(string $phoneNumberId, array $data)
     {
+        $data = $this->withRecipient($data);
+
         try {
             $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
             $accessToken = $instance ? $instance->access_token : null;

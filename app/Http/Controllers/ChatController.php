@@ -1854,7 +1854,7 @@ class ChatController extends Controller
 
         $result = $this->metaService->sendReaction(
             $instance->phone_number_id,
-            $conversation->phone_number,
+            $conversation->recipientId(),
             $message->wamid,
             $emoji
         );

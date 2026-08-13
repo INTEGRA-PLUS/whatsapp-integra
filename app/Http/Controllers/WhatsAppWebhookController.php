@@ -382,14 +382,36 @@ class WhatsAppWebhookController extends Controller
 
     private function processInboundMessage($message, Instance $instance, $metadata)
     {
-        $from = $message['from'];
-        $wamid = $message['id'];
-        $timestamp = $message['timestamp'];
+        // Quien oculta su número tras un nombre de usuario ya no viaja en `from`
+        // sino en `from_user_id`, con un BSUID por identidad. Leer sólo `from`
+        // lanzaba "Undefined array key", el webhook respondía 500 y Meta acababa
+        // descartando el mensaje: el cliente veía sus dos chulos y en el CRM no
+        // aparecía nada.
+        $from = $message['from'] ?? $message['from_user_id'] ?? null;
+        $wamid = $message['id'] ?? null;
+        $timestamp = $message['timestamp'] ?? null;
 
-        $contactName = 'Desconocido';
-        if (isset($metadata['contacts']) && count($metadata['contacts']) > 0) {
-            $contactName = $metadata['contacts'][0]['profile']['name'] ?? $from;
+        if (!$from || !$wamid) {
+            // Reintentar no lo va a arreglar: sin identidad o sin wamid el
+            // mensaje es inguardable. Se deja constancia y se devuelve 200 para
+            // que Meta no entre en el bucle de reintentos que ya costó miles de
+            // mensajes perdidos.
+            Log::channel('whatsapp')->error('❌ Mensaje entrante sin identidad utilizable', [
+                'instance_id' => $instance->id,
+                'wamid' => $wamid,
+                'type' => $message['type'] ?? null,
+                'claves' => array_keys($message),
+            ]);
+            return;
         }
+
+        $profile = $metadata['contacts'][0] ?? [];
+        $contactName = $profile['profile']['name'] ?? $from;
+        // El nombre de usuario es lo único legible que queda de un cliente sin
+        // teléfono; sin él el agente sólo vería "CO.1402615141764490".
+        $username = $profile['profile']['username'] ?? null;
+
+        $isBsuid = WhatsAppConversation::isBsuid($from);
 
         // resolveFor reconoce el hilo aunque se haya creado con el número escrito
         // de otra forma (con espacios, sin indicativo o con el indicativo
@@ -399,18 +421,30 @@ class WhatsAppWebhookController extends Controller
             $instance->id,
             $from,
             [
-                'phone_number' => $from,
-                'name' => $contactName,
+                'phone_number' => $isBsuid ? '' : $from,
+                'name' => $isBsuid && $username ? '@' . $username : $contactName,
                 'status' => 'open',
                 'last_message_at' => now()
             ]
         );
 
+        // El BSUID y el nombre de usuario se guardan en el hilo: son el único
+        // rastro de identidad de un cliente sin teléfono, y el agente los
+        // necesita para reconocerlo entre una conversación y la siguiente.
+        if ($isBsuid) {
+            $this->rememberIdentity($conversation, $from, $username, $contactName);
+        }
+
         // Registrar automáticamente el contacto entrante si aún no está registrado.
         // Es accesorio: si falla (contacto corrupto, choque de datos) el mensaje
         // se guarda igual — antes una excepción aquí lo hacía desaparecer.
+        // Los clientes sin teléfono se saltan este paso: la agenda de contactos
+        // se indexa por número y se sincroniza con Integra, así que meter ahí un
+        // BSUID crearía fichas basura que no casan con ningún abonado.
         try {
-            $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+            if (!$isBsuid) {
+                $this->ensureContactRegistered($conversation, $instance, $from, $contactName);
+            }
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
                 'conversation_id' => $conversation->id,
@@ -925,6 +959,45 @@ class WhatsAppWebhookController extends Controller
             'old_wa_id' => $oldWaId,
             'new_wa_id' => $newWaId,
         ]);
+    }
+
+    /**
+     * Guarda en el hilo la identidad de un cliente que oculta su teléfono.
+     *
+     * El BSUID es lo que hay que devolverle a Meta para responderle, y el
+     * nombre de usuario es lo único que un agente puede leer: sin esto el chat
+     * se titula "CO.1402615141764490" y nadie sabe con quién habla.
+     */
+    private function rememberIdentity(
+        WhatsAppConversation $conversation,
+        string $bsuid,
+        ?string $username,
+        string $contactName
+    ): void {
+        $metadata = $conversation->metadata ?? [];
+        $nuevo = array_filter([
+            'bsuid' => $bsuid,
+            'username' => $username,
+            'profile_name' => $contactName !== $bsuid ? $contactName : null,
+        ]);
+
+        $cambios = [];
+
+        if (array_diff_assoc($nuevo, array_intersect_key($metadata, $nuevo))) {
+            $cambios['metadata'] = array_merge($metadata, $nuevo);
+        }
+
+        // El hilo pudo crearse antes de que el cliente tuviera nombre de usuario,
+        // o con el BSUID crudo como título.
+        $titulo = $username ? '@' . $username : ($contactName !== $bsuid ? $contactName : null);
+
+        if ($titulo && $conversation->name !== $titulo && (!$conversation->name || $conversation->name === $bsuid)) {
+            $cambios['name'] = $titulo;
+        }
+
+        if ($cambios) {
+            $conversation->update($cambios);
+        }
     }
 
     /**

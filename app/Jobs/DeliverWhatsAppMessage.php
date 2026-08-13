@@ -53,7 +53,7 @@ class DeliverWhatsAppMessage implements ShouldQueue
             return;
         }
 
-        $to = $conversation->phone_number;
+        $to = $conversation->recipientId();
         $phoneNumberId = $instance->phone_number_id;
 
         // Sin el payload de la plantilla, Meta devuelve un "template.name is

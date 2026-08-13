@@ -50,6 +50,34 @@ class WhatsAppConversation extends Model
     }
 
     /**
+     * ¿Es un BSUID (Business-Scoped User ID) en vez de un teléfono?
+     *
+     * Desde que Meta permite ocultar el número tras un nombre de usuario, el
+     * webhook identifica a esos clientes con un id con ámbito de negocio con
+     * forma "CO.1402615141764490" (país + punto + alfanumérico). No es un
+     * teléfono y no se puede tocar: normalizarlo a dígitos ("1402615141764490")
+     * lo dejaría indistinguible de un número real y Meta lo rechazaría al
+     * responder.
+     */
+    public static function isBsuid(?string $value): bool
+    {
+        return (bool) preg_match('/^[A-Za-z]{2}\.[A-Za-z0-9]+$/', (string) $value);
+    }
+
+    /**
+     * Identificador con el que se le responde a este hilo.
+     *
+     * Casi siempre es el teléfono, pero a un cliente que lo oculta hay que
+     * devolverle su BSUID, que vive en `wa_id` porque no cabe en `phone_number`.
+     * Todos los envíos deben pasar por aquí: leer `phone_number` a pelo deja sin
+     * destinatario a esos clientes.
+     */
+    public function recipientId(): string
+    {
+        return self::isBsuid($this->wa_id) ? $this->wa_id : (string) $this->phone_number;
+    }
+
+    /**
      * Hilo de una instancia para un teléfono, creándolo si no existe.
      *
      * Sustituye al `firstOrCreate(['wa_id' => $phone])` que había repartido por
@@ -60,6 +88,12 @@ class WhatsAppConversation extends Model
      */
     public static function resolveFor(int $instanceId, ?string $phone, array $defaults = []): self
     {
+        // Un BSUID ya es canónico: se guarda tal cual y no pasa por la búsqueda
+        // de variantes, que razona en dígitos y uniría clientes distintos.
+        if (self::isBsuid($phone)) {
+            return self::resolveByIdentity($instanceId, (string) $phone, $defaults);
+        }
+
         $digits = self::normalizePhone($phone);
 
         if ($digits === '') {
@@ -102,6 +136,34 @@ class WhatsAppConversation extends Model
             // Un lote del webhook puede traer dos mensajes del mismo número nuevo
             // y competir por el índice único (instance_id, wa_id).
             return static::where('instance_id', $instanceId)->where('wa_id', $digits)->firstOrFail();
+        }
+    }
+
+    /**
+     * Hilo de un cliente identificado por BSUID, sin teléfono que normalizar.
+     *
+     * Se separa de la ruta de teléfonos a propósito: aquí no hay variantes que
+     * reconciliar (Meta emite un único BSUID por cliente y negocio) y
+     * `phone_number` se deja vacío en vez de repetir el BSUID: la columna es
+     * varchar(20) y un BSUID llega hasta 128 caracteres, así que copiarlo ahí
+     * reventaría el insert además de fingir un número que no existe.
+     */
+    private static function resolveByIdentity(int $instanceId, string $bsuid, array $defaults = []): self
+    {
+        $conversation = static::where('instance_id', $instanceId)->where('wa_id', $bsuid)->first();
+
+        if ($conversation) {
+            return $conversation;
+        }
+
+        try {
+            return static::create(array_merge($defaults, [
+                'instance_id'  => $instanceId,
+                'wa_id'        => $bsuid,
+                'phone_number' => '',
+            ]));
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            return static::where('instance_id', $instanceId)->where('wa_id', $bsuid)->firstOrFail();
         }
     }
 
