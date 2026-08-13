@@ -49,6 +49,9 @@ export default function AppLayout({ children, breadcrumb }) {
                             </nav>
                         )}
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Slot para que la página monte sus controles acá (vía portal)
+                                en lugar de agregar una segunda barra propia. */}
+                            <div id="app-topbar-actions" className="flex items-center gap-2" />
                             {auth?.isImpersonating && <ImpersonatingBadge />}
                             {auth?.user?.role !== 'master' && <NotificationBell />}
                         </div>

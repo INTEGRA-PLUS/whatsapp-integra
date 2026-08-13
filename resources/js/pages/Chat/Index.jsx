@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import axios from 'axios';
@@ -81,6 +82,16 @@ import { refreshNotifications, useConversationsRefresh } from '@/lib/notificatio
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+// El chat ya no tiene barra propia: sus controles viven en la barra superior
+// del layout para no gastar alto de pantalla.
+function TopBarActions({ children }) {
+    const [slot, setSlot] = useState(null);
+    useEffect(() => {
+        setSlot(document.getElementById('app-topbar-actions'));
+    }, []);
+    return slot ? createPortal(children, slot) : null;
+}
 
 // Filtro de conversaciones (estilo Chatwoot) ─────────────────────────────────
 const STATUS_OPTIONS = [
@@ -3553,81 +3564,68 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     </div>
                 </div>
             )}
-            <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
-                {/* Clean Header */}
-                <div className="bg-[#f0f2f5] dark:bg-[#202c33] border-b border-border/10 px-3 sm:px-4 py-2 flex justify-between items-center gap-2 z-20 shadow-sm">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <div className="size-9 sm:size-10 rounded-full bg-teal-600 flex items-center justify-center text-white shadow-sm shrink-0">
-                            <MessageSquare className="size-5" />
-                        </div>
-                        <div className="min-w-0">
-                            <h2 className="text-sm font-bold text-foreground truncate">Canales de WhatsApp Business</h2>
-                            <p className="hidden sm:block text-[10px] text-teal-600 dark:text-teal-400 font-black uppercase tracking-widest">Servicio Multi-agente</p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-                        <div className="flex items-center gap-2 bg-background/50 dark:bg-black/20 px-2 sm:px-3 py-1.5 rounded-lg border border-border/10">
-                            <span className="hidden sm:inline text-[11px] font-bold text-muted-foreground uppercase opacity-60">Instancia</span>
-                            <select
-                                value={selectedInstanceId}
-                                onChange={handleInstanceChange}
-                                className="bg-transparent text-xs font-black focus:outline-none cursor-pointer uppercase tracking-tight"
-                            >
-                                <option value="" className="bg-background">Elegir...</option>
-                                {instances.map(inst => (
-                                    <option key={inst.id} value={inst.id} className="bg-background">
-                                        {inst.name || 'SIN NOMBRE'}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <button className="p-2 rounded-lg transition-colors border border-border/10 flex items-center justify-center bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground">
-                                    <MoreHorizontal className="size-5" />
-                                </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
-                                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones de Chat</DropdownMenuLabel>
-                                <DropdownMenuSeparator className="bg-border/5" />
-
-                                <DropdownMenuItem
-                                    onClick={() => handleNewTag(null)}
-                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
-                                >
-                                    <div className="size-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
-                                        <PlusCircle className="size-4" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold leading-none mb-1">Nueva Etiqueta</span>
-                                        <span className="text-[9px] font-medium opacity-60 leading-none">Crear segmentación</span>
-                                    </div>
-                                </DropdownMenuItem>
-
-                                {hasActiveFilters && (
-                                    <>
-                                        <DropdownMenuSeparator className="bg-border/5" />
-                                        <DropdownMenuItem
-                                            className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
-                                            onClick={() => { resetFilters(); loadConversations(); }}
-                                        >
-                                            <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
-                                                <Filter className="size-4" />
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-xs font-bold leading-none mb-1">Limpiar Filtros</span>
-                                                <span className="text-[9px] font-medium text-muted-foreground leading-none">Restablecer vista</span>
-                                            </div>
-                                        </DropdownMenuItem>
-                                    </>
-                                )}
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
+            <TopBarActions>
+                <div className="flex items-center gap-1.5 rounded-lg border border-border/10 bg-background/50 dark:bg-black/20 px-2 h-8">
+                    <span className="hidden sm:inline text-[10px] font-bold text-muted-foreground uppercase opacity-60">Instancia</span>
+                    <select
+                        value={selectedInstanceId}
+                        onChange={handleInstanceChange}
+                        className="bg-transparent text-xs font-black focus:outline-none cursor-pointer uppercase tracking-tight max-w-[140px]"
+                    >
+                        <option value="" className="bg-background">Elegir...</option>
+                        {instances.map(inst => (
+                            <option key={inst.id} value={inst.id} className="bg-background">
+                                {inst.name || 'SIN NOMBRE'}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="size-8 rounded-lg transition-colors border border-border/10 flex items-center justify-center bg-background/50 dark:bg-black/20 text-muted-foreground hover:text-foreground">
+                            <MoreHorizontal className="size-4" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
+                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones de Chat</DropdownMenuLabel>
+                        <DropdownMenuSeparator className="bg-border/5" />
+
+                        <DropdownMenuItem
+                            onClick={() => handleNewTag(null)}
+                            className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
+                        >
+                            <div className="size-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                                <PlusCircle className="size-4" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold leading-none mb-1">Nueva Etiqueta</span>
+                                <span className="text-[9px] font-medium opacity-60 leading-none">Crear segmentación</span>
+                            </div>
+                        </DropdownMenuItem>
+
+                        {hasActiveFilters && (
+                            <>
+                                <DropdownMenuSeparator className="bg-border/5" />
+                                <DropdownMenuItem
+                                    className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
+                                    onClick={() => { resetFilters(); loadConversations(); }}
+                                >
+                                    <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
+                                        <Filter className="size-4" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold leading-none mb-1">Limpiar Filtros</span>
+                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">Restablecer vista</span>
+                                    </div>
+                                </DropdownMenuItem>
+                            </>
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </TopBarActions>
+
+            <div className="h-[calc(100vh-49px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {!selectedInstanceId ? (
                     <div className="flex-1 flex items-center justify-center">
                         <div className="text-center max-w-sm">
