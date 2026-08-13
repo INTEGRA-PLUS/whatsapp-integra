@@ -99,6 +99,17 @@ class ProcessAutoResponse implements ShouldQueue
             return;
         }
 
+        // Normalmente la ventana está abierta: el cliente acaba de escribir. Pero
+        // si Meta traía el webhook atascado y lo entrega días después, responder
+        // en texto libre sólo genera un fallido "Re-engagement" que nadie lee.
+        if (!$conversation->isWindowOpen()) {
+            Log::channel('whatsapp')->info('⏭️ Auto-respuesta omitida: ventana de 24h cerrada', [
+                'auto_response_id' => $rule->id,
+                'conversation_id' => $conversation->id,
+            ]);
+            return;
+        }
+
         $renderedMessage = $rule->renderMessage($conversation);
 
         $result = $metaService->sendMessage(

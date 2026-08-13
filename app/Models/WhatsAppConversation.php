@@ -279,9 +279,14 @@ class WhatsAppConversation extends Model
      */
     public function isWindowOpen(): bool
     {
+        // Meta cuenta desde que el cliente pulsó enviar (`sent_at`), no desde que
+        // nosotros guardamos el mensaje (`created_at`). Se parecen mientras todo
+        // fluye, pero cuando Meta reintenta un webhook durante días y luego suelta
+        // la cola de golpe, `created_at` es de hoy y `sent_at` de hace tres días:
+        // dábamos la ventana por abierta y el envío moría con "Re-engagement".
         return $this->messages()
             ->where('direction', 'inbound')
-            ->where('created_at', '>=', now()->subDay())
+            ->whereRaw('COALESCE(sent_at, created_at) >= ?', [now()->subDay()])
             ->exists();
     }
 

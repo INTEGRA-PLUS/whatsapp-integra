@@ -64,6 +64,16 @@ class ProcessOutOfHours implements ShouldQueue
             return true;
         }
 
+        // Igual que en las auto-respuestas: fuera de la ventana de 24h el texto
+        // libre sólo produce un fallido "Re-engagement" que nadie lee.
+        if (!$conversation->isWindowOpen()) {
+            Log::channel('whatsapp')->info('⏭️ Fuera de horario omitido: ventana de 24h cerrada', [
+                'business_hour_id' => $rule->id,
+                'conversation_id' => $conversation->id,
+            ]);
+            return true;
+        }
+
         $renderedMessage = $rule->renderMessage($conversation);
 
         $result = $metaService->sendMessage(

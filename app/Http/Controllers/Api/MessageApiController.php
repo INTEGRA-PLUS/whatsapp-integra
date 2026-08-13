@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
@@ -78,6 +79,34 @@ class MessageApiController extends Controller
             ]
         );
 
+        // Fuera de la ventana de 24h WhatsApp solo acepta plantillas aprobadas.
+        // Con texto libre Meta responde 200 y devuelve wamid, y sólo después
+        // avisa por webhook de que falló: quien llama se queda creyendo que el
+        // aviso salió y el cliente final nunca lo recibe.
+        $windowClosed = !$conversation->isWindowOpen();
+
+        if ($windowClosed && $this->windowGuardEnforced($instance)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'El destinatario no escribe desde hace más de 24 horas. '
+                    . 'WhatsApp no permite texto libre fuera de esa ventana: '
+                    . 'envía una plantilla aprobada con POST /api/v1/messages/template.',
+            ], 422);
+        }
+
+        if ($windowClosed) {
+            // Modo sombra: se deja pasar exactamente como hasta ahora para no
+            // llenar de errores al ERP de un día para otro. El envío casi con
+            // seguridad morirá con "Re-engagement", pero queda marcado para
+            // poder medir el volumen y comprobar que el guardarraíl no tiene
+            // falsos positivos antes de encenderlo.
+            Log::channel('whatsapp')->warning('🕓 Ventana de 24h cerrada: envío dejado pasar en modo sombra', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+            ]);
+        }
+
         $result = $this->metaService->sendMessage(
             $instance->phone_number_id,
             $to,
@@ -98,6 +127,10 @@ class MessageApiController extends Controller
                 'incoming_payment_id' => $request->incoming_payment_id,
                 'incoming_company_nit' => $request->incoming_company_nit,
                 'template_id' => $request->template_id,
+                // La marca hace que el informe sea una consulta a la BD y no un
+                // parseo de logs, y permite cruzarla con el estado final para
+                // saber si el guardarraíl habría acertado.
+                'metadata' => $windowClosed ? ['window_guard' => 'shadow_pass'] : null,
             ]);
 
             $conversation->update([
@@ -540,5 +573,24 @@ class MessageApiController extends Controller
             unset($value);
         }
         return $input;
+    }
+
+    /**
+     * ¿Se rechaza el texto libre fuera de la ventana, o sólo se marca?
+     *
+     * Arrancar rechazando a todas las empresas a la vez convierte meses de
+     * pérdidas silenciosas en cientos de errores diarios para el ERP de un día
+     * para otro. `enforce_companies` permite encenderlo de una en una, empezando
+     * por la que se pueda acompañar, sin tocar el modo global.
+     */
+    private function windowGuardEnforced(Instance $instance): bool
+    {
+        $guard = config('whatsapp.window_guard');
+
+        if (in_array((string) $instance->company_id, $guard['enforce_companies'] ?? [], true)) {
+            return true;
+        }
+
+        return ($guard['mode'] ?? 'shadow') === 'enforce';
     }
 }

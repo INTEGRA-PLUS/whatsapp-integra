@@ -54,6 +54,15 @@ class SendAutoResponseFollowUp implements ShouldQueue
             return;
         }
 
+        // El follow-up se programa a futuro, así que es el que más fácil cae
+        // fuera de la ventana de 24h.
+        if (!$conversation->isWindowOpen()) {
+            Log::channel('whatsapp')->info('⏭️ Follow-up cancelado: ventana de 24h cerrada', [
+                'conversation_id' => $this->conversationId,
+            ]);
+            return;
+        }
+
         $renderedMessage = $rule->renderMessage($conversation);
 
         $result = $metaService->sendMessage(
