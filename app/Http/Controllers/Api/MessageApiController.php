@@ -10,17 +10,32 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use App\Services\WhatsAppFallbackTemplateService;
 use Carbon\Carbon;
 
 class MessageApiController extends Controller
 {
     private $metaService;
 
-    public function __construct(MetaWhatsAppService $metaService)
-    {
+    public function __construct(
+        MetaWhatsAppService $metaService,
+        private WhatsAppFallbackTemplateService $fallbackTemplates
+    ) {
         $this->metaService = $metaService;
     }
 
+    /**
+     * Instancia dueña del token, o una respuesta de error.
+     *
+     * El índice único de `instances` es (company_id, phone_number_id), no
+     * phone_number_id a secas: dos empresas activas pueden reclamar el mismo
+     * número. Cuando pasa, este token no identifica a nadie —`first()` se
+     * quedaba con la de id más bajo, en silencio— y el aviso se atribuye a la
+     * empresa equivocada: se guarda en su hilo y, desde que existe la plantilla
+     * de respaldo, sale firmado con su nombre. El cliente de ABC leería un
+     * aviso de CBA. Una credencial ambigua no autentica: se rechaza y se avisa
+     * para que un administrador desduplique.
+     */
     private function validateInstance(Request $request)
     {
         $token = $request->header('X-Instance-Token');
@@ -29,14 +44,34 @@ class MessageApiController extends Controller
             return null;
         }
 
-        return Instance::where('phone_number_id', $token)
+        $candidates = Instance::where('phone_number_id', $token)
             ->where('active', true)
-            ->first();
+            ->orderBy('id')
+            ->get();
+
+        if ($candidates->count() > 1) {
+            Log::channel('whatsapp')->error('🚨 Token de API ambiguo: phone_number_id duplicado en varias empresas activas', [
+                'phone_number_id' => $token,
+                'instances' => $candidates->pluck('company_id', 'id'),
+            ]);
+
+            return response()->json([
+                'error' => 'Este phone_number_id está registrado como activo en más de una empresa, '
+                    . 'así que no identifica de forma única quién envía. Un administrador debe '
+                    . 'desactivar las instancias duplicadas antes de seguir enviando.',
+                'code' => 'ambiguous_instance',
+            ], 409);
+        }
+
+        return $candidates->first();
     }
 
     public function sendMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -108,15 +143,48 @@ class MessageApiController extends Controller
             return $this->sendTemplate($request);
         }
 
+        // Sin plantilla en la llamada, el respaldo lo pone la propia instancia:
+        // el texto del ERP se envuelve en la plantilla aprobada de esa empresa,
+        // que el servicio crea en su WABA la primera vez que hace falta. Es lo
+        // que evita tener que tocar el ERP aviso por aviso.
+        if ($windowClosed) {
+            try {
+                $fallback = $this->fallbackTemplates->prepare($instance, $messageContent, $conversation);
+            } catch (\Throwable $e) {
+                // El respaldo es una mejora sobre el camino de siempre, no un
+                // requisito suyo: si se cae, el envío sigue como sigue hoy.
+                Log::channel('whatsapp')->error('❌ Error resolviendo la plantilla de respaldo', [
+                    'company_id' => $instance->company_id,
+                    'conversation_id' => $conversation->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $fallback = ['ok' => false, 'status' => null, 'reason' => 'exception', 'name' => null];
+            }
+
+            if ($fallback['ok']) {
+                return $this->deliverFallbackTemplate($request, $instance, $conversation, $to, $messageContent, $fallback);
+            }
+
+            Log::channel('whatsapp')->warning('🕓 Ventana de 24h cerrada y sin plantilla de respaldo utilizable', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template' => $fallback['name'],
+                'template_status' => $fallback['status'],
+                'reason' => $fallback['reason'],
+            ]);
+        }
+
         if ($windowClosed && $this->windowGuardEnforced($instance)) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
+                'template_status' => $fallback['status'] ?? null,
                 'error' => 'El destinatario no escribe desde hace más de 24 horas. '
                     . 'WhatsApp no permite texto libre fuera de esa ventana. '
-                    . 'Añade "template_name" (y sus "components") a esta misma llamada '
-                    . 'para que el aviso salga como plantilla, o usa '
-                    . 'POST /api/v1/messages/template.',
+                    . $this->fallbackHint($fallback ?? null)
+                    . ' También puedes añadir "template_name" (y sus "components") a esta '
+                    . 'misma llamada, o usar POST /api/v1/messages/template.',
             ], 422);
         }
 
@@ -129,6 +197,7 @@ class MessageApiController extends Controller
             Log::channel('whatsapp')->warning('🕓 Ventana de 24h cerrada: envío dejado pasar en modo sombra', [
                 'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
+                'template_status' => $fallback['status'] ?? null,
             ]);
         }
 
@@ -154,8 +223,13 @@ class MessageApiController extends Controller
                 'template_id' => $request->template_id,
                 // La marca hace que el informe sea una consulta a la BD y no un
                 // parseo de logs, y permite cruzarla con el estado final para
-                // saber si el guardarraíl habría acertado.
-                'metadata' => $windowClosed ? ['window_guard' => 'shadow_pass'] : null,
+                // saber si el guardarraíl habría acertado. El estado de la
+                // plantilla explica por qué el respaldo no pudo rescatarlo.
+                'metadata' => $windowClosed ? [
+                    'window_guard' => 'shadow_pass',
+                    'fallback_status' => $fallback['status'] ?? null,
+                    'fallback_reason' => $fallback['reason'] ?? null,
+                ] : null,
             ]);
 
             $conversation->update([
@@ -179,6 +253,9 @@ class MessageApiController extends Controller
     public function sendTemplate(Request $request)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -347,6 +424,9 @@ class MessageApiController extends Controller
     public function registerMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -470,6 +550,9 @@ class MessageApiController extends Controller
     public function getConversations(Request $request)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -501,6 +584,9 @@ class MessageApiController extends Controller
     public function getMessages(Request $request, $conversationId)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -534,6 +620,9 @@ class MessageApiController extends Controller
     public function getWhatsAppMessages(Request $request)
     {
         $instance = $this->validateInstance($request);
+        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+            return $instance;
+        }
         if (!$instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
@@ -604,6 +693,117 @@ class MessageApiController extends Controller
             unset($value);
         }
         return $input;
+    }
+
+    /**
+     * Envía el aviso como la plantilla de respaldo de la instancia y lo guarda
+     * en el hilo.
+     *
+     * Lo que se guarda como contenido es el cuerpo ya renderizado —lo que el
+     * cliente vio de verdad—, no el texto suelto del ERP: si el agente lee en el
+     * chat algo distinto de lo que llegó al teléfono, la conversación siguiente
+     * arranca torcida. El texto original queda en la metadata.
+     */
+    private function deliverFallbackTemplate(
+        Request $request,
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        string $to,
+        string $originalText,
+        array $fallback
+    ) {
+        Log::channel('whatsapp')->info('🔁 Ventana de 24h cerrada: el aviso sale como plantilla de respaldo', [
+            'company_id' => $instance->company_id,
+            'conversation_id' => $conversation->id,
+            'template' => $fallback['name'],
+            'language' => $fallback['language'],
+        ]);
+
+        $result = $this->metaService->sendTemplate(
+            $instance->phone_number_id,
+            $to,
+            $fallback['name'],
+            $fallback['language'],
+            $fallback['components']
+        );
+
+        if (!($result['success'] ?? false)) {
+            Log::channel('whatsapp')->error('❌ Falló el envío de la plantilla de respaldo', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template' => $fallback['name'],
+                'error' => $result['error'] ?? null,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'code' => 'fallback_template_failed',
+                'error' => $result['error']['error']['message'] ?? 'Error al enviar la plantilla de respaldo a Meta',
+            ], 500);
+        }
+
+        $content = $fallback['preview'] ?? $originalText;
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'wamid' => $result['data']['messages'][0]['id'],
+            // Sin encabezado multimedia no hay nada que adjuntar: la burbuja de
+            // plantilla dejaría el aviso detrás de una tarjeta vacía.
+            'type' => 'text',
+            'content' => $content,
+            'direction' => 'outbound',
+            'status' => 'sent',
+            'sent_at' => now(),
+            'incoming_invoice_id' => $request->incoming_invoice_id,
+            'incoming_contract_id' => $request->incoming_contract_id,
+            'incoming_payment_id' => $request->incoming_payment_id,
+            'incoming_company_nit' => $request->incoming_company_nit,
+            'template_id' => $request->template_id,
+            'metadata' => [
+                'window_guard' => 'fallback_template',
+                'template' => $fallback['name'],
+                'language' => $fallback['language'],
+                'components' => $fallback['components'],
+                'original_text' => $originalText,
+            ],
+        ]);
+
+        $conversation->update([
+            'last_message' => $content,
+            'last_message_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message_id' => $message->id,
+            'wamid' => $message->wamid,
+            // El ERP no tiene que enterarse para funcionar, pero saber que su
+            // aviso viajó como plantilla le permite contabilizar el coste y
+            // detectar a los clientes que nunca contestan.
+            'sent_as' => 'template',
+            'template_name' => $fallback['name'],
+        ]);
+    }
+
+    /**
+     * Por qué el respaldo automático no pudo rescatar este aviso, en una frase
+     * que le sirva a quien lea la respuesta de la API.
+     */
+    private function fallbackHint(?array $fallback): string
+    {
+        return match ($fallback['status'] ?? null) {
+            WhatsAppFallbackTemplateService::STATUS_PENDING =>
+                'La plantilla de respaldo de esta línea ya está creada y espera aprobación de Meta; '
+                . 'en cuanto se apruebe, estos avisos saldrán solos como plantilla.',
+            WhatsAppFallbackTemplateService::STATUS_REJECTED =>
+                'Meta rechazó la plantilla de respaldo de esta línea: revísala en Ajustes > WhatsApp.',
+            WhatsAppFallbackTemplateService::STATUS_DISABLED =>
+                'El respaldo automático está desactivado para esta línea.',
+            WhatsAppFallbackTemplateService::STATUS_UNAVAILABLE =>
+                'No se pudo comprobar la plantilla de respaldo con Meta.',
+            default =>
+                'Esta línea todavía no tiene una plantilla de respaldo aprobada.',
+        };
     }
 
     /**

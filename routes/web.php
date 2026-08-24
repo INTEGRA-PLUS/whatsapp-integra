@@ -337,6 +337,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'resumeTemplateSettings']);
         Route::post('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateResumeTemplate'])
             ->middleware('permission:instances.update');
+
+        // Plantilla de respaldo de los avisos automáticos fuera de la ventana de 24h
+        Route::get('/fallback-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'fallbackTemplateSettings']);
+        Route::post('/fallback-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateFallbackTemplate'])
+            ->middleware('permission:instances.update');
+        Route::post('/fallback-template/provision', [App\Http\Controllers\WhatsAppSettingsController::class, 'provisionFallbackTemplate'])
+            ->middleware('permission:instances.update');
     });
 
     // API routes for Chat (moved from api.php to share session)

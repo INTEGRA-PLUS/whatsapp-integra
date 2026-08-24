@@ -44,10 +44,27 @@ class WindowGuardReport extends Command
             $this->line('  Empresas ya en enforce: ' . implode(', ', $forzadas));
         }
 
+        // Los rescatados por la plantilla de respaldo ya no se cuentan como
+        // pérdidas: salieron, y salieron entregados. Verlos aparte es lo que
+        // dice si el respaldo está haciendo su trabajo.
+        $rescatados = WhatsAppMessage::whereRaw("JSON_EXTRACT(whatsapp_messages.metadata, '$.window_guard') = 'fallback_template'")
+            ->where('whatsapp_messages.created_at', '>=', $desde);
+
+        $totalRescatados = (clone $rescatados)->count();
+
+        if ($totalRescatados > 0) {
+            $fallidosRescatados = (clone $rescatados)->where('whatsapp_messages.status', 'failed')->count();
+
+            $this->line("  Rescatados como plantilla:  <options=bold>{$totalRescatados}</>"
+                . ($fallidosRescatados > 0 ? " (fallaron {$fallidosRescatados})" : ''));
+        }
+
         $this->newLine();
 
         if ($total === 0) {
-            $this->info('Ningún envío fuera de ventana en el periodo. Nada que rechazaría.');
+            $this->info($totalRescatados > 0
+                ? 'Ningún envío fuera de ventana quedó sin respaldo: la plantilla los cubrió todos.'
+                : 'Ningún envío fuera de ventana en el periodo. Nada que rechazaría.');
             return self::SUCCESS;
         }
 

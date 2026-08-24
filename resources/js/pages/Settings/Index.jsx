@@ -12,7 +12,7 @@ import {
     Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
     Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
     Camera, ListChecks, CalendarClock, Plus, Trash2, Pencil,
-    PhoneCall, MessageCircle,
+    PhoneCall, MessageCircle, ShieldAlert,
 } from 'lucide-react';
 
 const TABS = [
@@ -580,6 +580,7 @@ const WA_SUBTABS = [
     { id: 'numbers',   label: 'Números',                 Icon: PhoneIcon },
     { id: 'calling',   label: 'Llamadas',                Icon: PhoneCall },
     { id: 'resume',    label: 'Reinicio de conversación', Icon: RefreshCw },
+    { id: 'fallback',  label: 'Avisos fuera de ventana',  Icon: ShieldAlert },
 ];
 
 function TabWhatsApp() {
@@ -705,6 +706,7 @@ function TabWhatsApp() {
             {subTab === 'numbers' && <PhoneNumbersPanel instanceId={instanceId} />}
             {subTab === 'calling' && <CallingSettingsPanel instanceId={instanceId} showToast={showToast} />}
             {subTab === 'resume' && <ResumeTemplatePanel instanceId={instanceId} showToast={showToast} />}
+            {subTab === 'fallback' && <FallbackTemplatePanel instanceId={instanceId} showToast={showToast} />}
             {subTab !== 'readiness' ? null : (
             <>
             <div className="flex items-center gap-2">
@@ -1664,6 +1666,263 @@ function ResumeTemplatePanel({ instanceId, showToast }) {
                     </Button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// Qué puede rellenar el sistema en cada hueco de la plantilla de respaldo. Los
+// valores son los tokens que entiende WhatsAppFallbackTemplateService.
+const FALLBACK_TOKENS = [
+    { value: 'message',       label: 'Texto del aviso' },
+    { value: 'business_name', label: 'Nombre del negocio' },
+    { value: 'customer_name', label: 'Nombre del cliente' },
+    { value: 'date',          label: 'Fecha de hoy' },
+];
+
+const FALLBACK_STATUS = {
+    APPROVED:    { label: 'Aprobada',   tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30' },
+    PENDING:     { label: 'En revisión', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-amber-500/30' },
+    REJECTED:    { label: 'Rechazada',  tone: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30' },
+    MISSING:     { label: 'Sin crear',  tone: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30' },
+    UNAVAILABLE: { label: 'Sin verificar', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30' },
+    DISABLED:    { label: 'Desactivado', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30' },
+};
+
+// Huecos {{n}} del cuerpo, ordenados como los espera la Cloud API.
+function templateSlots(body) {
+    const found = [...String(body ?? '').matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)].map(m => m[1]);
+    const unique = [...new Set(found)];
+    return unique.every(s => /^\d+$/.test(s)) ? unique.sort((a, b) => Number(a) - Number(b)) : unique;
+}
+
+/**
+ * Plantilla con la que salen los avisos automáticos cuando el cliente lleva más
+ * de 24h sin escribir. Sin ella esos avisos se pierden en silencio: Meta acepta
+ * el texto libre con un 200 y sólo después informa por webhook de que falló.
+ */
+function FallbackTemplatePanel({ instanceId, showToast }) {
+    const [state, setState] = useState(null);
+    const [templates, setTemplates] = useState([]);
+    const [catalog, setCatalog] = useState(null);
+    const [selectedKey, setSelectedKey] = useState('');
+    const [variables, setVariables] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => { if (instanceId) load(); }, [instanceId]);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const { data } = await axios.get('/api/settings/whatsapp/fallback-template', { params: { instance_id: instanceId } });
+            apply(data);
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo cargar la configuración.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function apply(data) {
+        setState(data.current ?? null);
+        setTemplates(data.templates ?? []);
+        setCatalog(data.catalog ?? null);
+
+        const isCustom = (data.current?.source ?? 'catalog') === 'custom';
+        setSelectedKey(isCustom ? `${data.current.name}|${data.current.language}` : '');
+        setVariables(data.current?.variables ?? []);
+    }
+
+    async function post(url, payload) {
+        setBusy(true);
+        try {
+            const { data } = await axios.post(url, { instance_id: instanceId, ...payload });
+            // La respuesta trae el estado ya refrescado contra Meta, pero no la
+            // lista de plantillas: se recarga todo para no dejar la pantalla a medias.
+            await load();
+            return data;
+        } catch (err) {
+            showToast?.(err?.response?.data?.message ?? 'No se pudo guardar la configuración.', 'error');
+            return null;
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function provision() {
+        const data = await post('/api/settings/whatsapp/fallback-template/provision', {});
+        if (!data) return;
+
+        const status = data.current?.status;
+        showToast?.(status === 'APPROVED'
+            ? 'La plantilla de respaldo está aprobada y lista.'
+            : status === 'PENDING'
+                ? 'Plantilla enviada a Meta. Queda en revisión; suele aprobarse en minutos.'
+                : 'Meta no pudo confirmar la plantilla. Revisa el detalle.');
+    }
+
+    async function save() {
+        const custom = selectedKey ? selectedKey.split('|') : null;
+        const data = await post('/api/settings/whatsapp/fallback-template', custom
+            ? { name: custom[0], language: custom[1], variables }
+            : { name: null });
+        if (data) showToast?.('Plantilla de respaldo actualizada.');
+    }
+
+    async function toggleDisabled(disabled) {
+        // `disabled: false` y no `name: null`: al reactivar hay que conservar la
+        // plantilla propia que la empresa hubiera elegido, no volver al catálogo.
+        const data = await post('/api/settings/whatsapp/fallback-template', { disabled });
+        if (data) showToast?.(disabled ? 'Respaldo automático desactivado.' : 'Respaldo automático activado.');
+    }
+
+    if (!instanceId) return <p className="text-sm text-muted-foreground">Selecciona una instancia.</p>;
+    if (loading && !state) return <p className="text-sm text-muted-foreground">Cargando…</p>;
+
+    const selected = templates.find(t => templateKey(t) === selectedKey);
+    const selectedBody = selected?.components?.find(c => c.type === 'BODY')?.text;
+    const slots = templateSlots(selectedBody);
+    const catalogBody = catalog?.entry?.components?.find(c => c.type === 'BODY')?.text;
+    const disabled = !!state?.disabled;
+    const status = FALLBACK_STATUS[state?.status] ?? FALLBACK_STATUS.UNAVAILABLE;
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Cuando un cliente lleva más de 24 horas sin escribir, WhatsApp ya no acepta mensajes de texto: sólo
+                plantillas aprobadas. Los avisos automáticos que llegan por la API (facturas, pagos, recordatorios) se
+                envían con esta plantilla en lugar de perderse. Si esta línea todavía no la tiene, se crea sola en Meta
+                la primera vez que hace falta.
+            </p>
+
+            <div className="rounded-2xl border border-border/60 bg-card/50 p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold text-foreground truncate">
+                                {state?.name ?? catalog?.key}
+                            </span>
+                            {state?.language && (
+                                <span className="text-xs text-muted-foreground">{state.language}</span>
+                            )}
+                            <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${status.tone}`}>
+                                {status.label}
+                            </span>
+                        </div>
+                        {state?.last_error && (
+                            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1.5 break-words">{state.last_error}</p>
+                        )}
+                        {state?.status === 'PENDING' && (
+                            <p className="text-[11px] text-muted-foreground mt-1.5">
+                                Mientras Meta la revisa, los avisos fuera de la ventana siguen sin poder entregarse.
+                            </p>
+                        )}
+                    </div>
+
+                    <Button onClick={provision} disabled={busy || disabled} variant="outline" size="sm" className="gap-2 shrink-0">
+                        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                        Crear / revisar en Meta
+                    </Button>
+                </div>
+
+                {(state?.body || catalogBody) && !disabled && (
+                    <div className="rounded-xl bg-[#dcf8c6] dark:bg-[#005c4b] px-3 py-2 text-[13px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                        {state?.body || catalogBody}
+                    </div>
+                )}
+
+                <div className="flex items-center justify-between gap-4 pt-1">
+                    <div>
+                        <p className="text-xs font-semibold text-foreground">Respaldo automático</p>
+                        <p className="text-[11px] text-muted-foreground">
+                            Desactivarlo hace que los avisos fuera de la ventana vuelvan a perderse.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!disabled}
+                        disabled={busy}
+                        onClick={() => toggleDisabled(!disabled)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${!disabled ? 'bg-teal-500' : 'bg-muted'}`}
+                    >
+                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${!disabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                </div>
+            </div>
+
+            {!disabled && (
+                <div className="rounded-2xl border border-border/60 bg-card/50 p-5 space-y-4">
+                    <div>
+                        <label className="text-xs font-semibold text-foreground mb-1.5 block">Usar otra plantilla</label>
+                        <select
+                            value={selectedKey}
+                            onChange={e => { setSelectedKey(e.target.value); setVariables([]); }}
+                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                        >
+                            <option value="">Plantilla por defecto de Integra CRM</option>
+                            {templates.map(t => (
+                                <option key={templateKey(t)} value={templateKey(t)}>{t.name} — {t.language}</option>
+                            ))}
+                        </select>
+                        <p className="text-[11px] text-muted-foreground mt-1.5">
+                            Debe estar aprobada y ser de categoría UTILITY: Meta bloquea las de marketing para clientes
+                            que no han escrito.
+                        </p>
+                    </div>
+
+                    {selectedBody && (
+                        <>
+                            <div className="rounded-xl bg-[#dcf8c6] dark:bg-[#005c4b] px-3 py-2 text-[13px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                                {selectedBody}
+                            </div>
+
+                            {/* Sin decir qué va en cada hueco, Meta rechaza el envío
+                                con "number of parameters mismatch" y el aviso se pierde igual. */}
+                            <div className="space-y-2">
+                                <p className="text-xs font-semibold text-foreground">Qué va en cada dato variable</p>
+                                {slots.map((slot, i) => (
+                                    <div key={slot} className="flex items-center gap-3">
+                                        <span className="text-xs font-mono text-muted-foreground w-14 shrink-0">{`{{${slot}}}`}</span>
+                                        <select
+                                            value={variables[i] ?? ''}
+                                            onChange={e => {
+                                                const next = [...variables];
+                                                next[i] = e.target.value;
+                                                setVariables(next);
+                                            }}
+                                            className="flex-1 rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                        >
+                                            <option value="">Elegir…</option>
+                                            {FALLBACK_TOKENS.map(t => (
+                                                <option key={t.value} value={t.value}>{t.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ))}
+                                {!variables.includes('message') && slots.length > 0 && (
+                                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                        Uno de los huecos debe ser «Texto del aviso»; si no, el aviso del sistema no
+                                        llegaría a ninguna parte.
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    <div className="flex justify-end">
+                        <Button
+                            onClick={save}
+                            disabled={busy || (!!selectedBody && (variables.filter(Boolean).length !== slots.length || !variables.includes('message')))}
+                            size="sm"
+                            className="gap-2"
+                        >
+                            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                            Guardar
+                        </Button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

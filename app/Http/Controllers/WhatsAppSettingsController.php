@@ -4,11 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Instance;
 use App\Services\MetaWhatsAppService;
+use App\Services\WhatsAppFallbackTemplateService;
 use Illuminate\Http\Request;
 
 class WhatsAppSettingsController extends Controller
 {
-    public function __construct(protected MetaWhatsAppService $meta) {}
+    public function __construct(
+        protected MetaWhatsAppService $meta,
+        protected WhatsAppFallbackTemplateService $fallbackTemplates
+    ) {}
 
     public function instances()
     {
@@ -513,6 +517,138 @@ class WhatsAppSettingsController extends Controller
                 'name' => $instance->resumeTemplateName(),
                 'language' => $instance->resumeTemplateLanguage(),
             ] : null,
+        ]);
+    }
+
+    /**
+     * Plantilla de respaldo de los avisos automáticos fuera de la ventana de
+     * 24h: estado en Meta, catálogo de plantillas aprobadas por si la empresa
+     * prefiere una suya, y el texto de la que trae Integra CRM por defecto.
+     */
+    public function fallbackTemplateSettings(Request $request)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        // Sin `force`: esta pantalla no debe crear nada en Meta por el simple
+        // hecho de abrirla si el estado guardado todavía sirve.
+        $state = $this->fallbackTemplates->ensure($instance);
+
+        $approved = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+            'status' => 'APPROVED',
+            'limit' => 200,
+        ]);
+
+        $catalogKey = WhatsAppFallbackTemplateService::CATALOG_KEY;
+
+        return response()->json([
+            'success' => true,
+            'current' => [
+                'name' => $state['name'] ?? $catalogKey,
+                'language' => $state['language'] ?? null,
+                'source' => $state['source'] ?? 'catalog',
+                'status' => $state['status'] ?? null,
+                'body' => $state['body'] ?? null,
+                'variables' => $state['variables'] ?? null,
+                'disabled' => (bool) ($state['disabled'] ?? false),
+                'last_error' => $state['last_error'] ?? null,
+                'checked_at' => $state['checked_at'] ?? null,
+            ],
+            'catalog' => [
+                'key' => $catalogKey,
+                'entry' => config("whatsapp_default_templates.{$catalogKey}"),
+            ],
+            'templates' => ($approved['success'] ?? false) ? ($approved['data']['data'] ?? []) : [],
+        ]);
+    }
+
+    /**
+     * Cambia la plantilla de respaldo de la instancia, o apaga el respaldo.
+     *
+     * `variables` es el contrato de relleno cuando la empresa usa una plantilla
+     * propia: qué va en cada hueco. Sin él sólo se sabría rellenar la del
+     * catálogo, y elegir una plantilla propia acabaría en un 132000 de Meta.
+     */
+    public function updateFallbackTemplate(Request $request)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'name' => 'nullable|string|max:512',
+            'language' => 'nullable|string|max:10',
+            'disabled' => 'nullable|boolean',
+            'variables' => 'nullable|array',
+            'variables.*' => 'string|max:200',
+        ]);
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        if (!empty($data['disabled'])) {
+            $instance->mergeFallbackTemplate(['disabled' => true]);
+            $instance->save();
+
+            return response()->json([
+                'success' => true,
+                'current' => ['disabled' => true, 'status' => WhatsAppFallbackTemplateService::STATUS_DISABLED],
+            ]);
+        }
+
+        // Volver a encenderlo sin tocar nada más: si esto cayera en la rama de
+        // abajo, la empresa perdería la plantilla propia que había elegido.
+        if ($request->has('disabled') && !$request->filled('name')) {
+            $instance->mergeFallbackTemplate(['disabled' => false]);
+            $instance->save();
+
+            return response()->json([
+                'success' => true,
+                'current' => $this->fallbackTemplates->ensure($instance, true),
+            ]);
+        }
+
+        $name = trim((string) ($data['name'] ?? ''));
+
+        if ($name === '') {
+            // Volver al catálogo: se borra todo, incluido el estado cacheado, y
+            // la siguiente consulta parte de cero.
+            $instance->clearFallbackTemplate();
+        } else {
+            // El estado guardado es de la plantilla anterior: dejarlo haría que
+            // una plantilla recién elegida se diera por aprobada sin preguntar.
+            $instance->clearFallbackTemplate();
+            $instance->mergeFallbackTemplate([
+                'name' => $name,
+                'language' => $data['language'] ?? 'es',
+                'variables' => $data['variables'] ?? null,
+                'disabled' => false,
+            ]);
+        }
+
+        $instance->save();
+
+        return response()->json([
+            'success' => true,
+            'current' => $this->fallbackTemplates->ensure($instance, true),
+        ]);
+    }
+
+    /**
+     * Crea ya la plantilla de respaldo en el WABA de la empresa (o refresca su
+     * estado), sin esperar a que un aviso se tope con la ventana cerrada.
+     */
+    public function provisionFallbackTemplate(Request $request)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        return response()->json([
+            'success' => true,
+            'current' => $this->fallbackTemplates->ensure($instance, true),
         ]);
     }
 
