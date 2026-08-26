@@ -16,8 +16,13 @@ return new class extends Migration
             $table->unsignedBigInteger('company_id')->nullable()->change();
         });
 
-        // Update enum definition to include 'master'
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('master', 'admin', 'agent', 'user') DEFAULT 'user'");
+        // Update enum definition to include 'master'.
+        // MODIFY COLUMN y ENUM son de MySQL; en sqlite (el driver de las pruebas)
+        // la sentencia revienta y tumba todas las migraciones. sqlite guarda role
+        // como texto libre, así que allí no hay nada que ajustar.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('master', 'admin', 'agent', 'user') DEFAULT 'user'");
+        }
     }
 
     /**
@@ -27,7 +32,10 @@ return new class extends Migration
     {
         // Revert enum
         DB::statement("UPDATE users SET role = 'admin' WHERE role = 'master'");
-        DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('admin', 'agent', 'user') DEFAULT 'user'");
+
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('admin', 'agent', 'user') DEFAULT 'user'");
+        }
 
         Schema::table('users', function (Blueprint $table) {
             $table->unsignedBigInteger('company_id')->nullable(false)->change();

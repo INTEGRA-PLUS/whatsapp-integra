@@ -13,7 +13,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE whatsapp_messages MODIFY type VARCHAR(32) NOT NULL DEFAULT 'text'");
+        // En sqlite la columna ya es texto libre: sólo MySQL necesita el ALTER.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE whatsapp_messages MODIFY type VARCHAR(32) NOT NULL DEFAULT 'text'");
+        }
 
         // Repara mensajes de ubicación/contacto ya guardados con type vacío:
         // el metadata sí se almacenó, así que se puede restaurar el tipo real.
@@ -30,6 +33,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         DB::statement("ALTER TABLE whatsapp_messages MODIFY type ENUM('text','image','document','audio','video','sticker','location','contacts','template') NOT NULL");
     }
 };

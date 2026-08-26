@@ -77,7 +77,7 @@ class InboundBsuidWebhookTest extends TestCase
     {
         $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->payload())->assertOk();
+        $this->postSignedWebhook($this->payload())->assertOk();
 
         $message = WhatsAppMessage::latest('id')->first();
 
@@ -90,7 +90,7 @@ class InboundBsuidWebhookTest extends TestCase
     {
         $instance = $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->payload())->assertOk();
+        $this->postSignedWebhook($this->payload())->assertOk();
 
         $conversation = WhatsAppConversation::firstWhere('instance_id', $instance->id);
 
@@ -104,8 +104,8 @@ class InboundBsuidWebhookTest extends TestCase
     {
         $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->payload())->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->payload([
+        $this->postSignedWebhook($this->payload())->assertOk();
+        $this->postSignedWebhook($this->payload([
             'text' => ['body' => '¿Alguien me responde?'],
         ]))->assertOk();
 
@@ -117,7 +117,7 @@ class InboundBsuidWebhookTest extends TestCase
     {
         $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->payload())->assertOk();
+        $this->postSignedWebhook($this->payload())->assertOk();
 
         // La agenda se indexa por número y se sincroniza con Integra: un BSUID
         // ahí sería una ficha basura que no casa con ningún abonado.
@@ -133,7 +133,7 @@ class InboundBsuidWebhookTest extends TestCase
             ['wa_id' => '573007852081', 'user_id' => null]
         );
 
-        $this->postJson('/webhooks/whatsapp', $payload)->assertOk();
+        $this->postSignedWebhook($payload)->assertOk();
 
         $conversation = WhatsAppConversation::firstWhere('instance_id', $instance->id);
 
@@ -150,7 +150,7 @@ class InboundBsuidWebhookTest extends TestCase
 
         // 200, no 500: reintentar no lo arregla y el bucle de reintentos es
         // justo lo que hacía perder los mensajes buenos del mismo lote.
-        $this->postJson('/webhooks/whatsapp', $payload)->assertOk();
+        $this->postSignedWebhook($payload)->assertOk();
 
         $this->assertSame(0, WhatsAppMessage::count());
     }

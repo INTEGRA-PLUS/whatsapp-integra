@@ -659,14 +659,13 @@ class WhatsAppSettingsController extends Controller
      */
     protected function ensureCallsWebhookSubscribed(Instance $instance): array
     {
-        $appSecret = config('services.meta.app_secret');
         $verifyToken = config('services.meta.webhook_verify_token');
 
-        if (!$appSecret || !$verifyToken) {
+        if (!$verifyToken) {
             return [
                 'success' => false,
                 'status' => 422,
-                'message' => 'Para habilitar llamadas hace falta configurar META_APP_SECRET y META_WEBHOOK_VERIFY_TOKEN en el servidor (se usan para suscribir el webhook "calls" en la app de Meta).',
+                'message' => 'Para habilitar llamadas hace falta configurar META_WEBHOOK_VERIFY_TOKEN en el servidor (se usa para suscribir el webhook "calls" en la app de Meta).',
             ];
         }
 
@@ -680,11 +679,25 @@ class WhatsAppSettingsController extends Controller
         }
         $appId = $debug['data']['app_id'];
 
+        // El secreto se resuelve DESPUÉS de saber a qué app pertenece el token:
+        // hay varias apps en juego y el par app_id|app_secret sólo funciona si
+        // ambos son de la misma. Antes se tomaba un META_APP_SECRET único y las
+        // instancias de la otra app fallaban aquí sin explicación útil.
+        $appSecret = $this->meta->appSecretForAppId($appId);
+
+        if (!$appSecret) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => "No hay app secret configurado para la app {$appId}. Agrégalo a META_APP_SECRETS en el servidor con el formato \"{$appId}:<secreto>\".",
+            ];
+        }
+
         $subs = $this->meta->getAppSubscriptions($appId, $appSecret);
         if (!($subs['success'] ?? false)) {
             return [
                 'success' => false,
-                'message' => 'No se pudo consultar la suscripción de webhooks de la app en Meta. Verifica que META_APP_SECRET corresponda a la app del token.',
+                'message' => "No se pudo consultar la suscripción de webhooks de la app {$appId} en Meta. Verifica que su app secret en META_APP_SECRETS sea correcto.",
                 'error' => $subs['error'] ?? null,
             ];
         }

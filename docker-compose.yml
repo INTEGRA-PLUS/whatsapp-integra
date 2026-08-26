@@ -66,6 +66,10 @@ x-app-env: &app-env
   ACCESS_TOKEN_META: ${ACCESS_TOKEN_META:-}
   META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
   META_APP_SECRET: ${META_APP_SECRET:-}
+  # Lista de app secrets (app_id:secreto, separados por coma). Si falta esta
+  # línea la variable no llega al contenedor y el webhook rechaza TODO con 403,
+  # por muy bien puesta que esté en el .env del host.
+  META_APP_SECRETS: ${META_APP_SECRETS:-}
   META_API_VERSION: ${META_API_VERSION:-v21.0}
   META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 

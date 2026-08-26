@@ -1036,16 +1036,125 @@ class MetaWhatsAppService
         }
     }
 
-    public function validateWebhookSignature(string $payload, string $signature): bool
+    /**
+     * Lee META_APP_SECRETS y lo separa en la lista de secretos y el mapa por app.
+     *
+     * Cada entrada puede venir como "secreto" suelto o como "app_id:secreto".
+     * La forma con app_id es la que permite saber cuál secreto corresponde a la
+     * app de una instancia concreta (necesario para armar el app access token
+     * "app_id|app_secret"); la suelta sólo sirve para validar firmas entrantes.
+     *
+     * @return array{secrets: list<string>, by_app_id: array<string, string>}
+     */
+    private function parseConfiguredAppSecrets(): array
     {
-        $appSecret = config('services.meta.app_secret');
-        
-        if (empty($appSecret)) {
-            return true;
+        $configured = config('services.meta.webhook_app_secrets');
+
+        if (!is_string($configured) || trim($configured) === '') {
+            return ['secrets' => [], 'by_app_id' => []];
         }
 
-        $expectedSignature = 'sha256=' . hash_hmac('sha256', $payload, $appSecret);
-        
-        return hash_equals($expectedSignature, $signature);
+        $secrets = [];
+        $byAppId = [];
+
+        foreach (explode(',', $configured) as $entry) {
+            $entry = trim($entry);
+
+            if ($entry === '') {
+                continue;
+            }
+
+            if (str_contains($entry, ':')) {
+                [$appId, $secret] = explode(':', $entry, 2);
+                $appId = trim($appId);
+                $secret = trim($secret);
+
+                if ($appId === '' || $secret === '') {
+                    continue;
+                }
+
+                $byAppId[$appId] = $secret;
+                $secrets[] = $secret;
+
+                continue;
+            }
+
+            $secrets[] = $entry;
+        }
+
+        return ['secrets' => array_values(array_unique($secrets)), 'by_app_id' => $byAppId];
+    }
+
+    /**
+     * Secretos de app aceptados al validar la firma de los webhooks entrantes.
+     *
+     * @return list<string>
+     */
+    private function webhookAppSecrets(): array
+    {
+        return $this->parseConfiguredAppSecrets()['secrets'];
+    }
+
+    /**
+     * Secreto de la app indicada, para armar el app access token "app_id|app_secret".
+     *
+     * Con varias apps entregando al mismo sitio, usar un META_APP_SECRET único
+     * hacía que las llamadas a nivel de app fallaran para las instancias de la
+     * otra app: el par app_id|app_secret no cuadraba y Meta devolvía error.
+     */
+    public function appSecretForAppId(?string $appId): ?string
+    {
+        $parsed = $this->parseConfiguredAppSecrets();
+
+        if ($appId !== null && isset($parsed['by_app_id'][$appId])) {
+            return $parsed['by_app_id'][$appId];
+        }
+
+        // Compatibilidad con la configuración de una sola app.
+        $single = config('services.meta.app_secret');
+
+        if (is_string($single) && trim($single) !== '') {
+            return trim($single);
+        }
+
+        // Última opción: si sólo hay un secreto configurado, es el que toca.
+        return count($parsed['secrets']) === 1 ? $parsed['secrets'][0] : null;
+    }
+
+    /**
+     * Valida la cabecera X-Hub-Signature-256 contra el cuerpo crudo de la petición.
+     *
+     * No hay camino permisivo: sin secretos configurados no se puede probar que el
+     * payload venga de Meta, así que se rechaza. El endpoint es público y, como
+     * Tech Provider, recibe eventos de WABAs de terceros; aceptar payloads sin
+     * firmar dejaría que cualquiera inyecte mensajes en las conversaciones.
+     *
+     * Se prueba contra todos los secretos configurados porque varias apps de Meta
+     * entregan al mismo callback y cada una firma con el suyo. Aceptar cualquiera
+     * de ellos es el comportamiento correcto: todos son secretos nuestros.
+     */
+    public function validateWebhookSignature(string $payload, ?string $signature): bool
+    {
+        $secrets = $this->webhookAppSecrets();
+
+        if ($secrets === []) {
+            Log::channel('whatsapp')->error('❌ Sin META_APP_SECRETS/META_APP_SECRET configurado: no se puede validar la firma del webhook');
+            return false;
+        }
+
+        if (empty($signature) || !str_starts_with($signature, 'sha256=')) {
+            return false;
+        }
+
+        $valid = false;
+
+        foreach ($secrets as $secret) {
+            // Sin cortes tempranos: se recorren todos los secretos siempre para
+            // no filtrar por tiempo de respuesta cuál de ellos fue el que casó.
+            $expectedSignature = 'sha256=' . hash_hmac('sha256', $payload, $secret);
+            $valid = hash_equals($expectedSignature, $signature) || $valid;
+        }
+
+        return $valid;
     }
 }

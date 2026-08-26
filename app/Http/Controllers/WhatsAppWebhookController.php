@@ -78,6 +78,20 @@ class WhatsAppWebhookController extends Controller
 
     public function webhook(Request $request)
     {
+        // La firma se calcula sobre el cuerpo crudo: $request->all() ya viene
+        // decodificado y re-serializarlo no reproduce byte a byte lo que firmó Meta.
+        $rawPayload = $request->getContent();
+        $signature = $request->header('X-Hub-Signature-256');
+
+        if (!$this->metaService->validateWebhookSignature($rawPayload, $signature)) {
+            Log::channel('whatsapp')->warning('❌ Webhook rechazado: firma inválida', [
+                'ip' => $request->ip(),
+                'tiene_firma' => $signature !== null,
+            ]);
+
+            return response('Forbidden', 403);
+        }
+
         $data = $request->all();
         $this->failedEvents = 0;
 

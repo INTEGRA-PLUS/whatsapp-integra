@@ -38,6 +38,16 @@ return [
     'meta' => [
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'app_secret' => env('META_APP_SECRET'),
+        // Secretos aceptados al validar la firma de los webhooks entrantes.
+        //
+        // Varias apps de Meta (Integra e Ispintegra) entregan al MISMO callback y
+        // cada una firma con su propio secreto, así que no basta con uno solo:
+        // validar contra uno dejaría sin mensajes a las empresas de la otra.
+        // Se declara aparte de 'app_secret' porque ese sigue siendo un valor
+        // único (se usa para armar el app access token "app_id|app_secret").
+        //
+        // Formato: uno o varios secretos separados por coma.
+        'webhook_app_secrets' => env('META_APP_SECRETS', env('META_APP_SECRET')),
         'api_version' => env('META_API_VERSION', 'v21.0'),
         // La Calling API requiere una versión más reciente del Graph API que la
         // mensajería. Se mantiene separada para no afectar el resto de llamadas.

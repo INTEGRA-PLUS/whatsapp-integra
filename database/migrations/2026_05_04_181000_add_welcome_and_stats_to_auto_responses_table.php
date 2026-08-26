@@ -9,7 +9,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE auto_responses MODIFY COLUMN match_type ENUM('exact', 'contains', 'starts_with', 'always', 'welcome') DEFAULT 'contains'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE auto_responses MODIFY COLUMN match_type ENUM('exact', 'contains', 'starts_with', 'always', 'welcome') DEFAULT 'contains'");
+        }
 
         Schema::table('auto_responses', function (Blueprint $table) {
             $table->unsignedInteger('fires_count')->default(0)->after('cooldown_minutes');
@@ -23,6 +25,8 @@ return new class extends Migration
             $table->dropColumn(['fires_count', 'last_fired_at']);
         });
 
-        DB::statement("ALTER TABLE auto_responses MODIFY COLUMN match_type ENUM('exact', 'contains', 'starts_with', 'always') DEFAULT 'contains'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE auto_responses MODIFY COLUMN match_type ENUM('exact', 'contains', 'starts_with', 'always') DEFAULT 'contains'");
+        }
     }
 };

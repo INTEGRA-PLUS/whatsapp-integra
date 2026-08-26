@@ -11,6 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // MODIFY COLUMN / ENUM son sintaxis de MySQL. En sqlite (driver de las
+        // pruebas) revientan y tumban toda la cadena de migraciones; allí la
+        // columna es texto libre y no hay nada que ajustar.
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `type` ENUM('text','image','document','audio','video','sticker','location','contacts','template','note') NOT NULL");
         DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `direction` ENUM('inbound','outbound','internal') NOT NULL");
     }
@@ -19,7 +26,9 @@ return new class extends Migration
     {
         DB::statement("UPDATE whatsapp_messages SET `type` = 'text' WHERE `type` = 'note'");
         DB::statement("UPDATE whatsapp_messages SET `direction` = 'outbound' WHERE `direction` = 'internal'");
-        DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `type` ENUM('text','image','document','audio','video','sticker','location','contacts','template') NOT NULL DEFAULT 'text'");
-        DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `direction` ENUM('inbound','outbound') NOT NULL");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `type` ENUM('text','image','document','audio','video','sticker','location','contacts','template') NOT NULL DEFAULT 'text'");
+            DB::statement("ALTER TABLE whatsapp_messages MODIFY COLUMN `direction` ENUM('inbound','outbound') NOT NULL");
+        }
     }
 };

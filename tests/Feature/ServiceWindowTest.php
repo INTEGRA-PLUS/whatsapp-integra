@@ -74,7 +74,7 @@ class ServiceWindowTest extends TestCase
         $instance = $this->metaInstance();
         $timestamp = 1786590653; // instante fijo, para que la aserción no dependa de "ahora"
 
-        $this->postJson('/webhooks/whatsapp', [
+        $this->postSignedWebhook([
             'object' => 'whatsapp_business_account',
             'entry' => [['id' => '1', 'changes' => [['field' => 'messages', 'value' => [
                 'messaging_product' => 'whatsapp',

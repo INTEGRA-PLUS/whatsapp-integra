@@ -86,7 +86,7 @@ class BsuidIdentityTest extends TestCase
     {
         $instance = $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine'], 'wa_id' => self::PHONE, 'user_id' => self::BSUID]],
             [$this->mensaje(['from' => self::PHONE, 'from_user_id' => self::BSUID])]
         ))->assertOk();
@@ -102,13 +102,13 @@ class BsuidIdentityTest extends TestCase
         $this->metaInstance();
 
         // Hoy: Meta todavía revela el número.
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine'], 'wa_id' => self::PHONE, 'user_id' => self::BSUID]],
             [$this->mensaje(['from' => self::PHONE, 'from_user_id' => self::BSUID])]
         ))->assertOk();
 
         // Un mes después, sin contacto de por medio: sólo queda el BSUID.
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID]],
             [$this->mensaje(['from_user_id' => self::BSUID, 'text' => ['body' => '¿Alguien me responde?']])]
         ))->assertOk();
@@ -121,12 +121,12 @@ class BsuidIdentityTest extends TestCase
     {
         $instance = $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID]],
             [$this->mensaje(['from_user_id' => self::BSUID])]
         ))->assertOk();
 
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine'], 'wa_id' => self::PHONE, 'user_id' => self::BSUID]],
             [$this->mensaje(['from' => self::PHONE, 'from_user_id' => self::BSUID])]
         ))->assertOk();
@@ -154,7 +154,7 @@ class BsuidIdentityTest extends TestCase
         ]);
 
         // El cliente responde, ya con el número oculto: sólo llega el BSUID.
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID]],
             [$this->mensaje(['from_user_id' => self::BSUID])]
         ))->assertOk();
@@ -173,7 +173,7 @@ class BsuidIdentityTest extends TestCase
         $instance = $this->metaInstance();
         $otroBsuid = 'CO.9988776655443322';
 
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [
                 ['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID],
                 ['profile' => ['name' => 'Andrés', 'username' => 'andres.gv'], 'user_id' => $otroBsuid],
@@ -197,7 +197,7 @@ class BsuidIdentityTest extends TestCase
         $instance = $this->metaInstance();
 
         // Hay payloads que ya traen la arroba incluida.
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine'], 'username' => '@katherine.pc', 'user_id' => self::BSUID]],
             [$this->mensaje(['from_user_id' => self::BSUID])]
         ))->assertOk();
@@ -258,7 +258,7 @@ class BsuidIdentityTest extends TestCase
     {
         $instance = $this->metaInstance();
 
-        $this->postJson('/webhooks/whatsapp', $this->webhook(
+        $this->postSignedWebhook($this->webhook(
             [['profile' => ['name' => 'Katherine', 'username' => 'katherine.pc'], 'user_id' => self::BSUID]],
             [$this->mensaje(['from_user_id' => self::BSUID])]
         ))->assertOk();
