@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\CompanyIntegration;
 use App\Models\Contact;
-use App\Services\IntegraClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -48,7 +47,7 @@ class SyncContactsFromIntegra implements ShouldQueue
             return;
         }
 
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
+        $client = $integration->client();
         $actualizadoDesde = $integration->last_synced_at?->toIso8601String();
 
         $processed = 0;

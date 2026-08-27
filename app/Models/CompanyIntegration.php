@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\IntegraClient;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -47,6 +48,29 @@ class CompanyIntegration extends Model
     public function company()
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * Cliente HTTP para hablar con el Integra de esta empresa, o null si no hay
+     * credenciales que usar.
+     *
+     * Construye a partir de lo guardado sin mirar el estado: quien quiera saber
+     * si la conexión está sana pregunta antes con isConnected(). Separarlo es lo
+     * que deja reintentar una conexión marcada como errónea —que es justo lo que
+     * hace el botón "Verificar"— sin tener que rearmar el cliente a mano.
+     *
+     * Vive aquí porque la fila es la dueña de las credenciales: cada sitio que
+     * hacía `new IntegraClient($i->base_url, $i->access_token)` estaba copiando
+     * ese conocimiento, y el día que la conexión necesite algo más —una cabecera,
+     * un timeout propio— habría que ir a buscarlos uno por uno.
+     */
+    public function client(): ?IntegraClient
+    {
+        if (empty($this->base_url) || empty($this->access_token)) {
+            return null;
+        }
+
+        return new IntegraClient($this->base_url, $this->access_token);
     }
 
     public function isConnected(): bool

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\WhatsAppBotFlow;
 use App\Models\WhatsAppConversation;
@@ -814,15 +813,7 @@ class WhatsAppMenuActionService
     /** La conexión a Integra de la empresa, o null si no está conectada. */
     private function client(int $companyId): ?IntegraClient
     {
-        $integration = CompanyIntegration::where('company_id', $companyId)
-            ->where('key', CompanyIntegration::KEY_INVOICE_PAYMENTS)
-            ->first();
-
-        if (!$integration || !$integration->isConnected()) {
-            return null;
-        }
-
-        return new IntegraClient($integration->base_url, $integration->access_token);
+        return Integra::for($companyId);
     }
 
     /**

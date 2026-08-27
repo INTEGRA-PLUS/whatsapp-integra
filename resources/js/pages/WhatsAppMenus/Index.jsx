@@ -4,40 +4,16 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff,
-    ChevronUp, ChevronDown, X, MessageSquare, CornerDownRight, UserRound, AlertTriangle,
-    FileText, CreditCard, Wifi, Wrench, CircleSlash, Smartphone, List, Construction,
-    Activity, Plug, Users,
+    ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
+    Plug, Users, HelpCircle,
 } from 'lucide-react';
+import MenuHelp from './MenuHelp';
+import {
+    MATCH_LABELS, MATCH_OPTIONS, KEYWORD_TYPES,
+    GROUP_LABELS, GROUP_ORDER, iconFor,
+} from './catalog';
 
-const MATCH_LABELS = {
-    exact: 'Coincidencia exacta',
-    contains: 'Contiene',
-    starts_with: 'Empieza con',
-    welcome: 'Mensaje de bienvenida',
-};
 
-const MATCH_OPTIONS = [
-    { value: 'welcome', label: 'Primer mensaje del cliente (bienvenida)' },
-    { value: 'contains', label: 'Contiene la palabra' },
-    { value: 'exact', label: 'Coincidencia exacta' },
-    { value: 'starts_with', label: 'Empieza con' },
-];
-
-const KEYWORD_TYPES = ['exact', 'contains', 'starts_with'];
-
-// La lista de tipos la manda el backend (WhatsAppMenuOption::catalog); aquí
-// sólo vive lo visual, para que añadir un tipo nuevo no obligue a tocar el front.
-const ACTION_ICONS = {
-    reply_text: MessageSquare,
-    submenu: CornerDownRight,
-    handoff: UserRound,
-    consultar_factura: FileText,
-    pagar_en_linea: CreditCard,
-    cambiar_clave: Wifi,
-    reportar_falla: Wrench,
-    estado_servicio: Activity,
-    none: CircleSlash,
-};
 
 /** Estrategias de reparto del handoff (WhatsAppMenuOption::ASSIGN_*). */
 const ASSIGN_OPTIONS = [
@@ -60,16 +36,6 @@ const INTEGRA_HELP = {
     estado_servicio: 'Consulta el contrato del cliente y le responde la parte que elijas abajo: si su internet está activo, su plan y velocidad, cuándo le cortan o lo que debe.',
 };
 
-const GROUP_LABELS = {
-    core: 'Acciones',
-    integra: 'Autoservicio (consulta Integra)',
-    pending: 'Opciones de negocio (integración pendiente)',
-    none: 'Otros',
-};
-
-const GROUP_ORDER = ['core', 'integra', 'pending', 'none'];
-
-const iconFor = value => ACTION_ICONS[value] ?? Construction;
 
 /** Valores de ejemplo para la vista previa: el menú se escribe con variables. */
 const SAMPLE = { name: 'Katherine', phone: '3007852081', wa_id: '573007852081' };
@@ -133,6 +99,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
     const actionMeta = Object.fromEntries(actionTypes.map(a => [a.value, a]));
     const [showCreate, setShowCreate] = useState(false);
+    const [showHelp, setShowHelp] = useState(false);
     const [editing, setEditing] = useState(null);
     const [createForm, setCreateForm] = useState(emptyForm);
     const [editForm, setEditForm] = useState(emptyForm);
@@ -215,9 +182,14 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                             El cliente elige una opción tocándola en vez de escribir lo que necesita.
                         </p>
                     </div>
-                    <Button onClick={() => { setCreateForm(emptyForm()); setShowCreate(true); }} className="gap-2">
-                        <Plus className="size-4" /> Nuevo menú
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
+                            <HelpCircle className="size-4" /> ¿Cómo funciona?
+                        </Button>
+                        <Button onClick={() => { setCreateForm(emptyForm()); setShowCreate(true); }} className="gap-2">
+                            <Plus className="size-4" /> Nuevo menú
+                        </Button>
+                    </div>
                 </div>
 
                 {menus.length === 0 ? (
@@ -227,6 +199,9 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         <p className="text-sm text-muted-foreground mt-1">
                             Por ejemplo: al primer mensaje del cliente, ofrecerle "Consultar factura", "Pagar en línea" o "Hablar con un asesor".
                         </p>
+                        <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2 mt-5">
+                            <HelpCircle className="size-4" /> Ver cómo se arma uno
+                        </Button>
                     </div>
                 ) : (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -242,6 +217,23 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     </div>
                 )}
             </div>
+
+            {showHelp && (
+                <Modal
+                    wide
+                    title="Cómo funcionan los menús"
+                    description="Del mensaje del cliente a la respuesta, y qué hace cada pieza del formulario"
+                    onClose={() => setShowHelp(false)}
+                >
+                    <MenuHelp
+                        actionTypes={actionTypes}
+                        limits={limits}
+                        statusSegments={statusSegments}
+                        integra={integra}
+                        onClose={() => setShowHelp(false)}
+                    />
+                </Modal>
+            )}
 
             {showCreate && (
                 <Modal wide title="Nuevo menú" description="Define el mensaje, las opciones y cuándo aparece" onClose={() => setShowCreate(false)}>
@@ -739,7 +731,7 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                     {!integra.connected && (
                         <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
                             <Plug className="size-3.5 shrink-0 mt-px" />
-                            Integra no está conectado. Conéctalo en Integraciones → "Pagos a facturas"; mientras
+                            Tu software Integra no está conectado. Conéctalo desde Integraciones; mientras
                             tanto, quien elija esta opción será derivado a un asesor.
                         </p>
                     )}

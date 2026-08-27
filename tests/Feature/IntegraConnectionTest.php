@@ -1,0 +1,116 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Company;
+use App\Models\CompanyIntegration;
+use App\Services\Integra;
+use App\Services\IntegraClient;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+/**
+ * La conexión con Integra, resuelta en un solo sitio.
+ *
+ * Lo que se protege aquí es la promesa que justificó el gateway: que la
+ * respuesta a "¿hay conexión?" sea la misma la pregunte quien la pregunte. Antes
+ * cada función la resolvía por su cuenta mirando sólo la tarjeta de pagos, así
+ * que una empresa con Integra conectado desde Contactos tenía medio sistema
+ * diciendo que sí y la otra mitad diciendo que no.
+ */
+class IntegraConnectionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_sin_ninguna_tarjeta_conectada_no_hay_conexion(): void
+    {
+        $company = $this->company();
+
+        $this->assertFalse(Integra::connected($company->id));
+        $this->assertNull(Integra::for($company->id));
+    }
+
+    public function test_una_tarjeta_conectada_basta(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS);
+
+        $this->assertTrue(Integra::connected($company->id));
+        $this->assertInstanceOf(IntegraClient::class, Integra::for($company->id));
+    }
+
+    /**
+     * Integra es un solo entorno por empresa; que el admin pulsara "Conectar"
+     * desde la tarjeta de contactos y no desde la de pagos no debería dejar los
+     * menús a oscuras.
+     */
+    public function test_vale_la_conexion_de_contactos_aunque_pagos_no_este(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC);
+
+        $this->assertTrue(Integra::connected($company->id));
+        $this->assertSame(
+            CompanyIntegration::KEY_CONTACTS_SYNC,
+            Integra::connection($company->id)->key
+        );
+    }
+
+    /** Con las dos conectadas manda la de pagos, que es la que se conecta primero. */
+    public function test_con_las_dos_conectadas_manda_la_de_pagos(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC, 'https://contactos.test');
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS, 'https://pagos.test');
+
+        $this->assertSame('https://pagos.test', Integra::connection($company->id)->base_url);
+    }
+
+    /** Una tarjeta en estado de error no cuenta como conexión. */
+    public function test_una_conexion_con_error_no_cuenta(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS)
+            ->update(['status' => 'error', 'last_error' => 'Token inválido']);
+
+        $this->assertFalse(Integra::connected($company->id));
+
+        // Pero sus credenciales siguen ahí para poder reintentar: es lo que hace
+        // el botón "Verificar" sin obligar a reescribir la URL y el token.
+        $this->assertInstanceOf(
+            IntegraClient::class,
+            CompanyIntegration::where('company_id', $company->id)->first()->client()
+        );
+    }
+
+    /** La conexión de una empresa no vale para otra. */
+    public function test_la_conexion_no_se_cruza_entre_empresas(): void
+    {
+        $conectada = $this->company('Conectada', 'conectada');
+        $sinConexion = $this->company('Sin conexión', 'sin-conexion');
+
+        $this->connect($conectada, CompanyIntegration::KEY_INVOICE_PAYMENTS);
+
+        $this->assertTrue(Integra::connected($conectada->id));
+        $this->assertFalse(Integra::connected($sinConexion->id));
+    }
+
+    // ------------------------------------------------------------------
+
+    private function company(string $name = 'Cmnet', string $slug = 'cmnet'): Company
+    {
+        return Company::create(['name' => $name, 'slug' => $slug, 'active' => true]);
+    }
+
+    private function connect(Company $company, string $key, string $baseUrl = 'https://demo.test/software'): CompanyIntegration
+    {
+        return CompanyIntegration::create([
+            'company_id' => $company->id,
+            'key' => $key,
+            'status' => 'connected',
+            'base_url' => $baseUrl,
+            'access_token' => 'itg_token',
+            'enabled' => true,
+        ]);
+    }
+}

@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
+use App\Services\Integra;
 use App\Services\IntegraClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -65,7 +65,7 @@ class WhatsAppMenuController extends Controller
             // el formulario lo avisa en vez de dejar que el admin arme un menú
             // que en producción sólo va a derivar chats a un asesor.
             'integra' => [
-                'connected' => (bool) $this->integration($user->company_id)?->isConnected(),
+                'connected' => Integra::connected($user->company_id),
             ],
         ]);
     }
@@ -329,35 +329,11 @@ class WhatsAppMenuController extends Controller
      */
     public function integraCatalogs()
     {
-        $integration = $this->integration(auth()->user()->company_id);
-
-        if (!$integration || !$integration->isConnected()) {
-            return response()->json([
-                'message' => 'Conecta la integración "Pagos a facturas" para configurar esta acción.',
-            ], 422);
-        }
-
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
-
-        try {
-            return response()->json($client->radicadoCatalogs());
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-    }
-
-    /**
-     * La conexión con Integra de la empresa.
-     *
-     * Es la misma que usa el formulario de pagos del chat: Integra es un solo
-     * entorno por empresa y pedir una segunda conexión para los menús sólo
-     * produciría empresas con una de las dos caducada.
-     */
-    private function integration(int $companyId): ?CompanyIntegration
-    {
-        return CompanyIntegration::where('company_id', $companyId)
-            ->where('key', CompanyIntegration::KEY_INVOICE_PAYMENTS)
-            ->first();
+        return Integra::respond(
+            auth()->user()->company_id,
+            fn (IntegraClient $client) => $client->radicadoCatalogs(),
+            'Conecta tu software Integra desde Integraciones para configurar esta acción.'
+        );
     }
 
     private function validateOptions(array $options, int $companyId, $menuId): void

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\SyncContactsFromIntegra;
 use App\Models\CompanyIntegration;
+use App\Services\Integra;
 use App\Services\IntegraClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -168,7 +169,7 @@ class IntegrationController extends Controller
             return response()->json($this->present($key, $integration));
         }
 
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
+        $client = $integration->client();
 
         try {
             $this->pingForKey($key, $client);
@@ -294,14 +295,10 @@ class IntegrationController extends Controller
      */
     public function searchClients(Request $request)
     {
-        $integration = $this->connectedOrFail();
-
         $search = trim((string) $request->query('search', ''));
         if (mb_strlen($search) < 2) {
             return response()->json(['data' => []]);
         }
-
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
 
         $digits  = preg_replace('/\D+/', '', $search);
         $isDigits = $digits !== '' && $digits === preg_replace('/[\s\-\+\.\(\)]+/', '', $search);
@@ -309,28 +306,31 @@ class IntegrationController extends Controller
         // Teléfono con indicativo → últimos 10 dígitos; lo demás va tal cual.
         $q = ($isDigits && strlen($digits) > 10) ? substr($digits, -10) : ($isDigits ? $digits : $search);
 
-        try {
-            $res = $client->searchContacts($q, 8);
-        } catch (\RuntimeException $e) {
-            if ($e->getCode() === IntegraClient::CODE_ENDPOINT_MISSING && $isDigits) {
-                // Entorno sin /contactos/buscar: al menos resolvemos NIT exacto vía facturas.
-                return $this->searchClientsViaInvoices($client, $digits);
+        return $this->payments(function (IntegraClient $client) use ($q, $digits, $isDigits) {
+            try {
+                $res = $client->searchContacts($q, 8);
+            } catch (\RuntimeException $e) {
+                if ($e->getCode() === IntegraClient::CODE_ENDPOINT_MISSING && $isDigits) {
+                    // Entorno sin /contactos/buscar: al menos resolvemos NIT exacto vía facturas.
+                    return ['data' => $this->searchClientsViaInvoices($client, $digits)];
+                }
+
+                throw $e;
             }
 
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-
-        return response()->json(['data' => array_map([$this, 'presentClient'], $res['data'])]);
+            return ['data' => array_map([$this, 'presentClient'], $res['data'])];
+        });
     }
 
-    /** Fallback para entornos Integra sin GET /contactos/buscar: NIT exacto vía facturas/pendientes. */
-    private function searchClientsViaInvoices(IntegraClient $client, string $nit)
+    /**
+     * Fallback para entornos Integra sin GET /contactos/buscar: NIT exacto vía
+     * facturas/pendientes. Deja subir la excepción: la traduce quien envuelve.
+     *
+     * @return array<int, array>
+     */
+    private function searchClientsViaInvoices(IntegraClient $client, string $nit): array
     {
-        try {
-            $res = $client->pendingInvoices(['nit' => $nit]);
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
+        $res = $client->pendingInvoices(['nit' => $nit]);
 
         $cliente = $res['cliente'];
         if ($cliente) {
@@ -338,7 +338,7 @@ class IntegrationController extends Controller
             $cliente['facturas_pendientes'] = $res['facturas'];
         }
 
-        return response()->json(['data' => $cliente ? [$this->presentClient($cliente)] : []]);
+        return $cliente ? [$this->presentClient($cliente)] : [];
     }
 
     /**
@@ -377,8 +377,6 @@ class IntegrationController extends Controller
      */
     public function invoices(Request $request)
     {
-        $integration = $this->connectedOrFail();
-
         $data = $request->validate([
             'cliente_id' => 'nullable|integer',
             'nit'        => 'nullable|string|max:32',
@@ -396,13 +394,7 @@ class IntegrationController extends Controller
         // Si llegan ambos, cliente_id gana (array_filter conserva el orden de las llaves).
         $params = array_slice($params, 0, 1);
 
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
-
-        try {
-            return response()->json($client->pendingInvoices($params));
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
+        return $this->payments(fn (IntegraClient $client) => $client->pendingInvoices($params));
     }
 
     /**
@@ -411,15 +403,7 @@ class IntegrationController extends Controller
      */
     public function catalogs()
     {
-        $integration = $this->connectedOrFail();
-
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
-
-        try {
-            return response()->json($client->paymentCatalogs());
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
+        return $this->payments(fn (IntegraClient $client) => $client->paymentCatalogs());
     }
 
     /**
@@ -430,8 +414,6 @@ class IntegrationController extends Controller
      */
     public function pay(Request $request)
     {
-        $integration = $this->connectedOrFail();
-
         $data = $request->validate([
             'factura_id'    => 'required|integer',
             'cuenta'        => 'required|integer',
@@ -440,33 +422,37 @@ class IntegrationController extends Controller
             'observaciones' => 'nullable|string|max:255',
         ]);
 
-        $client = new IntegraClient($integration->base_url, $integration->access_token);
-
         $agente = auth()->user()->name ?? 'agente';
 
-        try {
-            $result = $client->registerPayment((int) $data['factura_id'], [
+        return $this->payments(fn (IntegraClient $client) => [
+            'message' => 'Pago registrado correctamente.',
+            'result'  => $client->registerPayment((int) $data['factura_id'], [
                 'cuenta'        => $data['cuenta'],
                 'metodo_pago'   => $data['metodo_pago'],
                 'monto'         => $data['monto'],
                 'observaciones' => $data['observaciones'] ?? "Pago registrado desde WhatsApp ({$agente})",
-            ]);
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-
-        return response()->json(['message' => 'Pago registrado correctamente.', 'result' => $result]);
+            ]),
+        ]);
     }
 
-    /** Devuelve la integración de pagos conectada o aborta con 422. */
-    private function connectedOrFail(): CompanyIntegration
+    /**
+     * Consulta Integra desde el flujo de pagos del chat.
+     *
+     * Es el único consumidor con un interruptor propio —el disparador que el
+     * admin activa en la tarjeta— así que no basta con que haya conexión: hay
+     * que respetar también ese interruptor. Todo lo demás (resolver el cliente,
+     * traducir el fallo a un 422 con mensaje) lo pone Integra::run.
+     *
+     * @param callable(IntegraClient): mixed $query
+     */
+    private function payments(callable $query): \Illuminate\Http\JsonResponse
     {
         $integration = $this->find(CompanyIntegration::KEY_INVOICE_PAYMENTS);
 
         if (! $integration || ! $integration->isConnected() || ! $integration->enabled) {
-            abort(response()->json(['message' => 'La integración de pagos no está activa.'], 422));
+            return response()->json(['message' => 'La integración de pagos no está activa.'], 422);
         }
 
-        return $integration;
+        return Integra::run($integration->client(), $query);
     }
 }
