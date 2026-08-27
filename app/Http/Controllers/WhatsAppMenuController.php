@@ -56,6 +56,11 @@ class WhatsAppMenuController extends Controller
             // El catálogo viaja desde el modelo: el formulario y la vista previa
             // se arman con él en vez de repetir la lista de tipos en el front.
             'actionTypes' => WhatsAppMenuOption::catalog(),
+            // Qué parte del contrato puede mostrar cada opción de "Estado del
+            // contrato": el select se arma con esto en vez de repetir la lista.
+            'statusSegments' => collect(WhatsAppMenuOption::STATUS_SEGMENTS)
+                ->map(fn ($label, $value) => ['value' => $value, 'label' => $label])
+                ->values(),
             // Las acciones de negocio no sirven de nada sin Integra conectado:
             // el formulario lo avisa en vez de dejar que el admin arme un menú
             // que en producción sólo va a derivar chats a un asesor.
@@ -255,6 +260,7 @@ class WhatsAppMenuController extends Controller
             'options.*.config.radicado_prioridad' => 'nullable|integer|in:1,2,3',
             'options.*.config.radicado_tecnico' => 'nullable|integer',
             'options.*.config.payment_url' => 'nullable|string|max:500',
+            'options.*.config.segmento' => 'nullable|in:' . implode(',', array_keys(WhatsAppMenuOption::STATUS_SEGMENTS)),
         ]);
 
         $isRoot = (bool) ($validated['is_root'] ?? true);
@@ -304,6 +310,7 @@ class WhatsAppMenuController extends Controller
             // no un radicado.
             'reportar_falla' => ['radicado_servicio', 'radicado_prioridad', 'radicado_tecnico', 'payment_url'],
             'pagar_en_linea' => ['payment_url'],
+            'estado_servicio' => ['segmento'],
             default => [],
         };
 

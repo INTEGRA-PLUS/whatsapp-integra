@@ -294,6 +294,87 @@ class WhatsAppMenuIntegraTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Segmentos del contrato
+    // ------------------------------------------------------------------
+
+    /**
+     * Decir sólo "suspendido" deja al cliente igual de perdido: lo que resuelve
+     * la consulta es la causa y qué tiene que hacer para salir de ahí.
+     */
+    public function test_segmento_internet_explica_por_que_esta_suspendido(): void
+    {
+        $reply = $this->segmentReply('internet');
+
+        $this->assertStringContainsString('Suspendido', $reply);
+        $this->assertStringContainsString('10/08/2026', $reply);
+        $this->assertStringContainsString('$70.000', $reply);
+        $this->assertStringContainsString('se reactiva automáticamente', $reply);
+    }
+
+    /** Con el servicio activo, el cliente necesita saber qué hacer a continuación. */
+    public function test_segmento_internet_activo_dice_como_seguir(): void
+    {
+        $this->servicioActivo = true;
+
+        $reply = $this->segmentReply('internet');
+
+        $this->assertStringContainsString('Activo', $reply);
+        $this->assertStringContainsString('repórtalo desde el menú', $reply);
+    }
+
+    public function test_segmento_plan_responde_megas_tecnologia_y_precio(): void
+    {
+        $reply = $this->segmentReply('plan');
+
+        $this->assertStringContainsString('ZAFIRO GOLD 3.0', $reply);
+        $this->assertStringContainsString('300 Mbps', $reply);
+        $this->assertStringContainsString('150 Mbps', $reply);
+        $this->assertStringContainsString('Fibra óptica', $reply);
+        $this->assertStringContainsString('$60.000', $reply);
+    }
+
+    public function test_segmento_corte_responde_periodo_y_fecha(): void
+    {
+        $reply = $this->segmentReply('corte');
+
+        $this->assertStringContainsString('PERIODO 1 AL 30', $reply);
+        $this->assertStringContainsString('05/09/2026', $reply);
+        $this->assertStringContainsString('para no perder el servicio', $reply);
+    }
+
+    /** Sin deuda no hay corte que anunciar, y decirlo tranquiliza. */
+    public function test_segmento_corte_sin_deuda_no_alarma(): void
+    {
+        $this->servicioActivo = true;
+
+        $reply = $this->segmentReply('corte');
+
+        $this->assertStringContainsString('no hay riesgo de corte', $reply);
+    }
+
+    /**
+     * Las facturas del contrato llegan con los montos anidados; las del
+     * contacto, planos. Las dos formas tienen que pintar la misma línea.
+     */
+    public function test_segmento_facturas_lee_los_montos_anidados_del_contrato(): void
+    {
+        $reply = $this->segmentReply('facturas');
+
+        $this->assertStringContainsString('FV-1001', $reply);
+        $this->assertStringContainsString('$70.000', $reply);
+        $this->assertStringContainsString('30/07/2026', $reply);
+    }
+
+    /** El resumen completo sigue siendo lo que reciben las opciones sin segmento. */
+    public function test_sin_segmento_configurado_responde_el_resumen_completo(): void
+    {
+        $reply = $this->segmentReply(null);
+
+        $this->assertStringContainsString('Estado de tu servicio', $reply);
+        $this->assertStringContainsString('ZAFIRO GOLD 3.0', $reply);
+    }
+
+    // ------------------------------------------------------------------
     // Hablar con un asesor
     // ------------------------------------------------------------------
 
@@ -401,6 +482,19 @@ class WhatsAppMenuIntegraTest extends TestCase
         $user->assignRole($role);
 
         return $user->fresh();
+    }
+
+    /** Toca una opción "Estado del contrato" con el segmento indicado. */
+    private function segmentReply(?string $segment): string
+    {
+        $instance = $this->connectedInstance();
+        $option = $this->option($instance, 'Estado', 'estado_servicio', [
+            'config' => $segment ? ['segmento' => $segment] : null,
+        ]);
+
+        $this->tap($instance, $option);
+
+        return $this->lastText();
     }
 
     /** Un menú de una sola opción con la acción bajo prueba. */
@@ -583,7 +677,14 @@ class WhatsAppMenuIntegraTest extends TestCase
                 'contrato' => [
                     'id' => 320,
                     'nro' => '15',
+                    'servicio' => 'Internet Hogar',
+                    'direccion' => 'CRA 5 # 12-34, El Prado',
                     'plan' => ['nombre' => 'ZAFIRO GOLD 3.0', 'descarga' => 300, 'subida' => 150, 'precio' => 60000],
+                    'tecnologia' => 'fibra',
+                    'conexion' => 'pppoe',
+                    'grupo_corte' => 'PERIODO 1 AL 30',
+                    'fecha_corte' => '2026-09-05',
+                    'fecha_suspension' => $activo ? null : '2026-08-10',
                 ],
                 'estado' => [
                     'internet' => ['activo' => $activo, 'estado' => $activo ? 'activo' : 'suspendido'],
@@ -592,7 +693,14 @@ class WhatsAppMenuIntegraTest extends TestCase
                 'facturas_pendientes' => [
                     'total' => $deuda > 0 ? 1 : 0,
                     'total_por_pagar' => $deuda,
-                    'items' => [],
+                    // El endpoint del contrato anida los montos; el del contacto
+                    // los manda planos. Las dos formas tienen que pintarse igual.
+                    'items' => $deuda > 0 ? [[
+                        'codigo' => 'FV-1001',
+                        'vencimiento' => '2026-07-30',
+                        'vencida' => true,
+                        'montos' => ['total' => $deuda, 'pagado' => 0, 'por_pagar' => $deuda],
+                    ]] : [],
                 ],
             ],
         ];

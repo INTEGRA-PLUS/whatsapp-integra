@@ -21,9 +21,10 @@ use Illuminate\Support\Facades\DB;
 class DefaultWhatsAppMenu
 {
     public const NAME = 'Menú principal';
+    public const SUBMENU_NAME = 'Estado de mi contrato';
 
     /**
-     * Las opciones del menú, en el orden en que las ve el cliente.
+     * Las opciones del menú principal, en el orden en que las ve el cliente.
      *
      * Las tres primeras se resuelven solas contra el software de facturación;
      * "Hablar con un asesor" va al final a propósito, porque quien llega hasta
@@ -33,9 +34,10 @@ class DefaultWhatsAppMenu
      * cada empresa: el formulario lo pide en amarillo hasta que el admin elige
      * uno, y mientras tanto "Reportar falla" deriva a una persona.
      *
+     * @param int $submenuId Menú al que lleva "Estado de mi contrato".
      * @return list<array<string, mixed>>
      */
-    public static function options(): array
+    public static function options(int $submenuId): array
     {
         return [
             [
@@ -49,9 +51,10 @@ class DefaultWhatsAppMenu
                 'action_type' => 'pagar_en_linea',
             ],
             [
-                'title' => '📶 Cambiar clave WiFi',
-                'description' => 'Cambia la contraseña de tu red',
-                'action_type' => 'cambiar_clave',
+                'title' => '📶 Estado de mi contrato',
+                'description' => 'Internet, plan, velocidad y fechas de corte',
+                'action_type' => 'submenu',
+                'target_menu_id' => $submenuId,
             ],
             [
                 'title' => '🛠️ Reportar falla',
@@ -70,7 +73,47 @@ class DefaultWhatsAppMenu
     }
 
     /**
-     * Crea el menú por defecto de una empresa.
+     * Las opciones del submenú de contrato.
+     *
+     * Las cuatro salen de la misma consulta a Integra —una sola llamada trae
+     * internet, plan, fechas y facturas—; lo que cambia es qué se le cuenta al
+     * cliente. Preguntar antes de responder es lo que evita el muro de texto
+     * que nadie lee.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function submenuOptions(): array
+    {
+        return [
+            [
+                'title' => '🌐 Estado de internet',
+                'description' => '¿Está activo o suspendido? ¿Por qué?',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'internet'],
+            ],
+            [
+                'title' => '📄 Facturas pendientes',
+                'description' => 'Lo que debes en este contrato',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'facturas'],
+            ],
+            [
+                'title' => '⚡ Mi plan y velocidad',
+                'description' => 'Megas contratadas, tecnología y valor mensual',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'plan'],
+            ],
+            [
+                'title' => '📅 Cuándo me cortan',
+                'description' => 'Periodo de facturación y fecha de corte',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'corte'],
+            ],
+        ];
+    }
+
+    /**
+     * Crea el menú por defecto de una empresa, con su submenú de contrato.
      *
      * Devuelve null si la empresa ya tiene menús: quien ya configuró los suyos
      * no necesita que le aparezca uno más, y sobrescribir su trabajo sería
@@ -84,36 +127,80 @@ class DefaultWhatsAppMenu
         }
 
         return DB::transaction(function () use ($company) {
-            $menu = WhatsAppMenu::create([
-                'company_id' => $company->id,
-                // Sin instancia: sirve para todas las líneas de la empresa, que
-                // además es lo único posible cuando la empresa acaba de nacer y
-                // todavía no ha conectado ninguna.
-                'instance_id' => null,
-                'name' => self::NAME,
-                'header_text' => mb_substr($company->name, 0, WhatsAppMenu::MAX_HEADER),
-                'body_text' => "¡Hola {name}! 👋\n\n¿En qué puedo ayudarte hoy? Elige una opción y te atiendo al instante.",
-                'footer_text' => 'Escribe MENU cuando quieras volver aquí',
-                'list_button_text' => 'Ver opciones',
-                'is_root' => true,
-                // Bienvenida y palabra clave a la vez: sale solo en el primer
-                // contacto, y el cliente que ya va a mitad de conversación puede
-                // recuperarlo escribiendo "menu".
-                'match_types' => ['welcome', 'contains'],
-                'trigger_text' => 'menu, opciones, ayuda, inicio',
-                'active' => false,
-                'cooldown_minutes' => 60,
-            ]);
-
-            foreach (array_values(self::options()) as $position => $option) {
-                $menu->options()->create($option + [
-                    'position' => $position,
-                    'reply_text' => null,
-                    'config' => null,
-                ]);
-            }
+            $submenu = self::createSubmenu($company);
+            $menu = self::createRoot($company, $submenu->id);
 
             return $menu->load('options');
         });
+    }
+
+    private static function createRoot(Company $company, int $submenuId): WhatsAppMenu
+    {
+        $menu = WhatsAppMenu::create([
+            'company_id' => $company->id,
+            // Sin instancia: sirve para todas las líneas de la empresa, que
+            // además es lo único posible cuando la empresa acaba de nacer y
+            // todavía no ha conectado ninguna.
+            'instance_id' => null,
+            'name' => self::NAME,
+            'header_text' => mb_substr($company->name, 0, WhatsAppMenu::MAX_HEADER),
+            'body_text' => "¡Hola {name}! 👋\n\n¿En qué puedo ayudarte hoy? Elige una opción y te atiendo al instante.",
+            'footer_text' => 'Escribe MENU cuando quieras volver aquí',
+            'list_button_text' => 'Ver opciones',
+            'is_root' => true,
+            // Bienvenida y palabra clave a la vez: sale solo en el primer
+            // contacto, y el cliente que ya va a mitad de conversación puede
+            // recuperarlo escribiendo "menu".
+            'match_types' => ['welcome', 'contains'],
+            'trigger_text' => 'menu, opciones, ayuda, inicio',
+            'active' => false,
+            'cooldown_minutes' => 60,
+        ]);
+
+        self::addOptions($menu, self::options($submenuId));
+
+        return $menu;
+    }
+
+    /**
+     * El submenú nace ACTIVO aunque el principal esté apagado, y no es un
+     * descuido: al no ser menú raíz nunca se dispara por su cuenta, así que
+     * mientras el principal siga apagado no llega a nadie. Crearlo apagado
+     * sería la trampa: el admin enciende el menú principal, el cliente toca
+     * "Estado de mi contrato" y no recibe el submenú porque está inactivo.
+     */
+    private static function createSubmenu(Company $company): WhatsAppMenu
+    {
+        $submenu = WhatsAppMenu::create([
+            'company_id' => $company->id,
+            'instance_id' => null,
+            'name' => self::SUBMENU_NAME,
+            'header_text' => null,
+            'body_text' => "📶 ¿Qué quieres revisar de tu servicio?",
+            'footer_text' => 'Escribe MENU para volver al inicio',
+            'list_button_text' => 'Ver opciones',
+            'is_root' => false,
+            'match_types' => [],
+            'trigger_text' => null,
+            'active' => true,
+            'cooldown_minutes' => 0,
+        ]);
+
+        self::addOptions($submenu, self::submenuOptions());
+
+        return $submenu;
+    }
+
+    /** @param list<array<string, mixed>> $options */
+    private static function addOptions(WhatsAppMenu $menu, array $options): void
+    {
+        foreach (array_values($options) as $position => $option) {
+            $menu->options()->create($option + [
+                'position' => $position,
+                'reply_text' => null,
+                'target_menu_id' => null,
+                'config' => null,
+            ]);
+        }
     }
 }

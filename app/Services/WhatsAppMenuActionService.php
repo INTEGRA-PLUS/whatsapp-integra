@@ -232,10 +232,12 @@ class WhatsAppMenuActionService
         }
 
         $status = $client->contractStatus((string) $contract['nro']);
+        $segment = $option?->statusSegment() ?? WhatsAppMenuOption::SEGMENT_SUMMARY;
 
         $this->emit($instance, $conversation, 'service.checked', [
             'cliente' => $this->clientPayload($contact),
             'contrato_nro' => $contract['nro'],
+            'segmento' => $segment,
             'internet_activo' => (bool) data_get($status, 'estado.internet.activo'),
         ]);
 
@@ -246,10 +248,274 @@ class WhatsAppMenuActionService
         }
 
         return MenuActionResult::reply($this->withNote(
-            $this->statusLines($status, $contract),
+            $this->segmentLines($segment, $status, $contract),
             $option,
             $conversation
         ));
+    }
+
+    /**
+     * El trozo del contrato que pidió el cliente.
+     *
+     * Una sola llamada a Integra trae todo —internet, televisión, plan, fechas
+     * y facturas—, así que segmentar no cuesta consultas: cuesta sólo elegir
+     * qué contar. Y contar sólo lo que preguntaron es la diferencia entre un
+     * mensaje que se lee y un muro de texto que se ignora.
+     *
+     * @return string[]
+     */
+    private function segmentLines(string $segment, array $status, array $contract): array
+    {
+        return match ($segment) {
+            'internet' => $this->internetLines($status, $contract),
+            'facturas' => $this->contractInvoiceLines($status),
+            'plan' => $this->planLines($status),
+            'corte' => $this->cutoffLines($status),
+            'television' => $this->televisionLines($status),
+            'datos' => $this->contractDataLines($status, $contract),
+            default => $this->statusLines($status, $contract),
+        };
+    }
+
+    /**
+     * Estado de internet, con el motivo cuando está cortado.
+     *
+     * Decir sólo "suspendido" deja al cliente igual de perdido que antes: lo
+     * que resuelve la consulta es la causa y qué tiene que hacer para salir de
+     * ahí. Y si el sistema lo ve activo pero el cliente no navega, hay que
+     * decirle expresamente que reporte la falla, o se queda esperando.
+     */
+    private function internetLines(array $status, array $contract): array
+    {
+        $active = (bool) data_get($status, 'estado.internet.activo');
+        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+
+        $lines = [
+            '🌐 *Estado de tu internet*',
+            '',
+            'Contrato ' . (data_get($status, 'contrato.nro') ?? $contract['nro'] ?? '—')
+                . ' — ' . ($active ? '✅ *Activo*' : '⛔ *Suspendido*'),
+        ];
+
+        if (!$active) {
+            if ($since = data_get($status, 'contrato.fecha_suspension')) {
+                $lines[] = 'Suspendido desde el ' . $this->date($since);
+            }
+
+            $lines[] = '';
+            $lines[] = $due > 0
+                ? 'Tienes *' . $this->money($due) . '* en facturas pendientes. En cuanto registremos el pago, el servicio se reactiva automáticamente.'
+                : 'No aparecen facturas pendientes, así que la suspensión tiene otro motivo. Te recomiendo reportarlo desde el menú.';
+
+            return $lines;
+        }
+
+        $lines[] = '';
+        $lines[] = 'Tu servicio está habilitado desde nuestro lado. Si aun así no tienes conexión, reinicia el router y, si sigue igual, repórtalo desde el menú para que lo revise un técnico.';
+
+        if ($due > 0) {
+            $lines[] = '';
+            $lines[] = '⚠️ Ojo: tienes *' . $this->money($due) . '* pendientes'
+                . (($cut = data_get($status, 'contrato.fecha_corte')) ? '. Fecha de corte: ' . $this->date($cut) : '.');
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Facturas de este contrato, no del cliente entero: quien entra por
+     * "estado de mi contrato" pregunta por el servicio que tiene delante, y un
+     * cliente con dos contratos no quiere la suma de los dos.
+     *
+     * @return string[]
+     */
+    private function contractInvoiceLines(array $status): array
+    {
+        $items = (array) data_get($status, 'facturas_pendientes.items', []);
+        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+
+        if (!$items && $due <= 0) {
+            return ['✅ *Sin facturas pendientes*', '', 'Este contrato está al día. ¡Gracias!'];
+        }
+
+        $lines = ['📄 *Facturas pendientes de este contrato*', ''];
+
+        foreach ($items as $invoice) {
+            if (is_array($invoice)) {
+                $lines[] = $this->invoiceLine($this->flattenInvoice($invoice));
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = '*Total por pagar: ' . $this->money($due) . '*';
+
+        return $lines;
+    }
+
+    /**
+     * El plan contratado. Responde al "¿de cuántas megas soy?" que llega cada
+     * vez que alguien hace un test de velocidad.
+     *
+     * @return string[]
+     */
+    private function planLines(array $status): array
+    {
+        $lines = ['⚡ *Tu plan contratado*', ''];
+
+        $lines[] = 'Plan: *' . (data_get($status, 'contrato.plan.nombre') ?: 'sin plan registrado') . '*';
+
+        $down = data_get($status, 'contrato.plan.descarga');
+        $up = data_get($status, 'contrato.plan.subida');
+
+        if ($down || $up) {
+            $lines[] = 'Velocidad: ' . $this->speed($down) . ' de bajada · ' . $this->speed($up) . ' de subida';
+        }
+
+        if ($tech = data_get($status, 'contrato.tecnologia')) {
+            $lines[] = 'Tecnología: ' . $this->technologyLabel($tech);
+        }
+
+        if ($price = data_get($status, 'contrato.plan.precio')) {
+            $lines[] = 'Valor mensual: ' . $this->money((float) $price);
+        }
+
+        if (data_get($status, 'estado.television.tiene_servicio')) {
+            $lines[] = '';
+            $lines[] = 'Televisión: ' . (data_get($status, 'estado.television.plan') ?: 'incluida');
+        }
+
+        $lines[] = '';
+        $lines[] = 'La velocidad se mide por cable y con un solo equipo conectado; por WiFi siempre llega menos.';
+
+        return $lines;
+    }
+
+    /**
+     * Cuándo vence y cuándo cortan. Es la pregunta que más veces contesta un
+     * asesor mirando el grupo de corte del cliente.
+     *
+     * @return string[]
+     */
+    private function cutoffLines(array $status): array
+    {
+        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+        $cut = data_get($status, 'contrato.fecha_corte');
+        $suspend = data_get($status, 'contrato.fecha_suspension');
+        $period = data_get($status, 'contrato.grupo_corte');
+
+        $lines = ['📅 *Fechas de tu servicio*', ''];
+
+        if ($period) {
+            $lines[] = 'Periodo de facturación: ' . $period;
+        }
+
+        if ($cut) {
+            $lines[] = 'Fecha de corte: *' . $this->date($cut) . '*';
+        }
+
+        if ($suspend) {
+            $lines[] = 'Fecha de suspensión: ' . $this->date($suspend);
+        }
+
+        if (!$period && !$cut && !$suspend) {
+            $lines[] = 'No tengo fechas de corte registradas para este contrato.';
+        }
+
+        $lines[] = '';
+        $lines[] = $due > 0
+            ? 'Tienes *' . $this->money($due) . '* por pagar' . ($cut ? '. Paga antes del ' . $this->date($cut) . ' para no perder el servicio.' : '.')
+            : 'No tienes facturas pendientes, así que no hay riesgo de corte. 👌';
+
+        return $lines;
+    }
+
+    /** @return string[] */
+    private function televisionLines(array $status): array
+    {
+        if (!data_get($status, 'estado.television.tiene_servicio')) {
+            return [
+                '📺 *Televisión*',
+                '',
+                'Este contrato no tiene televisión contratada. Si quieres añadirla, pide hablar con un asesor desde el menú.',
+            ];
+        }
+
+        $lines = [
+            '📺 *Tu servicio de televisión*',
+            '',
+            'Estado: ' . (data_get($status, 'estado.television.activo') ? '✅ activo' : '⛔ inactivo'),
+        ];
+
+        if ($plan = data_get($status, 'estado.television.plan')) {
+            $lines[] = 'Plan: ' . $plan;
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Número de contrato y dirección. Parece menor, pero el número de contrato
+     * es lo que le piden al cliente en el corresponsal bancario y casi nadie
+     * se lo sabe de memoria.
+     *
+     * @return string[]
+     */
+    private function contractDataLines(array $status, array $contract): array
+    {
+        $lines = [
+            '📍 *Datos de tu contrato*',
+            '',
+            'Número de contrato: *' . (data_get($status, 'contrato.nro') ?? $contract['nro'] ?? '—') . '*',
+        ];
+
+        if ($address = data_get($status, 'contrato.direccion')) {
+            $lines[] = 'Dirección de instalación: ' . $address;
+        }
+
+        if ($service = data_get($status, 'contrato.servicio')) {
+            $lines[] = 'Servicio: ' . $service;
+        }
+
+        $lines[] = '';
+        $lines[] = 'Con el número de contrato puedes pagar en cualquiera de nuestros puntos autorizados.';
+
+        return $lines;
+    }
+
+    /**
+     * Las facturas del contrato llegan con los montos anidados (`montos.por_pagar`)
+     * y las del contacto planas (`por_pagar`). Se igualan aquí para que una sola
+     * función sepa pintar una línea de factura.
+     */
+    private function flattenInvoice(array $invoice): array
+    {
+        return [
+            'codigo' => $invoice['codigo'] ?? null,
+            'por_pagar' => $invoice['por_pagar'] ?? data_get($invoice, 'montos.por_pagar', 0),
+            'vencimiento' => $invoice['vencimiento'] ?? null,
+        ];
+    }
+
+    private function speed($value): string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return '—';
+        }
+
+        // Integra manda unas veces el número pelado y otras "300 Mbps".
+        return preg_match('/[a-z]/i', $value) ? $value : $value . ' Mbps';
+    }
+
+    private function technologyLabel(string $tech): string
+    {
+        return match (strtolower($tech)) {
+            'fibra' => 'Fibra óptica',
+            'inalambrica' => 'Inalámbrica',
+            'cableado_utp' => 'Cable UTP',
+            default => ucfirst($tech),
+        };
     }
 
     /**

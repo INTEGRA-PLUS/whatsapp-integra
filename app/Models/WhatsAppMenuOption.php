@@ -38,7 +38,7 @@ class WhatsAppMenuOption extends Model
             'reply' => null,
         ],
         'estado_servicio' => [
-            'label' => 'Estado de mi servicio',
+            'label' => 'Estado del contrato',
             'reply' => null,
         ],
     ];
@@ -71,6 +71,26 @@ class WhatsAppMenuOption extends Model
 
     /** Tipos que guardan el texto de la opción como mensaje al cliente. */
     public const TEXT_CARRYING_TYPES = ['reply_text', 'handoff'];
+
+    /**
+     * Qué parte del estado del contrato muestra la opción.
+     *
+     * La consulta a Integra es siempre la misma —una sola llamada trae internet,
+     * televisión, plan, fechas y facturas—; lo único que cambia es qué se le
+     * cuenta al cliente. Segmentarlo en un submenú evita el muro de texto que
+     * nadie lee y deja que cada quien pregunte exactamente lo que le interesa.
+     */
+    public const SEGMENT_SUMMARY = 'resumen';
+
+    public const STATUS_SEGMENTS = [
+        self::SEGMENT_SUMMARY => 'Resumen completo',
+        'internet' => 'Estado de internet',
+        'facturas' => 'Facturas pendientes',
+        'plan' => 'Plan y velocidad',
+        'corte' => 'Fechas de corte',
+        'television' => 'Estado de televisión',
+        'datos' => 'Datos del contrato',
+    ];
 
     /** Cómo se elige el asesor en un handoff. */
     public const ASSIGN_FIXED = 'fixed';
@@ -192,6 +212,18 @@ class WhatsAppMenuOption extends Model
         }
 
         return $this->assign_to_user_id ? self::ASSIGN_FIXED : self::ASSIGN_INBOX;
+    }
+
+    /**
+     * Parte del contrato que muestra esta opción. Las opciones creadas antes de
+     * que existiera el submenú no tienen segmento guardado y siguen mostrando
+     * el resumen completo, que es lo que hacían.
+     */
+    public function statusSegment(): string
+    {
+        $segment = $this->setting('segmento', self::SEGMENT_SUMMARY);
+
+        return array_key_exists($segment, self::STATUS_SEGMENTS) ? $segment : self::SEGMENT_SUMMARY;
     }
 
     /** ¿El tipo guarda un texto para el cliente? */

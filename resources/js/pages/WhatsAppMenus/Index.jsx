@@ -57,7 +57,7 @@ const INTEGRA_HELP = {
     consultar_factura: 'Busca al cliente por su número de WhatsApp en Integra y le responde sus facturas pendientes con el total. Si no lo encuentra, le pide el documento.',
     pagar_en_linea: 'Avisa a tus sistemas por el webhook payment.requested y le entrega al cliente el enlace de pago que configures aquí.',
     reportar_falla: 'Antes de abrir el radicado revisa el estado del contrato: si está suspendido por mora se lo dice y no crea nada. Si no, le pide que describa la falla y crea el radicado en Integra.',
-    estado_servicio: 'Le responde si su internet y su televisión están activos, el plan que tiene y cuánto debe.',
+    estado_servicio: 'Consulta el contrato del cliente y le responde la parte que elijas abajo: si su internet está activo, su plan y velocidad, cuándo le cortan o lo que debe.',
 };
 
 const GROUP_LABELS = {
@@ -127,7 +127,7 @@ const emptyForm = () => ({
     options: [emptyOption()],
 });
 
-export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], integra = {} }) {
+export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
@@ -248,7 +248,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     <MenuForm
                         form={createForm} setForm={setCreateForm}
                         instances={instances} agents={agents} menus={menus} limits={limits} errors={errors}
-                        actionTypes={actionTypes} actionMeta={actionMeta} integra={integra}
+                        actionTypes={actionTypes} actionMeta={actionMeta} integra={integra} statusSegments={statusSegments}
                         onSubmit={handleCreate} onCancel={() => setShowCreate(false)} submitLabel="Crear menú"
                     />
                 </Modal>
@@ -259,7 +259,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     <MenuForm
                         form={editForm} setForm={setEditForm}
                         instances={instances} agents={agents} menus={menus} limits={limits} errors={errors}
-                        actionTypes={actionTypes} actionMeta={actionMeta} integra={integra}
+                        actionTypes={actionTypes} actionMeta={actionMeta} integra={integra} statusSegments={statusSegments}
                         editingId={editing.id}
                         onSubmit={handleEdit} onCancel={() => setEditing(null)} submitLabel="Guardar cambios"
                     />
@@ -353,7 +353,7 @@ function MenuCard({ menu, actionMeta, onEdit, onDelete }) {
     );
 }
 
-function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, editingId = null, onSubmit, onCancel, submitLabel }) {
+function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, onSubmit, onCancel, submitLabel }) {
     const options = form.options ?? [];
     const catalogs = useIntegraCatalogs(
         integra.connected && options.some(o => o.action_type === 'reportar_falla')
@@ -535,6 +535,7 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             actionMeta={actionMeta}
                             integra={integra}
                             catalogs={catalogs}
+                            statusSegments={statusSegments}
                             submenuChoices={submenuChoices}
                             errors={errors}
                             canMoveUp={index > 0}
@@ -605,7 +606,7 @@ function useIntegraCatalogs(enabled) {
     return state;
 }
 
-function OptionRow({ index, option, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
+function OptionRow({ index, option, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
     const ActionIcon = iconFor(option.action_type);
     const meta = actionMeta[option.action_type];
     const config = option.config ?? {};
@@ -758,6 +759,19 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                                 Déjalo vacío si el enlace lo envía tu sistema al recibir el webhook.
                             </p>
                         </>
+                    )}
+
+                    {option.action_type === 'estado_servicio' && (
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-medium text-muted-foreground">¿Qué parte del contrato muestra?</label>
+                            <Select value={config.segmento ?? 'resumen'} onChange={v => setConfig({ segmento: v })} className="h-8 text-xs">
+                                {statusSegments.map(sg => <option key={sg.value} value={sg.value}>{sg.label}</option>)}
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                                Una sola consulta trae todo el contrato; esto elige qué se le cuenta al cliente.
+                                Para segmentarlo, crea un submenú con una opción por cada parte.
+                            </p>
+                        </div>
                     )}
 
                     {option.action_type === 'reportar_falla' && (

@@ -40,7 +40,7 @@ class DefaultWhatsAppMenuTest extends TestCase
     {
         $company = $this->company();
 
-        $menu = WhatsAppMenu::where('company_id', $company->id)->with('options')->first();
+        $menu = $this->rootMenu($company);
 
         $this->assertNotNull($menu, 'La empresa nueva no recibió su menú por defecto.');
         $this->assertSame(DefaultWhatsAppMenu::NAME, $menu->name);
@@ -61,9 +61,7 @@ class DefaultWhatsAppMenuTest extends TestCase
     {
         $company = $this->company();
 
-        $this->assertFalse(
-            WhatsAppMenu::where('company_id', $company->id)->first()->active
-        );
+        $this->assertFalse($this->rootMenu($company)->active);
     }
 
     public function test_apagado_no_le_responde_a_nadie(): void
@@ -81,14 +79,14 @@ class DefaultWhatsAppMenuTest extends TestCase
         $company = $this->company();
         $instance = $this->metaInstance($company);
 
-        WhatsAppMenu::where('company_id', $company->id)->update(['active' => true]);
+        $this->rootMenu($company)->update(['active' => true]);
 
         $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
 
         $outbound = WhatsAppMessage::where('direction', 'outbound')->first();
         $this->assertNotNull($outbound);
 
-        foreach (['Consultar factura', 'Pagar en línea', 'Cambiar clave WiFi', 'Reportar falla', 'Hablar con un asesor'] as $title) {
+        foreach (['Consultar factura', 'Pagar en línea', 'Estado de mi contrato', 'Reportar falla', 'Hablar con un asesor'] as $title) {
             $this->assertStringContainsString($title, $outbound->content);
         }
     }
@@ -99,7 +97,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $company = $this->company();
         $instance = $this->metaInstance($company);
 
-        WhatsAppMenu::where('company_id', $company->id)->update(['active' => true, 'cooldown_minutes' => 0]);
+        $this->rootMenu($company)->update(['active' => true, 'cooldown_minutes' => 0]);
 
         $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
         $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'menu', 'wamid.IN2'))->assertOk();
@@ -151,7 +149,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         DefaultWhatsAppMenu::createFor($company);
 
-        $menu = WhatsAppMenu::where('company_id', $company->id)->with('options')->first();
+        $menu = $this->rootMenu($company);
         $this->assertNotNull($menu);
         $this->assertCount(5, $menu->options);
         $this->assertFalse($menu->active);
@@ -165,8 +163,8 @@ class DefaultWhatsAppMenuTest extends TestCase
         DefaultWhatsAppMenu::createFor($company);
         DefaultWhatsAppMenu::createFor($company);
 
-        $this->assertSame(1, WhatsAppMenu::where('company_id', $company->id)->count());
-        $this->assertSame(5, WhatsAppMenuOption::whereIn(
+        $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
+        $this->assertSame(9, WhatsAppMenuOption::whereIn(
             'menu_id',
             WhatsAppMenu::where('company_id', $company->id)->pluck('id')
         )->count());
@@ -178,14 +176,14 @@ class DefaultWhatsAppMenuTest extends TestCase
      */
     public function test_los_textos_caben_en_los_limites_de_meta(): void
     {
-        $menu = WhatsAppMenu::where('company_id', $this->company()->id)->with('options')->first();
+        $menu = $this->rootMenu($this->company());
 
         $this->assertLessThanOrEqual(WhatsAppMenu::MAX_HEADER, mb_strlen($menu->header_text));
         $this->assertLessThanOrEqual(WhatsAppMenu::MAX_FOOTER, mb_strlen($menu->footer_text));
         $this->assertLessThanOrEqual(WhatsAppMenu::MAX_BODY, mb_strlen($menu->body_text));
         $this->assertLessThanOrEqual(WhatsAppMenu::MAX_BUTTON_TITLE, mb_strlen($menu->list_button_text));
 
-        foreach ($menu->options as $option) {
+        foreach (WhatsAppMenuOption::all() as $option) {
             $this->assertLessThanOrEqual(WhatsAppMenu::MAX_ROW_TITLE, mb_strlen($option->title), "Título largo: {$option->title}");
             $this->assertLessThanOrEqual(WhatsAppMenu::MAX_ROW_DESCRIPTION, mb_strlen($option->description));
         }
@@ -194,7 +192,7 @@ class DefaultWhatsAppMenuTest extends TestCase
     /** Las acciones configuradas de fábrica son las que el módulo sabe ejecutar. */
     public function test_las_acciones_son_todas_del_catalogo(): void
     {
-        $menu = WhatsAppMenu::where('company_id', $this->company()->id)->with('options')->first();
+        $menu = $this->rootMenu($this->company());
 
         foreach ($menu->options as $option) {
             $this->assertContains($option->action_type, WhatsAppMenuOption::ACTION_TYPES);
@@ -206,7 +204,80 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertSame(WhatsAppMenuOption::ASSIGN_LEAST_BUSY, $handoff->assignStrategy());
     }
 
+    /**
+     * El submenú de contrato nace ACTIVO aunque el principal esté apagado.
+     *
+     * No es un descuido: al no ser menú raíz nunca se dispara solo, así que no
+     * le llega a nadie mientras el principal siga apagado. Al revés sí sería
+     * una trampa — el admin enciende el menú, el cliente toca "Estado de mi
+     * contrato" y no recibe nada.
+     */
+    public function test_el_submenu_de_contrato_nace_activo_pero_no_se_dispara_solo(): void
+    {
+        $company = $this->company();
+        $instance = $this->metaInstance($company);
+
+        $submenu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)
+            ->with('options')
+            ->first();
+
+        $this->assertNotNull($submenu);
+        $this->assertTrue($submenu->active);
+        $this->assertFalse($submenu->is_root);
+        $this->assertCount(4, $submenu->options);
+
+        // Con el principal apagado, el cliente no recibe nada: un submenú activo
+        // sigue siendo inalcanzable por su cuenta.
+        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->assertSame(0, WhatsAppMessage::where('direction', 'outbound')->count());
+    }
+
+    public function test_la_opcion_de_contrato_lleva_al_submenu(): void
+    {
+        $company = $this->company();
+
+        $option = $this->rootMenu($company)->options->firstWhere('action_type', 'submenu');
+        $submenu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)
+            ->first();
+
+        $this->assertNotNull($option, 'El menú principal no tiene la opción que abre el submenú.');
+        $this->assertSame($submenu->id, $option->target_menu_id);
+    }
+
+    /**
+     * Cada opción del submenú pide un trozo distinto del contrato. Si dos
+     * compartieran segmento, el cliente recibiría lo mismo por dos caminos.
+     */
+    public function test_cada_opcion_del_submenu_muestra_un_segmento_distinto(): void
+    {
+        $company = $this->company();
+
+        $submenu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)
+            ->with('options')
+            ->firstOrFail();
+
+        $segments = $submenu->options->map->statusSegment();
+
+        $this->assertSame(['internet', 'facturas', 'plan', 'corte'], $segments->all());
+        $this->assertCount(4, $segments->unique());
+
+        foreach ($segments as $segment) {
+            $this->assertArrayHasKey($segment, WhatsAppMenuOption::STATUS_SEGMENTS);
+        }
+    }
+
     // ------------------------------------------------------------------
+
+    private function rootMenu(Company $company): ?WhatsAppMenu
+    {
+        return WhatsAppMenu::where('company_id', $company->id)
+            ->where('is_root', true)
+            ->with('options')
+            ->first();
+    }
 
     private function company(): Company
     {
