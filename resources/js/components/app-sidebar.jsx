@@ -20,7 +20,8 @@ import {
     Webhook,
     BellRing,
     Contact,
-    Wand2
+    Wand2,
+    ListTree
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -60,6 +61,7 @@ export function AppSidebar() {
             { title: 'Respuestas Rápidas', href: route('quick-replies.index'), icon: Zap, show: hasPermission('quick_replies.view') },
             { title: 'Macros', href: route('macros.index'), icon: Wand2, show: hasPermission('macros.view') },
             { title: 'Respuestas Automáticas', href: route('auto-responses.index'), icon: Bot, show: hasPermission('auto_responses.view') },
+            { title: 'Menús de WhatsApp', href: route('whatsapp-menus.index'), icon: ListTree, show: hasPermission('whatsapp_menus.view') },
             { title: 'Campañas', href: route('campaigns.index'), icon: Megaphone, show: hasPermission('campaigns.view') },
             { title: 'Plantillas', href: route('templates.index'), icon: FileType, show: hasPermission('templates.view') },
             { title: 'Reportes', href: route('reports.index'), icon: BarChart3, show: hasPermission('reports.view') },

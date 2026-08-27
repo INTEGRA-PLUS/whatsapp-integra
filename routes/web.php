@@ -236,6 +236,23 @@ Route::middleware('auth')->group(function () {
         Route::delete('/{auto_response}', [App\Http\Controllers\AutoResponseController::class, 'destroy'])
             ->middleware('permission:auto_responses.delete')->name('destroy');
     });
+    // Menús interactivos de WhatsApp (botones y listas)
+    Route::prefix('whatsapp-menus')->name('whatsapp-menus.')->group(function () {
+        Route::get('/', [App\Http\Controllers\WhatsAppMenuController::class, 'index'])
+            ->middleware('permission:whatsapp_menus.view')->name('index');
+        Route::post('/', [App\Http\Controllers\WhatsAppMenuController::class, 'store'])
+            ->middleware('permission:whatsapp_menus.create')->name('store');
+        Route::put('/{menu}', [App\Http\Controllers\WhatsAppMenuController::class, 'update'])
+            ->middleware('permission:whatsapp_menus.update')->name('update');
+        Route::delete('/{menu}', [App\Http\Controllers\WhatsAppMenuController::class, 'destroy'])
+            ->middleware('permission:whatsapp_menus.delete')->name('destroy');
+        // Catálogos de Integra (tipos de falla, prioridades, técnicos) para el
+        // formulario. Va aparte de index porque es una llamada HTTP a otro
+        // servidor: si Integra tarda, no debe retrasar la carga de la página.
+        Route::get('/integra-catalogs', [App\Http\Controllers\WhatsAppMenuController::class, 'integraCatalogs'])
+            ->middleware('permission:whatsapp_menus.view')->name('integra-catalogs');
+    });
+
     Route::resource('users', UserController::class)->middleware('permission:users.view');
     Route::resource('roles', RoleController::class)->middleware('permission:roles.view');
     Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');

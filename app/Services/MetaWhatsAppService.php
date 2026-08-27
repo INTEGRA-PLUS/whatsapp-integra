@@ -44,6 +44,30 @@ class MetaWhatsAppService
     }
 
     /**
+     * Envía un menú interactivo: botones de respuesta o lista de opciones.
+     *
+     * El bloque `interactive` llega ya armado desde WhatsAppMenuService, que es
+     * quien conoce los límites de cada formato. Aquí sólo se envuelve en el
+     * sobre del mensaje, igual que el texto o la plantilla.
+     */
+    public function sendInteractive(string $phoneNumberId, string $to, array $interactive, ?string $contextWamid = null)
+    {
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $to,
+            'type' => 'interactive',
+            'interactive' => $interactive,
+        ];
+
+        if ($contextWamid) {
+            $payload['context'] = ['message_id' => $contextWamid];
+        }
+
+        return $this->sendRequest($phoneNumberId, $payload);
+    }
+
+    /**
      * Reacciona con un emoji a un mensaje del chat.
      *
      * Meta trata la reacción como un mensaje más (`type: reaction`), así que

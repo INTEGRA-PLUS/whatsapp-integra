@@ -17,7 +17,7 @@ class IntegrationController extends Controller
             CompanyIntegration::KEY_INVOICE_PAYMENTS => [
                 'key'         => CompanyIntegration::KEY_INVOICE_PAYMENTS,
                 'name'        => 'Pagos a facturas',
-                'description' => 'Conecta con el software Integra para registrar pagos a facturas desde el chat.',
+                'description' => 'Conecta con el software Integra para registrar pagos desde el chat y para las opciones de autoservicio de los menús de WhatsApp (facturas, radicados, estado del servicio).',
             ],
             CompanyIntegration::KEY_CONTACTS_SYNC => [
                 'key'         => CompanyIntegration::KEY_CONTACTS_SYNC,

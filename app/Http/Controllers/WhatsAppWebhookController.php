@@ -13,6 +13,7 @@ use App\Models\WhatsAppCallPermission;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
+use App\Services\WhatsAppMenuService;
 use App\Support\ConversationNotice;
 
 class WhatsAppWebhookController extends Controller
@@ -20,15 +21,18 @@ class WhatsAppWebhookController extends Controller
     private $metaService;
     private $autoResponseService;
     private $businessHoursService;
+    private $menuService;
 
     public function __construct(
         MetaWhatsAppService $metaService,
         AutoResponseService $autoResponseService,
-        BusinessHoursService $businessHoursService
+        BusinessHoursService $businessHoursService,
+        WhatsAppMenuService $menuService
     ) {
         $this->metaService = $metaService;
         $this->autoResponseService = $autoResponseService;
         $this->businessHoursService = $businessHoursService;
+        $this->menuService = $menuService;
     }
 
     public function verify(Request $request)
@@ -794,7 +798,14 @@ class WhatsAppWebhookController extends Controller
             try {
                 $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
 
-                if (!$handledOutOfHours) {
+                // El menú va antes que la respuesta automática y la sustituye
+                // cuando se hace cargo: si respondieran los dos, el cliente
+                // recibiría el menú y encima el texto de bienvenida, que es
+                // justamente lo que el menú venía a reemplazar.
+                $handledByMenu = !$handledOutOfHours
+                    && $this->menuService->handleInbound($instance, $conversation, $messageData, $wamid);
+
+                if (!$handledOutOfHours && !$handledByMenu) {
                     $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
                 }
             } catch (\Throwable $e) {

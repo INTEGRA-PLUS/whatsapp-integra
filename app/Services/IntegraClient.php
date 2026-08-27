@@ -18,7 +18,9 @@ use Illuminate\Support\Facades\Log;
  * Autenticación: Bearer token por empresa (tenant), generado en el servidor
  * de Integra con `php artisan api:token {empresa} --abilities=...`. Scopes
  * usados por esta integración: contactos.leer, facturas.leer, pagos.leer,
- * pagos.registrar.
+ * pagos.registrar, radicados.leer, radicados.crear, contratos.leer. Un token
+ * emitido sin abilities (el que sale del wizard con email+contraseña) los
+ * tiene todos; uno pegado a mano puede quedarse corto y responder 403.
  *
  * Envelope de respuesta: { success, data, message?, meta? } — errores llegan
  * como { success: false, message } con HTTP 401/403/404/422/500.
@@ -32,6 +34,12 @@ use Illuminate\Support\Facades\Log;
  *   POST /api/v1/facturas/{factura}/pagos             (pagos.registrar)
  *        body: { cuenta, metodo_pago, monto, fecha?, observaciones?,
  *                comprobante_pago?, forma_pago? }
+ *   GET  /api/v1/radicados/catalogos                  (radicados.leer)
+ *   POST /api/v1/radicados                            (radicados.crear)
+ *        body: { servicio, prioridad, cliente_id|identificacion, reporte?,
+ *                contrato?, medio?, telefono?, ip?, mac_address? }
+ *   GET  /api/v1/contratos/{nro}/estado               (contratos.leer)
+ *        estado de internet/TV + facturas pendientes del contrato
  */
 class IntegraClient
 {
@@ -364,5 +372,71 @@ class IntegraClient
         ));
 
         return $res->json('data') ?? [];
+    }
+
+    /**
+     * Catálogos para crear un radicado: servicios (tipos de falla), técnicos,
+     * prioridades y estatus del entorno Integra.
+     *
+     * Los usa el formulario del menú: el admin elige con qué servicio y qué
+     * prioridad entra el radicado que abrirá el cliente desde WhatsApp.
+     *
+     * @return array{servicios: array, tecnicos: array, prioridades: array, estatus: array}
+     * @throws \RuntimeException
+     */
+    public function radicadoCatalogs(): array
+    {
+        $data = $this->call('get', '/api/v1/radicados/catalogos')->json('data') ?? [];
+
+        return [
+            'servicios' => $data['servicios'] ?? [],
+            'tecnicos' => $data['tecnicos'] ?? [],
+            'prioridades' => $data['prioridades'] ?? [],
+            'estatus' => $data['estatus'] ?? [],
+        ];
+    }
+
+    /**
+     * Crea un radicado de soporte. El cliente se identifica por `cliente_id` o
+     * `identificacion`; nombre, teléfono y dirección se toman del contacto si
+     * no se envían.
+     *
+     * @param array $payload { servicio, prioridad, cliente_id|identificacion, reporte?, contrato?, medio?, telefono?, ip?, mac_address? }
+     * @return array { id, codigo, estatus, cliente_id, fecha }
+     * @throws \RuntimeException
+     */
+    public function createRadicado(array $payload): array
+    {
+        $res = $this->call('post', '/api/v1/radicados', array_filter(
+            $payload,
+            fn ($v) => $v !== null && $v !== ''
+        ));
+
+        return $res->json('data') ?? [];
+    }
+
+    /**
+     * Estado de internet y televisión de un contrato, con el contrato en sí y
+     * sus facturas pendientes.
+     *
+     * Devuelve null cuando Integra no conoce el contrato (404 de negocio): que
+     * el número esté mal no es un fallo de la integración, y el llamador
+     * necesita distinguirlo de que la API esté caída.
+     *
+     * @param string $nro Número de contrato (contracts.nro), no el id.
+     * @throws \RuntimeException
+     */
+    public function contractStatus(string $nro): ?array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/contratos/'.rawurlencode($nro).'/estado');
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return null;
+            }
+            throw $e;
+        }
+
+        return $res->json('data') ?? null;
     }
 }
