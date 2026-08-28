@@ -36,6 +36,24 @@ class DefaultWhatsAppMenuTest extends TestCase
         ['👤 Hablar con un asesor', 'handoff'],
     ];
 
+    /** Y la siguiente, ya con submenú: dos menús que hay que comprobar enteros. */
+    private const SUBMENU_TEMPLATE_NAME = 'Estado de mi contrato';
+
+    private const PREVIOUS_ROOT_WITH_SUBMENU = [
+        ['📄 Consultar factura', 'consultar_factura'],
+        ['💳 Pagar en línea', 'pagar_en_linea'],
+        ['📶 Estado de mi contrato', 'submenu'],
+        ['🛠️ Reportar falla', 'reportar_falla'],
+        ['👤 Hablar con un asesor', 'handoff'],
+    ];
+
+    private const PREVIOUS_SUBMENU = [
+        ['🌐 Estado de internet', 'estado_servicio'],
+        ['📄 Facturas pendientes', 'estado_servicio'],
+        ['⚡ Mi plan y velocidad', 'estado_servicio'],
+        ['📅 Cuándo me cortan', 'estado_servicio'],
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -53,7 +71,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $this->assertNotNull($menu, 'La empresa nueva no recibió su menú por defecto.');
         $this->assertSame(DefaultWhatsAppMenu::NAME, $menu->name);
-        $this->assertCount(5, $menu->options);
+        $this->assertCount(8, $menu->options);
         $this->assertSame('list', $menu->format());
 
         // El nombre de la empresa encabeza el menú, y las variables del módulo
@@ -83,7 +101,7 @@ class DefaultWhatsAppMenuTest extends TestCase
     }
 
     /** Y en cuanto lo encienden, funciona sin tocar nada más. */
-    public function test_al_encenderlo_responde_con_las_cinco_opciones(): void
+    public function test_al_encenderlo_responde_con_todas_las_opciones(): void
     {
         $company = $this->company();
         $instance = $this->metaInstance($company);
@@ -95,7 +113,10 @@ class DefaultWhatsAppMenuTest extends TestCase
         $outbound = WhatsAppMessage::where('direction', 'outbound')->first();
         $this->assertNotNull($outbound);
 
-        foreach (['Consultar factura', 'Pagar en línea', 'Estado de mi contrato', 'Reportar falla', 'Hablar con un asesor'] as $title) {
+        foreach ([
+            'Mis facturas', 'Pagar en línea', 'Estado de mi servicio', 'Mis últimos pagos',
+            'Reportar una falla', 'Mi consumo', 'Mi plan y contrato', 'Hablar con un asesor',
+        ] as $title) {
             $this->assertStringContainsString($title, $outbound->content);
         }
     }
@@ -160,7 +181,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $menu = $this->rootMenu($company);
         $this->assertNotNull($menu);
-        $this->assertCount(5, $menu->options);
+        $this->assertCount(8, $menu->options);
         $this->assertFalse($menu->active);
     }
 
@@ -173,7 +194,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         DefaultWhatsAppMenu::createFor($company);
 
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
-        $this->assertSame(9, WhatsAppMenuOption::whereIn(
+        $this->assertSame(15, WhatsAppMenuOption::whereIn(
             'menu_id',
             WhatsAppMenu::where('company_id', $company->id)->pluck('id')
         )->count());
@@ -234,7 +255,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertNotNull($submenu);
         $this->assertTrue($submenu->active);
         $this->assertFalse($submenu->is_root);
-        $this->assertCount(4, $submenu->options);
+        $this->assertCount(7, $submenu->options);
 
         // Con el principal apagado, el cliente no recibe nada: un submenú activo
         // sigue siendo inalcanzable por su cuenta.
@@ -270,8 +291,8 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $segments = $submenu->options->map->statusSegment();
 
-        $this->assertSame(['internet', 'facturas', 'plan', 'corte'], $segments->all());
-        $this->assertCount(4, $segments->unique());
+        $this->assertSame(['plan', 'corte', 'contrato', 'wifi', 'soportes', 'television', 'datos'], $segments->all());
+        $this->assertCount(7, $segments->unique());
 
         foreach ($segments as $segment) {
             $this->assertArrayHasKey($segment, WhatsAppMenuOption::STATUS_SEGMENTS);
@@ -293,11 +314,66 @@ class DefaultWhatsAppMenuTest extends TestCase
         DefaultWhatsAppMenu::refreshUntouched(self::PREVIOUS_TEMPLATE);
 
         $root = $this->rootMenu($company);
-        $this->assertSame('📶 Estado de mi contrato', $root->options[2]->title);
-        $this->assertSame('submenu', $root->options[2]->action_type);
+        $this->assertSame('📶 Estado de mi servicio', $root->options[2]->title);
+        $this->assertSame('estado_servicio', $root->options[2]->action_type);
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
         // Y sigue apagado: ponerse al día no es motivo para empezar a responder.
         $this->assertFalse($root->active);
+    }
+
+    /**
+     * La puesta al día cuando la plantilla anterior ya traía submenú.
+     *
+     * Es el caso que estaba roto por partida doble: mirando sólo el menú raíz,
+     * una empresa con dos menús nunca se consideraba intacta y no se
+     * actualizaba jamás; y si hubiera pasado el filtro, se borraba el raíz
+     * dejando el submenú huérfano —y con él en pie, sembrar de nuevo no hace
+     * nada porque la empresa "ya tiene menús"—, así que la empresa se habría
+     * quedado sin menú principal.
+     */
+    public function test_una_plantilla_de_dos_menus_intacta_tambien_se_pone_al_dia(): void
+    {
+        $company = $this->company();
+        $this->downgradeToSubmenuTemplate($company);
+
+        DefaultWhatsAppMenu::refreshUntouched(
+            self::PREVIOUS_ROOT_WITH_SUBMENU,
+            [self::SUBMENU_TEMPLATE_NAME => self::PREVIOUS_SUBMENU]
+        );
+
+        $root = $this->rootMenu($company);
+
+        $this->assertNotNull($root, 'La empresa se quedó sin menú principal.');
+        $this->assertCount(8, $root->options);
+        $this->assertSame('💵 Mis últimos pagos', $root->options[3]->title);
+        $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
+        $this->assertSame(
+            DefaultWhatsAppMenu::SUBMENU_NAME,
+            WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->value('name')
+        );
+        // Y sigue apagado: ponerse al día no es motivo para empezar a responder.
+        $this->assertFalse($root->active);
+    }
+
+    /**
+     * Y si el admin retocó el submenú —aunque el raíz siga de fábrica—, no se
+     * toca nada. El trabajo suyo manda sobre la plantilla al día.
+     */
+    public function test_un_submenu_retocado_deja_toda_la_plantilla_en_paz(): void
+    {
+        $company = $this->company();
+        $this->downgradeToSubmenuTemplate($company);
+
+        $submenu = WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->with('options')->first();
+        $submenu->options[1]->update(['title' => '📄 Lo que debo']);
+
+        DefaultWhatsAppMenu::refreshUntouched(
+            self::PREVIOUS_ROOT_WITH_SUBMENU,
+            [self::SUBMENU_TEMPLATE_NAME => self::PREVIOUS_SUBMENU]
+        );
+
+        $this->assertCount(5, $this->rootMenu($company)->options);
+        $this->assertSame('📄 Lo que debo', $submenu->fresh()->options[1]->title);
     }
 
     /**
@@ -333,6 +409,43 @@ class DefaultWhatsAppMenuTest extends TestCase
     // ------------------------------------------------------------------
 
     /** Deja a la empresa como si hubiera recibido la plantilla anterior. */
+    /**
+     * Deja a la empresa como si hubiera recibido la plantilla del submenú: dos
+     * menús, el raíz apuntando al de contrato.
+     */
+    private function downgradeToSubmenuTemplate(Company $company): void
+    {
+        WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->delete();
+
+        $submenu = WhatsAppMenu::create([
+            'company_id' => $company->id,
+            'name' => self::SUBMENU_TEMPLATE_NAME,
+            'body_text' => '📶 ¿Qué quieres revisar de tu servicio?',
+            'is_root' => false,
+            'active' => true,
+        ]);
+
+        foreach (self::PREVIOUS_SUBMENU as $position => [$title, $action]) {
+            $submenu->options()->create([
+                'position' => $position,
+                'title' => $title,
+                'action_type' => $action,
+            ]);
+        }
+
+        $menu = $this->rootMenu($company);
+        $menu->options()->delete();
+
+        foreach (self::PREVIOUS_ROOT_WITH_SUBMENU as $position => [$title, $action]) {
+            $menu->options()->create([
+                'position' => $position,
+                'title' => $title,
+                'action_type' => $action,
+                'target_menu_id' => $action === 'submenu' ? $submenu->id : null,
+            ]);
+        }
+    }
+
     private function downgradeToPreviousTemplate(Company $company): void
     {
         WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->delete();

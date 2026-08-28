@@ -230,14 +230,15 @@ class WhatsAppMenuActionService
             );
         }
 
-        $status = $client->contractStatus((string) $contract['nro']);
+        $status = $this->summaryFor($client, $contract, $contact, $option);
         $segment = $option?->statusSegment() ?? WhatsAppMenuOption::SEGMENT_SUMMARY;
 
         $this->emit($instance, $conversation, 'service.checked', [
             'cliente' => $this->clientPayload($contact),
             'contrato_nro' => $contract['nro'],
             'segmento' => $segment,
-            'internet_activo' => (bool) data_get($status, 'estado.internet.activo'),
+            'internet_activo' => (bool) data_get($status, 'servicio.internet.activo'),
+            'motivo' => data_get($status, 'servicio.internet.motivo'),
         ]);
 
         if (!$status) {
@@ -268,7 +269,12 @@ class WhatsAppMenuActionService
         return match ($segment) {
             'internet' => $this->internetLines($status, $contract),
             'facturas' => $this->contractInvoiceLines($status),
+            'pagos' => $this->recentPaymentsLines($status),
+            'soportes' => $this->supportTicketsLines($status),
+            'consumo' => $this->usageLines($status),
             'plan' => $this->planLines($status),
+            'contrato' => $this->contractTermsLines($status),
+            'wifi' => $this->wifiLines($status),
             'corte' => $this->cutoffLines($status),
             'television' => $this->televisionLines($status),
             'datos' => $this->contractDataLines($status, $contract),
@@ -286,8 +292,9 @@ class WhatsAppMenuActionService
      */
     private function internetLines(array $status, array $contract): array
     {
-        $active = (bool) data_get($status, 'estado.internet.activo');
-        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+        $active = (bool) data_get($status, 'servicio.internet.activo');
+        $motivo = data_get($status, 'servicio.internet.motivo');
+        $due = (float) data_get($status, 'facturacion.pendientes.total_por_pagar', 0);
 
         $lines = [
             '🌐 *Estado de tu internet*',
@@ -296,26 +303,76 @@ class WhatsAppMenuActionService
                 . ' — ' . ($active ? '✅ *Activo*' : '⛔ *Suspendido*'),
         ];
 
-        if (!$active) {
-            if ($since = data_get($status, 'contrato.fecha_suspension')) {
-                $lines[] = 'Suspendido desde el ' . $this->date($since);
-            }
-
+        if ($active) {
             $lines[] = '';
-            $lines[] = $due > 0
-                ? 'Tienes *' . $this->money($due) . '* en facturas pendientes. En cuanto registremos el pago, el servicio se reactiva automáticamente.'
-                : 'No aparecen facturas pendientes, así que la suspensión tiene otro motivo. Te recomiendo reportarlo desde el menú.';
+            $lines[] = 'Tu servicio está habilitado desde nuestro lado. Si aun así no tienes conexión, reinicia el router y, si sigue igual, repórtalo desde el menú para que lo revise un técnico.';
+
+            if ($due > 0) {
+                $lines[] = '';
+                $lines[] = '⚠️ Ojo: tienes *' . $this->money($due) . '* pendientes'
+                    . (($cut = $this->cutoffDay($status)) ? '. Te cortan el día ' . $cut . ' de cada mes.' : '.');
+            }
 
             return $lines;
         }
 
         $lines[] = '';
-        $lines[] = 'Tu servicio está habilitado desde nuestro lado. Si aun así no tienes conexión, reinicia el router y, si sigue igual, repórtalo desde el menú para que lo revise un técnico.';
 
-        if ($due > 0) {
+        // El motivo es lo que cambia la conversación entera: "pague $X y se
+        // reactiva solo" y "hay una falla, le abro un reporte" son dos caminos
+        // distintos, y decir sólo "suspendido" deja al cliente sin ninguno.
+        $lines = array_merge($lines, match ($motivo) {
+            'mora' => $this->arrearsLines($status, $due),
+            'pausado' => [
+                'Tu servicio está *pausado a petición tuya*. Cuando quieras reactivarlo, pídelo desde el menú y lo gestionamos.',
+            ],
+            'retirado' => [
+                'Este contrato figura como *retirado*. Si quieres volver a tener servicio, escribe por el menú y un asesor te cuenta cómo.',
+            ],
+            'suspendido' => [
+                'No aparecen facturas pendientes, así que *la suspensión no es por pago*. Repórtalo desde el menú para que lo revise un técnico.',
+            ],
+            default => [
+                $due > 0
+                    ? 'Tienes *' . $this->money($due) . '* en facturas pendientes. En cuanto registremos el pago, el servicio se reactiva automáticamente.'
+                    : 'No aparecen facturas pendientes, así que la suspensión tiene otro motivo. Te recomiendo reportarlo desde el menú.',
+            ],
+        });
+
+        // Integra redacta su propio detalle ("suspendido desde el 12/08 por
+        // mora del ciclo 7"). Se añade sin reescribirlo: sabe cosas del caso
+        // que aquí no tenemos.
+        if ($detalle = trim((string) data_get($status, 'servicio.internet.detalle'))) {
             $lines[] = '';
-            $lines[] = '⚠️ Ojo: tienes *' . $this->money($due) . '* pendientes'
-                . (($cut = data_get($status, 'contrato.fecha_corte')) ? '. Fecha de corte: ' . $this->date($cut) : '.');
+            $lines[] = '_' . $detalle . '_';
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Cortado por mora: el único caso en que el cliente puede resolverlo solo,
+     * así que es el único donde hay que decirle el monto exacto.
+     *
+     * `monto_para_reactivar` no siempre es el total pendiente —puede bastar con
+     * cubrir el ciclo vencido—, y cobrar de más ahuyenta al que iba a pagar.
+     *
+     * @return string[]
+     */
+    private function arrearsLines(array $status, float $due): array
+    {
+        $toReactivate = data_get($status, 'servicio.internet.monto_para_reactivar');
+        $amount = $toReactivate !== null ? (float) $toReactivate : $due;
+
+        $lines = ['Está suspendido *por facturas pendientes*.'];
+
+        if ($amount > 0) {
+            $lines[] = '';
+            $lines[] = 'Con *' . $this->money($amount) . '* se reactiva, y se hace solo en cuanto registremos el pago.';
+
+            if ($toReactivate !== null && $due > $amount) {
+                $lines[] = 'Tu deuda total es de ' . $this->money($due) . ', pero para volver a navegar basta con lo de arriba.';
+            }
         }
 
         return $lines;
@@ -330,11 +387,14 @@ class WhatsAppMenuActionService
      */
     private function contractInvoiceLines(array $status): array
     {
-        $items = (array) data_get($status, 'facturas_pendientes.items', []);
-        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+        $items = (array) data_get($status, 'facturacion.pendientes.items', []);
+        $due = (float) data_get($status, 'facturacion.pendientes.total_por_pagar', 0);
+        $credit = (float) data_get($status, 'facturacion.saldo_a_favor', 0);
 
         if (!$items && $due <= 0) {
-            return ['✅ *Sin facturas pendientes*', '', 'Este contrato está al día. ¡Gracias!'];
+            $lines = ['✅ *Sin facturas pendientes*', '', 'Este contrato está al día. ¡Gracias!'];
+
+            return array_merge($lines, $this->creditLines($credit));
         }
 
         $lines = ['📄 *Facturas pendientes de este contrato*', ''];
@@ -347,6 +407,292 @@ class WhatsAppMenuActionService
 
         $lines[] = '';
         $lines[] = '*Total por pagar: ' . $this->money($due) . '*';
+
+        return array_merge($lines, $this->creditLines($credit, $due));
+    }
+
+    /**
+     * El saldo a favor.
+     *
+     * Se calla cuando es cero, y se dice siempre que no lo sea: no verlo es lo
+     * que produce el reclamo de "yo pagué de más y nadie me lo abonó". Cuando
+     * cubre lo que debe, decirlo evita un pago que el cliente no tiene que hacer.
+     *
+     * @return string[]
+     */
+    private function creditLines(float $credit, float $due = 0.0): array
+    {
+        if ($credit <= 0) {
+            return [];
+        }
+
+        $lines = ['', '💰 Tienes *' . $this->money($credit) . '* a favor.'];
+
+        if ($due > 0) {
+            $lines[] = $credit >= $due
+                ? 'Alcanza para cubrir lo pendiente: pídelo por el menú y lo aplicamos.'
+                : 'Se descuenta de tu próxima factura.';
+        } else {
+            $lines[] = 'Se descuenta de tu próxima factura.';
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Los últimos pagos registrados.
+     *
+     * Contesta el "yo ya pagué y no me lo han registrado", que hoy se lleva un
+     * asesor entero: si el pago está, el cliente lo ve con su número de recibo
+     * y se acabó la discusión; si no está, sabe que tiene que mandar el
+     * comprobante y no espera sentado.
+     *
+     * @return string[]
+     */
+    private function recentPaymentsLines(array $status): array
+    {
+        $payments = array_filter((array) data_get($status, 'pagos_recientes', []), 'is_array');
+
+        if (!$payments) {
+            return [
+                '💳 *Tus últimos pagos*',
+                '',
+                'No tengo pagos registrados en este contrato todavía. Si acabas de pagar, mándanos el comprobante por aquí y lo aplicamos.',
+            ];
+        }
+
+        $lines = ['💳 *Tus últimos pagos*', ''];
+
+        foreach ($payments as $payment) {
+            $line = '• ' . ($payment['fecha'] ? $this->date((string) $payment['fecha']) : 'sin fecha')
+                . ' — *' . $this->money((float) ($payment['valor'] ?? 0)) . '*';
+
+            if ($medio = trim((string) ($payment['medio'] ?? ''))) {
+                $line .= ' · ' . $medio;
+            }
+
+            if ($recibo = trim((string) ($payment['recibo'] ?? ''))) {
+                $line .= ' (recibo ' . $recibo . ')';
+            }
+
+            $lines[] = $line;
+        }
+
+        $lines[] = '';
+        $lines[] = '¿Falta alguno? Mándanos el comprobante por este chat y lo revisamos.';
+
+        return $lines;
+    }
+
+    /**
+     * Los reportes de soporte que ya tiene abiertos.
+     *
+     * Es la consulta que evita el ticket duplicado: el cliente que no ve avance
+     * vuelve a reportar, y el técnico acaba con tres radicados de la misma
+     * falla. Enseñarle el que ya tiene, con su número y su estado, le da algo
+     * concreto que preguntar en vez de otro reporte.
+     *
+     * @return string[]
+     */
+    private function supportTicketsLines(array $status): array
+    {
+        $open = (int) data_get($status, 'soportes.abiertos', 0);
+        $items = array_filter((array) data_get($status, 'soportes.items', []), 'is_array');
+
+        if ($open < 1 && !$items) {
+            return [
+                '🔧 *Tus reportes de falla*',
+                '',
+                'No tienes reportes abiertos ahora mismo. Si tu servicio no funciona bien, ábrelo desde el menú y queda registrado.',
+            ];
+        }
+
+        $lines = [
+            '🔧 *Tus reportes de falla*',
+            '',
+            $open === 1 ? 'Tienes *1 reporte abierto*:' : 'Tienes *' . $open . ' reportes abiertos*:',
+            '',
+        ];
+
+        foreach ($items as $ticket) {
+            $line = '• #' . ($ticket['codigo'] ?? '—');
+
+            if ($fecha = ($ticket['fecha'] ?? null)) {
+                $line .= ' del ' . $this->date((string) $fecha);
+            }
+
+            if ($servicio = trim((string) ($ticket['servicio'] ?? ''))) {
+                $line .= ' · ' . $servicio;
+            }
+
+            $lines[] = $line . ' — ' . $this->ticketStateLabel((string) ($ticket['estado'] ?? 'otro'));
+        }
+
+        $lines[] = '';
+        $lines[] = 'Ya está en cola: no hace falta que lo reportes otra vez. Si es urgente, pide hablar con un asesor.';
+
+        return $lines;
+    }
+
+    private function ticketStateLabel(string $estado): string
+    {
+        return match ($estado) {
+            'pendiente' => '🕒 pendiente de asignar',
+            'en_proceso' => '🔧 en proceso',
+            'escalado' => '⚠️ escalado',
+            'solventado' => '✅ solucionado',
+            default => $estado,
+        };
+    }
+
+    /**
+     * El consumo de datos.
+     *
+     * `consumo` llega en null cuando no hay muestras, y eso NO es lo mismo que
+     * consumir cero: decirle "llevas 0 GB" a quien lleva el mes navegando es
+     * perder la confianza en todo lo demás que dice el bot.
+     *
+     * @return string[]
+     */
+    private function usageLines(array $status): array
+    {
+        $usage = data_get($status, 'consumo');
+
+        if (!is_array($usage)) {
+            return [
+                '📊 *Tu consumo*',
+                '',
+                'Todavía no tengo mediciones de consumo para este contrato. Estamos habilitándolo.',
+            ];
+        }
+
+        $lines = ['📊 *Tu consumo de este mes*', ''];
+
+        $total = (float) data_get($usage, 'mes_actual.total_gb', 0);
+        $down = (float) data_get($usage, 'mes_actual.descarga_gb', 0);
+        $up = (float) data_get($usage, 'mes_actual.subida_gb', 0);
+
+        $lines[] = 'Total: *' . $this->gigabytes($total) . '*';
+        $lines[] = 'Descarga: ' . $this->gigabytes($down) . ' · Subida: ' . $this->gigabytes($up);
+
+        if ($since = data_get($usage, 'mes_actual.desde')) {
+            $lines[] = 'Contado desde el ' . $this->date((string) $since) . '.';
+        }
+
+        $daily = array_filter((array) data_get($usage, 'por_dia', []), 'is_array');
+
+        if ($daily) {
+            $lines[] = '';
+            $lines[] = '*Por día:*';
+
+            foreach ($daily as $day) {
+                $dayTotal = (float) ($day['descarga_gb'] ?? 0) + (float) ($day['subida_gb'] ?? 0);
+                $lines[] = '• ' . $this->date((string) ($day['dia'] ?? '')) . ' — ' . $this->gigabytes($dayTotal);
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = 'Tu plan no tiene límite de datos: esto es informativo.';
+
+        return $lines;
+    }
+
+    private function gigabytes(float $value): string
+    {
+        return $value >= 10
+            ? number_format($value, 0, ',', '.') . ' GB'
+            : number_format($value, 1, ',', '.') . ' GB';
+    }
+
+    /**
+     * Permanencia, reconexión y contrato firmado.
+     *
+     * La permanencia es lo que nadie sabe cuando llama a cancelar, y el costo
+     * de reconexión lo que nadie sabe cuando lo cortan. Decirlos antes de que
+     * pregunten es lo que convierte una discusión en un trámite.
+     *
+     * @return string[]
+     */
+    private function contractTermsLines(array $status): array
+    {
+        $lines = ['📋 *Tu contrato*', ''];
+
+        $months = data_get($status, 'condiciones.permanencia_meses');
+
+        if ($months === null) {
+            $lines[] = 'Sin cláusula de permanencia: puedes cancelar cuando quieras, avisando con antelación.';
+        } else {
+            $months = (int) $months;
+            $lines[] = 'Permanencia: *' . $months . ' ' . ($months === 1 ? 'mes' : 'meses') . '*';
+
+            if ($desde = data_get($status, 'contrato.desde')) {
+                $lines[] = 'Contrato firmado el ' . $this->date((string) $desde) . '.';
+            }
+        }
+
+        $reconnection = (float) data_get($status, 'condiciones.costo_reconexion', 0);
+
+        if ($reconnection > 0) {
+            $lines[] = 'Costo de reconexión si te cortan: ' . $this->money($reconnection);
+        }
+
+        $discount = (float) data_get($status, 'condiciones.descuento', 0);
+
+        if ($discount > 0) {
+            $line = 'Descuento vigente: ' . $this->money($discount);
+
+            if ($until = data_get($status, 'condiciones.descuento_hasta')) {
+                $line .= ' hasta el ' . $this->date((string) $until);
+            }
+
+            $lines[] = $line;
+        }
+
+        if ($pdf = data_get($status, 'contrato_digital.pdf_url')) {
+            $lines[] = '';
+            $lines[] = '📄 Tu contrato firmado 👉 ' . $pdf;
+        } elseif (data_get($status, 'contrato_digital.firmado') === false) {
+            $lines[] = '';
+            $lines[] = 'Tu contrato aún no está firmado digitalmente. Pídelo por el menú y te mandamos el enlace.';
+        }
+
+        return $lines;
+    }
+
+    /**
+     * La clave del WiFi.
+     *
+     * Se puede consultar, no cambiar: cambiarla exige tocar el equipo del
+     * cliente por TR-069 y hoy Integra no lo expone. Prometer el cambio y no
+     * hacerlo sería peor que no ofrecerlo, así que el mensaje lo dice de frente
+     * y ofrece la salida real, que es el asesor.
+     *
+     * @return string[]
+     */
+    private function wifiLines(array $status): array
+    {
+        $wifi = data_get($status, 'wifi');
+
+        if (!is_array($wifi) || (!($wifi['red'] ?? null) && !($wifi['clave'] ?? null))) {
+            return [
+                '🔑 *Tu clave WiFi*',
+                '',
+                'No tengo guardadas las credenciales de tu red. Un asesor puede ayudarte a recuperarlas: pídelo desde el menú.',
+            ];
+        }
+
+        $lines = ['🔑 *Tu red WiFi*', ''];
+
+        if ($red = trim((string) ($wifi['red'] ?? ''))) {
+            $lines[] = 'Red: *' . $red . '*';
+        }
+
+        if ($clave = trim((string) ($wifi['clave'] ?? ''))) {
+            $lines[] = 'Clave: *' . $clave . '*';
+        }
+
+        $lines[] = '';
+        $lines[] = 'Es la clave que quedó registrada en la instalación. Si alguien la cambió en el router, esta ya no sirve y hay que revisarlo con un técnico.';
 
         return $lines;
     }
@@ -370,17 +716,13 @@ class WhatsAppMenuActionService
             $lines[] = 'Velocidad: ' . $this->speed($down) . ' de bajada · ' . $this->speed($up) . ' de subida';
         }
 
-        if ($tech = data_get($status, 'contrato.tecnologia')) {
-            $lines[] = 'Tecnología: ' . $this->technologyLabel($tech);
-        }
-
         if ($price = data_get($status, 'contrato.plan.precio')) {
             $lines[] = 'Valor mensual: ' . $this->money((float) $price);
         }
 
-        if (data_get($status, 'estado.television.tiene_servicio')) {
+        if (data_get($status, 'servicio.television.tiene_servicio')) {
             $lines[] = '';
-            $lines[] = 'Televisión: ' . (data_get($status, 'estado.television.plan') ?: 'incluida');
+            $lines[] = 'Televisión: incluida en tu contrato.';
         }
 
         $lines[] = '';
@@ -397,41 +739,70 @@ class WhatsAppMenuActionService
      */
     private function cutoffLines(array $status): array
     {
-        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
-        $cut = data_get($status, 'contrato.fecha_corte');
-        $suspend = data_get($status, 'contrato.fecha_suspension');
-        $period = data_get($status, 'contrato.grupo_corte');
+        $due = (float) data_get($status, 'facturacion.pendientes.total_por_pagar', 0);
+        $cut = $this->cutoffDay($status);
+        $bill = data_get($status, 'facturacion.ciclo.dia_factura');
+        $pay = data_get($status, 'facturacion.ciclo.dia_pago');
+        $group = data_get($status, 'facturacion.ciclo.grupo');
 
         $lines = ['📅 *Fechas de tu servicio*', ''];
 
-        if ($period) {
-            $lines[] = 'Periodo de facturación: ' . $period;
+        if ($group) {
+            $lines[] = 'Periodo de facturación: ' . $group;
+        }
+
+        if ($bill) {
+            $lines[] = 'Te facturamos el día ' . $bill . ' de cada mes.';
+        }
+
+        if ($pay) {
+            $lines[] = 'Fecha límite de pago: día ' . $pay . '.';
         }
 
         if ($cut) {
-            $lines[] = 'Fecha de corte: *' . $this->date($cut) . '*';
+            $lines[] = 'Corte por falta de pago: *día ' . $cut . '*.';
         }
 
-        if ($suspend) {
-            $lines[] = 'Fecha de suspensión: ' . $this->date($suspend);
-        }
-
-        if (!$period && !$cut && !$suspend) {
+        if (!$group && !$bill && !$pay && !$cut) {
             $lines[] = 'No tengo fechas de corte registradas para este contrato.';
+        }
+
+        // La promesa vigente manda sobre la fecha de corte: quien ya tiene un
+        // plazo aprobado y lee "te cortan el día 15" vuelve a llamar asustado.
+        $promise = data_get($status, 'facturacion.promesa_pago');
+
+        if (is_array($promise) && ($promise['vigente'] ?? false)) {
+            $lines[] = '';
+            $lines[] = '🤝 *Tienes una prórroga vigente.*';
+
+            if ($vence = ($promise['vence'] ?? $promise['fecha'] ?? null)) {
+                $lines[] = 'Te comprometiste a pagar antes del ' . $this->date((string) $vence)
+                    . ', y hasta esa fecha no se corta el servicio.';
+            }
+
+            return $lines;
         }
 
         $lines[] = '';
         $lines[] = $due > 0
-            ? 'Tienes *' . $this->money($due) . '* por pagar' . ($cut ? '. Paga antes del ' . $this->date($cut) . ' para no perder el servicio.' : '.')
+            ? 'Tienes *' . $this->money($due) . '* por pagar' . ($cut ? '. Paga antes del día ' . $cut . ' para no perder el servicio.' : '.')
             : 'No tienes facturas pendientes, así que no hay riesgo de corte. 👌';
 
         return $lines;
     }
 
+    /** El día del mes en que cortan, si Integra lo tiene registrado. */
+    private function cutoffDay(array $status): ?int
+    {
+        $day = data_get($status, 'facturacion.ciclo.dia_corte');
+
+        return $day === null ? null : (int) $day;
+    }
+
     /** @return string[] */
     private function televisionLines(array $status): array
     {
-        if (!data_get($status, 'estado.television.tiene_servicio')) {
+        if (!data_get($status, 'servicio.television.tiene_servicio')) {
             return [
                 '📺 *Televisión*',
                 '',
@@ -439,17 +810,11 @@ class WhatsAppMenuActionService
             ];
         }
 
-        $lines = [
+        return [
             '📺 *Tu servicio de televisión*',
             '',
-            'Estado: ' . (data_get($status, 'estado.television.activo') ? '✅ activo' : '⛔ inactivo'),
+            'Estado: ' . (data_get($status, 'servicio.television.activo') ? '✅ activo' : '⛔ inactivo'),
         ];
-
-        if ($plan = data_get($status, 'estado.television.plan')) {
-            $lines[] = 'Plan: ' . $plan;
-        }
-
-        return $lines;
     }
 
     /**
@@ -473,6 +838,10 @@ class WhatsAppMenuActionService
 
         if ($service = data_get($status, 'contrato.servicio')) {
             $lines[] = 'Servicio: ' . $service;
+        }
+
+        if ($since = data_get($status, 'contrato.desde')) {
+            $lines[] = 'Cliente desde el ' . $this->date((string) $since) . '.';
         }
 
         $lines[] = '';
@@ -507,23 +876,14 @@ class WhatsAppMenuActionService
         return preg_match('/[a-z]/i', $value) ? $value : $value . ' Mbps';
     }
 
-    private function technologyLabel(string $tech): string
-    {
-        return match (strtolower($tech)) {
-            'fibra' => 'Fibra óptica',
-            'inalambrica' => 'Inalámbrica',
-            'cableado_utp' => 'Cable UTP',
-            default => ucfirst($tech),
-        };
-    }
-
     /**
      * Reportar una falla.
      *
-     * Antes de abrir el radicado se mira el estado del contrato: si el servicio
-     * está suspendido y hay facturas pendientes, la falla no existe —está
-     * cortado— y el radicado sólo le haría perder el viaje a un técnico. En ese
-     * caso se le dice al cliente lo que debe y no se crea nada.
+     * Antes de abrir el radicado se mira el resumen del contrato por dos
+     * motivos. Si ya tiene un reporte abierto, se le enseña ese en vez de
+     * duplicarlo. Y si está cortado por mora, la falla no existe —está
+     * cortado— y el radicado sólo le haría perder el viaje a un técnico: en ese
+     * caso se le dice lo que debe y no se crea nada.
      */
     private function reportFailure(
         IntegraClient $client,
@@ -541,10 +901,27 @@ class WhatsAppMenuActionService
 
         // Sin contrato el radicado se puede crear igual (Integra lo acepta):
         // peor es dejar sin canal a quien sí tiene un problema.
-        $status = $contract ? $this->contractStatusIfPossible($client, $contract, $conversation) : null;
+        $status = $contract ? $this->contractStatusIfPossible($client, $contract, $contact, $conversation) : null;
+
+        // Un reporte ya abierto de la misma falla no ayuda a nadie: al cliente
+        // no le adelanta nada y al técnico le multiplica la cola. Enseñarle el
+        // que tiene, con su número, le da algo por lo que preguntar.
+        if ($status && ($open = (int) data_get($status, 'soportes.abiertos', 0)) > 0) {
+            $this->emit($instance, $conversation, 'service.checked', [
+                'cliente' => $this->clientPayload($contact),
+                'contrato_nro' => $contract['nro'] ?? null,
+                'reportes_abiertos' => $open,
+            ]);
+
+            return MenuActionResult::reply($this->withNote(
+                $this->supportTicketsLines($status),
+                $option,
+                $conversation
+            ));
+        }
 
         if ($status && $this->suspendedForDebt($status)) {
-            $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+            $due = (float) data_get($status, 'facturacion.pendientes.total_por_pagar', 0);
 
             $this->emit($instance, $conversation, 'service.checked', [
                 'cliente' => $this->clientPayload($contact),
@@ -554,12 +931,20 @@ class WhatsAppMenuActionService
                 'total_por_pagar' => $due,
             ]);
 
+            $reactivate = data_get($status, 'servicio.internet.monto_para_reactivar');
+            $amount = $reactivate !== null ? (float) $reactivate : $due;
+
             $lines = [
                 '⚠️ *Tu servicio está suspendido por facturas pendientes*',
                 '',
-                'Tienes *' . $this->money($due) . '* por pagar. En cuanto registremos el pago, '
-                    . 'el servicio se reactiva automáticamente.',
+                'Con *' . $this->money($amount) . '* se reactiva, y se hace solo en cuanto '
+                    . 'registremos el pago.',
             ];
+
+            if ($reactivate !== null && $due > $amount) {
+                $lines[] = 'Tu deuda total es de ' . $this->money($due)
+                    . ', pero para volver a navegar basta con lo de arriba.';
+            }
 
             if ($url = $option?->setting('payment_url')) {
                 $lines[] = '';
@@ -606,10 +991,11 @@ class WhatsAppMenuActionService
     private function contractStatusIfPossible(
         IntegraClient $client,
         array $contract,
+        array $contact,
         WhatsAppConversation $conversation
     ): ?array {
         try {
-            return $client->contractStatus((string) ($contract['nro'] ?? ''));
+            return $this->summaryFor($client, $contract, $contact);
         } catch (\RuntimeException $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo revisar el estado del contrato; se sigue con el reporte', [
                 'conversation_id' => $conversation->id,
@@ -618,11 +1004,35 @@ class WhatsAppMenuActionService
                 'error' => $e->getMessage(),
                 'pista' => $e->getCode() === 403
                     ? 'El token de Integra no tiene el scope contratos.leer.'
-                    : 'Puede que este entorno Integra aún no exponga /contratos/{nro}/estado.',
+                    : 'Puede que este entorno Integra aún no exponga /contratos/{nro}/resumen.',
             ]);
 
             return null;
         }
+    }
+
+    /**
+     * El resumen del contrato que va a leer el cliente.
+     *
+     * Va con la identificación del contacto que ya reconocimos, no con la que
+     * escriba quien chatea: Integra comprueba la titularidad contra ella y
+     * responde 404 si no cuadra, que es lo que impide que alguien pida el
+     * contrato del vecino probando el número siguiente al suyo.
+     *
+     * `dias_consumo` sale de la opción para que un menú que sólo enseña el
+     * consumo del día no arrastre 90 días de detalle en cada consulta.
+     */
+    private function summaryFor(
+        IntegraClient $client,
+        array $contract,
+        array $contact,
+        ?WhatsAppMenuOption $option = null
+    ): ?array {
+        return $client->contractSummary(
+            (string) ($contract['nro'] ?? ''),
+            (string) ($contact['identificacion'] ?? ''),
+            (int) ($option?->setting('dias_consumo', 7) ?? 7)
+        );
     }
 
     /**
@@ -994,12 +1404,18 @@ class WhatsAppMenuActionService
     }
 
     /** ¿El servicio está cortado y además hay deuda? */
+    /**
+     * ¿Está cortado por mora?
+     *
+     * Antes se deducía de "sin internet + con deuda", que confundía al cliente
+     * pausado o retirado que además debía algo. Ahora lo dice Integra: `motivo`
+     * distingue mora de pausa, retiro y suspensión sin deuda, y sólo la primera
+     * se arregla pagando.
+     */
     private function suspendedForDebt(array $status): bool
     {
-        $internetDown = data_get($status, 'estado.internet.activo') === false;
-        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
-
-        return $internetDown && $due > 0;
+        return data_get($status, 'servicio.internet.activo') === false
+            && data_get($status, 'servicio.internet.motivo') === 'mora';
     }
 
     // ------------------------------------------------------------------
@@ -1009,7 +1425,7 @@ class WhatsAppMenuActionService
     /** @return string[] */
     private function statusLines(array $status, array $contract): array
     {
-        $internetOk = (bool) data_get($status, 'estado.internet.activo');
+        $internetOk = (bool) data_get($status, 'servicio.internet.activo');
         $lines = [
             '📡 *Estado de tu servicio*',
             '',
@@ -1020,19 +1436,20 @@ class WhatsAppMenuActionService
             $lines[] = 'Plan: ' . $plan;
         }
 
-        $lines[] = 'Internet: ' . ($internetOk ? '✅ activo' : '⛔ suspendido');
+        $lines[] = 'Internet: ' . ($internetOk ? '✅ activo' : '⛔ suspendido')
+            . ($internetOk ? '' : ' (' . $this->reasonLabel(data_get($status, 'servicio.internet.motivo')) . ')');
 
-        if (data_get($status, 'estado.television.tiene_servicio')) {
-            $lines[] = 'Televisión: ' . (data_get($status, 'estado.television.activo') ? '✅ activa' : '⛔ inactiva');
+        if (data_get($status, 'servicio.television.tiene_servicio')) {
+            $lines[] = 'Televisión: ' . (data_get($status, 'servicio.television.activo') ? '✅ activa' : '⛔ inactiva');
         }
 
-        $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
+        $due = (float) data_get($status, 'facturacion.pendientes.total_por_pagar', 0);
 
         if ($due > 0) {
             $lines[] = '';
             $lines[] = 'Facturas pendientes: *' . $this->money($due) . '*';
 
-            if (!$internetOk) {
+            if (!$internetOk && data_get($status, 'servicio.internet.motivo') === 'mora') {
                 $lines[] = 'Tu servicio se reactiva automáticamente al registrar el pago.';
             }
         } elseif ($internetOk) {
@@ -1040,7 +1457,32 @@ class WhatsAppMenuActionService
             $lines[] = 'Todo en orden y sin facturas pendientes 🎉';
         }
 
+        $lines = array_merge($lines, $this->creditLines(
+            (float) data_get($status, 'facturacion.saldo_a_favor', 0),
+            $due
+        ));
+
+        // Un reporte abierto es lo primero que quiere saber quien escribe
+        // porque algo no le funciona; enterrarlo en otro submenú hace que
+        // reporte otra vez.
+        if (($open = (int) data_get($status, 'soportes.abiertos', 0)) > 0) {
+            $lines[] = '';
+            $lines[] = '🔧 Tienes *' . $open . ' ' . ($open === 1 ? 'reporte abierto' : 'reportes abiertos') . '* en soporte.';
+        }
+
         return $lines;
+    }
+
+    /** El motivo de la suspensión, en una palabra que el cliente entienda. */
+    private function reasonLabel(?string $motivo): string
+    {
+        return match ($motivo) {
+            'mora' => 'por facturas pendientes',
+            'pausado' => 'pausado a petición tuya',
+            'retirado' => 'contrato retirado',
+            'suspendido' => 'no es por pago',
+            default => 'motivo sin registrar',
+        };
     }
 
     private function invoiceLine(array $invoice): string

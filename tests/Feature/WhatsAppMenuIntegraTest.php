@@ -46,6 +46,14 @@ class WhatsAppMenuIntegraTest extends TestCase
     private bool $contactoBuscablePorCelular = true;
     private ?int $estadoContratoFalla = null;
 
+    /**
+     * Lo que cada prueba quiera cambiar del resumen, sólo la rama que le
+     * importa: el resto del payload sigue siendo el de fábrica.
+     *
+     * @var array<string, mixed>
+     */
+    private array $resumenExtra = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -63,7 +71,7 @@ class WhatsAppMenuIntegraTest extends TestCase
                 return Http::response($this->contactResponse($request));
             }
 
-            if (str_contains($url, '/estado')) {
+            if (str_contains($url, '/resumen')) {
                 if ($this->estadoContratoFalla !== null) {
                     return Http::response(
                         ['success' => false, 'message' => 'El token no tiene permiso para esta operación.'],
@@ -71,9 +79,10 @@ class WhatsAppMenuIntegraTest extends TestCase
                     );
                 }
 
-                return Http::response($this->contractStatusResponse(
+                return Http::response($this->contractSummaryResponse(
                     $this->servicioActivo,
-                    $this->servicioActivo ? 0 : 70000
+                    $this->servicioActivo ? 0 : 70000,
+                    $this->resumenExtra
                 ));
             }
 
@@ -231,6 +240,38 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->assertSame(0, WhatsAppBotFlow::count());
     }
 
+    /**
+     * El cliente que no ve avance vuelve a reportar, y el técnico acaba con
+     * tres radicados de la misma falla. Enseñarle el que ya tiene, con su
+     * número y su estado, le da algo concreto por lo que preguntar.
+     */
+    public function test_no_se_abre_un_segundo_radicado_si_ya_tiene_uno_en_curso(): void
+    {
+        $this->servicioActivo = true;
+        $this->resumenExtra = ['soportes' => [
+            'abiertos' => 1,
+            'items' => [
+                ['codigo' => 5601, 'fecha' => '2026-08-26', 'servicio' => 'Sin internet', 'estado' => 'en_proceso'],
+            ],
+        ]];
+
+        $instance = $this->connectedInstance();
+        $option = $this->option($instance, 'Reportar falla', 'reportar_falla', [
+            'config' => ['radicado_servicio' => 3, 'radicado_prioridad' => 2],
+        ]);
+
+        $this->tap($instance, $option);
+
+        $reply = $this->lastText();
+        $this->assertStringContainsString('#5601', $reply);
+        $this->assertStringContainsString('en proceso', $reply);
+        $this->assertStringContainsString('no hace falta que lo reportes otra vez', $reply);
+
+        $this->assertSame(0, $this->requestsTo('/api/v1/radicados'));
+        // Y tampoco se le pide describir una falla que ya describió.
+        $this->assertSame(0, WhatsAppBotFlow::count());
+    }
+
     public function test_reportar_falla_pide_la_descripcion_y_crea_el_radicado(): void
     {
         $instance = $this->connectedInstance();
@@ -353,14 +394,65 @@ class WhatsAppMenuIntegraTest extends TestCase
      * Decir sólo "suspendido" deja al cliente igual de perdido: lo que resuelve
      * la consulta es la causa y qué tiene que hacer para salir de ahí.
      */
+    /**
+     * "Suspendido" a secas deja al cliente igual de perdido. Lo que cambia la
+     * conversación es el motivo y, cuando es mora, el monto exacto con el que
+     * vuelve a navegar.
+     */
     public function test_segmento_internet_explica_por_que_esta_suspendido(): void
     {
         $reply = $this->segmentReply('internet');
 
         $this->assertStringContainsString('Suspendido', $reply);
+        $this->assertStringContainsString('por facturas pendientes', $reply);
+        $this->assertStringContainsString('$45.000', $reply);
+        $this->assertStringContainsString('se hace solo en cuanto registremos el pago', $reply);
+        // El detalle que redacta Integra viaja tal cual: sabe cosas del caso
+        // que aquí no tenemos.
         $this->assertStringContainsString('10/08/2026', $reply);
-        $this->assertStringContainsString('$70.000', $reply);
-        $this->assertStringContainsString('se reactiva automáticamente', $reply);
+    }
+
+    /**
+     * Reactivar puede costar menos que la deuda entera —basta con cubrir el
+     * ciclo vencido—, y cobrar de más ahuyenta justo al que iba a pagar.
+     */
+    public function test_el_monto_para_reactivar_no_se_confunde_con_la_deuda_total(): void
+    {
+        $reply = $this->segmentReply('internet');
+
+        $this->assertStringContainsString('Con *$45.000* se reactiva', $reply);
+        $this->assertStringContainsString('Tu deuda total es de $70.000', $reply);
+    }
+
+    /**
+     * Pausa y retiro no se arreglan pagando, así que ofrecerle pagar sería
+     * mandarlo a un callejón sin salida.
+     */
+    public function test_una_pausa_no_se_cuenta_como_una_mora(): void
+    {
+        $this->resumenExtra = ['servicio' => ['internet' => [
+            'motivo' => 'pausado',
+            'monto_para_reactivar' => null,
+        ]]];
+
+        $reply = $this->segmentReply('internet');
+
+        $this->assertStringContainsString('pausado a petición tuya', $reply);
+        $this->assertStringNotContainsString('se reactiva', $reply);
+    }
+
+    /** Suspendido sin deuda es una falla, no un cobro: hay que mandarlo a soporte. */
+    public function test_una_suspension_sin_deuda_manda_a_reportar_y_no_a_pagar(): void
+    {
+        $this->resumenExtra = ['servicio' => ['internet' => [
+            'motivo' => 'suspendido',
+            'monto_para_reactivar' => null,
+        ]]];
+
+        $reply = $this->segmentReply('internet');
+
+        $this->assertStringContainsString('la suspensión no es por pago', $reply);
+        $this->assertStringContainsString('Repórtalo desde el menú', $reply);
     }
 
     /** Con el servicio activo, el cliente necesita saber qué hacer a continuación. */
@@ -374,24 +466,49 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->assertStringContainsString('repórtalo desde el menú', $reply);
     }
 
-    public function test_segmento_plan_responde_megas_tecnologia_y_precio(): void
+    public function test_segmento_plan_responde_megas_y_precio(): void
     {
         $reply = $this->segmentReply('plan');
 
         $this->assertStringContainsString('ZAFIRO GOLD 3.0', $reply);
         $this->assertStringContainsString('300 Mbps', $reply);
         $this->assertStringContainsString('150 Mbps', $reply);
-        $this->assertStringContainsString('Fibra óptica', $reply);
         $this->assertStringContainsString('$60.000', $reply);
     }
 
-    public function test_segmento_corte_responde_periodo_y_fecha(): void
+    /**
+     * El ciclo va por días del mes, no por una fecha suelta: el cliente que
+     * pregunta "¿cuándo me cortan?" quiere saber su día, no el del mes que
+     * viene.
+     */
+    public function test_segmento_corte_responde_el_ciclo_completo(): void
     {
         $reply = $this->segmentReply('corte');
 
         $this->assertStringContainsString('PERIODO 1 AL 30', $reply);
-        $this->assertStringContainsString('05/09/2026', $reply);
+        $this->assertStringContainsString('día 1 de cada mes', $reply);
+        $this->assertStringContainsString('día 15', $reply);
+        $this->assertStringContainsString('día 20', $reply);
         $this->assertStringContainsString('para no perder el servicio', $reply);
+    }
+
+    /**
+     * Quien ya tiene una prórroga aprobada y lee "te cortan el día 20" vuelve
+     * a escribir asustado. La promesa vigente manda sobre la fecha de corte.
+     */
+    public function test_una_prorroga_vigente_manda_sobre_la_fecha_de_corte(): void
+    {
+        $this->resumenExtra = ['facturacion' => ['promesa_pago' => [
+            'fecha' => '2026-08-20',
+            'vence' => '2026-09-02',
+            'vigente' => true,
+        ]]];
+
+        $reply = $this->segmentReply('corte');
+
+        $this->assertStringContainsString('Tienes una prórroga vigente', $reply);
+        $this->assertStringContainsString('02/09/2026', $reply);
+        $this->assertStringNotContainsString('para no perder el servicio', $reply);
     }
 
     /** Sin deuda no hay corte que anunciar, y decirlo tranquiliza. */
@@ -537,6 +654,126 @@ class WhatsAppMenuIntegraTest extends TestCase
     }
 
     /** Toca una opción "Estado del contrato" con el segmento indicado. */
+    // ------------------------------------------------------------------
+    // Segmentos que abrió /resumen
+    // ------------------------------------------------------------------
+
+    /**
+     * "Yo ya pagué y no me lo han registrado" se lleva un asesor entero. Con el
+     * recibo delante, la discusión se acaba sola.
+     */
+    public function test_segmento_pagos_lista_los_ultimos_recibos(): void
+    {
+        $reply = $this->segmentReply('pagos');
+
+        $this->assertStringContainsString('05/07/2026', $reply);
+        $this->assertStringContainsString('$60.000', $reply);
+        $this->assertStringContainsString('Efecty', $reply);
+        $this->assertStringContainsString('RC-8891', $reply);
+    }
+
+    /** Sin pagos registrados hay que decirle qué hacer, no dejarlo en blanco. */
+    public function test_sin_pagos_registrados_se_le_pide_el_comprobante(): void
+    {
+        $this->resumenExtra = ['pagos_recientes' => []];
+
+        $reply = $this->segmentReply('pagos');
+
+        $this->assertStringContainsString('No tengo pagos registrados', $reply);
+        $this->assertStringContainsString('comprobante', $reply);
+    }
+
+    public function test_segmento_soportes_muestra_los_reportes_abiertos_con_su_estado(): void
+    {
+        $this->resumenExtra = ['soportes' => [
+            'abiertos' => 2,
+            'items' => [
+                ['codigo' => 5601, 'fecha' => '2026-08-26', 'servicio' => 'Sin internet', 'estado' => 'en_proceso'],
+                ['codigo' => 5622, 'fecha' => '2026-08-27', 'servicio' => 'Intermitencia', 'estado' => 'pendiente'],
+            ],
+        ]];
+
+        $reply = $this->segmentReply('soportes');
+
+        $this->assertStringContainsString('2 reportes abiertos', $reply);
+        $this->assertStringContainsString('#5601', $reply);
+        $this->assertStringContainsString('en proceso', $reply);
+        $this->assertStringContainsString('pendiente de asignar', $reply);
+    }
+
+    /**
+     * `consumo` en null NO es consumo cero: decirle "llevas 0 GB" a quien lleva
+     * el mes navegando tira por tierra la confianza en todo lo demás.
+     */
+    public function test_sin_muestras_de_consumo_no_se_inventa_un_cero(): void
+    {
+        $this->resumenExtra = ['consumo' => null];
+
+        $reply = $this->segmentReply('consumo');
+
+        $this->assertStringContainsString('Todavía no tengo mediciones', $reply);
+        $this->assertStringNotContainsString('0 GB', $reply);
+    }
+
+    public function test_segmento_consumo_responde_el_mes_y_el_detalle_por_dia(): void
+    {
+        $reply = $this->segmentReply('consumo');
+
+        $this->assertStringContainsString('141 GB', $reply);
+        $this->assertStringContainsString('27/08/2026', $reply);
+    }
+
+    public function test_segmento_wifi_entrega_la_clave_registrada(): void
+    {
+        $reply = $this->segmentReply('wifi');
+
+        $this->assertStringContainsString('INTERSOLAR_5G', $reply);
+        $this->assertStringContainsString('casa1234', $reply);
+    }
+
+    /** Sin credenciales guardadas hay que ofrecer la salida real: el asesor. */
+    public function test_sin_clave_wifi_guardada_se_ofrece_un_asesor(): void
+    {
+        $this->resumenExtra = ['wifi' => null];
+
+        $reply = $this->segmentReply('wifi');
+
+        $this->assertStringContainsString('No tengo guardadas las credenciales', $reply);
+    }
+
+    public function test_segmento_contrato_responde_permanencia_reconexion_y_pdf(): void
+    {
+        $reply = $this->segmentReply('contrato');
+
+        $this->assertStringContainsString('12 meses', $reply);
+        $this->assertStringContainsString('$15.000', $reply);
+        $this->assertStringContainsString('https://demo.integra.test/contratos/15.pdf', $reply);
+    }
+
+    /** Sin permanencia, decirlo es la respuesta: es lo que vino a preguntar. */
+    public function test_sin_permanencia_se_dice_que_puede_cancelar(): void
+    {
+        $this->resumenExtra = ['condiciones' => ['permanencia_meses' => null]];
+
+        $reply = $this->segmentReply('contrato');
+
+        $this->assertStringContainsString('Sin cláusula de permanencia', $reply);
+    }
+
+    /**
+     * El saldo a favor invisible es la fuente número uno de "yo pagué de más y
+     * nadie me lo abonó".
+     */
+    public function test_el_saldo_a_favor_sale_en_las_facturas(): void
+    {
+        $this->resumenExtra = ['facturacion' => ['saldo_a_favor' => 95000]];
+
+        $reply = $this->segmentReply('facturas');
+
+        $this->assertStringContainsString('$95.000', $reply);
+        $this->assertStringContainsString('Alcanza para cubrir lo pendiente', $reply);
+    }
+
     private function segmentReply(?string $segment): string
     {
         $instance = $this->connectedInstance();
@@ -721,40 +958,112 @@ class WhatsAppMenuIntegraTest extends TestCase
         ];
     }
 
-    private function contractStatusResponse(bool $activo = false, float $deuda = 70000): array
+    /**
+     * El resumen que devuelve `/contratos/{nro}/resumen`.
+     *
+     * `$extra` se mezcla rama a rama para que cada prueba toque sólo lo suyo
+     * —la promesa de pago, el consumo, los soportes— y el resto del contrato
+     * siga siendo el de fábrica. Copiar el payload entero en cada prueba lo
+     * volvería ilegible y escondería justo el dato que se está probando.
+     *
+     * @param array<string, mixed> $extra
+     */
+    private function contractSummaryResponse(bool $activo = false, float $deuda = 70000, array $extra = []): array
     {
         return [
             'success' => true,
-            'data' => [
+            'data' => $this->mergeSummary([
                 'contrato' => [
-                    'id' => 320,
                     'nro' => '15',
                     'servicio' => 'Internet Hogar',
                     'direccion' => 'CRA 5 # 12-34, El Prado',
+                    'desde' => '2024-03-01',
                     'plan' => ['nombre' => 'ZAFIRO GOLD 3.0', 'descarga' => 300, 'subida' => 150, 'precio' => 60000],
-                    'tecnologia' => 'fibra',
-                    'conexion' => 'pppoe',
-                    'grupo_corte' => 'PERIODO 1 AL 30',
-                    'fecha_corte' => '2026-09-05',
-                    'fecha_suspension' => $activo ? null : '2026-08-10',
                 ],
-                'estado' => [
-                    'internet' => ['activo' => $activo, 'estado' => $activo ? 'activo' : 'suspendido'],
-                    'television' => ['tiene_servicio' => false, 'plan' => null, 'activo' => false, 'estado' => 'inactivo'],
+                'titular' => ['nombre' => 'Katherine Ospina', 'identificacion' => '40389154'],
+                'servicio' => [
+                    'internet' => [
+                        'activo' => $activo,
+                        'estado' => $activo ? 'activo' : 'suspendido',
+                        'motivo' => $activo ? null : 'mora',
+                        'detalle' => $activo ? 'Servicio activo.' : 'Suspendido el 10/08/2026 por facturas vencidas.',
+                        'monto_para_reactivar' => $activo ? null : 45000,
+                    ],
+                    'television' => ['tiene_servicio' => false, 'activo' => false],
                 ],
-                'facturas_pendientes' => [
-                    'total' => $deuda > 0 ? 1 : 0,
-                    'total_por_pagar' => $deuda,
-                    // El endpoint del contrato anida los montos; el del contacto
-                    // los manda planos. Las dos formas tienen que pintarse igual.
-                    'items' => $deuda > 0 ? [[
-                        'codigo' => 'FV-1001',
-                        'vencimiento' => '2026-07-30',
-                        'vencida' => true,
-                        'montos' => ['total' => $deuda, 'pagado' => 0, 'por_pagar' => $deuda],
-                    ]] : [],
+                'facturacion' => [
+                    'pendientes' => [
+                        'total' => $deuda > 0 ? 1 : 0,
+                        'total_por_pagar' => $deuda,
+                        // El endpoint del contrato anida los montos; el del
+                        // contacto los manda planos. Las dos formas tienen que
+                        // pintarse igual.
+                        'items' => $deuda > 0 ? [[
+                            'id' => 9911,
+                            'codigo' => 'FV-1001',
+                            'vencimiento' => '2026-07-30',
+                            'vencida' => true,
+                            'montos' => ['total' => $deuda, 'pagado' => 0, 'por_pagar' => $deuda],
+                        ]] : [],
+                    ],
+                    'saldo_a_favor' => 0,
+                    'ciclo' => [
+                        'grupo' => 'PERIODO 1 AL 30',
+                        'dia_factura' => 1,
+                        'dia_pago' => 15,
+                        'dia_corte' => 20,
+                    ],
+                    'promesa_pago' => null,
                 ],
-            ],
+                'pagos_recientes' => [
+                    ['recibo' => 'RC-8891', 'fecha' => '2026-07-05', 'valor' => 60000, 'medio' => 'Efecty'],
+                    ['recibo' => 'RC-8420', 'fecha' => '2026-06-04', 'valor' => 60000, 'medio' => 'PSE'],
+                ],
+                'soportes' => ['abiertos' => 0, 'items' => []],
+                'consumo' => [
+                    'mes_actual' => ['descarga_gb' => 128.4, 'subida_gb' => 12.6, 'total_gb' => 141.0, 'desde' => '2026-08-01'],
+                    'por_dia' => [
+                        ['dia' => '2026-08-26', 'descarga_gb' => 6.2, 'subida_gb' => 0.8],
+                        ['dia' => '2026-08-27', 'descarga_gb' => 7.1, 'subida_gb' => 0.9],
+                    ],
+                ],
+                'contrato_digital' => [
+                    'firmado' => true,
+                    'fecha_firma' => '2024-03-01',
+                    'tiene_documento' => true,
+                    'pdf_url' => 'https://demo.integra.test/contratos/15.pdf',
+                ],
+                'wifi' => ['red' => 'INTERSOLAR_5G', 'clave' => 'casa1234', 'editable_remotamente' => false],
+                'condiciones' => [
+                    'permanencia_meses' => 12,
+                    'costo_reconexion' => 15000,
+                    'descuento' => 0,
+                    'descuento_hasta' => null,
+                ],
+            ], $extra),
         ];
+    }
+
+    /**
+     * Mezcla lo que pide la prueba sobre el resumen de fábrica.
+     *
+     * No sirve array_replace_recursive a secas: fusiona las listas índice a
+     * índice, así que pedir `['pagos_recientes' => []]` dejaba intactos los
+     * pagos de fábrica y la prueba del caso vacío pasaba en verde probando el
+     * caso lleno. Las listas se sustituyen enteras; sólo los mapas se recorren.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $extra
+     * @return array<string, mixed>
+     */
+    private function mergeSummary(array $base, array $extra): array
+    {
+        foreach ($extra as $key => $value) {
+            $base[$key] = is_array($value) && !array_is_list($value) && is_array($base[$key] ?? null)
+                ? $this->mergeSummary($base[$key], $value)
+                : $value;
+        }
+
+        return $base;
     }
 }

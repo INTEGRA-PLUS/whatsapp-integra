@@ -73,21 +73,30 @@ class WhatsAppMenuOption extends Model
     public const TEXT_CARRYING_TYPES = ['reply_text', 'handoff'];
 
     /**
-     * Qué parte del estado del contrato muestra la opción.
+     * Qué parte del servicio muestra la opción.
      *
-     * La consulta a Integra es siempre la misma —una sola llamada trae internet,
-     * televisión, plan, fechas y facturas—; lo único que cambia es qué se le
-     * cuenta al cliente. Segmentarlo en un submenú evita el muro de texto que
-     * nadie lee y deja que cada quien pregunte exactamente lo que le interesa.
+     * La consulta a Integra es siempre la misma —`/contratos/{nro}/resumen`
+     * trae de un viaje estado, facturas, pagos, soportes, consumo, contrato y
+     * WiFi—; lo único que cambia es qué se le cuenta al cliente. Segmentarlo en
+     * un submenú evita el muro de texto que nadie lee y deja que cada quien
+     * pregunte exactamente lo que le interesa, sin que cueste una consulta más.
+     *
+     * Por eso añadir un segmento sale casi gratis y añadir una acción no: el
+     * dato ya viajó en la misma respuesta.
      */
     public const SEGMENT_SUMMARY = 'resumen';
 
     public const STATUS_SEGMENTS = [
         self::SEGMENT_SUMMARY => 'Resumen completo',
-        'internet' => 'Estado de internet',
-        'facturas' => 'Facturas pendientes',
+        'internet' => 'Estado del servicio (y por qué)',
+        'facturas' => 'Facturas y saldo a favor',
+        'pagos' => 'Mis últimos pagos',
+        'soportes' => 'Mis reportes de falla',
+        'consumo' => 'Mi consumo de datos',
+        'corte' => 'Cuándo me cortan',
         'plan' => 'Plan y velocidad',
-        'corte' => 'Fechas de corte',
+        'contrato' => 'Permanencia y contrato firmado',
+        'wifi' => 'Mi clave WiFi',
         'television' => 'Estado de televisión',
         'datos' => 'Datos del contrato',
     ];

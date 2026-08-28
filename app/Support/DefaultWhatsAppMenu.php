@@ -21,28 +21,35 @@ use Illuminate\Support\Facades\DB;
 class DefaultWhatsAppMenu
 {
     public const NAME = 'Menú principal';
-    public const SUBMENU_NAME = 'Estado de mi contrato';
+    public const SUBMENU_NAME = 'Mi plan y contrato';
 
     /**
      * Las opciones del menú principal, en el orden en que las ve el cliente.
      *
-     * Las tres primeras se resuelven solas contra el software de facturación;
-     * "Hablar con un asesor" va al final a propósito, porque quien llega hasta
-     * ahí ya descartó que lo suyo fuera una factura o un corte.
+     * El orden no es decorativo: arriba va lo que más veces se pregunta —la
+     * factura y el estado del servicio—, y "Hablar con un asesor" queda al
+     * final a propósito, porque quien llega hasta ahí ya descartó que lo suyo
+     * fuera una factura o un corte.
+     *
+     * Todo lo que consulta el contrato sale de una sola llamada a
+     * `/contratos/{nro}/resumen`, así que tener seis opciones de autoservicio
+     * en vez de dos no cuesta seis consultas: cuesta elegir qué contar en cada
+     * una. Lo que no cabe arriba (permanencia, WiFi, televisión) vive en el
+     * submenú para no pasar de las 10 filas que admite WhatsApp.
      *
      * `radicado_servicio` se queda sin definir porque depende del catálogo de
      * cada empresa: el formulario lo pide en amarillo hasta que el admin elige
-     * uno, y mientras tanto "Reportar falla" deriva a una persona.
+     * uno, y mientras tanto "Reportar una falla" deriva a una persona.
      *
-     * @param int $submenuId Menú al que lleva "Estado de mi contrato".
+     * @param int $submenuId Menú al que lleva "Mi plan y contrato".
      * @return list<array<string, mixed>>
      */
     public static function options(int $submenuId): array
     {
         return [
             [
-                'title' => '📄 Consultar factura',
-                'description' => 'Tus facturas pendientes y el total a pagar',
+                'title' => '📄 Mis facturas',
+                'description' => 'Lo que debes, con tu saldo a favor si lo tienes',
                 'action_type' => 'consultar_factura',
             ],
             [
@@ -51,16 +58,34 @@ class DefaultWhatsAppMenu
                 'action_type' => 'pagar_en_linea',
             ],
             [
-                'title' => '📶 Estado de mi contrato',
-                'description' => 'Internet, plan, velocidad y fechas de corte',
-                'action_type' => 'submenu',
-                'target_menu_id' => $submenuId,
+                'title' => '📶 Estado de mi servicio',
+                'description' => '¿Está activo? Y si no, por qué y cómo recuperarlo',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'internet'],
             ],
             [
-                'title' => '🛠️ Reportar falla',
+                'title' => '💵 Mis últimos pagos',
+                'description' => 'Cuándo pagaste, cuánto y con qué recibo',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'pagos'],
+            ],
+            [
+                'title' => '🔧 Reportar una falla',
                 'description' => 'Sin internet, señal intermitente o TV sin imagen',
                 'action_type' => 'reportar_falla',
                 'config' => ['radicado_prioridad' => 2],
+            ],
+            [
+                'title' => '📊 Mi consumo',
+                'description' => 'Cuántos GB llevas este mes, y por día',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'consumo'],
+            ],
+            [
+                'title' => '📋 Mi plan y contrato',
+                'description' => 'Velocidad, fechas de corte, permanencia y clave WiFi',
+                'action_type' => 'submenu',
+                'target_menu_id' => $submenuId,
             ],
             [
                 'title' => '👤 Hablar con un asesor',
@@ -75,10 +100,10 @@ class DefaultWhatsAppMenu
     /**
      * Las opciones del submenú de contrato.
      *
-     * Las cuatro salen de la misma consulta a Integra —una sola llamada trae
-     * internet, plan, fechas y facturas—; lo que cambia es qué se le cuenta al
-     * cliente. Preguntar antes de responder es lo que evita el muro de texto
-     * que nadie lee.
+     * Las siete salen de la misma consulta a Integra —`/resumen` trae de un
+     * viaje plan, fechas, permanencia, WiFi, soportes y televisión—; lo que
+     * cambia es qué se le cuenta al cliente. Preguntar antes de responder es lo
+     * que evita el muro de texto que nadie lee.
      *
      * @return list<array<string, mixed>>
      */
@@ -86,28 +111,46 @@ class DefaultWhatsAppMenu
     {
         return [
             [
-                'title' => '🌐 Estado de internet',
-                'description' => '¿Está activo o suspendido? ¿Por qué?',
-                'action_type' => 'estado_servicio',
-                'config' => ['segmento' => 'internet'],
-            ],
-            [
-                'title' => '📄 Facturas pendientes',
-                'description' => 'Lo que debes en este contrato',
-                'action_type' => 'estado_servicio',
-                'config' => ['segmento' => 'facturas'],
-            ],
-            [
-                'title' => '⚡ Mi plan y velocidad',
-                'description' => 'Megas contratadas, tecnología y valor mensual',
+                'title' => '⚡ Plan y velocidad',
+                'description' => 'Megas contratadas y valor mensual',
                 'action_type' => 'estado_servicio',
                 'config' => ['segmento' => 'plan'],
             ],
             [
                 'title' => '📅 Cuándo me cortan',
-                'description' => 'Periodo de facturación y fecha de corte',
+                'description' => 'Día de facturación, de pago y de corte',
                 'action_type' => 'estado_servicio',
                 'config' => ['segmento' => 'corte'],
+            ],
+            [
+                'title' => '📝 Mi permanencia',
+                'description' => 'Hasta cuándo, reconexión y contrato firmado',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'contrato'],
+            ],
+            [
+                'title' => '🔑 Mi clave WiFi',
+                'description' => 'La clave que quedó registrada en la instalación',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'wifi'],
+            ],
+            [
+                'title' => '🔧 Mis reportes',
+                'description' => 'Las fallas que ya tienes abiertas, con su estado',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'soportes'],
+            ],
+            [
+                'title' => '📺 Mi televisión',
+                'description' => 'Si tienes TV contratada y si está activa',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'television'],
+            ],
+            [
+                'title' => '📍 Datos del contrato',
+                'description' => 'Tu número de contrato y la dirección instalada',
+                'action_type' => 'estado_servicio',
+                'config' => ['segmento' => 'datos'],
             ],
         ];
     }
@@ -148,11 +191,15 @@ class DefaultWhatsAppMenu
      * paz — vale más su trabajo que tener la plantilla al día.
      *
      * @param list<array{0: string, 1: string}> $seeded Título y acción de cada
-     *        opción en la versión anterior, en orden. Lo aporta quien llama,
-     *        porque es un dato del pasado y no de la plantilla actual.
+     *        opción del menú raíz en la versión anterior, en orden. Lo aporta
+     *        quien llama, porque es un dato del pasado y no de la plantilla
+     *        actual.
+     * @param array<string, list<array{0: string, 1: string}>> $seededSubmenus
+     *        Los submenús que traía esa versión, por nombre. Vacío significa
+     *        que la plantilla anterior era de un solo menú.
      * @return int Cuántas empresas se pusieron al día.
      */
-    public static function refreshUntouched(array $seeded): int
+    public static function refreshUntouched(array $seeded, array $seededSubmenus = []): int
     {
         $updated = 0;
 
@@ -163,8 +210,8 @@ class DefaultWhatsAppMenu
             ->whereNull('instance_id')
             ->with('options')
             ->get()
-            ->each(function (WhatsAppMenu $menu) use ($seeded, &$updated) {
-                if (! self::isPristine($menu, $seeded)) {
+            ->each(function (WhatsAppMenu $menu) use ($seeded, $seededSubmenus, &$updated) {
+                if (! self::isPristine($menu, $seeded, $seededSubmenus)) {
                     return;
                 }
 
@@ -174,10 +221,13 @@ class DefaultWhatsAppMenu
                     return;
                 }
 
-                DB::transaction(function () use ($menu, $company) {
-                    // Las opciones se van con el menú por la clave foránea, y
-                    // con ellas el "ya tiene menús" que bloqueaba la siembra.
-                    $menu->delete();
+                DB::transaction(function () use ($company) {
+                    // Se borra la plantilla ENTERA, submenús incluidos. Borrar
+                    // sólo el menú raíz dejaba huérfano el submenú, y con él en
+                    // pie createFor() ve que la empresa "ya tiene menús" y no
+                    // siembra nada: la empresa se quedaría sin menú principal.
+                    // Las opciones caen con su menú por la clave foránea.
+                    WhatsAppMenu::where('company_id', $company->id)->get()->each->delete();
                     self::createFor($company);
                 });
 
@@ -187,22 +237,53 @@ class DefaultWhatsAppMenu
         return $updated;
     }
 
-    /** @param list<array{0: string, 1: string}> $seeded */
-    private static function isPristine(WhatsAppMenu $menu, array $seeded): bool
+    /**
+     * ¿La empresa conserva la plantilla exactamente como salió de fábrica?
+     *
+     * Se exige que cuadre TODO: el menú raíz, sus opciones en orden, y ni un
+     * menú de más ni de menos. Basta que el admin haya añadido un submenú
+     * propio o cambiado una palabra para que se le deje en paz: vale más su
+     * trabajo que tener la plantilla al día.
+     *
+     * @param list<array{0: string, 1: string}> $seeded
+     * @param array<string, list<array{0: string, 1: string}>> $seededSubmenus
+     */
+    private static function isPristine(WhatsAppMenu $menu, array $seeded, array $seededSubmenus = []): bool
     {
-        // Un menú suelto en la empresa: si hay más, alguien ya estuvo armando
-        // cosas y borrar por debajo sería peor que dejarlo desactualizado.
-        if (WhatsAppMenu::where('company_id', $menu->company_id)->count() !== 1) {
+        $menus = WhatsAppMenu::where('company_id', $menu->company_id)->with('options')->get();
+
+        // Ni uno más de los que siembra la plantilla: si hay otro, alguien
+        // estuvo armando cosas y borrar por debajo sería peor que dejarlo
+        // desactualizado.
+        if ($menus->count() !== 1 + count($seededSubmenus)) {
             return false;
         }
 
-        $current = $menu->options
+        if (self::optionSignature($menu) !== $seeded) {
+            return false;
+        }
+
+        foreach ($menus->where('is_root', false) as $submenu) {
+            $expected = $seededSubmenus[$submenu->name] ?? null;
+
+            // Un submenú que ya se usó tiene conversaciones detrás; rehacerlo
+            // cambiaría los ids que viajaron a los menús ya enviados.
+            if ($expected === null || $submenu->fires_count > 0 || self::optionSignature($submenu) !== $expected) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return list<array{0: string, 1: string}> */
+    private static function optionSignature(WhatsAppMenu $menu): array
+    {
+        return $menu->options
             ->sortBy('position')
             ->map(fn (WhatsAppMenuOption $o) => [$o->title, $o->action_type])
             ->values()
             ->all();
-
-        return $current === $seeded;
     }
 
     private static function createRoot(Company $company, int $submenuId): WhatsAppMenu
@@ -247,7 +328,7 @@ class DefaultWhatsAppMenu
             'instance_id' => null,
             'name' => self::SUBMENU_NAME,
             'header_text' => null,
-            'body_text' => "📶 ¿Qué quieres revisar de tu servicio?",
+            'body_text' => "📋 ¿Qué quieres revisar de tu plan o tu contrato?",
             'footer_text' => 'Escribe MENU para volver al inicio',
             'list_button_text' => 'Ver opciones',
             'is_root' => false,

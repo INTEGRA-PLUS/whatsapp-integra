@@ -103,11 +103,11 @@ export const ACTION_HELP = {
         needs: 'El enlace de pago. Sin él, el cliente ve su total pero no tiene dónde pagar.',
     },
     estado_servicio: {
-        does: 'Consulta el contrato y responde la parte que elijas: internet, plan y velocidad, fechas de corte, facturas…',
-        needs: 'Qué parte del contrato muestra. Sin elegir, manda el resumen completo.',
+        does: 'Consulta el contrato y responde la parte que elijas: por qué está suspendido y cuánto cuesta reactivarlo, facturas y saldo a favor, últimos pagos, reportes abiertos, consumo, permanencia, clave WiFi…',
+        needs: 'Qué parte del servicio muestra. Sin elegir, manda el resumen completo.',
     },
     reportar_falla: {
-        does: 'Revisa el contrato antes de abrir nada: si está cortado por mora se lo dice y no crea radicado. Si no, le pide que describa la falla y lo registra.',
+        does: 'Revisa el contrato antes de abrir nada: si ya tiene un reporte en curso le muestra ese en vez de duplicarlo, y si está cortado por mora se lo dice y no crea radicado. Si no, le pide que describa la falla y lo registra.',
         needs: 'El tipo de falla. Sin él no se puede crear el radicado y el cliente acaba con un asesor.',
     },
     cambiar_clave: {

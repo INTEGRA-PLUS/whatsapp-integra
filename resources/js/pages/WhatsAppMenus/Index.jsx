@@ -32,8 +32,8 @@ const RADICADO_PRIORITIES = [
 const INTEGRA_HELP = {
     consultar_factura: 'Busca al cliente por su número de WhatsApp en Integra y le responde sus facturas pendientes con el total. Si no lo encuentra, le pide el documento.',
     pagar_en_linea: 'Avisa a tus sistemas por el webhook payment.requested y le entrega al cliente el enlace de pago que configures aquí.',
-    reportar_falla: 'Antes de abrir el radicado revisa el estado del contrato: si está suspendido por mora se lo dice y no crea nada. Si no, le pide que describa la falla y crea el radicado en Integra.',
-    estado_servicio: 'Consulta el contrato del cliente y le responde la parte que elijas abajo: si su internet está activo, su plan y velocidad, cuándo le cortan o lo que debe.',
+    reportar_falla: 'Antes de abrir el radicado revisa el contrato: si el cliente ya tiene un reporte en curso le muestra ese en vez de duplicarlo, y si está suspendido por mora se lo dice y no crea nada. Si no, le pide que describa la falla y crea el radicado en Integra.',
+    estado_servicio: 'Una sola consulta a Integra trae todo el servicio del cliente; aquí eliges qué parte le respondes. Añadir más opciones de estas no cuesta más consultas.',
 };
 
 
