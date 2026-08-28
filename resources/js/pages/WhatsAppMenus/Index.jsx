@@ -97,6 +97,9 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     const [editing, setEditing] = useState(null);
     const [createForm, setCreateForm] = useState(emptyForm);
     const [editForm, setEditForm] = useState(emptyForm);
+    // Cuando se entra desde un aviso de la revisión, la opción que hay que
+    // corregir: el formulario baja hasta ella y la resalta.
+    const [focusOption, setFocusOption] = useState(null);
 
     function payload(form) {
         return {
@@ -136,7 +139,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         router.delete(route('whatsapp-menus.destroy', menu.id));
     }
 
-    function openEdit(menu) {
+    function openEdit(menu, focusOptionId = null) {
         setEditForm({
             name: menu.name ?? '',
             instance_id: menu.instance_id ? String(menu.instance_id) : '',
@@ -162,6 +165,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 ),
             })),
         });
+        setFocusOption(focusOptionId);
         setEditing(menu);
     }
 
@@ -187,9 +191,9 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 </div>
 
                 {menus.length > 0 && (
-                    <ReviewPanel onEditMenu={id => {
+                    <ReviewPanel onEditMenu={(id, optionId) => {
                         const menu = menus.find(m => m.id === id);
-                        if (menu) openEdit(menu);
+                        if (menu) openEdit(menu, optionId);
                     }} />
                 )}
 
@@ -255,7 +259,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         form={editForm} setForm={setEditForm}
                         instances={instances} agents={agents} menus={menus} limits={limits} errors={errors}
                         actionTypes={actionTypes} actionMeta={actionMeta} integra={integra} statusSegments={statusSegments}
-                        editingId={editing.id}
+                        editingId={editing.id} focusOption={focusOption}
                         onSubmit={handleEdit} onCancel={() => setEditing(null)} submitLabel="Guardar cambios"
                     />
                 </Modal>
@@ -390,7 +394,7 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
     );
 }
 
-function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, onSubmit, onCancel, submitLabel }) {
+function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, focusOption = null, onSubmit, onCancel, submitLabel }) {
     const options = form.options ?? [];
     const catalogs = useIntegraCatalogs(
         integra.connected && options.some(o => o.action_type === 'reportar_falla')
@@ -560,11 +564,14 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             error={errors?.list_button_text} />
                     )}
 
+                    <OptionLegend />
+
                     {options.map((option, index) => (
                         <OptionRow
                             key={index}
                             index={index}
                             option={option}
+                            focused={focusOption != null && String(option.id) === String(focusOption)}
                             isList={isList}
                             limits={limits}
                             agents={agents}
@@ -682,6 +689,36 @@ function useIntegraCatalogs(enabled) {
  * consulta Integra, azul lo que resuelve la plataforma sola, ámbar lo que
  * todavía no existe.
  */
+/**
+ * Qué significa el color de cada tarjeta.
+ *
+ * Un código de color sin leyenda es un adorno: el admin ve verdes y azules y se
+ * pregunta por qué, que es exactamente lo que pasó. Explicado, se convierte en
+ * información — de un vistazo se ve cuánto del menú depende de Integra.
+ */
+function OptionLegend() {
+    const items = [
+        { tone: 'bg-emerald-400', label: 'Consulta Integra', hint: 'Necesita el complemento conectado' },
+        { tone: 'bg-sky-400', label: 'Lo resuelve la plataforma', hint: 'Funciona siempre, sin depender de nadie' },
+        { tone: 'bg-amber-400', label: 'Todavía no disponible', hint: 'Responde un aviso de «próximamente»' },
+        { tone: 'bg-zinc-300', label: 'Sin acción', hint: 'El cliente la ve y no recibe nada' },
+    ];
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-dashed px-2.5 py-2">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Color de cada opción
+            </span>
+            {items.map(i => (
+                <span key={i.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title={i.hint}>
+                    <span className={`size-2.5 rounded-sm ${i.tone}`} />
+                    {i.label}
+                </span>
+            ))}
+        </div>
+    );
+}
+
 const GROUP_TONES = {
     core: {
         card: 'border-l-sky-400 bg-sky-50/60 dark:bg-sky-950/20',
@@ -817,7 +854,7 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
     );
 }
 
-function OptionRow({ index, option, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
+function OptionRow({ index, option, focused = false, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
     const ActionIcon = iconFor(option.action_type);
     const meta = actionMeta[option.action_type];
     const config = option.config ?? {};
@@ -839,8 +876,28 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
     // enseñar nada.
     const tone = GROUP_TONES[meta?.group] ?? GROUP_TONES.core;
 
+    // Lo que va mal en esta opción, con las mismas palabras que la revisión de
+    // arriba: si el aviso te trajo hasta aquí, tienes que reconocerlo.
+    const problem = describeOption(option, actionMeta,
+        submenuChoices.find(m => String(m.id) === String(option.target_menu_id)));
+    const broken = problem.startsWith('⚠️');
+
+    // Cuando se entra desde un aviso, el formulario baja hasta la opción y la
+    // resalta. Abrirlo por arriba y dejar al admin buscando cuál de las ocho
+    // era es justo el paso que se quería ahorrar.
+    const ref = useRef(null);
+
+    useEffect(() => {
+        if (!focused || !ref.current) return;
+
+        ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, [focused]);
+
     return (
-        <div className={`space-y-2 rounded-md border border-l-[3px] p-2.5 ${tone.card}`}>
+        <div ref={ref}
+            className={`space-y-2 rounded-md border border-l-[3px] p-2.5 transition-shadow ${tone.card} ${
+                focused ? 'ring-2 ring-primary ring-offset-2' : broken ? 'ring-1 ring-amber-400' : ''
+            }`}>
             <div className="flex items-center gap-2">
                 <span className={`flex size-6 shrink-0 items-center justify-center rounded text-xs font-semibold ${tone.badge}`}>
                     {index + 1}
@@ -867,6 +924,12 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                     </button>
                 </div>
             </div>
+
+            {broken && (
+                <p className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="size-3.5 shrink-0" /> Le falta algo para funcionar
+                </p>
+            )}
 
             {isList && (
                 <input
@@ -1109,7 +1172,7 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * Integraciones" y dejaba al admin buscando la pantalla a mano. Un diagnóstico
  * que no lleva a donde se arregla no es mejor que no diagnosticar.
  */
-function IssueAction({ action, menuId, onEditMenu, onConnect }) {
+function IssueAction({ action, menuId, optionId, onEditMenu, onConnect }) {
     if (!action) return null;
 
     if (action.kind === 'integrations') {
@@ -1131,7 +1194,7 @@ function IssueAction({ action, menuId, onEditMenu, onConnect }) {
 
     if (action.kind === 'menu' && menuId) {
         return (
-            <button type="button" onClick={() => onEditMenu?.(menuId)}
+            <button type="button" onClick={() => onEditMenu?.(menuId, optionId)}
                 className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent">
                 <Pencil className="size-3" /> {action.label}
             </button>
@@ -1234,8 +1297,8 @@ function ReviewPanel({ onEditMenu }) {
                                     {issue.says}
                                 </p>
                                 <p className="text-muted-foreground">{issue.fix}</p>
-                                <IssueAction action={issue.action} menuId={issue.menu_id} onEditMenu={onEditMenu}
-                                    onConnect={() => setConnecting(true)} />
+                                <IssueAction action={issue.action} menuId={issue.menu_id} optionId={issue.option_id}
+                                    onEditMenu={onEditMenu} onConnect={() => setConnecting(true)} />
                             </div>
                         </div>
                     ))}

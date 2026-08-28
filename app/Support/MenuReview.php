@@ -45,6 +45,7 @@ class MenuReview
             $issues[] = [
                 'menu_id' => null,
                 'menu' => null,
+                'option_id' => null,
                 'option' => null,
                 'level' => self::BLOCKER,
                 'says' => $capabilities['error'],
@@ -57,6 +58,7 @@ class MenuReview
             $issues[] = [
                 'menu_id' => null,
                 'menu' => null,
+                'option_id' => null,
                 'option' => null,
                 'level' => self::BLOCKER,
                 'says' => 'Tu software Integra no está conectado, así que las opciones de autoservicio derivarán al cliente a un asesor.',
@@ -83,8 +85,12 @@ class MenuReview
                     $issues[] = $issue + [
                         'menu_id' => $menu->id,
                         'menu' => $menu->name,
+                        // Con el id de la opción, el botón puede llevar al admin
+                        // directamente a ella en vez de abrir el formulario y
+                        // dejarle buscar cuál de las ocho era.
+                        'option_id' => $option->id,
                         'option' => $option->title,
-                        'action' => ['kind' => 'menu', 'label' => 'Editar el menú'],
+                        'action' => ['kind' => 'menu', 'label' => 'Corregir esta opción'],
                     ];
                 }
             }
@@ -124,6 +130,7 @@ class MenuReview
         return [
             'menu_id' => null,
             'menu' => null,
+            'option_id' => null,
             'option' => null,
             'level' => self::BLOCKER,
             'says' => 'Tu token de Integra no puede ' . self::enumerate($labels) . '. '
