@@ -30,14 +30,6 @@ const RADICADO_PRIORITIES = [
     { value: '3', label: 'Alta' },
 ];
 
-/** Ayuda de cada acción de Integra, para que el admin sepa qué va a pasar. */
-const INTEGRA_HELP = {
-    consultar_factura: 'Busca al cliente por su número de WhatsApp en Integra y le responde sus facturas pendientes con el total. Si no lo encuentra, le pide el documento.',
-    pagar_en_linea: 'Avisa a tus sistemas por el webhook payment.requested y le entrega al cliente el enlace de pago que configures aquí.',
-    reportar_falla: 'Antes de abrir el radicado revisa el contrato: si el cliente ya tiene un reporte en curso le muestra ese en vez de duplicarlo, y si está suspendido por mora se lo dice y no crea nada. Si no, le pide que describa la falla y crea el radicado en Integra.',
-    estado_servicio: 'Una sola consulta a Integra trae todo el servicio del cliente; aquí eliges qué parte le respondes. Añadir más opciones de estas no cuesta más consultas.',
-};
-
 
 /** Valores de ejemplo para la vista previa: el menú se escribe con variables. */
 const SAMPLE = { name: 'Katherine', phone: '3007852081', wa_id: '573007852081' };
@@ -637,6 +629,36 @@ function useIntegraCatalogs(enabled) {
  * Lo que escribe el admin se refleja en vivo; lo que arma el sistema se muestra
  * con datos de muestra.
  */
+
+/** La caja de ajustes de una acción: un solo sitio, y sólo si hay algo dentro. */
+function Settings({ children }) {
+    const any = Array.isArray(children)
+        ? children.flat().some(Boolean)
+        : Boolean(children);
+
+    if (!any) return null;
+
+    return (
+        <div className="space-y-2 rounded-md border p-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Ajustes</p>
+            <div className="grid grid-cols-2 gap-2">{children}</div>
+        </div>
+    );
+}
+
+/** Un campo de la rejilla, con su etiqueta encima y su ayuda debajo. */
+function SettingField({ label, hint, wide = false, required = false, children }) {
+    return (
+        <div className={`space-y-1 ${wide ? 'col-span-2' : ''}`}>
+            <label className="text-[10px] font-medium text-muted-foreground">
+                {label}{required && <span className="text-amber-600"> · falta</span>}
+            </label>
+            {children}
+            {hint && <p className="text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
+        </div>
+    );
+}
+
 function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
     const type = option.action_type;
     const target = type === 'submenu'
@@ -849,8 +871,6 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
 
             {meta?.group === 'integra' && (
                 <>
-                    <p className="text-[11px] text-muted-foreground">{INTEGRA_HELP[option.action_type]}</p>
-
                     {!integra.connected && (
                         <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
                             <Plug className="size-3.5 shrink-0 mt-px" />
@@ -859,55 +879,56 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                         </p>
                     )}
 
-                    {needsPaymentUrl && (
-                        <>
-                            <input
-                                value={config.payment_url ?? ''}
-                                onChange={e => setConfig({ payment_url: e.target.value })}
-                                maxLength={500}
-                                placeholder="https://pagos.tuempresa.com/?nit={nit}&valor={total}"
-                                className={`flex h-8 w-full rounded-md border bg-background px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.config.payment_url`] ? 'border-destructive' : 'border-input'}`}
-                            />
-                            <p className="text-[10px] text-muted-foreground">
-                                Enlace de pago. Variables: <code>{'{nit}'}</code> <code>{'{cliente_id}'}</code>{' '}
-                                <code>{'{nombre}'}</code> <code>{'{total}'}</code> <code>{'{factura}'}</code>.
-                                Déjalo vacío si el enlace lo envía tu sistema al recibir el webhook.
-                            </p>
-                        </>
-                    )}
-
-                    {option.action_type === 'estado_servicio' && (
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-medium text-muted-foreground">¿Qué parte del contrato muestra?</label>
-                            <Select value={config.segmento ?? 'resumen'} onChange={v => setConfig({ segmento: v })} className="h-8 text-xs">
-                                {statusSegments.map(sg => <option key={sg.value} value={sg.value}>{sg.label}</option>)}
-                            </Select>
-                            <p className="text-[10px] text-muted-foreground">
-                                Una sola consulta trae todo el contrato; esto elige qué se le cuenta al cliente.
-                                Para segmentarlo, crea un submenú con una opción por cada parte.
-                            </p>
-                        </div>
-                    )}
-
-                    {option.action_type === 'reportar_falla' && (
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-medium text-muted-foreground">Tipo de falla (servicio)</label>
-                                <Select value={config.radicado_servicio ?? ''} onChange={v => setConfig({ radicado_servicio: v })}
-                                    className="h-8 text-xs" disabled={!servicios.length}>
-                                    <option value="">{catalogs.loading ? 'Cargando…' : 'Elige el servicio…'}</option>
-                                    {servicios.map(sv => <option key={sv.id} value={sv.id}>{sv.nombre}</option>)}
+                    {/* Un solo sitio para los ajustes, cada campo con su
+                        etiqueta y todos del mismo alto. Antes caían sueltos
+                        entre párrafos de ayuda y no se sabía a qué pertenecía
+                        cada caja. */}
+                    <Settings>
+                        {option.action_type === 'estado_servicio' && (
+                            <SettingField label="¿Qué le muestra al cliente?" wide
+                                hint="Una sola consulta trae todo el contrato; esto elige qué parte se le cuenta.">
+                                <Select value={config.segmento ?? 'resumen'} onChange={v => setConfig({ segmento: v })} className="h-8 text-xs">
+                                    {statusSegments.map(sg => <option key={sg.value} value={sg.value}>{sg.label}</option>)}
                                 </Select>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-medium text-muted-foreground">Prioridad</label>
-                                <Select value={config.radicado_prioridad ?? '2'} onChange={v => setConfig({ radicado_prioridad: v })}
-                                    className="h-8 text-xs">
-                                    {RADICADO_PRIORITIES.map(pr => <option key={pr.value} value={pr.value}>{pr.label}</option>)}
-                                </Select>
-                            </div>
-                        </div>
-                    )}
+                            </SettingField>
+                        )}
+
+                        {option.action_type === 'reportar_falla' && (
+                            <>
+                                <SettingField label="Tipo de falla" required={!config.radicado_servicio}>
+                                    <Select value={config.radicado_servicio ?? ''} onChange={v => setConfig({ radicado_servicio: v })}
+                                        className="h-8 text-xs" disabled={!servicios.length}>
+                                        <option value="">{catalogs.loading ? 'Cargando…' : 'Elige el servicio…'}</option>
+                                        {servicios.map(sv => <option key={sv.id} value={sv.id}>{sv.nombre}</option>)}
+                                    </Select>
+                                </SettingField>
+                                <SettingField label="Prioridad">
+                                    <Select value={config.radicado_prioridad ?? '2'} onChange={v => setConfig({ radicado_prioridad: v })}
+                                        className="h-8 text-xs">
+                                        {RADICADO_PRIORITIES.map(pr => <option key={pr.value} value={pr.value}>{pr.label}</option>)}
+                                    </Select>
+                                </SettingField>
+                            </>
+                        )}
+
+                        {needsPaymentUrl && (
+                            <SettingField
+                                label="Enlace de pago"
+                                wide
+                                hint={option.action_type === 'reportar_falla'
+                                    ? 'Sólo se usa si el cliente está cortado por mora: en vez de abrir el radicado, se le ofrece pagar.'
+                                    : 'Variables: {nit} {cliente_id} {nombre} {total} {factura}. Vacío si el enlace lo manda tu sistema.'}
+                            >
+                                <input
+                                    value={config.payment_url ?? ''}
+                                    onChange={e => setConfig({ payment_url: e.target.value })}
+                                    maxLength={500}
+                                    placeholder="https://pagos.tuempresa.com/?nit={nit}&valor={total}"
+                                    className={`flex h-8 w-full rounded-md border bg-background px-2.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.config.payment_url`] ? 'border-destructive' : 'border-input'}`}
+                                />
+                            </SettingField>
+                        )}
+                    </Settings>
 
                     {option.action_type === 'reportar_falla' && catalogs.error && (
                         <div className="rounded-md bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
@@ -922,20 +943,18 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                         </div>
                     )}
 
-                    {option.action_type === 'reportar_falla' && !config.radicado_servicio && (
-                        <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
-                            <AlertTriangle className="size-3.5 shrink-0 mt-px" />
-                            Sin tipo de falla no se puede crear el radicado: el cliente será derivado a un asesor.
-                        </p>
-                    )}
-
-                    <textarea
-                        value={option.reply_text ?? ''}
-                        onChange={e => onChange({ reply_text: e.target.value })}
-                        rows={2} maxLength={4096}
-                        placeholder="Texto adicional al final de la respuesta (opcional). Ej: Escribe MENU para volver."
-                        className="flex w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                    />
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-medium text-muted-foreground">
+                            Texto tuyo al final (opcional)
+                        </label>
+                        <textarea
+                            value={option.reply_text ?? ''}
+                            onChange={e => onChange({ reply_text: e.target.value })}
+                            rows={2} maxLength={4096}
+                            placeholder="Ej: Escribe MENU para volver."
+                            className="flex w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        />
+                    </div>
                 </>
             )}
 
