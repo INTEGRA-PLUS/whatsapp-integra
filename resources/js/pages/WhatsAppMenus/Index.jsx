@@ -3,7 +3,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
-    Plus, Pencil, Trash2, ListTree, Power, PowerOff,
+    Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2,
 } from 'lucide-react';
@@ -210,6 +210,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                             <MenuCard
                                 key={menu.id}
                                 menu={menu}
+                                menus={menus}
                                 actionMeta={actionMeta}
                                 onEdit={() => openEdit(menu)}
                                 onDelete={() => handleDelete(menu)}
@@ -263,9 +264,18 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     );
 }
 
-function MenuCard({ menu, actionMeta, onEdit, onDelete }) {
+function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
     const options = menu.options ?? [];
     const isList = menu.format === 'list';
+
+    // De quién es este submenú: qué menús —y por qué opción— llevan hasta aquí.
+    // Sin esto, una tarjeta suelta que dice "sólo se abre desde otro menú" deja
+    // al admin adivinando cuál, y no hay forma de saberlo sin abrir los demás.
+    const openedFrom = menu.is_root ? [] : menus.flatMap(other =>
+        (other.options ?? [])
+            .filter(o => o.action_type === 'submenu' && String(o.target_menu_id) === String(menu.id))
+            .map(o => ({ menu: other.name, option: o.title, active: other.active }))
+    );
 
     return (
         <div className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
@@ -302,18 +312,51 @@ function MenuCard({ menu, actionMeta, onEdit, onDelete }) {
                                 <span className="font-mono text-foreground"> "{menu.trigger_text}"</span>
                             )}
                         </>
+                    ) : openedFrom.length > 0 ? (
+                        <div className="space-y-0.5">
+                            {openedFrom.map((from, i) => (
+                                <p key={i} className="flex items-start gap-1.5">
+                                    <CornerDownRight className="mt-px size-3 shrink-0" />
+                                    <span>
+                                        Se abre desde <span className="font-medium text-foreground">{from.menu}</span>
+                                        {' › '}<span className="text-foreground">{from.option}</span>
+                                        {!from.active && <span className="text-amber-600"> (ese menú está apagado)</span>}
+                                    </span>
+                                </p>
+                            ))}
+                        </div>
                     ) : (
-                        <span className="italic">Submenú — sólo se abre desde otro menú</span>
+                        <span className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="mt-px size-3 shrink-0" />
+                            Ningún menú lleva aquí todavía: los clientes no pueden llegar a este submenú.
+                        </span>
                     )}
                 </div>
                 <div className="text-foreground whitespace-pre-wrap line-clamp-2">{menu.body_text}</div>
                 <ul className="space-y-0.5 pt-0.5">
                     {options.map((o, i) => {
                         const meta = actionMeta?.[o.action_type];
+                        // "Abrir otro menú" no dice cuál. El nombre del destino
+                        // es justo lo que hay que ver de un vistazo para
+                        // entender cómo encaja el menú con sus submenús.
+                        const target = o.action_type === 'submenu'
+                            ? menus.find(m => String(m.id) === String(o.target_menu_id))
+                            : null;
+
                         return (
                             <li key={o.id} className="text-foreground/80 truncate">
                                 {i + 1}. {o.title}
-                                <span className="text-muted-foreground"> — {meta?.label ?? o.action_type}</span>
+                                <span className="text-muted-foreground">
+                                    {' — '}
+                                    {target
+                                        ? <>abre <span className="text-foreground">{target.name}</span></>
+                                        : (meta?.label ?? o.action_type)}
+                                </span>
+                                {o.action_type === 'submenu' && !target && (
+                                    <span className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                        sin destino
+                                    </span>
+                                )}
                                 {meta?.group === 'pending' && (
                                     <span className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                                         pendiente
