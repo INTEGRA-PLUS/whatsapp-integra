@@ -167,3 +167,85 @@ export const TEMPLATE_VARS = [
     { token: '{phone}', is: 'Su número de teléfono' },
     { token: '{wa_id}', is: 'Su identificador de WhatsApp, con indicativo' },
 ];
+
+/**
+ * Un ejemplo de lo que recibe el cliente con cada acción.
+ *
+ * No basta con explicar qué hace una opción: hasta que no ves el mensaje que le
+ * llega al cliente no sabes si es lo que querías. Los textos siguen de cerca a
+ * los que arma el backend, con datos de muestra.
+ *
+ * `null` significa que el mensaje lo escribe el admin y ya se ve en su campo.
+ */
+export const ACTION_SAMPLES = {
+    reply_text: null,
+    reply_image: null,
+    submenu: null,
+    none: null,
+    consultar_factura:
+        '📄 *Tus facturas pendientes*\n\n' +
+        '• FV-1001 — *$70.000* (venció el 30/07/2026 ⚠️)\n\n' +
+        '*Total por pagar: $70.000*\n\n' +
+        '💰 Tienes *$12.000* a favor.\nSe descuenta de tu próxima factura.',
+    pagar_en_linea:
+        '💳 *Pagar en línea*\n\n' +
+        'Tienes *$70.000* por pagar.\n\n' +
+        'Paga aquí 👉 https://pagos.tuempresa.com/?nit=40389154&valor=70000',
+    reportar_falla:
+        '🛠️ Cuéntame en un mensaje qué está pasando con tu servicio ' +
+        '(por ejemplo: *sin internet desde anoche*, *se corta a ratos*, ' +
+        '*el televisor no da señal*).',
+    cambiar_clave:
+        'Por ahora no puedo cambiar la clave desde aquí. Estamos habilitando ' +
+        'esta opción muy pronto.',
+};
+
+/** Y lo mismo para cada parte del servicio que puede mostrar "Estado del contrato". */
+export const SEGMENT_SAMPLES = {
+    resumen:
+        '📡 *Estado de tu servicio*\n\nContrato: 15\nPlan: ZAFIRO GOLD 3.0\n' +
+        'Internet: ⛔ suspendido (por facturas pendientes)\n\n' +
+        'Facturas pendientes: *$70.000*\nTu servicio se reactiva automáticamente al registrar el pago.',
+    internet:
+        '🌐 *Estado de tu internet*\n\nContrato 15 — ⛔ *Suspendido*\n\n' +
+        'Está suspendido *por facturas pendientes*.\n\n' +
+        'Con *$45.000* se reactiva, y se hace solo en cuanto registremos el pago.\n' +
+        'Tu deuda total es de $70.000, pero para volver a navegar basta con lo de arriba.',
+    facturas:
+        '📄 *Facturas pendientes de este contrato*\n\n' +
+        '• FV-1001 — *$70.000* (venció el 30/07/2026 ⚠️)\n\n*Total por pagar: $70.000*',
+    pagos:
+        '💳 *Tus últimos pagos*\n\n' +
+        '• 05/07/2026 — *$60.000* · Efecty (recibo RC-8891)\n' +
+        '• 04/06/2026 — *$60.000* · PSE (recibo RC-8420)\n\n' +
+        '¿Falta alguno? Mándanos el comprobante por este chat y lo revisamos.',
+    soportes:
+        '🔧 *Tus reportes de falla*\n\nTienes *1 reporte abierto*:\n\n' +
+        '• #5601 del 26/08/2026 · Sin internet — 🔧 en proceso\n\n' +
+        'Ya está en cola: no hace falta que lo reportes otra vez.',
+    consumo:
+        '📊 *Tu consumo de este mes*\n\nTotal: *141 GB*\n' +
+        'Descarga: 128 GB · Subida: 12,6 GB\nContado desde el 01/08/2026.\n\n' +
+        'Tu plan no tiene límite de datos: esto es informativo.',
+    corte:
+        '📅 *Fechas de tu servicio*\n\nPeriodo de facturación: PERIODO 1 AL 30\n' +
+        'Te facturamos el día 1 de cada mes.\nFecha límite de pago: día 15.\n' +
+        'Corte por falta de pago: *día 20*.\n\n' +
+        'Tienes *$70.000* por pagar. Paga antes del día 20 para no perder el servicio.',
+    plan:
+        '⚡ *Tu plan contratado*\n\nPlan: *ZAFIRO GOLD 3.0*\n' +
+        'Velocidad: 300 Mbps de bajada · 150 Mbps de subida\nValor mensual: $60.000\n\n' +
+        'La velocidad se mide por cable y con un solo equipo conectado; por WiFi siempre llega menos.',
+    contrato:
+        '📋 *Tu contrato*\n\nPermanencia: *12 meses*\nContrato firmado el 01/03/2024.\n' +
+        'Costo de reconexión si te cortan: $15.000\n\n📄 Tu contrato firmado 👉 https://…/contratos/15.pdf',
+    wifi:
+        '🔑 *Tu red WiFi*\n\nRed: *INTERSOLAR_5G*\nClave: *casa1234*\n\n' +
+        'Es la clave que quedó registrada en la instalación.',
+    television:
+        '📺 *Tu servicio de televisión*\n\nEstado: ✅ activo',
+    datos:
+        '📍 *Datos de tu contrato*\n\nNúmero de contrato: *15*\n' +
+        'Dirección de instalación: CRA 5 # 12-34, El Prado\n\n' +
+        'Con el número de contrato puedes pagar en cualquiera de nuestros puntos autorizados.',
+};

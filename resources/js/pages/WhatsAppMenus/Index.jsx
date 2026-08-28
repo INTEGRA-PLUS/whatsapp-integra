@@ -12,6 +12,7 @@ import ProviderConnectForm from '@/components/ProviderConnectForm';
 import {
     MATCH_LABELS, MATCH_OPTIONS, KEYWORD_TYPES,
     GROUP_LABELS, GROUP_ORDER, iconFor,
+    ACTION_SAMPLES, SEGMENT_SAMPLES,
 } from './catalog';
 
 
@@ -623,6 +624,80 @@ function useIntegraCatalogs(enabled) {
     return state;
 }
 
+
+/**
+ * Qué hace esta opción y cómo la verá el cliente, debajo del propio selector.
+ *
+ * Elegir una acción en un desplegable no dice nada: "Estado del contrato" o
+ * "Pasar a un asesor" son etiquetas, y hasta que no ves el mensaje que le llega
+ * al cliente no sabes si es lo que querías. Antes esto vivía en un modal
+ * aparte, que es tanto como no tenerlo: la duda aparece mientras se configura,
+ * no después.
+ *
+ * Lo que escribe el admin se refleja en vivo; lo que arma el sistema se muestra
+ * con datos de muestra.
+ */
+function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
+    const type = option.action_type;
+    const target = type === 'submenu'
+        ? submenuChoices.find(m => String(m.id) === String(option.target_menu_id))
+        : null;
+
+    const written = (option.reply_text ?? '').trim();
+
+    // El mensaje que verá el cliente: el del admin cuando lo escribe él, y si no
+    // el que arma el sistema.
+    let bubble = null;
+
+    if (type === 'reply_text' || type === 'reply_image') {
+        bubble = written !== '' ? fillVars(written) : null;
+    } else if (type === 'handoff') {
+        bubble = written !== '' ? fillVars(written) : null;
+    } else if (type === 'estado_servicio') {
+        bubble = SEGMENT_SAMPLES[option.config?.segmento || 'resumen'] ?? null;
+    } else {
+        bubble = ACTION_SAMPLES[type] ?? null;
+        // Las acciones de Integra admiten un texto extra al final.
+        if (bubble && written !== '') bubble += '\n\n' + fillVars(written);
+    }
+
+    const does = describeOption(option, actionMeta, target);
+    const warns = does.startsWith('⚠️');
+
+    return (
+        <div className="space-y-2 rounded-md border bg-muted/30 p-2.5">
+            <p className={`text-[11px] ${warns ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                <span className="font-medium text-foreground">Qué pasa: </span>{does}
+            </p>
+
+            {bubble && (
+                <div>
+                    <p className="mb-1 text-[10px] font-medium text-muted-foreground">
+                        Así lo verá el cliente:
+                    </p>
+                    <div className="rounded-lg rounded-tl-none bg-white p-2 shadow-sm dark:bg-zinc-800">
+                        <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+                            {bubble}
+                        </p>
+                    </div>
+                    {type === 'estado_servicio' && (
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                            Ejemplo con datos de muestra; los de tu cliente salen de Integra.
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {type === 'reply_image' && option.config?.image_url && (
+                <div>
+                    <p className="mb-1 text-[10px] font-medium text-muted-foreground">Y esta imagen:</p>
+                    <img src={option.config.image_url} alt="" className="max-h-32 rounded-lg border object-contain" />
+                </div>
+            )}
+        </div>
+    );
+}
+
 function OptionRow({ index, option, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
     const ActionIcon = iconFor(option.action_type);
     const meta = actionMeta[option.action_type];
@@ -689,6 +764,8 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                     ))}
                 </Select>
             </div>
+
+            <OptionExplainer option={option} actionMeta={actionMeta} submenuChoices={submenuChoices} />
 
             {option.action_type === 'reply_text' && (
                 <textarea
@@ -1161,7 +1238,6 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
     // y con el listado plegado la mitad del menú quedaba escondida detrás de un
     // clic que nadie daba.
     const [listOpen, setListOpen] = useState(true);
-    const [full, setFull] = useState(false);
 
     const all = form.options ?? [];
     const isList = all.length > limits.max_buttons;
@@ -1256,106 +1332,12 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
                 </div>
             </div>
 
-            <button
-                type="button"
-                onClick={() => setFull(true)}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border bg-background px-2 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
-            >
-                <Smartphone className="size-3.5" /> Ver qué pasa al tocar cada opción
-            </button>
-
             <p className="text-[10px] leading-relaxed text-muted-foreground">
                 Aproximación con datos de ejemplo ({SAMPLE.name}). Los títulos se muestran
                 recortados igual que en WhatsApp: {limits.max_button_title} caracteres
                 como botón y {limits.max_row_title} en lista.
             </p>
 
-            {full && (
-                <Modal
-                    wide
-                    title="Así lo recibe tu cliente"
-                    description="Lo que ve en su WhatsApp y qué ocurre cuando toca cada opción"
-                    onClose={() => setFull(false)}
-                >
-                    <MenuWalkthrough form={form} limits={limits} rows={rows} isList={isList}
-                        actionMeta={actionMeta} menus={menus} />
-                </Modal>
-            )}
-        </div>
-    );
-}
-
-/**
- * El menú explicado opción por opción.
- *
- * La vista previa pequeña enseña lo que el cliente VE; esto enseña lo que le
- * PASA al tocar. Es la mitad que faltaba: el admin elegía "Estado del contrato"
- * o "Pasar a un asesor" en un desplegable y no tenía forma de comprobar que el
- * recorrido completo fuera el que quería sin probarlo con un cliente de verdad.
- */
-function MenuWalkthrough({ form, limits, rows, isList, actionMeta, menus }) {
-    return (
-        <div className="space-y-5 text-sm">
-            <div className="rounded-xl border bg-muted/30 p-4">
-                <p className="text-xs font-medium text-foreground">1. El cliente escribe y recibe esto</p>
-                <div className="mt-3 max-w-sm space-y-1.5 rounded-xl bg-[#E5DDD5] p-3 dark:bg-zinc-900">
-                    <div className="rounded-lg bg-white p-2.5 shadow-sm dark:bg-zinc-800">
-                        {(form.header_text ?? '').trim() !== '' && (
-                            <p className="text-[11px] font-semibold text-zinc-900 dark:text-zinc-100">
-                                {cut(fillVars(form.header_text), limits.max_header)}
-                            </p>
-                        )}
-                        <p className="whitespace-pre-wrap text-[11px] text-zinc-800 dark:text-zinc-200">
-                            {cut(fillVars(form.body_text), limits.max_body)}
-                        </p>
-                        {(form.footer_text ?? '').trim() !== '' && (
-                            <p className="mt-1 text-[10px] text-zinc-500">
-                                {cut(fillVars(form.footer_text), limits.max_footer)}
-                            </p>
-                        )}
-                    </div>
-                    <p className="text-center text-[10px] text-zinc-600 dark:text-zinc-400">
-                        {isList
-                            ? 'Con más de ' + limits.max_buttons + ' opciones, WhatsApp las muestra en un listado que se abre con «' + (form.list_button_text || 'Ver opciones') + '».'
-                            : 'Con ' + limits.max_buttons + ' opciones o menos, WhatsApp las pinta como botones debajo del mensaje.'}
-                    </p>
-                </div>
-            </div>
-
-            <div>
-                <p className="text-xs font-medium text-foreground">2. Y esto ocurre al tocar cada una</p>
-                <div className="mt-3 space-y-2">
-                    {rows.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                            Todavía no hay opciones con título. Escríbelos y aparecerán aquí.
-                        </p>
-                    )}
-
-                    {rows.map((option, i) => {
-                        const OptionIcon = iconFor(option.action_type);
-                        const target = option.action_type === 'submenu'
-                            ? menus.find(m => String(m.id) === String(option.target_menu_id))
-                            : null;
-
-                        return (
-                            <div key={i} className="flex gap-3 rounded-xl border p-3">
-                                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
-                                    {i + 1}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-medium text-foreground">
-                                        {cut(option.title, isList ? limits.max_row_title : limits.max_button_title)}
-                                    </p>
-                                    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                                        <OptionIcon className="mt-px size-3.5 shrink-0" />
-                                        <span>{describeOption(option, actionMeta, target)}</span>
-                                    </p>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
         </div>
     );
 }
@@ -1389,6 +1371,13 @@ function describeOption(option, actionMeta, target) {
             return option.config?.radicado_servicio
                 ? 'Revisamos su contrato; si no tiene un reporte en curso ni está cortado por mora, le pedimos que describa la falla y abrimos el radicado.'
                 : '⚠️ Sin tipo de falla elegido no se puede crear el radicado: acabaría con un asesor.';
+        case 'consultar_factura':
+            return 'Lo identificamos por su número de WhatsApp y le respondemos sus facturas pendientes, el total y su saldo a favor. Si no lo encontramos, le pedimos el documento.';
+        case 'pagar_en_linea':
+            return 'Le decimos cuánto debe y le entregamos tu enlace de pago'
+                + (option.config?.payment_url ? '.' : ' ⚠️ que todavía no has configurado: vería el total sin dónde pagar.');
+        case 'cambiar_clave':
+            return 'Todavía no existe la integración detrás: recibe un aviso de «próximamente». Escríbele tu propio texto para que sepa a dónde acudir.';
         default:
             return label + '.';
     }
