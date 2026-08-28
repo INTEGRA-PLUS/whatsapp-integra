@@ -146,7 +146,7 @@ class WhatsAppMenuIntegraTest extends TestCase
         );
 
         // El cliente escribe su cédula: la acción termina donde se quedó.
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, '40389154', 'wamid.IN3'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, '40389154', 'wamid.IN3'))->assertOk();
 
         $this->assertStringContainsString('FV-1001', $this->lastText());
         // La pregunta se cierra: el siguiente mensaje del cliente vuelve a ser
@@ -170,7 +170,7 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->tap($instance, $option);
 
         foreach (['111', '222', '333'] as $i => $intento) {
-            $this->postJson('/webhooks/whatsapp', $this->inbound($instance, $intento, 'wamid.INT' . $i))->assertOk();
+            $this->postSignedWebhook($this->inbound($instance, $intento, 'wamid.INT' . $i))->assertOk();
         }
 
         $this->assertStringContainsString('asesor', $this->lastText());
@@ -246,7 +246,7 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->assertStringContainsString('qué está pasando', $this->lastText());
         $this->assertSame(WhatsAppBotFlow::STEP_REPORT, WhatsAppBotFlow::first()?->step);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound(
+        $this->postSignedWebhook($this->inbound(
             $instance,
             'No tengo internet desde anoche',
             'wamid.IN9'
@@ -287,7 +287,7 @@ class WhatsAppMenuIntegraTest extends TestCase
 
         $this->assertStringContainsString('qué está pasando', $this->lastText());
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Sin internet', 'wamid.IN9'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Sin internet', 'wamid.IN9'))->assertOk();
 
         $this->assertStringContainsString('#5601', $this->lastText());
         $this->assertSame('Sin internet', $this->lastBodyTo('/api/v1/radicados')['reporte']);
@@ -304,7 +304,7 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->estadoContratoFalla = 404;
 
         $this->tap($instance, $option);
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Se corta a ratos', 'wamid.IN9'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Se corta a ratos', 'wamid.IN9'))->assertOk();
 
         $this->assertStringContainsString('#5601', $this->lastText());
     }
@@ -322,7 +322,7 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->servicioActivo = true;
 
         $this->tap($instance, $option);
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Se corta a ratos', 'wamid.IN9'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Se corta a ratos', 'wamid.IN9'))->assertOk();
 
         $this->assertStringContainsString('asesor', $this->lastText());
         $this->assertSame($agent->id, WhatsAppConversation::first()->assigned_to);
@@ -573,8 +573,8 @@ class WhatsAppMenuIntegraTest extends TestCase
     /** El cliente saluda (sale el menú) y toca la opción. */
     private function tap(Instance $instance, WhatsAppMenuOption $option): void
     {
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $option))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
     }
 
     private function inbound(Instance $instance, string $text, string $wamid = 'wamid.IN1'): array

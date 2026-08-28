@@ -77,7 +77,7 @@ class DefaultWhatsAppMenuTest extends TestCase
     {
         $instance = $this->metaInstance($this->company());
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $this->assertSame(0, WhatsAppMessage::where('direction', 'outbound')->count());
     }
@@ -90,7 +90,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $this->rootMenu($company)->update(['active' => true]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $outbound = WhatsAppMessage::where('direction', 'outbound')->first();
         $this->assertNotNull($outbound);
@@ -108,8 +108,8 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $this->rootMenu($company)->update(['active' => true, 'cooldown_minutes' => 0]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'menu', 'wamid.IN2'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'menu', 'wamid.IN2'))->assertOk();
 
         $this->assertSame(2, WhatsAppMessage::where('direction', 'outbound')->count());
     }
@@ -238,7 +238,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         // Con el principal apagado, el cliente no recibe nada: un submenú activo
         // sigue siendo inalcanzable por su cuenta.
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
         $this->assertSame(0, WhatsAppMessage::where('direction', 'outbound')->count());
     }
 

@@ -168,7 +168,7 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $this->menu($instance, ['Consultar factura', 'Pagar en línea', 'Hablar con un asesor']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $payloads = $this->interactivePayloads();
         $this->assertCount(1, $payloads);
@@ -184,7 +184,7 @@ class WhatsAppMenuTest extends TestCase
             'Consultar factura', 'Pagar en línea', 'Cambiar clave WiFi', 'Reportar falla', 'Hablar con un asesor',
         ], ['list_button_text' => 'Ver opciones']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $payloads = $this->interactivePayloads();
         $this->assertCount(1, $payloads);
@@ -203,7 +203,7 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $this->menu($instance, ['Consultar mi factura hoy']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $title = $this->interactivePayloads()[0]['action']['buttons'][0]['reply']['title'];
         $this->assertSame(20, mb_strlen($title));
@@ -214,9 +214,9 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $menu = $this->menu($instance, ['Consultar factura', 'Pagar en línea']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
         $option = $menu->options->first();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $option))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
 
         $this->assertContains('Respuesta de Consultar factura', $this->textsSent());
     }
@@ -230,8 +230,8 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $this->menu($instance, ['Consultar factura', 'Pagar en línea']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, '2', 'wamid.IN2'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, '2', 'wamid.IN2'))->assertOk();
 
         $this->assertContains('Respuesta de Pagar en línea', $this->textsSent());
     }
@@ -241,8 +241,8 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $this->menu($instance, ['Consultar factura', 'Pagar en línea']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'PAGAR EN LINEA', 'wamid.IN2'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'PAGAR EN LINEA', 'wamid.IN2'))->assertOk();
 
         $this->assertContains('Respuesta de Pagar en línea', $this->textsSent());
     }
@@ -259,8 +259,8 @@ class WhatsAppMenuTest extends TestCase
         $menu = $this->menu($instance, ['Reportar falla']);
         $menu->options->first()->update(['action_type' => 'submenu', 'target_menu_id' => $sub->id, 'reply_text' => null]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         $payloads = $this->interactivePayloads();
         $this->assertCount(2, $payloads);
@@ -289,15 +289,15 @@ class WhatsAppMenuTest extends TestCase
             'reply_text' => 'Te comunico con un asesor.',
         ]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         $conversation = WhatsAppConversation::first();
         $this->assertSame($agent->id, $conversation->fresh()->assigned_to);
         $this->assertContains('Te comunico con un asesor.', $this->textsSent());
 
         // Con la conversación ya en manos de un agente, el menú no vuelve a salir.
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola', 'wamid.IN3'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.IN3'))->assertOk();
         $this->assertCount(1, $this->interactivePayloads());
     }
 
@@ -314,8 +314,8 @@ class WhatsAppMenuTest extends TestCase
             'trigger_text' => 'menu',
         ]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'menu'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'menu'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         $this->assertCount(1, $this->interactivePayloads());
     }
@@ -330,7 +330,7 @@ class WhatsAppMenuTest extends TestCase
             'trigger_text' => 'hola',
         ]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $this->assertCount(0, $this->interactivePayloads());
     }
@@ -341,7 +341,7 @@ class WhatsAppMenuTest extends TestCase
         $instance = $this->metaInstance();
         $this->menu($instance, ['Consultar factura', 'Pagar en línea']);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
 
         $outbound = WhatsAppMessage::where('direction', 'outbound')->first();
         $this->assertNotNull($outbound);
@@ -361,8 +361,8 @@ class WhatsAppMenuTest extends TestCase
         $menu = $this->menu($instance, ['Consultar factura']);
         $menu->options->first()->update(['action_type' => 'consultar_factura', 'reply_text' => null]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         $this->assertStringContainsString('Te comunico con un asesor', implode("\n", $this->textsSent()));
 
@@ -380,8 +380,8 @@ class WhatsAppMenuTest extends TestCase
             'reply_text' => 'Todavía no tenemos pagos por aquí, {name}. Escríbenos y te ayudamos.',
         ]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         // El aviso a medida admite las mismas variables que el resto del módulo.
         $this->assertContains(
@@ -410,8 +410,8 @@ class WhatsAppMenuTest extends TestCase
             'reply_text' => null,
         ]);
 
-        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Hola'))->assertOk();
-        $this->postJson('/webhooks/whatsapp', $this->inboundReply($instance, $menu->options->first()))->assertOk();
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first()))->assertOk();
 
         $this->assertSame([], $this->textsSent());
         $this->assertSame(0, WhatsAppMenuSession::count());
