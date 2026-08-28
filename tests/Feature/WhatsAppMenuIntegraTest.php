@@ -44,6 +44,7 @@ class WhatsAppMenuIntegraTest extends TestCase
     private bool $servicioActivo = false;
     private bool $contactoEnIntegra = true;
     private bool $contactoBuscablePorCelular = true;
+    private ?int $estadoContratoFalla = null;
 
     protected function setUp(): void
     {
@@ -63,6 +64,13 @@ class WhatsAppMenuIntegraTest extends TestCase
             }
 
             if (str_contains($url, '/estado')) {
+                if ($this->estadoContratoFalla !== null) {
+                    return Http::response(
+                        ['success' => false, 'message' => 'El token no tiene permiso para esta operación.'],
+                        $this->estadoContratoFalla
+                    );
+                }
+
                 return Http::response($this->contractStatusResponse(
                     $this->servicioActivo,
                     $this->servicioActivo ? 0 : 70000
@@ -255,6 +263,50 @@ class WhatsAppMenuIntegraTest extends TestCase
         $this->assertSame('10.80.1.59', $body['ip']);
         $this->assertSame('No tengo internet desde anoche', $body['reporte']);
         $this->assertSame('WhatsApp', $body['medio']);
+    }
+
+    /**
+     * Revisar el estado del contrato es una conveniencia, no un requisito.
+     *
+     * Es el fallo que se vio en producción: el token no tenía el scope
+     * `contratos.leer`, la consulta previa reventaba y el cliente se quedaba
+     * sin poder reportar su falla. Perder el atajo es aceptable; perder el
+     * reporte no.
+     */
+    public function test_si_no_se_puede_revisar_el_contrato_el_reporte_sigue_adelante(): void
+    {
+        $instance = $this->connectedInstance();
+        $option = $this->option($instance, 'Reportar falla', 'reportar_falla', [
+            'config' => ['radicado_servicio' => 3, 'radicado_prioridad' => 2],
+        ]);
+
+        // 403: el token no tiene scope contratos.leer.
+        $this->estadoContratoFalla = 403;
+
+        $this->tap($instance, $option);
+
+        $this->assertStringContainsString('qué está pasando', $this->lastText());
+
+        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Sin internet', 'wamid.IN9'))->assertOk();
+
+        $this->assertStringContainsString('#5601', $this->lastText());
+        $this->assertSame('Sin internet', $this->lastBodyTo('/api/v1/radicados')['reporte']);
+    }
+
+    /** Y lo mismo si el entorno Integra ni siquiera tiene esa ruta. */
+    public function test_un_entorno_integra_sin_la_ruta_de_estado_tampoco_bloquea_el_reporte(): void
+    {
+        $instance = $this->connectedInstance();
+        $option = $this->option($instance, 'Reportar falla', 'reportar_falla', [
+            'config' => ['radicado_servicio' => 3],
+        ]);
+
+        $this->estadoContratoFalla = 404;
+
+        $this->tap($instance, $option);
+        $this->postJson('/webhooks/whatsapp', $this->inbound($instance, 'Se corta a ratos', 'wamid.IN9'))->assertOk();
+
+        $this->assertStringContainsString('#5601', $this->lastText());
     }
 
     /**

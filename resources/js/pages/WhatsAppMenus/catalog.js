@@ -120,6 +120,32 @@ export const ACTION_HELP = {
     },
 };
 
+/**
+ * Qué pasa con cada acción de autoservicio cuando el software no está conectado.
+ *
+ * Se documenta siempre, esté conectado o no: es la pregunta que llega cuando ya
+ * está pasando, y para entonces nadie quiere descubrir el comportamiento
+ * probándolo con un cliente de verdad.
+ */
+export const OFFLINE_BEHAVIOUR = [
+    {
+        title: 'El cliente nunca se queda sin respuesta',
+        text: 'Recibe un mensaje y el chat pasa al asesor con menos conversaciones abiertas. Callar sería lo peor: el silencio se lee como un sistema roto.',
+    },
+    {
+        title: 'Queda una nota en el chat',
+        text: 'Quien abra la conversación ve «El bot no pudo resolver la solicitud del cliente y derivó el chat», así sabe por qué le llegó.',
+    },
+    {
+        title: 'Puedes escribir tú el mensaje',
+        text: 'Si rellenas el texto adicional de la opción, es ese el que recibe el cliente en lugar del genérico. El chat pasa a un asesor igualmente.',
+    },
+    {
+        title: 'Lo demás sigue funcionando',
+        text: 'Responder con un mensaje, abrir otro menú y pasar a un asesor no dependen del software: funcionan siempre.',
+    },
+];
+
 /** Por qué un menú no se envía, en orden de frecuencia real. */
 export const SILENCE_REASONS = [
     'El menú está apagado. Es lo primero que hay que mirar.',

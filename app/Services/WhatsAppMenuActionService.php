@@ -541,7 +541,7 @@ class WhatsAppMenuActionService
 
         // Sin contrato el radicado se puede crear igual (Integra lo acepta):
         // peor es dejar sin canal a quien sí tiene un problema.
-        $status = $contract ? $client->contractStatus((string) $contract['nro']) : null;
+        $status = $contract ? $this->contractStatusIfPossible($client, $contract, $conversation) : null;
 
         if ($status && $this->suspendedForDebt($status)) {
             $due = (float) data_get($status, 'facturas_pendientes.total_por_pagar', 0);
@@ -588,6 +588,41 @@ class WhatsAppMenuActionService
                 ] : null,
             ]
         );
+    }
+
+    /**
+     * El estado del contrato, si se puede consultar.
+     *
+     * Mirar si el servicio está cortado por mora es una conveniencia —ahorra un
+     * radicado y un viaje del técnico—, no un requisito para reportar una falla.
+     * Que falle no puede costarle al cliente su reporte: sin el dato se sigue
+     * adelante y el radicado se crea igual, que es lo que el cliente vino a
+     * hacer.
+     *
+     * Falla, sobre todo, por dos motivos que el admin puede arreglar y que por
+     * eso se registran con detalle: el token no tiene el scope `contratos.leer`
+     * (403), o el entorno Integra es anterior a esa ruta.
+     */
+    private function contractStatusIfPossible(
+        IntegraClient $client,
+        array $contract,
+        WhatsAppConversation $conversation
+    ): ?array {
+        try {
+            return $client->contractStatus((string) ($contract['nro'] ?? ''));
+        } catch (\RuntimeException $e) {
+            Log::channel('whatsapp')->warning('⚠️ No se pudo revisar el estado del contrato; se sigue con el reporte', [
+                'conversation_id' => $conversation->id,
+                'contrato_nro' => $contract['nro'] ?? null,
+                'code' => $e->getCode(),
+                'error' => $e->getMessage(),
+                'pista' => $e->getCode() === 403
+                    ? 'El token de Integra no tiene el scope contratos.leer.'
+                    : 'Puede que este entorno Integra aún no exponga /contratos/{nro}/estado.',
+            ]);
+
+            return null;
+        }
     }
 
     /**
@@ -1094,14 +1129,17 @@ class WhatsAppMenuActionService
 
         $configured = trim((string) $option?->reply_text);
 
-        if ($configured === '') {
-            return MenuActionResult::escalate('En este momento no puedo consultarlo. Te comunico con un asesor.');
-        }
-
-        // El texto del admin admite las mismas variables que el resto del
-        // módulo: es el mismo campo que ya usaban las acciones simples.
-        return MenuActionResult::reply(
-            $option->menu?->render($configured, $conversation) ?? $configured
+        // Siempre a un asesor, tenga o no texto el admin.
+        //
+        // Antes, con texto configurado se contestaba sólo eso y el chat se
+        // quedaba ahí. Pero ese campo se ofrece como "texto adicional al final
+        // de la respuesta" —la gente escribe cosas como "Escribe MENU para
+        // volver"—, así que servía de respuesta única a un cliente que había
+        // pedido su factura: un callejón sin salida con aire de respuesta.
+        return MenuActionResult::escalate(
+            $configured === ''
+                ? 'En este momento no puedo consultarlo. Te comunico con un asesor.'
+                : ($option->menu?->render($configured, $conversation) ?? $configured)
         );
     }
 

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
     ArrowRight, MessageCircle, Zap, Hand, CheckCheck, AlertTriangle,
-    Plug, Clock, X,
+    Plug, Clock, X, ListTree,
 } from 'lucide-react';
 import {
     GROUP_LABELS, GROUP_ORDER, iconFor, ACTION_HELP,
-    MATCH_OPTIONS, MATCH_HELP, SILENCE_REASONS, TEMPLATE_VARS,
+    MATCH_OPTIONS, MATCH_HELP, SILENCE_REASONS, TEMPLATE_VARS, OFFLINE_BEHAVIOUR,
 } from './catalog';
 
 /**
@@ -22,10 +22,11 @@ const TABS = [
     { id: 'flujo', label: 'Cómo funciona' },
     { id: 'crear', label: 'Crear un menú' },
     { id: 'acciones', label: 'Las acciones' },
+    { id: 'fallos', label: 'Si algo falla' },
     { id: 'detalles', label: 'Detalles' },
 ];
 
-export default function MenuHelp({ actionTypes = [], limits = {}, statusSegments = [], integra = {}, onClose }) {
+export default function MenuHelp({ actionTypes = [], limits = {}, statusSegments = [], integra = {}, menus = [], onClose }) {
     const [tab, setTab] = useState('flujo');
 
     return (
@@ -48,9 +49,10 @@ export default function MenuHelp({ actionTypes = [], limits = {}, statusSegments
             </nav>
 
             <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-6">
-                {tab === 'flujo' && <FlowTab integra={integra} />}
-                {tab === 'crear' && <CreateTab limits={limits} />}
-                {tab === 'acciones' && <ActionsTab actionTypes={actionTypes} statusSegments={statusSegments} integra={integra} />}
+                {tab === 'flujo' && <FlowTab />}
+                {tab === 'crear' && <CreateTab limits={limits} menus={menus} />}
+                {tab === 'acciones' && <ActionsTab actionTypes={actionTypes} statusSegments={statusSegments} onTrouble={() => setTab('fallos')} />}
+                {tab === 'fallos' && <TroubleTab integra={integra} />}
                 {tab === 'detalles' && <DetailsTab limits={limits} />}
             </div>
 
@@ -76,7 +78,7 @@ const FLOW = [
     { icon: CheckCheck, title: 'Pasa lo que configuraste', text: 'Un mensaje, otro menú, una consulta a tu software, o el chat pasa a un asesor.' },
 ];
 
-function FlowTab({ integra }) {
+function FlowTab() {
     return (
         <>
             <Lead>
@@ -102,34 +104,13 @@ function FlowTab({ integra }) {
                 ))}
             </ol>
 
-            <Section title="Cuándo el menú NO se envía">
-                <p className="text-[13px] text-muted-foreground mb-3">
-                    Que el menú no aparezca casi nunca es un error. Estas son las razones, de más a menos frecuente:
-                </p>
-                <ol className="space-y-1.5">
-                    {SILENCE_REASONS.map((reason, i) => (
-                        <li key={reason} className="flex gap-2.5 text-[13px] text-muted-foreground">
-                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60 pt-0.5">{i + 1}</span>
-                            <span>{reason}</span>
-                        </li>
-                    ))}
-                </ol>
-            </Section>
-
-            {!integra.connected && (
-                <Note tone="amber" icon={Plug}>
-                    Tu software Integra no está conectado. Las opciones de autoservicio —facturas, pagos,
-                    radicados, estado del contrato— derivarán el chat a un asesor hasta que lo conectes
-                    desde <strong>Integraciones</strong>.
-                </Note>
-            )}
         </>
     );
 }
 
 /* ── Crear un menú ─────────────────────────────────────────────── */
 
-function CreateTab({ limits }) {
+function CreateTab({ limits, menus }) {
     const steps = [
         {
             title: 'Ponle nombre y elige la línea',
@@ -185,12 +166,56 @@ function CreateTab({ limits }) {
         },
     ];
 
+    const root = menus.find(m => m.is_root);
+    const pending = pendingSetup(menus);
+
     return (
         <>
-            <Lead>
-                Cinco pasos. El formulario valida mientras escribes y la vista previa se actualiza sola, así
-                que puedes ir viendo el resultado sin guardar nada.
-            </Lead>
+            {root ? (
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                        <ListTree className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                        <div>
+                            <p className="text-sm font-medium text-foreground">
+                                No empiezas de cero: ya tienes «{root.name}»
+                            </p>
+                            <p className="text-[13px] text-muted-foreground mt-0.5">
+                                {root.active
+                                    ? 'Está encendido y respondiendo. Los pasos de abajo te sirven para revisarlo o para crear otro.'
+                                    : 'Está creado y apagado, esperando a que lo revises. Los pasos de abajo recorren todos sus campos; cuando te convenza, enciéndelo.'}
+                            </p>
+                        </div>
+                    </div>
+
+                    {pending.length > 0 && (
+                        <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+                            <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1.5">
+                                Te falta completar {pending.length === 1 ? 'una cosa' : `${pending.length} cosas`}
+                            </p>
+                            <ul className="space-y-1">
+                                {pending.map(item => (
+                                    <li key={item} className="flex gap-2 text-[13px] text-amber-700 dark:text-amber-400">
+                                        <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+                                        <span>{item}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {pending.length === 0 && (
+                        <p className="flex items-start gap-2 rounded-md bg-teal-50 dark:bg-teal-900/20 px-3 py-2.5 text-[13px] text-teal-700 dark:text-teal-400">
+                            <CheckCheck className="size-4 shrink-0 mt-0.5" />
+                            <span>No le falta nada por configurar. Revísalo y {root.active ? 'listo' : 'enciéndelo'}.</span>
+                        </p>
+                    )}
+                </div>
+            ) : (
+                <Lead>
+                    Cinco pasos. El formulario valida mientras escribes y la vista previa se actualiza sola,
+                    así que puedes ir viendo el resultado sin guardar nada.
+                </Lead>
+            )}
 
             <ol className="space-y-0">
                 {steps.map((step, i) => (
@@ -225,9 +250,47 @@ function CreateTab({ limits }) {
     );
 }
 
+/**
+ * Lo que le falta a los menús de esta empresa para funcionar de verdad.
+ *
+ * Se calcula de los menús reales y no se escribe a mano: "configuré la opción y
+ * no pasa nada" casi siempre es uno de estos campos vacíos, y decírselo al
+ * admin con el nombre de la opción delante le ahorra buscar cuál era.
+ *
+ * @returns {string[]}
+ */
+function pendingSetup(menus) {
+    const missing = [];
+
+    for (const menu of menus) {
+        for (const option of menu.options ?? []) {
+            const config = option.config ?? {};
+            const where = `«${option.title}»`;
+
+            if (option.action_type === 'reportar_falla' && !config.radicado_servicio) {
+                missing.push(`Elige el tipo de falla en ${where}, o no podrá crear el radicado.`);
+            }
+
+            if (option.action_type === 'pagar_en_linea' && !config.payment_url) {
+                missing.push(`Pega el enlace de pago en ${where}, o el cliente sabrá cuánto debe pero no dónde pagarlo.`);
+            }
+
+            if (option.action_type === 'submenu' && !option.target_menu_id) {
+                missing.push(`Elige el submenú al que lleva ${where}.`);
+            }
+
+            if (option.action_type === 'none') {
+                missing.push(`Decide qué hace ${where}: hoy el cliente la toca y no recibe nada.`);
+            }
+        }
+    }
+
+    return missing;
+}
+
 /* ── Las acciones ──────────────────────────────────────────────── */
 
-function ActionsTab({ actionTypes, statusSegments, integra }) {
+function ActionsTab({ actionTypes, statusSegments, onTrouble }) {
     const grouped = GROUP_ORDER
         .map(group => [group, actionTypes.filter(a => a.group === group)])
         .filter(([, list]) => list.length > 0);
@@ -284,13 +347,104 @@ function ActionsTab({ actionTypes, statusSegments, integra }) {
                 </Section>
             )}
 
-            {!integra.connected && (
-                <Note tone="amber" icon={Plug}>
-                    Las acciones de autoservicio necesitan tu software Integra conectado. Se hace una sola
-                    vez desde <strong>Integraciones</strong>. Mientras no lo esté, quien las elija recibe un
-                    mensaje y el chat pasa a un asesor: nunca se queda sin respuesta.
+            <Note tone="teal" icon={Plug}>
+                ¿Qué pasa con estas cuatro si tu software no está conectado, o si se cae?{' '}
+                <button type="button" onClick={onTrouble} className="underline underline-offset-2 font-medium">
+                    Está explicado en «Si algo falla»
+                </button>.
+            </Note>
+        </>
+    );
+}
+
+/* ── Si algo falla ─────────────────────────────────────────────── */
+
+/**
+ * Todo lo que puede ir mal, junto y en su propia pestaña.
+ *
+ * Estaba repartido —las razones del silencio en "Cómo funciona", el software
+ * caído al fondo de "Las acciones"— y era justo lo que nadie encontraba. Quien
+ * abre la ayuda con un problema delante no va a recorrer cuatro pestañas: o lo
+ * ve en la que dice "Si algo falla", o se rinde y escribe a soporte.
+ */
+function TroubleTab({ integra }) {
+    return (
+        <>
+            <Lead>
+                Casi nada de lo que parece un fallo lo es. Esto es lo que pasa en cada caso y qué mirar.
+            </Lead>
+
+            <Note tone={integra.connected ? 'teal' : 'amber'} icon={Plug}>
+                {integra.connected
+                    ? 'Tu software está conectado ahora mismo: las cuatro acciones de autoservicio responden con datos reales.'
+                    : 'Tu software NO está conectado ahora mismo: las cuatro acciones de autoservicio derivarán el chat a un asesor. Se conecta desde Integraciones.'}
+            </Note>
+
+            <Section title="El menú no le llegó al cliente">
+                <p className="text-[13px] text-muted-foreground mb-3">
+                    Casi nunca es un error. Estas son las razones, de más a menos frecuente:
+                </p>
+                <ol className="space-y-1.5">
+                    {SILENCE_REASONS.map((reason, i) => (
+                        <li key={reason} className="flex gap-2.5 text-[13px] text-muted-foreground">
+                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60 pt-0.5">{i + 1}</span>
+                            <span>{reason}</span>
+                        </li>
+                    ))}
+                </ol>
+            </Section>
+
+            <Section title="Tu software no está conectado, o se cayó">
+                <p className="text-[13px] text-muted-foreground mb-3">
+                    Las cuatro acciones de autoservicio lo consultan. Esto es exactamente lo que pasa
+                    mientras no esté disponible:
+                </p>
+                <div className="space-y-2">
+                    {OFFLINE_BEHAVIOUR.map(item => (
+                        <div key={item.title} className="flex gap-2.5 rounded-lg border bg-muted/30 p-3">
+                            <CheckCheck className="size-4 shrink-0 mt-0.5 text-muted-foreground" />
+                            <div>
+                                <p className="text-[13px] font-medium text-foreground">{item.title}</p>
+                                <p className="text-[13px] text-muted-foreground mt-0.5">{item.text}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <Note tone="teal" icon={Clock} className="mt-3">
+                    <strong>No hace falta apagar el menú</strong> mientras conectas el software. Las opciones
+                    de autoservicio se comportan como un «hablar con un asesor» y empiezan a responder con
+                    datos reales en cuanto conectes, sin tocar nada más.
                 </Note>
-            )}
+            </Section>
+
+            <Section title="Unas opciones funcionan y otra no">
+                <p className="text-[13px] text-muted-foreground">
+                    Si «Consultar factura» responde bien pero otra dice <em>«tuve un problema consultando tu
+                    información»</em> y deriva a un asesor, la conexión está bien: lo que falla es un{' '}
+                    <strong>permiso concreto del acceso</strong>. Cada consulta pide el suyo, y el acceso que
+                    se generó puede no incluirlos todos.
+                </p>
+                <Note tone="amber" icon={AlertTriangle} className="mt-3">
+                    No hay nada que arreglar en el menú. Pásaselo a tu área de sistemas: el acceso a tu
+                    software necesita un permiso más.
+                </Note>
+            </Section>
+
+            <Section title="«Reportar falla» no crea el radicado">
+                <p className="text-[13px] text-muted-foreground">
+                    Dos causas posibles. La primera: le falta el <strong>tipo de falla</strong>, y el
+                    formulario te lo avisa en amarillo. La segunda: el servicio del cliente está{' '}
+                    <strong>suspendido por mora</strong>, y entonces no crea radicado a propósito — se lo dice
+                    al cliente y le ofrece pagar, que es lo que de verdad resuelve su problema.
+                </p>
+            </Section>
+
+            <Section title="El cliente recibió dos respuestas">
+                <p className="text-[13px] text-muted-foreground">
+                    No debería pasar: cuando un menú se hace cargo de un mensaje, la respuesta automática no
+                    se envía. Si lo ves, avisa — es un fallo de verdad.
+                </p>
+            </Section>
         </>
     );
 }

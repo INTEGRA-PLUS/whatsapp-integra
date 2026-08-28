@@ -134,6 +134,77 @@ class DefaultWhatsAppMenu
         });
     }
 
+    /**
+     * Rehace los menús de fábrica que nadie ha tocado todavía, para que una
+     * empresa que recibió una versión anterior de la plantilla se ponga al día.
+     *
+     * Hace falta porque createFor() se salta a toda empresa que ya tenga menús:
+     * sin esto, quien sembró antes de un cambio se quedaba con la versión vieja
+     * para siempre.
+     *
+     * Sólo se rehace lo demostrablemente intacto: menú apagado, que nunca se ha
+     * enviado, sin instancia, único de la empresa y con sus opciones tal cual
+     * salieron de fábrica. En cuanto el admin cambia una palabra se le deja en
+     * paz — vale más su trabajo que tener la plantilla al día.
+     *
+     * @param list<array{0: string, 1: string}> $seeded Título y acción de cada
+     *        opción en la versión anterior, en orden. Lo aporta quien llama,
+     *        porque es un dato del pasado y no de la plantilla actual.
+     * @return int Cuántas empresas se pusieron al día.
+     */
+    public static function refreshUntouched(array $seeded): int
+    {
+        $updated = 0;
+
+        WhatsAppMenu::where('name', self::NAME)
+            ->where('is_root', true)
+            ->where('active', false)
+            ->where('fires_count', 0)
+            ->whereNull('instance_id')
+            ->with('options')
+            ->get()
+            ->each(function (WhatsAppMenu $menu) use ($seeded, &$updated) {
+                if (! self::isPristine($menu, $seeded)) {
+                    return;
+                }
+
+                $company = Company::find($menu->company_id);
+
+                if (! $company) {
+                    return;
+                }
+
+                DB::transaction(function () use ($menu, $company) {
+                    // Las opciones se van con el menú por la clave foránea, y
+                    // con ellas el "ya tiene menús" que bloqueaba la siembra.
+                    $menu->delete();
+                    self::createFor($company);
+                });
+
+                $updated++;
+            });
+
+        return $updated;
+    }
+
+    /** @param list<array{0: string, 1: string}> $seeded */
+    private static function isPristine(WhatsAppMenu $menu, array $seeded): bool
+    {
+        // Un menú suelto en la empresa: si hay más, alguien ya estuvo armando
+        // cosas y borrar por debajo sería peor que dejarlo desactualizado.
+        if (WhatsAppMenu::where('company_id', $menu->company_id)->count() !== 1) {
+            return false;
+        }
+
+        $current = $menu->options
+            ->sortBy('position')
+            ->map(fn (WhatsAppMenuOption $o) => [$o->title, $o->action_type])
+            ->values()
+            ->all();
+
+        return $current === $seeded;
+    }
+
     private static function createRoot(Company $company, int $submenuId): WhatsAppMenu
     {
         $menu = WhatsAppMenu::create([

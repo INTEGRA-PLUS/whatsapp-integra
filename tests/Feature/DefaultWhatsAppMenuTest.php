@@ -27,6 +27,15 @@ class DefaultWhatsAppMenuTest extends TestCase
 
     private const PHONE = '573007852081';
 
+    /** La plantilla anterior: la que recibieron las empresas que sembraron antes del submenú. */
+    private const PREVIOUS_TEMPLATE = [
+        ['📄 Consultar factura', 'consultar_factura'],
+        ['💳 Pagar en línea', 'pagar_en_linea'],
+        ['📶 Cambiar clave WiFi', 'cambiar_clave'],
+        ['🛠️ Reportar falla', 'reportar_falla'],
+        ['👤 Hablar con un asesor', 'handoff'],
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -269,7 +278,76 @@ class DefaultWhatsAppMenuTest extends TestCase
         }
     }
 
+    /**
+     * Una empresa que recibió la plantilla anterior se pone al día sola.
+     *
+     * Es el caso que de verdad pasó: sembrar se salta a quien ya tiene menús,
+     * así que sin un camino de actualización esas empresas se quedaban con la
+     * versión vieja para siempre.
+     */
+    public function test_un_menu_de_fabrica_intacto_se_pone_al_dia(): void
+    {
+        $company = $this->company();
+        $this->downgradeToPreviousTemplate($company);
+
+        DefaultWhatsAppMenu::refreshUntouched(self::PREVIOUS_TEMPLATE);
+
+        $root = $this->rootMenu($company);
+        $this->assertSame('📶 Estado de mi contrato', $root->options[2]->title);
+        $this->assertSame('submenu', $root->options[2]->action_type);
+        $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
+        // Y sigue apagado: ponerse al día no es motivo para empezar a responder.
+        $this->assertFalse($root->active);
+    }
+
+    /**
+     * Lo contrario, que importa más: en cuanto el admin cambia algo, la
+     * actualización lo deja en paz. Vale más su trabajo que la plantilla al día.
+     */
+    public function test_un_menu_ya_configurado_no_se_toca(): void
+    {
+        $company = $this->company();
+        $this->downgradeToPreviousTemplate($company);
+
+        $menu = $this->rootMenu($company);
+        $menu->options[2]->update(['title' => '📶 Mi WiFi']);
+
+        DefaultWhatsAppMenu::refreshUntouched(self::PREVIOUS_TEMPLATE);
+
+        $this->assertSame('📶 Mi WiFi', $this->rootMenu($company)->options[2]->title);
+        $this->assertSame(1, WhatsAppMenu::where('company_id', $company->id)->count());
+    }
+
+    /** Un menú ya encendido tampoco: está atendiendo clientes ahora mismo. */
+    public function test_un_menu_encendido_no_se_toca(): void
+    {
+        $company = $this->company();
+        $this->downgradeToPreviousTemplate($company);
+        $this->rootMenu($company)->update(['active' => true]);
+
+        DefaultWhatsAppMenu::refreshUntouched(self::PREVIOUS_TEMPLATE);
+
+        $this->assertSame('📶 Cambiar clave WiFi', $this->rootMenu($company)->options[2]->title);
+    }
+
     // ------------------------------------------------------------------
+
+    /** Deja a la empresa como si hubiera recibido la plantilla anterior. */
+    private function downgradeToPreviousTemplate(Company $company): void
+    {
+        WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->delete();
+
+        $menu = $this->rootMenu($company);
+        $menu->options()->delete();
+
+        foreach (self::PREVIOUS_TEMPLATE as $position => [$title, $action]) {
+            $menu->options()->create([
+                'position' => $position,
+                'title' => $title,
+                'action_type' => $action,
+            ]);
+        }
+    }
 
     private function rootMenu(Company $company): ?WhatsAppMenu
     {

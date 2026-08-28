@@ -230,6 +230,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         limits={limits}
                         statusSegments={statusSegments}
                         integra={integra}
+                        menus={menus}
                         onClose={() => setShowHelp(false)}
                     />
                 </Modal>

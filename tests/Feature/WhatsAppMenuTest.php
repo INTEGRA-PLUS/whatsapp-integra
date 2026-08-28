@@ -388,6 +388,16 @@ class WhatsAppMenuTest extends TestCase
             'Todavía no tenemos pagos por aquí, Katherine. Escríbenos y te ayudamos.',
             $this->textsSent()
         );
+
+        // Y aun con texto propio el chat pasa a una persona: ese campo se
+        // ofrece como "texto adicional al final de la respuesta", así que
+        // dejarlo como respuesta única sería un callejón sin salida para quien
+        // pidió su factura.
+        $this->assertDatabaseHas('whatsapp_messages', [
+            'conversation_id' => WhatsAppConversation::first()->id,
+            'type' => 'system',
+            'content' => 'El bot no pudo resolver la solicitud del cliente y derivó el chat',
+        ]);
     }
 
     /** "Sin acción" es un marcador de trabajo: registra la elección y calla. */
