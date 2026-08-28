@@ -120,6 +120,99 @@ class IntegraConnectionTest extends TestCase
         $this->assertContains('radicados.crear', IntegraClient::ABILITIES);
     }
 
+    /**
+     * Conectar una función conecta todas las del mismo proveedor.
+     *
+     * Es un solo entorno de Integra y un solo token: pedir la URL dos veces
+     * sólo servía para escribirla mal en una de las dos, y para que el segundo
+     * token revocara al primero dejando las dos tarjetas en verde con una
+     * muerta.
+     */
+    public function test_conectar_una_funcion_conecta_las_del_mismo_proveedor(): void
+    {
+        Http::fake([
+            '*/api/v1/tokens' => Http::response([
+                'success' => true,
+                'data' => ['token' => 'itg_nuevo'],
+            ], 201),
+            '*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $company = $this->company();
+        $user = $this->admin($company);
+
+        $this->actingAs($user)
+            ->postJson('/api/integrations/' . CompanyIntegration::KEY_INVOICE_PAYMENTS . '/connect', [
+                'base_url' => 'https://demo.test',
+                'email' => 'admin@empresa.test',
+                'password' => 'secreto',
+            ])
+            ->assertOk();
+
+        $rows = CompanyIntegration::where('company_id', $company->id)->get();
+
+        $this->assertCount(2, $rows, 'Las dos funciones del proveedor quedan conectadas.');
+
+        foreach ($rows as $row) {
+            $this->assertTrue($row->isConnected(), $row->key . ' debería quedar conectada.');
+            $this->assertSame('itg_nuevo', $row->access_token, 'Comparten el token: sólo hay uno vivo.');
+        }
+
+        // Y la misma URL, resuelta una sola vez: escribirla dos veces era la
+        // forma de tener una de las dos mal.
+        $this->assertCount(1, $rows->pluck('base_url')->unique());
+    }
+
+    /**
+     * Lo que NO se comparte: cada función guarda si está activada en el chat y
+     * con qué comando. Eso es suyo, no de la conexión.
+     */
+    public function test_conectar_no_pisa_los_ajustes_propios_de_cada_funcion(): void
+    {
+        Http::fake([
+            '*/api/v1/tokens' => Http::response(['success' => true, 'data' => ['token' => 'itg_nuevo']], 201),
+            '*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC)
+            ->update(['enabled' => true, 'trigger_command' => 'clientes']);
+
+        $this->actingAs($this->admin($company))
+            ->postJson('/api/integrations/' . CompanyIntegration::KEY_INVOICE_PAYMENTS . '/connect', [
+                'base_url' => 'https://demo.test',
+                'email' => 'admin@empresa.test',
+                'password' => 'secreto',
+            ])
+            ->assertOk();
+
+        $contacts = CompanyIntegration::where('company_id', $company->id)
+            ->where('key', CompanyIntegration::KEY_CONTACTS_SYNC)
+            ->first();
+
+        $this->assertTrue($contacts->enabled);
+        $this->assertSame('clientes', $contacts->trigger_command);
+        $this->assertSame('itg_nuevo', $contacts->access_token);
+    }
+
+    /** Y desconectar desconecta el proveedor entero, por lo mismo: es un token. */
+    public function test_desconectar_apaga_todas_las_funciones_del_proveedor(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS);
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC);
+
+        $this->actingAs($this->admin($company))
+            ->postJson('/api/integrations/' . CompanyIntegration::KEY_INVOICE_PAYMENTS . '/disconnect')
+            ->assertOk();
+
+        $this->assertFalse(Integra::connected($company->id));
+        $this->assertSame(
+            0,
+            CompanyIntegration::where('company_id', $company->id)->whereNotNull('access_token')->count()
+        );
+    }
+
     /** Una tarjeta en estado de error no cuenta como conexión. */
     public function test_una_conexion_con_error_no_cuenta(): void
     {
@@ -154,6 +247,26 @@ class IntegraConnectionTest extends TestCase
     private function company(string $name = 'Cmnet', string $slug = 'cmnet'): Company
     {
         return Company::create(['name' => $name, 'slug' => $slug, 'active' => true]);
+    }
+
+    /**
+     * El primer usuario de una empresa recibe el rol admin con los permisos que
+     * existan en ese momento (User::booted), así que hay que crearlos antes.
+     */
+    private function admin(Company $company): \App\Models\User
+    {
+        foreach (['integrations.view', 'integrations.update'] as $name) {
+            \Spatie\Permission\Models\Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+        }
+
+        return \App\Models\User::create([
+            'company_id' => $company->id,
+            'name' => 'Admin',
+            'email' => 'admin-' . $company->id . '@example.test',
+            'password' => bcrypt('secret'),
+            'role' => 'admin',
+            'active' => true,
+        ]);
     }
 
     private function connect(Company $company, string $key, string $baseUrl = 'https://demo.test/software'): CompanyIntegration

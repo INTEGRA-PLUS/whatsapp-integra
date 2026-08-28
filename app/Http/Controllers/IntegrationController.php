@@ -6,6 +6,7 @@ use App\Jobs\SyncContactsFromIntegra;
 use App\Models\CompanyIntegration;
 use App\Services\Integra;
 use App\Services\IntegraClient;
+use App\Support\IntegrationProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -102,10 +103,12 @@ class IntegrationController extends Controller
      *    Integra), para entornos sin el endpoint de emisión.
      * En ambos casos se valida la conexión con una llamada real (que además
      * resuelve el prefijo /software) y el token se persiste cifrado (cast
-     * `encrypted` del modelo); nunca vuelve al frontend. Cada integración
-     * (`{key}`, ej. invoice_payments o contacts_sync) guarda su propia fila:
-     * conectar una no conecta automáticamente la otra, aunque apunten al
-     * mismo entorno/usuario de Integra.
+     * `encrypted` del modelo); nunca vuelve al frontend.
+     *
+     * Conectar una función conecta TODAS las del mismo proveedor: es un solo
+     * entorno y un solo token, así que pedir la URL dos veces sólo servía para
+     * escribirla mal una de las dos y para que el segundo token revocara al
+     * primero. Ver IntegrationProvider.
      */
     public function connect(Request $request, string $key)
     {
@@ -143,20 +146,31 @@ class IntegrationController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $integration = CompanyIntegration::updateOrCreate(
-            ['company_id' => $this->companyId(), 'key' => $key],
-            [
-                'status'           => 'connected',
-                'base_url'         => $client->baseUrl(), // base resuelta (con /software si aplica)
-                'access_token'     => $plainToken,
-                'token_expires_at' => null, // los tokens de API de Integra no expiran
-                'account'          => ['api' => 'integra2-v1'],
-                'last_error'       => null,
-                'connected_at'     => now(),
-            ]
-        );
+        $connection = [
+            'status'           => 'connected',
+            'base_url'         => $client->baseUrl(), // base resuelta (con /software si aplica)
+            'access_token'     => $plainToken,
+            'token_expires_at' => null, // los tokens de API de Integra no expiran
+            'account'          => ['api' => 'integra2-v1'],
+            'last_error'       => null,
+            'connected_at'     => now(),
+        ];
 
-        return response()->json($this->present($key, $integration->fresh()));
+        // La conexión es del PROVEEDOR, no de la tarjeta: la misma URL y el
+        // mismo token se guardan en todas las funciones que ese proveedor
+        // habilita. Antes cada una emitía el suyo contra el mismo servidor y,
+        // como Integra desactiva los anteriores al emitir uno con el mismo
+        // nombre, conectar la segunda dejaba muerta la primera — con las dos
+        // en verde en pantalla. Lo que NO se toca es lo propio de cada función
+        // (si está activada en el chat y con qué comando).
+        foreach (IntegrationProvider::siblingKeys($key) as $sibling) {
+            CompanyIntegration::updateOrCreate(
+                ['company_id' => $this->companyId(), 'key' => $sibling],
+                $connection
+            );
+        }
+
+        return response()->json($this->present($key, $this->find($key)));
     }
 
     /** GET /api/integrations/{key}/status — verifica la conexión contra Integra. */
@@ -265,20 +279,23 @@ class IntegrationController extends Controller
     {
         abort_unless(isset($this->catalog()[$key]), 404);
 
-        $integration = $this->find($key);
-        if ($integration) {
-            // El token maestro es estático: no hay nada que revocar en Integra,
-            // basta con borrarlo de nuestro lado.
-            $integration->update([
+        // Se desconecta el proveedor entero, por lo mismo que se conecta
+        // entero: es un solo token. Dejar la otra tarjeta en verde con el
+        // token que se acaba de borrar sólo produce una pantalla que miente.
+        CompanyIntegration::where('company_id', $this->companyId())
+            ->whereIn('key', IntegrationProvider::siblingKeys($key))
+            ->get()
+            ->each(fn (CompanyIntegration $i) => $i->update([
+                // El token maestro es estático: no hay nada que revocar en
+                // Integra, basta con borrarlo de nuestro lado.
                 'status'           => 'disconnected',
                 'access_token'     => null,
                 'token_expires_at' => null,
                 'enabled'          => false,
                 'last_error'       => null,
-            ]);
-        }
+            ]));
 
-        return response()->json($this->present($key, $integration?->fresh()));
+        return response()->json($this->present($key, $this->find($key)));
     }
 
     /**
