@@ -4,9 +4,10 @@ import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
+import IntegrationsHelp from './IntegrationsHelp';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
-    Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft,
+    Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
     RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users,
 } from 'lucide-react';
 
@@ -24,22 +25,28 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
     const [section, setSection] = useState('apps');
     // Qué complemento se está viendo por dentro. Sin ninguno, se ve la galería.
     const [openProvider, setOpenProvider] = useState(null);
+    const [showHelp, setShowHelp] = useState(false);
 
     return (
         <>
             <Head title="Integraciones" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
                 {/* Header */}
-                <div className="flex items-center gap-3">
-                    <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                        <Plug className="size-6" />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                            <Plug className="size-6" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-semibold text-foreground">Integraciones</h1>
+                            <p className="text-sm text-muted-foreground mt-0.5">
+                                Conecta tu WhatsApp con sistemas externos y úsalos desde el chat.
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Integraciones</h1>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                            Conecta tu WhatsApp con sistemas externos y úsalos desde el chat.
-                        </p>
-                    </div>
+                    <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
+                        <HelpCircle className="size-4" /> ¿Cómo funciona?
+                    </Button>
                 </div>
 
                 {/* Sub-nav */}
@@ -68,6 +75,28 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
                     ? <ProviderSection can={can} onBack={() => setOpenProvider(null)} />
                     : <ProviderGallery onOpen={setOpenProvider} />)}
             </div>
+
+            {showHelp && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    onClick={() => setShowHelp(false)}>
+                    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border bg-card p-6 shadow-2xl"
+                        onClick={e => e.stopPropagation()}>
+                        <div className="mb-5 flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-lg font-semibold text-foreground">Complementos y webhooks</h2>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    Qué es cada uno, cuál necesitas y cómo saber si está funcionando
+                                </p>
+                            </div>
+                            <button type="button" onClick={() => setShowHelp(false)}
+                                className="text-muted-foreground hover:text-foreground">
+                                <X className="size-5" />
+                            </button>
+                        </div>
+                        <IntegrationsHelp onClose={() => setShowHelp(false)} />
+                    </div>
+                </div>
+            )}
         </>
     );
 }
@@ -164,6 +193,8 @@ function WebhooksSection({ webhooks: initialWebhooks, eventCatalog, can }) {
                                             </span>
                                         ))}
                                     </div>
+
+                                    <WebhookHealth health={wh.health} />
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                     {can('integrations.update') && (
@@ -221,6 +252,51 @@ function WebhooksSection({ webhooks: initialWebhooks, eventCatalog, can }) {
                     onClose={() => setDeliveriesFor(null)}
                 />
             )}
+        </div>
+    );
+}
+
+
+/**
+ * Si el webhook está entregando, no si está encendido.
+ *
+ * "ACTIVO" en verde sólo dice que el interruptor está puesto. Uno de los que
+ * había en producción llevaba 111 avisos mandados a una puerta que no abría
+ * —apuntaba a una web, no a una ruta que recibiera POSTs— y la pantalla lo
+ * mostraba en verde todo el tiempo. El estado que importa es este.
+ */
+function WebhookHealth({ health }) {
+    if (!health) return null;
+
+    const { state, total, ok, failed, says, fix, last_at: lastAt } = health;
+
+    const tone = state === 'ok'
+        ? 'text-emerald-700 dark:text-emerald-400'
+        : state === 'failing'
+            ? 'text-destructive'
+            : 'text-muted-foreground';
+
+    const Icon = state === 'ok' ? CheckCircle2 : state === 'failing' ? AlertTriangle : History;
+
+    return (
+        <div className="mt-3 border-t pt-3">
+            <div className={`flex items-center gap-1.5 text-xs font-medium ${tone}`}>
+                <Icon className="size-3.5 shrink-0" />
+                {says}
+                {lastAt && (
+                    <span className="font-normal text-muted-foreground">
+                        · {new Date(lastAt).toLocaleString('es-CO')}
+                    </span>
+                )}
+            </div>
+
+            {total > 0 && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                    {total} {total === 1 ? 'entrega' : 'entregas'} · {ok} correctas · {failed} fallidas
+                </p>
+            )}
+
+            {fix && <p className="mt-1 text-[11px] text-muted-foreground">{fix}</p>}
         </div>
     );
 }
