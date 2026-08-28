@@ -29,16 +29,51 @@ class MenuReview
     /**
      * @param \Illuminate\Support\Collection<int, WhatsAppMenu> $menus
      * @param array{connected: bool, checked: bool, can: array<string, bool>, error: ?string} $capabilities
-     * @return list<array{menu_id: int, menu: string, option: ?string, level: string, says: string, fix: string}>
+     * @return list<array{menu_id: ?int, menu: ?string, option: ?string, level: string, says: string, fix: string, action: ?array}>
      */
     public static function build($menus, array $capabilities): array
     {
         $issues = [];
 
+        // Un token revocado tumba TODOS los permisos a la vez, así que sacar un
+        // aviso por cada opción y cada permiso llenaría la pantalla de ocho
+        // líneas que dicen lo mismo y esconden las que sí son distintas. Es una
+        // sola causa y una sola cosa que hacer: reconectar.
+        $tokenDead = ($capabilities['error'] ?? null) !== null;
+
+        if ($tokenDead) {
+            $issues[] = [
+                'menu_id' => null,
+                'menu' => null,
+                'option' => null,
+                'level' => self::BLOCKER,
+                'says' => $capabilities['error'],
+                'fix' => 'Reconéctalo con tu usuario y contraseña de Integra. El token nuevo sale con todos los permisos.',
+                'action' => ['kind' => 'integrations', 'label' => 'Reconectar Integra'],
+            ];
+        }
+
+        if (($capabilities['connected'] ?? false) === false) {
+            $issues[] = [
+                'menu_id' => null,
+                'menu' => null,
+                'option' => null,
+                'level' => self::BLOCKER,
+                'says' => 'Tu software Integra no está conectado, así que las opciones de autoservicio derivarán al cliente a un asesor.',
+                'fix' => 'Conéctalo con tu usuario y contraseña de Integra.',
+                'action' => ['kind' => 'integrations', 'label' => 'Conectar Integra'],
+            ];
+        }
+
         foreach ($menus as $menu) {
             foreach ($menu->options as $option) {
-                foreach (self::optionIssues($menu, $option, $capabilities, $menus) as $issue) {
-                    $issues[] = $issue + ['menu_id' => $menu->id, 'menu' => $menu->name, 'option' => $option->title];
+                foreach (self::optionIssues($menu, $option, $capabilities, $menus, $tokenDead) as $issue) {
+                    $issues[] = $issue + [
+                        'menu_id' => $menu->id,
+                        'menu' => $menu->name,
+                        'option' => $option->title,
+                        'action' => ['kind' => 'menu', 'label' => 'Editar el menú'],
+                    ];
                 }
             }
         }
@@ -50,6 +85,23 @@ class MenuReview
     }
 
     /**
+     * «a», «b» ni «c» — con el conector delante del último, que es como se lee.
+     * Va "ni" detrás de "no puede", y "y" cuando la frase es afirmativa.
+     *
+     * @param list<string> $items
+     */
+    private static function enumerate(array $items, string $connector = 'ni'): string
+    {
+        if (count($items) < 2) {
+            return (string) ($items[0] ?? '');
+        }
+
+        $last = array_pop($items);
+
+        return implode(', ', $items) . " $connector " . $last;
+    }
+
+    /**
      * @param \Illuminate\Support\Collection<int, WhatsAppMenu> $menus
      * @return list<array{level: string, says: string, fix: string}>
      */
@@ -57,18 +109,27 @@ class MenuReview
         WhatsAppMenu $menu,
         WhatsAppMenuOption $option,
         array $capabilities,
-        $menus
+        $menus,
+        bool $tokenDead = false
     ): array {
         $issues = [];
 
-        foreach (IntegraCapabilities::missingFor($option, $capabilities) as $missing) {
+        $missing = $tokenDead ? [] : IntegraCapabilities::missingFor($option, $capabilities);
+
+        // Todos los permisos que le faltan a una opción van en UNA línea. Con
+        // uno por permiso, "Reportar falla" salía tres veces seguidas diciendo
+        // casi lo mismo, y lo repetido se deja de leer.
+        if ($missing) {
+            $labels = array_map(fn ($m) => '«' . (IntegraCapabilities::LABELS[$m] ?? $m) . '»', $missing);
+            $scopes = array_map(fn ($m) => IntegraCapabilities::SCOPES[$m] ?? $m, $missing);
+
             $issues[] = [
                 'level' => self::BLOCKER,
-                'says' => 'Tu token de Integra no puede «' . (IntegraCapabilities::LABELS[$missing] ?? $missing)
-                    . '», así que esta opción no podrá responder y derivará al cliente a un asesor.',
-                'fix' => 'Pide que reemitan el token de Integra con el permiso '
-                    . (IntegraCapabilities::SCOPES[$missing] ?? $missing)
-                    . ', o vuelve a conectarlo con tu usuario y contraseña desde Integraciones (así sale con todos).',
+                'says' => 'Tu token de Integra no puede ' . self::enumerate($labels)
+                    . ', así que esta opción no podrá responder y derivará al cliente a un asesor.',
+                'fix' => 'Reconecta Integra con tu usuario y contraseña: el token nuevo sale con todos los permisos. '
+                    . 'Si lo emites a mano, pide ' . self::enumerate($scopes, 'y') . '.',
+                'action' => ['kind' => 'integrations', 'label' => 'Reconectar Integra'],
             ];
         }
 

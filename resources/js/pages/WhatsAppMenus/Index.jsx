@@ -192,7 +192,12 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     </div>
                 </div>
 
-                {menus.length > 0 && <ReviewPanel />}
+                {menus.length > 0 && (
+                    <ReviewPanel onEditMenu={id => {
+                        const menu = menus.find(m => m.id === id);
+                        if (menu) openEdit(menu);
+                    }} />
+                )}
 
                 {menus.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
@@ -873,6 +878,37 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * exactamente los que aplica el backend al construir el payload.
  */
 /**
+ * El botón que resuelve el aviso.
+ *
+ * Sin él la revisión era un callejón sin salida: decía "reconéctalo desde
+ * Integraciones" y dejaba al admin buscando la pantalla a mano. Un diagnóstico
+ * que no lleva a donde se arregla no es mejor que no diagnosticar.
+ */
+function IssueAction({ action, menuId, onEditMenu }) {
+    if (!action) return null;
+
+    if (action.kind === 'integrations') {
+        return (
+            <a href={route('integrations.index')}
+                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent">
+                <Plug className="size-3" /> {action.label}
+            </a>
+        );
+    }
+
+    if (action.kind === 'menu' && menuId) {
+        return (
+            <button type="button" onClick={() => onEditMenu?.(menuId)}
+                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent">
+                <Pencil className="size-3" /> {action.label}
+            </button>
+        );
+    }
+
+    return null;
+}
+
+/**
  * La revisión del menú: qué va a fallar antes de que lo toque un cliente.
  *
  * Se pide aparte de la página porque comprueba contra el servidor de Integra
@@ -880,7 +916,7 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * "funciona": un token con facturas pero sin contratos deja el panel en verde y
  * cada cliente que pregunte por su servicio acaba derivado a un asesor.
  */
-function ReviewPanel() {
+function ReviewPanel({ onEditMenu }) {
     const [state, setState] = useState({ loading: true, data: null, error: null });
     const [open, setOpen] = useState(true);
 
@@ -936,12 +972,6 @@ function ReviewPanel() {
 
             {open && (
                 <div className="space-y-3 border-t px-4 py-3">
-                    {capabilities.error && (
-                        <p className="rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
-                            {capabilities.error}
-                        </p>
-                    )}
-
                     {capabilities.checked && (
                         <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[11px] text-muted-foreground">Tu token de Integra puede:</span>
@@ -957,13 +987,19 @@ function ReviewPanel() {
                     {issues.map((issue, i) => (
                         <div key={i} className="flex gap-2 text-xs">
                             <span className={`mt-1 size-1.5 shrink-0 rounded-full ${issue.level === 'blocker' ? 'bg-destructive' : 'bg-amber-500'}`} />
-                            <div className="space-y-0.5">
+                            <div className="min-w-0 space-y-1">
                                 <p className="text-foreground">
-                                    <span className="font-medium">{issue.menu}</span>
-                                    {issue.option && <span className="text-muted-foreground"> › {issue.option}</span>}
-                                    {' — '}{issue.says}
+                                    {issue.menu && (
+                                        <>
+                                            <span className="font-medium">{issue.menu}</span>
+                                            {issue.option && <span className="text-muted-foreground"> › {issue.option}</span>}
+                                            {' — '}
+                                        </>
+                                    )}
+                                    {issue.says}
                                 </p>
                                 <p className="text-muted-foreground">{issue.fix}</p>
+                                <IssueAction action={issue.action} menuId={issue.menu_id} onEditMenu={onEditMenu} />
                             </div>
                         </div>
                     ))}

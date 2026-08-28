@@ -190,7 +190,66 @@ class MenuReviewTest extends TestCase
             ['connected' => false, 'checked' => false, 'can' => [], 'error' => null]
         );
 
-        $this->assertSame([], $issues);
+        // El único aviso es que Integra no está conectado, con su botón. Ni una
+        // sola acusación de "te falta el permiso X".
+        $this->assertCount(1, $issues);
+        $this->assertStringContainsString('no está conectado', $issues[0]['says']);
+        $this->assertSame('integrations', $issues[0]['action']['kind']);
+        $this->assertStringNotContainsString('permiso', $issues[0]['fix']);
+    }
+
+    /**
+     * Un token revocado tumba todos los permisos a la vez. Sacar un aviso por
+     * opción y por permiso llenaba la pantalla de ocho líneas que decían lo
+     * mismo y escondían las que sí eran distintas: es una causa y una sola cosa
+     * que hacer.
+     */
+    public function test_un_token_revocado_produce_un_solo_aviso_y_no_uno_por_opcion(): void
+    {
+        $company = $this->bareCompany();
+        $this->menuWith($company, [
+            ['title' => 'Mis facturas', 'action_type' => 'consultar_factura'],
+            ['title' => 'Pagar en línea', 'action_type' => 'pagar_en_linea'],
+            ['title' => 'Estado de mi servicio', 'action_type' => 'estado_servicio'],
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            [
+                'connected' => true,
+                'checked' => true,
+                'can' => ['contactos' => false, 'facturas' => false, 'contratos' => false, 'radicados' => false],
+                'error' => 'Integra rechaza el token: está revocado o caducado.',
+            ]
+        );
+
+        $blockers = array_values(array_filter($issues, fn ($i) => $i['level'] === MenuReview::BLOCKER));
+
+        $this->assertCount(1, $blockers, 'Tres opciones sin permisos, pero una sola causa que resolver.');
+        $this->assertStringContainsString('revocado', $blockers[0]['says']);
+        $this->assertSame('integrations', $blockers[0]['action']['kind']);
+    }
+
+    /**
+     * Con el token vivo pero corto, los permisos que le faltan a una opción van
+     * en UNA línea. Con una por permiso, "Reportar falla" salía tres veces
+     * seguidas diciendo casi lo mismo, y lo repetido se deja de leer.
+     */
+    public function test_los_permisos_que_faltan_a_una_opcion_van_en_un_solo_aviso(): void
+    {
+        $company = $this->bareCompany();
+        $this->menuWith($company, [
+            ['title' => 'Reportar falla', 'action_type' => 'reportar_falla', 'config' => ['radicado_servicio' => 3]],
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities(['contactos' => false, 'radicados' => false])
+        );
+
+        $this->assertCount(1, $issues);
+        $this->assertStringContainsString('«Buscar al cliente» ni «Crear radicados»', $issues[0]['says']);
+        $this->assertStringContainsString('contactos.leer y radicados.leer + radicados.crear', $issues[0]['fix']);
     }
 
     /** @param array<string, bool> $can */
