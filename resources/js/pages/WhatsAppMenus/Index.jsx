@@ -8,6 +8,7 @@ import {
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2,
 } from 'lucide-react';
 import MenuHelp from './MenuHelp';
+import ProviderConnectForm from '@/components/ProviderConnectForm';
 import {
     MATCH_LABELS, MATCH_OPTIONS, KEYWORD_TYPES,
     GROUP_LABELS, GROUP_ORDER, iconFor,
@@ -884,15 +885,23 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * Integraciones" y dejaba al admin buscando la pantalla a mano. Un diagnóstico
  * que no lleva a donde se arregla no es mejor que no diagnosticar.
  */
-function IssueAction({ action, menuId, onEditMenu }) {
+function IssueAction({ action, menuId, onEditMenu, onConnect }) {
     if (!action) return null;
 
     if (action.kind === 'integrations') {
         return (
-            <a href={route('integrations.index')}
-                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent">
-                <Plug className="size-3" /> {action.label}
-            </a>
+            <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={onConnect}
+                    className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent">
+                    <Plug className="size-3" /> {action.label}
+                </button>
+                {/* Por si prefiere el módulo completo: revisar el estado, la
+                    sincronización de contactos o el comando del chat. */}
+                <a href={route('integrations.index')}
+                    className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground">
+                    o abrir Integraciones
+                </a>
+            </div>
         );
     }
 
@@ -919,6 +928,8 @@ function IssueAction({ action, menuId, onEditMenu }) {
 function ReviewPanel({ onEditMenu }) {
     const [state, setState] = useState({ loading: true, data: null, error: null });
     const [open, setOpen] = useState(true);
+    const [connecting, setConnecting] = useState(false);
+    const [connectError, setConnectError] = useState(null);
 
     const load = (fresh = false) => {
         setState(s => ({ ...s, loading: true }));
@@ -999,7 +1010,8 @@ function ReviewPanel({ onEditMenu }) {
                                     {issue.says}
                                 </p>
                                 <p className="text-muted-foreground">{issue.fix}</p>
-                                <IssueAction action={issue.action} menuId={issue.menu_id} onEditMenu={onEditMenu} />
+                                <IssueAction action={issue.action} menuId={issue.menu_id} onEditMenu={onEditMenu}
+                                    onConnect={() => setConnecting(true)} />
                             </div>
                         </div>
                     ))}
@@ -1009,6 +1021,31 @@ function ReviewPanel({ onEditMenu }) {
                         {state.loading ? 'Revisando…' : 'Volver a revisar'}
                     </button>
                 </div>
+            )}
+
+            {connecting && (
+                <Modal
+                    title="Conectar Integra"
+                    description="Una sola conexión habilita las facturas, los contactos y las respuestas del menú"
+                    onClose={() => { setConnecting(false); setConnectError(null); }}
+                >
+                    {connectError && (
+                        <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            {connectError}
+                        </p>
+                    )}
+                    <ProviderConnectForm
+                        onConnected={() => {
+                            setConnecting(false);
+                            setConnectError(null);
+                            // Se revisa de nuevo en el acto: el sentido de
+                            // conectar desde aquí es ver los avisos desaparecer
+                            // sin cambiar de pantalla.
+                            load(true);
+                        }}
+                        onError={setConnectError}
+                    />
+                </Modal>
             )}
         </div>
     );

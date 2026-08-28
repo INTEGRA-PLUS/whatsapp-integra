@@ -3,16 +3,19 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import ProviderConnectForm from '@/components/ProviderConnectForm';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
-    Power, Copy, X, Plug, Wallet, Link2, ShieldCheck, ArrowRight, ArrowLeft,
-    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Mail, KeyRound, Users,
+    Power, Copy, X, Plug, Wallet, ArrowRight,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users,
 } from 'lucide-react';
 
+// Webhooks es nuestro; lo demás son proveedores. Cuando entre el segundo, esta
+// lista se arma con el catálogo que ya manda el backend (IntegrationProvider)
+// en vez de escribirse a mano.
 const SECTIONS = [
-    { id: 'webhooks', label: 'Webhooks',          Icon: Webhook },
-    { id: 'payments', label: 'Pagos a facturas',  Icon: Wallet },
-    { id: 'contacts', label: 'Contactos',         Icon: Users },
+    { id: 'webhooks', label: 'Webhooks', Icon: Webhook },
+    { id: 'integra',  label: 'Integra',  Icon: Plug },
 ];
 
 export default function IntegrationsIndex({ webhooks, eventCatalog }) {
@@ -59,8 +62,7 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
                 </div>
 
                 {section === 'webhooks' && <WebhooksSection webhooks={webhooks} eventCatalog={eventCatalog} can={can} />}
-                {section === 'payments' && <PaymentsSection can={can} />}
-                {section === 'contacts' && <ContactsSection can={can} />}
+                {section === 'integra' && <ProviderSection can={can} />}
             </div>
         </>
     );
@@ -463,91 +465,73 @@ function ProviderHeader({ integration }) {
     );
 }
 
-function PaymentsSection({ can }) {
-    const [integration, setIntegration] = useState(null);
+/* ───────────────────────── Integra (proveedor) ───────────────────────── */
+
+/**
+ * Todo lo que habilita un proveedor, en una sola pantalla.
+ *
+ * Antes eran dos pestañas —"Pagos a facturas" y "Contactos"— que pedían por
+ * separado la URL del MISMO entorno de Integra y emitían un token cada una.
+ * Nada en pantalla decía que hablaran con el mismo servidor, así que la
+ * pregunta obvia era por qué hay que escribirlo dos veces. Ahora se conecta una
+ * vez y debajo aparece lo que esa conexión habilita.
+ */
+function ProviderSection({ can }) {
+    const [rows, setRows] = useState(null);
     const [error, setError] = useState(null);
+    const [toast, setToast] = useState(null);
 
     useEffect(() => { load(); }, []);
 
     async function load() {
         try {
             const { data } = await axios.get('/api/integrations');
-            setIntegration((data ?? []).find(i => i.key === 'invoice_payments') ?? null);
+            setRows(data ?? []);
         } catch (err) {
             setError(err?.response?.data?.message ?? 'No se pudieron cargar las integraciones.');
         }
     }
-
-    if (error) {
-        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
-    }
-    if (!integration) {
-        return (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
-                <Loader2 className="size-4 animate-spin" /> Cargando…
-            </div>
-        );
-    }
-
-    return <PaymentsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} />;
-}
-
-const WIZARD_STEPS = [
-    { n: 1, label: 'Conectar', Icon: Link2 },
-    { n: 2, label: 'Estado',   Icon: ShieldCheck },
-    { n: 3, label: 'Activar',  Icon: Power },
-];
-
-function PaymentsWizard({ integration, onUpdated, canManage }) {
-    const [step, setStep] = useState(integration.connected ? (integration.enabled ? 3 : 2) : 1);
-    const [toast, setToast] = useState(null);
 
     function showToast(text, kind = 'success') {
         setToast({ text, kind });
         setTimeout(() => setToast(null), 4000);
     }
 
-    return (
-        <div className="flex flex-col gap-6 max-w-2xl">
-            <ProviderHeader integration={integration} />
+    /** Sustituye la fila que devuelve el backend y deja las demás como están. */
+    function upsert(row) {
+        setRows(prev => (prev ?? []).map(r => (r.key === row.key ? row : r)));
+    }
 
-            {/* Stepper */}
-            <div className="flex items-center gap-2">
-                {WIZARD_STEPS.map((s, idx) => {
-                    const done = step > s.n;
-                    const current = step === s.n;
-                    return (
-                        <div key={s.n} className="flex items-center gap-2 flex-1">
-                            <button
-                                onClick={() => setStep(s.n)}
-                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                                    current ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300'
-                                    : done ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-muted-foreground'
-                                }`}
-                            >
-                                <span className={`flex items-center justify-center size-6 rounded-full text-[11px] font-bold ${
-                                    current ? 'bg-teal-500 text-white'
-                                    : done ? 'bg-emerald-500 text-white'
-                                    : 'bg-muted text-muted-foreground'
-                                }`}>
-                                    {done ? <CheckCircle2 className="size-3.5" /> : s.n}
-                                </span>
-                                <span className="hidden sm:inline">{s.label}</span>
-                            </button>
-                            {idx < WIZARD_STEPS.length - 1 && <div className="flex-1 h-px bg-border/60" />}
-                        </div>
-                    );
-                })}
+    if (error) {
+        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
+    }
+
+    if (!rows) {
+        return (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Cargando…
             </div>
+        );
+    }
+
+    const payments = rows.find(r => r.key === 'invoice_payments');
+    const contacts = rows.find(r => r.key === 'contacts_sync');
+    // Cualquiera sirve para saberlo: la conexión es del proveedor, no de la
+    // función, así que o están las dos conectadas o no lo está ninguna.
+    const connected = !!payments?.connected;
+    const canManage = can('integrations.update');
+
+    return (
+        <div className="flex max-w-2xl flex-col gap-6">
+            <ProviderHeader integration={payments ?? { connected }} />
 
             {toast && (
-                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
+                <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
                     toast.kind === 'error'
                         ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
                         : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
                 }`}>
-                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
+                    {toast.kind === 'error' ? <AlertTriangle className="mt-0.5 size-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0" />}
                     <span>{toast.text}</span>
                 </div>
             )}
@@ -559,158 +543,60 @@ function PaymentsWizard({ integration, onUpdated, canManage }) {
             )}
 
             <fieldset disabled={!canManage} className="contents">
-                {step === 1 && <StepConnect integration={integration} onUpdated={onUpdated} onDone={() => setStep(2)} showToast={showToast} />}
-                {step === 2 && <StepStatus integration={integration} onUpdated={onUpdated} onNext={() => setStep(3)} showToast={showToast} />}
-                {step === 3 && <StepActivate integration={integration} onUpdated={onUpdated} showToast={showToast} />}
+                {!connected ? (
+                    <div className="rounded-xl border bg-card p-5">
+                        <ProviderConnectForm
+                            integrationKey="invoice_payments"
+                            initialBaseUrl={payments?.base_url ?? ''}
+                            onConnected={() => { showToast('Conexión establecida con Integra.'); load(); }}
+                            onError={message => showToast(message, 'error')}
+                        />
+                    </div>
+                ) : (
+                    <>
+                        {payments && (
+                            <StepStatus integration={payments} onUpdated={() => load()} showToast={showToast} />
+                        )}
+
+                        <Panel title="Pagos a facturas" Icon={Wallet}
+                            does="Consultar la deuda de un cliente y registrar su pago sin salir del chat.">
+                            {payments && <StepActivate integration={payments} onUpdated={upsert} showToast={showToast} />}
+                        </Panel>
+
+                        <Panel title="Contactos" Icon={Users}
+                            does="Traer el maestro de clientes de Integra para tener la agenda al día.">
+                            {contacts && <StepSync integration={contacts} onUpdated={upsert} showToast={showToast} />}
+                        </Panel>
+
+                        <Panel title="Menús de WhatsApp" Icon={CreditCard}
+                            does="Que el bot responda facturas, estado del servicio, consumo y reportes.">
+                            <p className="text-sm text-muted-foreground">
+                                No hay nada que activar aquí: en cuanto Integra está conectado, las opciones de
+                                autoservicio del menú empiezan a responder.{' '}
+                                <a href="/whatsapp-menus" className="underline underline-offset-2 hover:text-foreground">
+                                    Ir a los menús
+                                </a>
+                            </p>
+                        </Panel>
+                    </>
+                )}
             </fieldset>
         </div>
     );
 }
 
-function WField({ label, icon: Icon, error, children }) {
-    return (
-        <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                {Icon && <Icon className="size-3.5 text-muted-foreground" />}{label}
-            </label>
-            {children}
-            {error && <p className="text-xs text-destructive font-medium">{error}</p>}
-        </div>
-    );
-}
-
-const wInput = 'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
-
-function StepConnect({ integration, onUpdated, onDone, showToast }) {
-    const [connecting, setConnecting] = useState(false);
-    const [mode, setMode] = useState('login'); // 'login' (email+contraseña) | 'token' (pegar itg_)
-    const [baseUrl, setBaseUrl] = useState(integration.base_url ?? '');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [token, setToken] = useState('');
-    const [errors, setErrors] = useState({});
-
-    async function connect() {
-        const url = baseUrl.trim().replace(/\/+$/, '');
-        const e = {};
-        // Integra es multi-tenant: cada empresa entra a la URL de su propio entorno.
-        if (!/^https?:\/\/.+\..+/i.test(url)) {
-            e.base_url = 'Ingresa la URL completa de tu entorno Integra (ej. https://miempresa.integra.com).';
-        }
-        if (mode === 'login') {
-            if (!email.trim()) e.email = 'Ingresa el email de tu usuario de Integra.';
-            if (!password) e.password = 'Ingresa tu contraseña de Integra.';
-        } else if (!token.trim()) {
-            e.token = 'Pega el token itg_ de la API de tu entorno Integra.';
-        }
-        setErrors(e);
-        if (Object.keys(e).length) return;
-
-        setConnecting(true);
-        try {
-            // El backend valida contra la API V1 de Integra antes de guardar: con
-            // credenciales, canjea el login por un token itg_ recién emitido (la
-            // contraseña solo viaja en esta petición, nunca se guarda); con token
-            // pegado, valida la pareja URL+token. El token queda cifrado.
-            const payload = mode === 'login'
-                ? { base_url: url, email: email.trim(), password }
-                : { base_url: url, token: token.trim() };
-            const { data } = await axios.post(`/api/integrations/${integration.key}/connect`, payload);
-            onUpdated(data);
-            showToast('Conexión establecida con Integra.');
-            onDone();
-        } catch (err) {
-            showToast(err?.response?.data?.message ?? 'No se pudo conectar con Integra.', 'error');
-        } finally {
-            setConnecting(false);
-        }
-    }
-
+/** Una función del proveedor, con lo que hace escrito arriba. */
+function Panel({ title, Icon, does, children }) {
     return (
         <div className="rounded-xl border bg-card p-5">
-            <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                    {mode === 'login'
-                        ? 'Indica la dirección de tu entorno Integra e inicia sesión con tu usuario. Generaremos automáticamente el token de la API con los permisos del flujo de pagos y validaremos la conexión antes de guardar.'
-                        : <>Indica la dirección de tu entorno Integra y un token de su API pública (se genera en el servidor de Integra con <code className="font-mono text-xs">php artisan api:token</code>; la documentación vive en <code className="font-mono text-xs">/software/api/docs</code>). Validaremos la conexión antes de guardar.</>}
-                </p>
-
-                <WField label="URL de tu entorno Integra" icon={Link2} error={errors.base_url}>
-                    <input
-                        type="url"
-                        value={baseUrl}
-                        onChange={e => { setBaseUrl(e.target.value); if (errors.base_url) setErrors(p => ({ ...p, base_url: null })); }}
-                        onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-                        placeholder="https://miempresa.integra.com"
-                        className={`${wInput} font-mono`}
-                        autoFocus
-                    />
-                </WField>
-
-                {mode === 'login' ? (
-                    <>
-                        <WField label="Email de tu usuario de Integra" icon={Mail} error={errors.email}>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={e => { setEmail(e.target.value); if (errors.email) setErrors(p => ({ ...p, email: null })); }}
-                                onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-                                placeholder="usuario@miempresa.com"
-                                autoComplete="off"
-                                className={wInput}
-                            />
-                        </WField>
-
-                        <WField label="Contraseña" icon={KeyRound} error={errors.password}>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={e => { setPassword(e.target.value); if (errors.password) setErrors(p => ({ ...p, password: null })); }}
-                                onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-                                placeholder="Tu contraseña de Integra"
-                                autoComplete="new-password"
-                                className={wInput}
-                            />
-                        </WField>
-                    </>
-                ) : (
-                    <WField label="Token de la API" icon={ShieldCheck} error={errors.token}>
-                        <input
-                            type="password"
-                            value={token}
-                            onChange={e => { setToken(e.target.value); if (errors.token) setErrors(p => ({ ...p, token: null })); }}
-                            onKeyDown={e => { if (e.key === 'Enter') connect(); }}
-                            placeholder="itg_xxxxxxxxxxxxxxxxxxxxxxxx"
-                            autoComplete="off"
-                            className={`${wInput} font-mono`}
-                        />
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                            El token necesita los scopes <code className="font-mono">contactos.leer, facturas.leer, pagos.leer, pagos.registrar</code> (o sin scopes = todos los permisos).
-                        </p>
-                    </WField>
-                )}
-
-                <div className="flex items-start gap-3 rounded-xl bg-muted/40 border p-4 text-xs text-muted-foreground">
-                    <ShieldCheck className="size-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
-                    <p>
-                        {mode === 'login'
-                            ? 'Tu contraseña solo se usa una vez para generar el token y no se guarda. El token queda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos).'
-                            : 'El token se guarda cifrado y solo se usa desde el servidor para consultar la API de tu entorno Integra (clientes, deuda de contratos y pagos). Nunca se muestra de nuevo ni viaja al navegador.'}
-                    </p>
-                </div>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <Button onClick={connect} disabled={connecting} className="gap-2">
-                        {connecting ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />} Conectar con Integra
-                    </Button>
-                    <button
-                        type="button"
-                        onClick={() => { setMode(m => (m === 'login' ? 'token' : 'login')); setErrors({}); }}
-                        className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    >
-                        {mode === 'login' ? '¿Prefieres pegar un token de API?' : 'Volver a iniciar sesión con mi usuario'}
-                    </button>
+            <div className="mb-4 flex items-start gap-2.5">
+                <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div>
+                    <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+                    <p className="text-xs text-muted-foreground">{does}</p>
                 </div>
             </div>
+            {children}
         </div>
     );
 }
@@ -761,7 +647,7 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
                             )}
                         </div>
                     ) : (
-                        <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conéctate en el paso 1.'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conecta Integra para empezar.'}</p>
                     )}
                 </div>
             </div>
@@ -770,7 +656,7 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
                 <Button onClick={verify} disabled={checking} variant="outline" className="gap-2">
                     {checking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Verificar conexión
                 </Button>
-                {ok && (
+                {ok && onNext && (
                     <Button onClick={onNext} className="gap-2">Continuar <ArrowRight className="size-4" /></Button>
                 )}
                 {integration.status !== 'disconnected' && (
@@ -883,110 +769,6 @@ function StepActivate({ integration, onUpdated, showToast }) {
 }
 
 /* ───────────────────────── Contactos (software Integra) ───────────────────────── */
-
-function ContactsSection({ can }) {
-    const [integration, setIntegration] = useState(null);
-    const [error, setError] = useState(null);
-
-    useEffect(() => { load(); }, []);
-
-    async function load() {
-        try {
-            const { data } = await axios.get('/api/integrations');
-            setIntegration((data ?? []).find(i => i.key === 'contacts_sync') ?? null);
-        } catch (err) {
-            setError(err?.response?.data?.message ?? 'No se pudieron cargar las integraciones.');
-        }
-    }
-
-    if (error) {
-        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
-    }
-    if (!integration) {
-        return (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center">
-                <Loader2 className="size-4 animate-spin" /> Cargando…
-            </div>
-        );
-    }
-
-    return <ContactsWizard integration={integration} onUpdated={setIntegration} canManage={can('integrations.update')} />;
-}
-
-const CONTACTS_WIZARD_STEPS = [
-    { n: 1, label: 'Conectar',    Icon: Link2 },
-    { n: 2, label: 'Estado',      Icon: ShieldCheck },
-    { n: 3, label: 'Sincronizar', Icon: RefreshCw },
-];
-
-function ContactsWizard({ integration, onUpdated, canManage }) {
-    const [step, setStep] = useState(integration.connected ? 3 : 1);
-    const [toast, setToast] = useState(null);
-
-    function showToast(text, kind = 'success') {
-        setToast({ text, kind });
-        setTimeout(() => setToast(null), 4000);
-    }
-
-    return (
-        <div className="flex flex-col gap-6 max-w-2xl">
-            <ProviderHeader integration={integration} />
-
-            {/* Stepper */}
-            <div className="flex items-center gap-2">
-                {CONTACTS_WIZARD_STEPS.map((s, idx) => {
-                    const done = step > s.n;
-                    const current = step === s.n;
-                    return (
-                        <div key={s.n} className="flex items-center gap-2 flex-1">
-                            <button
-                                onClick={() => setStep(s.n)}
-                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
-                                    current ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300'
-                                    : done ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-muted-foreground'
-                                }`}
-                            >
-                                <span className={`flex items-center justify-center size-6 rounded-full text-[11px] font-bold ${
-                                    current ? 'bg-teal-500 text-white'
-                                    : done ? 'bg-emerald-500 text-white'
-                                    : 'bg-muted text-muted-foreground'
-                                }`}>
-                                    {done ? <CheckCircle2 className="size-3.5" /> : s.n}
-                                </span>
-                                <span className="hidden sm:inline">{s.label}</span>
-                            </button>
-                            {idx < CONTACTS_WIZARD_STEPS.length - 1 && <div className="flex-1 h-px bg-border/60" />}
-                        </div>
-                    );
-                })}
-            </div>
-
-            {toast && (
-                <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
-                    toast.kind === 'error'
-                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                }`}>
-                    {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
-                    <span>{toast.text}</span>
-                </div>
-            )}
-
-            {!canManage && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
-                    No tienes permisos para modificar esta integración. Pide a un administrador que la configure.
-                </div>
-            )}
-
-            <fieldset disabled={!canManage} className="contents">
-                {step === 1 && <StepConnect integration={integration} onUpdated={onUpdated} onDone={() => setStep(2)} showToast={showToast} />}
-                {step === 2 && <StepStatus integration={integration} onUpdated={onUpdated} onNext={() => setStep(3)} showToast={showToast} />}
-                {step === 3 && <StepSync integration={integration} onUpdated={onUpdated} showToast={showToast} />}
-            </fieldset>
-        </div>
-    );
-}
 
 function StepSync({ integration, onUpdated, showToast }) {
     const [syncing, setSyncing] = useState(false);
