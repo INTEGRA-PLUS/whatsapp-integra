@@ -344,6 +344,113 @@ class DefaultWhatsAppMenu
     }
 
     /** @param list<array<string, mixed>> $options */
+    /**
+     * Pone al día las opciones de una empresa SIN borrar sus menús.
+     *
+     * Es la vía para las empresas que refreshUntouched() se salta a propósito:
+     * las que ya encendieron el menú y lo están usando. Ahí no se puede borrar y
+     * volver a crear, porque el identificador que viaja a Meta lleva dentro el
+     * id del menú y el de la opción (`wamenu:{menu}:{opción}`): recrearlos deja
+     * muertos todos los menús que los clientes ya tienen en el móvil, y quien
+     * abra la conversación de ayer y toque una opción no recibiría nada.
+     *
+     * Así que se reescriben las opciones en su sitio —se actualizan las que hay
+     * por posición, se crean las que faltan y se borran las que sobran—, con lo
+     * que las primeras conservan su id y los menús ya enviados siguen vivos.
+     *
+     * Los textos del menú (cabecera, cuerpo, pie) NO se tocan: son de la
+     * empresa y a menudo llevan su nombre y su tono. Aquí sólo se traen las
+     * opciones nuevas.
+     *
+     * @return array{menu: WhatsAppMenu, creadas: int, actualizadas: int, borradas: int}
+     */
+    public static function applyTemplateInPlace(Company $company): ?array
+    {
+        $menu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('is_root', true)
+            ->with('options')
+            ->first();
+
+        if (! $menu) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($company, $menu) {
+            $submenu = self::ensureSubmenu($company);
+            $before = $menu->options->count();
+
+            $wrote = self::syncOptions($menu, self::options($submenu->id));
+            self::syncOptions($submenu, self::submenuOptions());
+
+            return [
+                'menu' => $menu->fresh('options'),
+                'creadas' => max(0, $wrote - $before),
+                'actualizadas' => min($before, $wrote),
+                'borradas' => max(0, $before - $wrote),
+            ];
+        });
+    }
+
+    /**
+     * El submenú de la plantilla, reutilizando el que haya.
+     *
+     * Se busca por nombre —el actual o el que tenía la versión anterior— para no
+     * dejar dos submenús donde había uno; y si el nombre es el viejo se renombra
+     * en vez de crear otro, con lo que la opción del menú raíz que ya apuntaba
+     * ahí sigue apuntando bien.
+     */
+    private static function ensureSubmenu(Company $company): WhatsAppMenu
+    {
+        $submenu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('is_root', false)
+            ->whereIn('name', [self::SUBMENU_NAME, 'Estado de mi contrato'])
+            ->first();
+
+        if ($submenu) {
+            $submenu->update(['name' => self::SUBMENU_NAME, 'active' => true]);
+
+            return $submenu;
+        }
+
+        return self::createSubmenu($company);
+    }
+
+    /**
+     * Reescribe las opciones de un menú dejándolas como la plantilla.
+     *
+     * Se emparejan por posición para conservar los ids: la opción 1 sigue
+     * siendo la opción 1 aunque le cambie el título.
+     *
+     * @param list<array<string, mixed>> $options
+     * @return int Cuántas opciones quedan.
+     */
+    private static function syncOptions(WhatsAppMenu $menu, array $options): int
+    {
+        $existing = $menu->options()->orderBy('position')->get()->values();
+
+        foreach (array_values($options) as $position => $option) {
+            $attributes = $option + [
+                'position' => $position,
+                'reply_text' => null,
+                'target_menu_id' => null,
+                'config' => null,
+            ];
+
+            if ($current = $existing->get($position)) {
+                $current->update($attributes);
+
+                continue;
+            }
+
+            $menu->options()->create($attributes);
+        }
+
+        // Las que sobran de la plantilla anterior.
+        $existing->slice(count($options))->each->delete();
+
+        return count($options);
+    }
+
     private static function addOptions(WhatsAppMenu $menu, array $options): void
     {
         foreach (array_values($options) as $position => $option) {

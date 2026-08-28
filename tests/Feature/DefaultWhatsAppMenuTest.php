@@ -377,6 +377,63 @@ class DefaultWhatsAppMenuTest extends TestCase
     }
 
     /**
+     * Traer las opciones nuevas a un menú YA EN USO, cuando su dueño lo pide.
+     *
+     * Lo que no se puede hacer aquí es borrar y recrear: el identificador que
+     * viaja a Meta lleva dentro el id del menú y el de la opción, así que
+     * recrearlos deja muertos todos los menús que los clientes ya tienen en el
+     * móvil. Por eso se reescriben en su sitio y los ids sobreviven.
+     */
+    public function test_aplicar_la_plantilla_en_uso_conserva_los_ids(): void
+    {
+        $company = $this->company();
+        $this->downgradeToPreviousTemplate($company);
+
+        $menu = $this->rootMenu($company);
+        $menu->update(['active' => true, 'fires_count' => 4]);
+
+        $menuId = $menu->id;
+        $primeraOpcion = $menu->options[0]->id;
+
+        DefaultWhatsAppMenu::applyTemplateInPlace($company);
+
+        $actualizado = $this->rootMenu($company);
+
+        // El menú y las primeras opciones siguen siendo los mismos: los menús ya
+        // enviados a los clientes siguen respondiendo.
+        $this->assertSame($menuId, $actualizado->id);
+        $this->assertSame($primeraOpcion, $actualizado->options[0]->id);
+
+        // Y ya trae la plantilla nueva, con su submenú.
+        $this->assertCount(8, $actualizado->options);
+        $this->assertSame('📄 Mis facturas', $actualizado->options[0]->title);
+        $this->assertSame('💵 Mis últimos pagos', $actualizado->options[3]->title);
+        $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
+
+        // Sigue encendido: estaba atendiendo clientes y no se apaga por esto.
+        $this->assertTrue($actualizado->active);
+    }
+
+    /** Y el submenú queda apuntado desde el menú raíz, no suelto. */
+    public function test_aplicar_la_plantilla_deja_el_submenu_enlazado(): void
+    {
+        $company = $this->company();
+        $this->downgradeToPreviousTemplate($company);
+        $this->rootMenu($company)->update(['active' => true, 'fires_count' => 9]);
+
+        DefaultWhatsAppMenu::applyTemplateInPlace($company);
+
+        $submenu = WhatsAppMenu::where('company_id', $company->id)->where('is_root', false)->first();
+        $opcion = $this->rootMenu($company)->options->firstWhere('action_type', 'submenu');
+
+        $this->assertNotNull($submenu);
+        $this->assertSame(DefaultWhatsAppMenu::SUBMENU_NAME, $submenu->name);
+        $this->assertSame($submenu->id, $opcion->target_menu_id);
+        $this->assertTrue($submenu->active);
+        $this->assertCount(7, $submenu->options);
+    }
+
+    /**
      * Lo contrario, que importa más: en cuanto el admin cambia algo, la
      * actualización lo deja en paz. Vale más su trabajo que la plantilla al día.
      */
