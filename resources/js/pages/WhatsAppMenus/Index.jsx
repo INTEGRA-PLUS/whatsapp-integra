@@ -748,7 +748,7 @@ const GROUP_TONES = {
 function faultTypesPlaceholder(catalogs, servicios) {
     if (catalogs.loading) return 'Consultando Integra…';
     if (catalogs.error) return 'No se pudo consultar Integra';
-    if (!servicios.length) return 'Tu Integra no tiene tipos de falla';
+    if (!servicios.length) return 'Tu Integra no tiene servicios de soporte';
 
     return 'Elige el servicio…';
 }
@@ -757,11 +757,15 @@ function faultTypesHint(catalogs, servicios) {
     if (catalogs.loading || catalogs.error) return null;
 
     if (!servicios.length) {
-        return 'Integra respondió, pero no tiene ningún tipo de falla creado. Créalos en tu Integra '
+        return 'Integra respondió, pero no tiene ningún servicio de soporte creado. Créalos en tu Integra '
             + '(Soporte › Servicios) y vuelve aquí: aparecerán solos.';
     }
 
-    return null;
+    // La confusión típica: parece que aquí se elige la falla del cliente, y es
+    // al revés. Él la describe con sus palabras; esto es la cola de Integra.
+    return 'La falla la describe el cliente con sus palabras y eso va como texto del radicado. '
+        + 'Esto es la categoría con la que entra en Integra, igual para todos los reportes de esta opción. '
+        + '¿Quieres separarlos? Crea un submenú con una opción por cada servicio.';
 }
 
 /** La caja de ajustes de una acción: un solo sitio, y sólo si hay algo dentro. */
@@ -1060,7 +1064,8 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
 
                         {option.action_type === 'reportar_falla' && (
                             <>
-                                <SettingField label="Tipo de falla" required={!config.radicado_servicio}
+                                <SettingField label="¿Bajo qué servicio de Integra entra?"
+                                    required={!config.radicado_servicio}
                                     hint={faultTypesHint(catalogs, servicios)}>
                                     <Select value={config.radicado_servicio ?? ''} onChange={v => setConfig({ radicado_servicio: v })}
                                         className="h-8 text-xs" disabled={!servicios.length}>
@@ -1554,8 +1559,8 @@ function describeOption(option, actionMeta, target) {
                 + (option.config?.segmento ? SEGMENT_HINTS[option.config.segmento] ?? option.config.segmento : 'el resumen completo') + '.';
         case 'reportar_falla':
             return option.config?.radicado_servicio
-                ? 'Revisamos su contrato; si no tiene un reporte en curso ni está cortado por mora, le pedimos que describa la falla y abrimos el radicado.'
-                : '⚠️ Sin tipo de falla elegido no se puede crear el radicado: acabaría con un asesor.';
+                ? 'Revisamos su contrato; si no tiene un reporte en curso ni está cortado por mora, le pedimos que nos cuente qué le pasa y abrimos el radicado en Integra con lo que escriba.'
+                : '⚠️ Falta elegir bajo qué servicio de Integra entra el radicado: sin eso no se puede crear y acabaría con un asesor.';
         case 'consultar_factura':
             return 'Lo identificamos por su número de WhatsApp y le respondemos sus facturas pendientes, el total y su saldo a favor. Si no lo encontramos, le pedimos el documento.';
         case 'pagar_en_linea':

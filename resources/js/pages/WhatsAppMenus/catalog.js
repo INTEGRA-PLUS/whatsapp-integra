@@ -113,7 +113,7 @@ export const ACTION_HELP = {
     },
     reportar_falla: {
         does: 'Revisa el contrato antes de abrir nada: si ya tiene un reporte en curso le muestra ese en vez de duplicarlo, y si está cortado por mora se lo dice y no crea radicado. Si no, le pide que describa la falla y lo registra.',
-        needs: 'El tipo de falla. Sin él no se puede crear el radicado y el cliente acaba con un asesor.',
+        needs: 'Bajo qué servicio de Integra entra el radicado. Ojo: la falla la describe el cliente con sus palabras; esto es sólo la categoría con la que se archiva. Sin ella no se puede crear y el cliente acaba con un asesor.',
     },
     cambiar_clave: {
         does: 'Todavía no cambia nada: responde un aviso de que la función está en camino.',
