@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
-    Plug, Users, HelpCircle, ImagePlus,
+    Plug, Users, HelpCircle, ImagePlus, CheckCircle2,
 } from 'lucide-react';
 import MenuHelp from './MenuHelp';
 import {
@@ -191,6 +191,8 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         </Button>
                     </div>
                 </div>
+
+                {menus.length > 0 && <ReviewPanel />}
 
                 {menus.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
@@ -870,6 +872,112 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * iconos en las filas— pero el contenido, el formato y los recortes son
  * exactamente los que aplica el backend al construir el payload.
  */
+/**
+ * La revisión del menú: qué va a fallar antes de que lo toque un cliente.
+ *
+ * Se pide aparte de la página porque comprueba contra el servidor de Integra
+ * qué permisos tiene de verdad el token. Es la diferencia entre "conectado" y
+ * "funciona": un token con facturas pero sin contratos deja el panel en verde y
+ * cada cliente que pregunte por su servicio acaba derivado a un asesor.
+ */
+function ReviewPanel() {
+    const [state, setState] = useState({ loading: true, data: null, error: null });
+    const [open, setOpen] = useState(true);
+
+    const load = (fresh = false) => {
+        setState(s => ({ ...s, loading: true }));
+
+        fetch(route('whatsapp-menus.revision') + (fresh ? '?fresh=1' : ''), { headers: { Accept: 'application/json' } })
+            .then(async res => {
+                const body = await res.json().catch(() => ({}));
+                setState(res.ok
+                    ? { loading: false, data: body, error: null }
+                    : { loading: false, data: null, error: body.message ?? 'No se pudo revisar el menú.' });
+            })
+            .catch(() => setState({ loading: false, data: null, error: 'No se pudo revisar el menú.' }));
+    };
+
+    useEffect(() => { load(); }, []);
+
+    if (state.loading && !state.data) {
+        return (
+            <div className="rounded-xl border px-4 py-3 text-sm text-muted-foreground">
+                Revisando tu menú y los permisos de Integra…
+            </div>
+        );
+    }
+
+    if (state.error) return null;
+
+    const { capabilities = {}, issues = [] } = state.data ?? {};
+    const blockers = issues.filter(i => i.level === 'blocker');
+    const warnings = issues.filter(i => i.level === 'warning');
+    const clean = issues.length === 0;
+
+    return (
+        <div className={`rounded-xl border ${blockers.length ? 'border-destructive/40 bg-destructive/5' : clean ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+            <button type="button" onClick={() => setOpen(o => !o)}
+                className="flex w-full items-center gap-2.5 px-4 py-3 text-left">
+                {clean
+                    ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                    : <AlertTriangle className={`size-4 shrink-0 ${blockers.length ? 'text-destructive' : 'text-amber-600'}`} />}
+                <span className="text-sm font-medium text-foreground">
+                    {clean
+                        ? 'Tu menú está listo para responder'
+                        : blockers.length
+                            ? `${blockers.length} ${blockers.length === 1 ? 'cosa impide' : 'cosas impiden'} que tu menú responda`
+                            : `${warnings.length} ${warnings.length === 1 ? 'detalle' : 'detalles'} por revisar`}
+                </span>
+                {capabilities.connected === false && (
+                    <span className="text-xs text-muted-foreground">· Integra no está conectado</span>
+                )}
+                <ChevronDown className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+
+            {open && (
+                <div className="space-y-3 border-t px-4 py-3">
+                    {capabilities.error && (
+                        <p className="rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive">
+                            {capabilities.error}
+                        </p>
+                    )}
+
+                    {capabilities.checked && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] text-muted-foreground">Tu token de Integra puede:</span>
+                            {Object.entries(state.data.labels ?? {}).map(([key, label]) => (
+                                <span key={key}
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${capabilities.can?.[key] ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                                    {capabilities.can?.[key] ? '✓' : '✕'} {label}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+
+                    {issues.map((issue, i) => (
+                        <div key={i} className="flex gap-2 text-xs">
+                            <span className={`mt-1 size-1.5 shrink-0 rounded-full ${issue.level === 'blocker' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                            <div className="space-y-0.5">
+                                <p className="text-foreground">
+                                    <span className="font-medium">{issue.menu}</span>
+                                    {issue.option && <span className="text-muted-foreground"> › {issue.option}</span>}
+                                    {' — '}{issue.says}
+                                </p>
+                                <p className="text-muted-foreground">{issue.fix}</p>
+                            </div>
+                        </div>
+                    ))}
+
+                    <button type="button" onClick={() => load(true)} disabled={state.loading}
+                        className="text-[11px] text-muted-foreground hover:underline">
+                        {state.loading ? 'Revisando…' : 'Volver a revisar'}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 /**
  * La imagen de una opción: se sube al elegirla y se guarda su URL.
  *

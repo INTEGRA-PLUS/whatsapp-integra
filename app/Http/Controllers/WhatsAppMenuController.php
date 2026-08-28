@@ -7,7 +7,9 @@ use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Services\Integra;
+use App\Services\IntegraCapabilities;
 use App\Services\IntegraClient;
+use App\Support\MenuReview;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -339,6 +341,28 @@ class WhatsAppMenuController extends Controller
             fn (IntegraClient $client) => $client->radicadoCatalogs(),
             'Conecta tu software Integra desde Integraciones para configurar esta acción.'
         );
+    }
+
+    /**
+     * Lo que le va a fallar al menú antes de que lo toque un cliente.
+     *
+     * Va aparte de index() y no dentro porque comprueba los permisos reales del
+     * token contra el servidor de Integra: son cuatro llamadas HTTP a otra
+     * máquina, y si ese servidor tarda no puede retrasar la carga de la página.
+     */
+    public function review(Request $request)
+    {
+        $companyId = auth()->user()->company_id;
+
+        $capabilities = IntegraCapabilities::for($companyId, $request->boolean('fresh'));
+
+        $menus = WhatsAppMenu::where('company_id', $companyId)->with('options')->get();
+
+        return response()->json([
+            'capabilities' => $capabilities,
+            'labels' => IntegraCapabilities::LABELS,
+            'issues' => MenuReview::build($menus, $capabilities),
+        ]);
     }
 
     /**
