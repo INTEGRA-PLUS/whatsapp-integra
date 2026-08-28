@@ -673,6 +673,60 @@ function useIntegraCatalogs(enabled) {
  * con datos de muestra.
  */
 
+
+/**
+ * Colores suaves por familia de acción.
+ *
+ * Con ocho opciones seguidas, todas del mismo gris, cuesta ver dónde acaba una y
+ * empieza la siguiente. El color las separa y de paso dice algo: verde lo que
+ * consulta Integra, azul lo que resuelve la plataforma sola, ámbar lo que
+ * todavía no existe.
+ */
+const GROUP_TONES = {
+    core: {
+        card: 'border-l-sky-400 bg-sky-50/60 dark:bg-sky-950/20',
+        badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+    },
+    integra: {
+        card: 'border-l-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/20',
+        badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    },
+    pending: {
+        card: 'border-l-amber-400 bg-amber-50/60 dark:bg-amber-950/20',
+        badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    },
+    none: {
+        card: 'border-l-zinc-300 bg-muted/40',
+        badge: 'bg-background text-muted-foreground',
+    },
+};
+
+/**
+ * Qué poner en el desplegable de tipos de falla según lo que haya pasado.
+ *
+ * Son tres situaciones distintas y antes las tres se veían igual —un desplegable
+ * vacío—, que es la peor forma de dejar a alguien en el aire: no sabe si está
+ * cargando, si falló, o si es que no hay nada que elegir.
+ */
+function faultTypesPlaceholder(catalogs, servicios) {
+    if (catalogs.loading) return 'Consultando Integra…';
+    if (catalogs.error) return 'No se pudo consultar Integra';
+    if (!servicios.length) return 'Tu Integra no tiene tipos de falla';
+
+    return 'Elige el servicio…';
+}
+
+function faultTypesHint(catalogs, servicios) {
+    if (catalogs.loading || catalogs.error) return null;
+
+    if (!servicios.length) {
+        return 'Integra respondió, pero no tiene ningún tipo de falla creado. Créalos en tu Integra '
+            + '(Soporte › Servicios) y vuelve aquí: aparecerán solos.';
+    }
+
+    return null;
+}
+
 /** La caja de ajustes de una acción: un solo sitio, y sólo si hay algo dentro. */
 function Settings({ children }) {
     const any = Array.isArray(children)
@@ -780,10 +834,15 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
         .map(group => [group, actionTypes.filter(a => a.group === group)])
         .filter(([, list]) => list.length > 0);
 
+    // El color separa las tarjetas de un vistazo y además significa algo: qué
+    // familia de acción es. Decorarlas al azar habría ordenado la vista sin
+    // enseñar nada.
+    const tone = GROUP_TONES[meta?.group] ?? GROUP_TONES.core;
+
     return (
-        <div className="rounded-md border bg-muted/30 p-2.5 space-y-2">
+        <div className={`space-y-2 rounded-md border border-l-[3px] p-2.5 ${tone.card}`}>
             <div className="flex items-center gap-2">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded bg-background text-xs font-medium text-muted-foreground">
+                <span className={`flex size-6 shrink-0 items-center justify-center rounded text-xs font-semibold ${tone.badge}`}>
                     {index + 1}
                 </span>
                 <input
@@ -938,10 +997,11 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
 
                         {option.action_type === 'reportar_falla' && (
                             <>
-                                <SettingField label="Tipo de falla" required={!config.radicado_servicio}>
+                                <SettingField label="Tipo de falla" required={!config.radicado_servicio}
+                                    hint={faultTypesHint(catalogs, servicios)}>
                                     <Select value={config.radicado_servicio ?? ''} onChange={v => setConfig({ radicado_servicio: v })}
                                         className="h-8 text-xs" disabled={!servicios.length}>
-                                        <option value="">{catalogs.loading ? 'Cargando…' : 'Elige el servicio…'}</option>
+                                        <option value="">{faultTypesPlaceholder(catalogs, servicios)}</option>
                                         {servicios.map(sv => <option key={sv.id} value={sv.id}>{sv.nombre}</option>)}
                                     </Select>
                                 </SettingField>
