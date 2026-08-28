@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -566,7 +566,7 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                 </div>
             </form>
 
-            <MenuPreview form={form} limits={limits} />
+            <MenuPreview form={form} limits={limits} actionMeta={actionMeta} menus={menus} />
         </div>
     );
 }
@@ -578,31 +578,47 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
  * por formulario abierto: es una llamada HTTP a otro servidor y cargarla con la
  * página retrasaría el listado de menús por un select que casi nadie abre.
  */
+/**
+ * Los catálogos de Integra (tipos de falla, prioridades) para el formulario.
+ *
+ * Ojo con las dependencias: la versión anterior llevaba `state.loading` en el
+ * array y se marcaba a sí misma como cargando antes de pedir nada. Eso cambiaba
+ * la dependencia, React desmontaba el efecto, la limpieza ponía `cancelled` y
+ * la respuesta se descartaba al llegar. El select se quedaba en "Cargando…"
+ * para siempre, en todas las empresas, y parecía un problema de Integra cuando
+ * la petición había ido y vuelto perfectamente.
+ *
+ * Ahora el "ya lo pedí" vive en una ref, que no provoca renders, y el efecto
+ * sólo depende de si hace falta pedirlo.
+ */
 function useIntegraCatalogs(enabled) {
     const [state, setState] = useState({ loading: false, data: null, error: null });
+    const requested = useRef(false);
 
     useEffect(() => {
-        if (!enabled || state.data || state.error || state.loading) return;
+        if (!enabled || requested.current) return;
 
-        let cancelled = false;
-        setState(s => ({ ...s, loading: true }));
+        requested.current = true;
+        setState({ loading: true, data: null, error: null });
+
+        let alive = true;
 
         fetch(route('whatsapp-menus.integra-catalogs'), { headers: { Accept: 'application/json' } })
             .then(async res => {
                 const body = await res.json().catch(() => ({}));
-                if (cancelled) return;
+                if (!alive) return;
                 setState(res.ok
                     ? { loading: false, data: body, error: null }
                     : { loading: false, data: null, error: body.message ?? 'No se pudieron cargar los catálogos de Integra.' });
             })
             .catch(() => {
-                if (!cancelled) {
+                if (alive) {
                     setState({ loading: false, data: null, error: 'No se pudieron cargar los catálogos de Integra.' });
                 }
             });
 
-        return () => { cancelled = true; };
-    }, [enabled, state.data, state.error, state.loading]);
+        return () => { alive = false; };
+    }, [enabled]);
 
     return state;
 }
@@ -817,7 +833,16 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                     )}
 
                     {option.action_type === 'reportar_falla' && catalogs.error && (
-                        <p className="text-[11px] text-destructive">{catalogs.error}</p>
+                        <div className="rounded-md bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                            <p>{catalogs.error}</p>
+                            {/* El tipo de falla sale del catálogo de Integra, así
+                                que sin conexión el desplegable no se puede llenar:
+                                lo que hay que arreglar está en otra pantalla. */}
+                            <a href={route('integrations.index')}
+                                className="mt-1 inline-flex items-center gap-1 underline underline-offset-2">
+                                <Plug className="size-3" /> Reconectar Integra
+                            </a>
+                        </div>
                     )}
 
                     {option.action_type === 'reportar_falla' && !config.radicado_servicio && (
@@ -1131,8 +1156,12 @@ function ImageField({ url, error, onChange }) {
     );
 }
 
-function MenuPreview({ form, limits }) {
-    const [listOpen, setListOpen] = useState(false);
+function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
+    // Nace abierto: la vista previa existe para ver lo que recibe el cliente,
+    // y con el listado plegado la mitad del menú quedaba escondida detrás de un
+    // clic que nadie daba.
+    const [listOpen, setListOpen] = useState(true);
+    const [full, setFull] = useState(false);
 
     const all = form.options ?? [];
     const isList = all.length > limits.max_buttons;
@@ -1227,15 +1256,159 @@ function MenuPreview({ form, limits }) {
                 </div>
             </div>
 
+            <button
+                type="button"
+                onClick={() => setFull(true)}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border bg-background px-2 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
+            >
+                <Smartphone className="size-3.5" /> Ver qué pasa al tocar cada opción
+            </button>
+
             <p className="text-[10px] leading-relaxed text-muted-foreground">
                 Aproximación con datos de ejemplo ({SAMPLE.name}). Los títulos se muestran
                 recortados igual que en WhatsApp: {limits.max_button_title} caracteres
                 como botón y {limits.max_row_title} en lista.
-                {isList && ' Toca "' + (form.list_button_text || 'Ver opciones') + '" para ver el listado.'}
             </p>
+
+            {full && (
+                <Modal
+                    wide
+                    title="Así lo recibe tu cliente"
+                    description="Lo que ve en su WhatsApp y qué ocurre cuando toca cada opción"
+                    onClose={() => setFull(false)}
+                >
+                    <MenuWalkthrough form={form} limits={limits} rows={rows} isList={isList}
+                        actionMeta={actionMeta} menus={menus} />
+                </Modal>
+            )}
         </div>
     );
 }
+
+/**
+ * El menú explicado opción por opción.
+ *
+ * La vista previa pequeña enseña lo que el cliente VE; esto enseña lo que le
+ * PASA al tocar. Es la mitad que faltaba: el admin elegía "Estado del contrato"
+ * o "Pasar a un asesor" en un desplegable y no tenía forma de comprobar que el
+ * recorrido completo fuera el que quería sin probarlo con un cliente de verdad.
+ */
+function MenuWalkthrough({ form, limits, rows, isList, actionMeta, menus }) {
+    return (
+        <div className="space-y-5 text-sm">
+            <div className="rounded-xl border bg-muted/30 p-4">
+                <p className="text-xs font-medium text-foreground">1. El cliente escribe y recibe esto</p>
+                <div className="mt-3 max-w-sm space-y-1.5 rounded-xl bg-[#E5DDD5] p-3 dark:bg-zinc-900">
+                    <div className="rounded-lg bg-white p-2.5 shadow-sm dark:bg-zinc-800">
+                        {(form.header_text ?? '').trim() !== '' && (
+                            <p className="text-[11px] font-semibold text-zinc-900 dark:text-zinc-100">
+                                {cut(fillVars(form.header_text), limits.max_header)}
+                            </p>
+                        )}
+                        <p className="whitespace-pre-wrap text-[11px] text-zinc-800 dark:text-zinc-200">
+                            {cut(fillVars(form.body_text), limits.max_body)}
+                        </p>
+                        {(form.footer_text ?? '').trim() !== '' && (
+                            <p className="mt-1 text-[10px] text-zinc-500">
+                                {cut(fillVars(form.footer_text), limits.max_footer)}
+                            </p>
+                        )}
+                    </div>
+                    <p className="text-center text-[10px] text-zinc-600 dark:text-zinc-400">
+                        {isList
+                            ? 'Con más de ' + limits.max_buttons + ' opciones, WhatsApp las muestra en un listado que se abre con «' + (form.list_button_text || 'Ver opciones') + '».'
+                            : 'Con ' + limits.max_buttons + ' opciones o menos, WhatsApp las pinta como botones debajo del mensaje.'}
+                    </p>
+                </div>
+            </div>
+
+            <div>
+                <p className="text-xs font-medium text-foreground">2. Y esto ocurre al tocar cada una</p>
+                <div className="mt-3 space-y-2">
+                    {rows.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                            Todavía no hay opciones con título. Escríbelos y aparecerán aquí.
+                        </p>
+                    )}
+
+                    {rows.map((option, i) => {
+                        const OptionIcon = iconFor(option.action_type);
+                        const target = option.action_type === 'submenu'
+                            ? menus.find(m => String(m.id) === String(option.target_menu_id))
+                            : null;
+
+                        return (
+                            <div key={i} className="flex gap-3 rounded-xl border p-3">
+                                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                                    {i + 1}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-medium text-foreground">
+                                        {cut(option.title, isList ? limits.max_row_title : limits.max_button_title)}
+                                    </p>
+                                    <p className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                                        <OptionIcon className="mt-px size-3.5 shrink-0" />
+                                        <span>{describeOption(option, actionMeta, target)}</span>
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/** Qué le pasa al cliente al tocar esta opción, en una frase. */
+function describeOption(option, actionMeta, target) {
+    const label = actionMeta[option.action_type]?.label ?? option.action_type;
+    const text = (option.reply_text ?? '').trim();
+
+    switch (option.action_type) {
+        case 'reply_text':
+            return text !== ''
+                ? 'Recibe este mensaje: «' + cut(fillVars(text), 120) + '»'
+                : '⚠️ Responde con un mensaje, pero está vacío: no recibiría nada.';
+        case 'reply_image':
+            return option.config?.image_url
+                ? 'Recibe la imagen que subiste' + (text !== '' ? ', con el pie «' + cut(text, 80) + '»' : ', sin pie de foto.')
+                : '⚠️ Es una opción de imagen y no tiene imagen: sólo recibiría el pie de foto.';
+        case 'submenu':
+            return target
+                ? 'Se le abre el menú «' + target.name + '»' + (target.active ? '.' : ' ⚠️ que está apagado: no recibiría nada.')
+                : '⚠️ No tiene submenú elegido: al tocarla no pasaría nada.';
+        case 'handoff':
+            return 'El chat pasa a una persona y el bot deja de responder' + (text !== '' ? ', tras recibir «' + cut(text, 80) + '»' : '.');
+        case 'none':
+            return '⚠️ La ve y la toca, pero no recibe nada. Sólo sirve para armar el menú.';
+        case 'estado_servicio':
+            return 'Consultamos su contrato en Integra y le respondemos: '
+                + (option.config?.segmento ? SEGMENT_HINTS[option.config.segmento] ?? option.config.segmento : 'el resumen completo') + '.';
+        case 'reportar_falla':
+            return option.config?.radicado_servicio
+                ? 'Revisamos su contrato; si no tiene un reporte en curso ni está cortado por mora, le pedimos que describa la falla y abrimos el radicado.'
+                : '⚠️ Sin tipo de falla elegido no se puede crear el radicado: acabaría con un asesor.';
+        default:
+            return label + '.';
+    }
+}
+
+/** Qué cuenta cada segmento, para la explicación de arriba. */
+const SEGMENT_HINTS = {
+    resumen: 'el resumen completo del servicio',
+    internet: 'si su internet está activo y, si no, por qué y cuánto cuesta reactivarlo',
+    facturas: 'sus facturas pendientes y su saldo a favor',
+    pagos: 'sus últimos pagos con recibo y medio',
+    soportes: 'los reportes de falla que ya tiene abiertos',
+    consumo: 'cuántos GB lleva este mes y por día',
+    corte: 'los días de facturación, pago y corte',
+    plan: 'su plan, velocidad y valor mensual',
+    contrato: 'su permanencia, el costo de reconexión y su contrato firmado',
+    wifi: 'la clave WiFi registrada en su instalación',
+    television: 'si tiene televisión y si está activa',
+    datos: 'su número de contrato y la dirección instalada',
+};
 
 function Modal({ title, description, onClose, wide = false, children }) {
     return (
