@@ -6,23 +6,24 @@ import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
-    Power, Copy, X, Plug, Wallet, ArrowRight,
+    Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft,
     RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users,
 } from 'lucide-react';
 
-// Webhooks es nuestro; lo demás son proveedores. Cuando entre el segundo, esta
-// lista se arma con el catálogo que ya manda el backend (IntegrationProvider)
-// en vez de escribirse a mano.
+// Los complementos son los proveedores del catálogo; los webhooks son cosa
+// nuestra y por eso van aparte.
 const SECTIONS = [
-    { id: 'webhooks', label: 'Webhooks', Icon: Webhook },
-    { id: 'integra',  label: 'Integra',  Icon: Plug },
+    { id: 'apps',     label: 'Complementos', Icon: Blocks },
+    { id: 'webhooks', label: 'Webhooks',     Icon: Webhook },
 ];
 
 export default function IntegrationsIndex({ webhooks, eventCatalog }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
-    const [section, setSection] = useState('webhooks');
+    const [section, setSection] = useState('apps');
+    // Qué complemento se está viendo por dentro. Sin ninguno, se ve la galería.
+    const [openProvider, setOpenProvider] = useState(null);
 
     return (
         <>
@@ -62,7 +63,10 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
                 </div>
 
                 {section === 'webhooks' && <WebhooksSection webhooks={webhooks} eventCatalog={eventCatalog} can={can} />}
-                {section === 'integra' && <ProviderSection can={can} />}
+
+                {section === 'apps' && (openProvider
+                    ? <ProviderSection can={can} onBack={() => setOpenProvider(null)} />
+                    : <ProviderGallery onOpen={setOpenProvider} />)}
             </div>
         </>
     );
@@ -465,6 +469,95 @@ function ProviderHeader({ integration }) {
     );
 }
 
+/* ───────────────────────── Galería de complementos ───────────────────────── */
+
+/**
+ * Los complementos que puede tener el CRM, uno por tarjeta.
+ *
+ * Con una sola pestaña por proveedor no se veía que esto fuera un ecosistema:
+ * parecía que la plataforma era "lo de Integra". En galería, Integra es una
+ * tarjeta y el hueco para las que vengan está a la vista — que es lo que de
+ * verdad es, porque la plataforma es nuestra y ellos son un cliente más.
+ *
+ * El catálogo llega del backend (IntegrationProvider), así que sumar un
+ * complemento no obliga a tocar esta pantalla.
+ */
+function ProviderGallery({ onOpen }) {
+    const { providers = [] } = usePage().props;
+    const [rows, setRows] = useState(null);
+
+    useEffect(() => {
+        axios.get('/api/integrations')
+            .then(({ data }) => setRows(data ?? []))
+            .catch(() => setRows([]));
+    }, []);
+
+    // La conexión es del proveedor, así que basta con mirar una de sus filas.
+    const connected = id => !!(rows ?? []).find(r => r.key === 'invoice_payments')?.connected && id === 'integra';
+
+    return (
+        <div className="flex flex-col gap-4">
+            <p className="max-w-2xl text-sm text-muted-foreground">
+                Conecta el software que ya usa tu empresa y sus datos empiezan a responder desde WhatsApp:
+                facturas, contratos, soporte y clientes, sin que nadie los copie a mano.
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {providers.map(p => {
+                    const on = connected(p.id);
+
+                    return (
+                        <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => onOpen(p.id)}
+                            className="group flex flex-col rounded-xl border bg-card p-5 text-left transition-colors hover:border-primary/40 hover:bg-accent/30"
+                        >
+                            <div className="flex items-start justify-between">
+                                <img src={p.logo} alt={p.name}
+                                    className="size-12 rounded-xl bg-[#0d1b2a] object-contain" />
+                                <ArrowRight className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                            </div>
+
+                            <h3 className="mt-3 font-semibold text-foreground">{p.name}</h3>
+                            <p className="text-xs text-muted-foreground">{p.tagline}</p>
+
+                            <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                {rows === null ? (
+                                    <span className="text-[11px] text-muted-foreground">Comprobando…</span>
+                                ) : on ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                        <CheckCircle2 className="size-3" /> Conectado
+                                    </span>
+                                ) : (
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                                        Sin conectar
+                                    </span>
+                                )}
+                                <span className="text-[11px] text-muted-foreground">
+                                    · {p.capabilities.length} funciones
+                                </span>
+                            </div>
+                        </button>
+                    );
+                })}
+
+                {/* El hueco de los que vengan: sin él, la galería de una sola
+                    tarjeta vuelve a parecer una pantalla dedicada a Integra. */}
+                <div className="flex flex-col items-start justify-center rounded-xl border border-dashed p-5">
+                    <Blocks className="size-8 text-muted-foreground/40" />
+                    <h3 className="mt-3 font-semibold text-muted-foreground">Más complementos en camino</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        ¿Usas otro software de gestión? Escríbenos y lo integramos.
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ───────────────────────── Integra (proveedor) ───────────────────────── */
 
 /**
@@ -476,7 +569,7 @@ function ProviderHeader({ integration }) {
  * pregunta obvia era por qué hay que escribirlo dos veces. Ahora se conecta una
  * vez y debajo aparece lo que esa conexión habilita.
  */
-function ProviderSection({ can }) {
+function ProviderSection({ can, onBack }) {
     const [rows, setRows] = useState(null);
     const [error, setError] = useState(null);
     const [toast, setToast] = useState(null);
@@ -523,6 +616,13 @@ function ProviderSection({ can }) {
 
     return (
         <div className="flex max-w-2xl flex-col gap-6">
+            {onBack && (
+                <button type="button" onClick={onBack}
+                    className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+                    <ArrowLeft className="size-4" /> Complementos
+                </button>
+            )}
+
             <ProviderHeader integration={payments ?? { connected }} />
 
             {toast && (
