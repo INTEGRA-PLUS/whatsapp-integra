@@ -65,9 +65,21 @@ class MenuReview
             ];
         }
 
+        // Los permisos que faltan se juntan de TODAS las opciones antes de
+        // escribir nada: una empresa sin `contratos.leer` tiene diez opciones
+        // que fallan por lo mismo, y diez líneas idénticas esconden las que sí
+        // son distintas. Es un problema, no diez.
+        $byMissing = [];
+
         foreach ($menus as $menu) {
             foreach ($menu->options as $option) {
-                foreach (self::optionIssues($menu, $option, $capabilities, $menus, $tokenDead) as $issue) {
+                if (! $tokenDead && $missing = IntegraCapabilities::missingFor($option, $capabilities)) {
+                    $key = implode('|', $missing);
+                    $byMissing[$key]['missing'] = $missing;
+                    $byMissing[$key]['options'][] = $option->title;
+                }
+
+                foreach (self::optionIssues($menu, $option, $menus) as $issue) {
                     $issues[] = $issue + [
                         'menu_id' => $menu->id,
                         'menu' => $menu->name,
@@ -78,10 +90,48 @@ class MenuReview
             }
         }
 
+        foreach ($byMissing as $group) {
+            $issues[] = self::missingPermissionIssue($group['missing'], $group['options']);
+        }
+
         // Los bloqueos primero: son los que dejan al cliente sin respuesta.
         usort($issues, fn ($a, $b) => ($a['level'] === self::BLOCKER ? 0 : 1) <=> ($b['level'] === self::BLOCKER ? 0 : 1));
 
         return $issues;
+    }
+
+    /**
+     * Un permiso que falta, con todas las opciones que deja mudas.
+     *
+     * @param list<string> $missing
+     * @param list<string> $options
+     * @return array{menu_id: null, menu: null, option: null, level: string, says: string, fix: string, action: array}
+     */
+    private static function missingPermissionIssue(array $missing, array $options): array
+    {
+        $labels = array_map(fn ($m) => '«' . (IntegraCapabilities::LABELS[$m] ?? $m) . '»', $missing);
+        $scopes = array_map(fn ($m) => IntegraCapabilities::SCOPES[$m] ?? $m, $missing);
+
+        $options = array_values(array_unique($options));
+        $shown = array_slice($options, 0, 4);
+        $rest = count($options) - count($shown);
+
+        $affected = count($options) === 1
+            ? 'La opción «' . $shown[0] . '» no podrá responder'
+            : count($options) . ' opciones no podrán responder (' . implode(', ', $shown)
+                . ($rest > 0 ? ' y ' . $rest . ' más' : '') . ')';
+
+        return [
+            'menu_id' => null,
+            'menu' => null,
+            'option' => null,
+            'level' => self::BLOCKER,
+            'says' => 'Tu token de Integra no puede ' . self::enumerate($labels) . '. '
+                . $affected . ': derivarán al cliente a un asesor.',
+            'fix' => 'Reconecta Integra con tu usuario y contraseña: el token nuevo sale con todos los permisos. '
+                . 'Si lo emites a mano, pide ' . self::enumerate($scopes, 'y') . '.',
+            'action' => ['kind' => 'integrations', 'label' => 'Reconectar Integra'],
+        ];
     }
 
     /**
@@ -108,30 +158,9 @@ class MenuReview
     private static function optionIssues(
         WhatsAppMenu $menu,
         WhatsAppMenuOption $option,
-        array $capabilities,
-        $menus,
-        bool $tokenDead = false
+        $menus
     ): array {
         $issues = [];
-
-        $missing = $tokenDead ? [] : IntegraCapabilities::missingFor($option, $capabilities);
-
-        // Todos los permisos que le faltan a una opción van en UNA línea. Con
-        // uno por permiso, "Reportar falla" salía tres veces seguidas diciendo
-        // casi lo mismo, y lo repetido se deja de leer.
-        if ($missing) {
-            $labels = array_map(fn ($m) => '«' . (IntegraCapabilities::LABELS[$m] ?? $m) . '»', $missing);
-            $scopes = array_map(fn ($m) => IntegraCapabilities::SCOPES[$m] ?? $m, $missing);
-
-            $issues[] = [
-                'level' => self::BLOCKER,
-                'says' => 'Tu token de Integra no puede ' . self::enumerate($labels)
-                    . ', así que esta opción no podrá responder y derivará al cliente a un asesor.',
-                'fix' => 'Reconecta Integra con tu usuario y contraseña: el token nuevo sale con todos los permisos. '
-                    . 'Si lo emites a mano, pide ' . self::enumerate($scopes, 'y') . '.',
-                'action' => ['kind' => 'integrations', 'label' => 'Reconectar Integra'],
-            ];
-        }
 
         if ($option->action_type === 'reportar_falla' && ! $option->setting('radicado_servicio')) {
             $issues[] = [

@@ -98,13 +98,44 @@ class MenuReviewTest extends TestCase
 
         $this->assertCount(1, $blockers);
         $issue = array_values($blockers)[0];
-        $this->assertSame('Estado de mi servicio', $issue['option']);
         $this->assertStringContainsString('Leer el contrato', $issue['says']);
+        // Nombra la opción afectada, para que el admin sepa qué deja de responder.
+        $this->assertStringContainsString('«Estado de mi servicio»', $issue['says']);
         // Y le dice qué scope pedir, que es lo que tiene que reenviarle a quien
-        // administra su Integra.
+        // administra su Integra, con el botón que lleva a arreglarlo.
         $this->assertStringContainsString('contratos.leer', $issue['fix']);
+        $this->assertSame('integrations', $issue['action']['kind']);
 
-        $this->assertSame($menu->id, $issue['menu_id']);
+        $this->assertNotNull($menu->id);
+    }
+
+    /**
+     * Una empresa sin `contratos.leer` tiene diez opciones que fallan por lo
+     * mismo. Diez líneas idénticas esconden las que sí son distintas: es un
+     * problema, no diez.
+     */
+    public function test_las_opciones_que_fallan_por_el_mismo_permiso_van_en_un_aviso(): void
+    {
+        $company = $this->bareCompany();
+        $this->menuWith($company, [
+            ['title' => 'Estado de mi servicio', 'action_type' => 'estado_servicio'],
+            ['title' => 'Mi consumo', 'action_type' => 'estado_servicio'],
+            ['title' => 'Mis últimos pagos', 'action_type' => 'estado_servicio'],
+            ['title' => 'Mi clave WiFi', 'action_type' => 'estado_servicio'],
+            ['title' => 'Cuándo me cortan', 'action_type' => 'estado_servicio'],
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities(['contratos' => false])
+        );
+
+        $this->assertCount(1, $issues);
+        $this->assertStringContainsString('5 opciones no podrán responder', $issues[0]['says']);
+        // Se nombran las primeras y se cuentan las demás: la lista entera no
+        // cabe y tampoco hace falta para entender el problema.
+        $this->assertStringContainsString('Estado de mi servicio', $issues[0]['says']);
+        $this->assertStringContainsString('y 1 más', $issues[0]['says']);
     }
 
     public function test_reportar_falla_sin_tipo_de_falla_no_puede_crear_el_radicado(): void
