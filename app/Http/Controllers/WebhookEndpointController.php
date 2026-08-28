@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\DeliverWebhook;
 use App\Models\WebhookEndpoint;
 use Illuminate\Http\Request;
+use App\Support\IntegrationProvider;
 use Inertia\Inertia;
 
 class WebhookEndpointController extends Controller
@@ -14,6 +15,9 @@ class WebhookEndpointController extends Controller
         return Inertia::render('Integrations/Index', [
             'webhooks'      => $this->companyWebhooks()->get(),
             'eventCatalog'  => config('webhooks.events', []),
+            // El catálogo de proveedores conectables. Viaja desde el backend
+            // para que añadir uno nuevo no exija tocar también el frontend.
+            'providers'     => IntegrationProvider::forDisplay(),
         ]);
     }
 

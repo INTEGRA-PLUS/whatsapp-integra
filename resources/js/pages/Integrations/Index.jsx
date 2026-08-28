@@ -405,6 +405,64 @@ function DeliveriesModal({ webhook, eventCatalog, onClose }) {
 
 /* ───────────────────────── Pagos a facturas (software Integra) ───────────────────────── */
 
+/**
+ * La cabecera del proveedor, común a todas sus funciones.
+ *
+ * Antes cada tarjeta se presentaba sola, con su icono genérico, y nada decía
+ * que las dos hablaran con el MISMO Integra. De ahí que se pidiera la URL dos
+ * veces y que nadie entendiera por qué conectar una tumbaba la otra. Aquí se
+ * ve el proveedor, su logo, y qué funciones habilita esa única conexión.
+ */
+function ProviderHeader({ integration }) {
+    const { providers = [] } = usePage().props;
+    // Hoy sólo hay uno; el día que haya varios, esto se resuelve por la clave
+    // de la integración y el resto de la pantalla no cambia.
+    const provider = providers[0];
+
+    if (!provider) {
+        return (
+            <div>
+                <h2 className="text-lg font-semibold text-foreground">{integration.name}</h2>
+                <p className="text-sm text-muted-foreground">{integration.description}</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="rounded-xl border bg-card p-4">
+            <div className="flex items-start gap-3">
+                <img src={provider.logo} alt={provider.name}
+                    className="size-12 rounded-xl object-contain shrink-0 bg-[#0d1b2a]" />
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-semibold text-foreground">{provider.name}</h2>
+                        {integration.connected && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                <CheckCircle2 className="size-3" /> Conectado
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">{provider.description}</p>
+                </div>
+            </div>
+
+            <div className="mt-3 border-t pt-3">
+                <p className="text-[11px] text-muted-foreground">
+                    Una sola conexión —una URL y un token— habilita todo esto:
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {provider.capabilities.map(c => (
+                        <span key={c.id} title={c.does}
+                            className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground">
+                            {c.label}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function PaymentsSection({ can }) {
     const [integration, setIntegration] = useState(null);
     const [error, setError] = useState(null);
@@ -451,15 +509,7 @@ function PaymentsWizard({ integration, onUpdated, canManage }) {
 
     return (
         <div className="flex flex-col gap-6 max-w-2xl">
-            <div className="flex items-start gap-3">
-                <div className="size-11 rounded-xl bg-teal-500/10 dark:bg-teal-500/15 flex items-center justify-center shrink-0">
-                    <Wallet className="size-6 text-teal-600 dark:text-teal-400" />
-                </div>
-                <div>
-                    <h2 className="text-lg font-semibold text-foreground">{integration.name}</h2>
-                    <p className="text-sm text-muted-foreground">{integration.description}</p>
-                </div>
-            </div>
+            <ProviderHeader integration={integration} />
 
             {/* Stepper */}
             <div className="flex items-center gap-2">
@@ -880,15 +930,7 @@ function ContactsWizard({ integration, onUpdated, canManage }) {
 
     return (
         <div className="flex flex-col gap-6 max-w-2xl">
-            <div className="flex items-start gap-3">
-                <div className="size-11 rounded-xl bg-teal-500/10 dark:bg-teal-500/15 flex items-center justify-center shrink-0">
-                    <Users className="size-6 text-teal-600 dark:text-teal-400" />
-                </div>
-                <div>
-                    <h2 className="text-lg font-semibold text-foreground">{integration.name}</h2>
-                    <p className="text-sm text-muted-foreground">{integration.description}</p>
-                </div>
-            </div>
+            <ProviderHeader integration={integration} />
 
             {/* Stepper */}
             <div className="flex items-center gap-2">
