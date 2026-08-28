@@ -261,6 +261,11 @@ class WhatsAppMenuController extends Controller
             'options.*.config.radicado_tecnico' => 'nullable|integer',
             'options.*.config.payment_url' => 'nullable|string|max:500',
             'options.*.config.segmento' => 'nullable|in:' . implode(',', array_keys(WhatsAppMenuOption::STATUS_SEGMENTS)),
+            // Meta descarga la imagen desde esta URL al enviar, así que tiene
+            // que ser pública y absoluta: una ruta relativa se guarda sin
+            // protestar y falla en el primer cliente que toque la opción.
+            'options.*.config.image_url' => 'nullable|url|max:2048',
+            'options.*.config.dias_consumo' => 'nullable|integer|min:1|max:90',
         ]);
 
         $isRoot = (bool) ($validated['is_root'] ?? true);
@@ -336,6 +341,47 @@ class WhatsAppMenuController extends Controller
         );
     }
 
+    /**
+     * Guarda la imagen de una opción y devuelve su URL pública.
+     *
+     * Se sube al elegir el archivo, no al guardar el menú: Meta descarga la
+     * imagen desde esta URL en el momento de enviar, así que si no es
+     * alcanzable desde fuera el fallo aparece con el primer cliente que toque
+     * la opción. Subirla ya deja al admin verla en la vista previa antes de
+     * encender nada.
+     *
+     * El disco s3_media va con 'throw' => false: si el bucket falla,
+     * storePublicly() devuelve false en vez de lanzar, y sin esta guarda se
+     * devolvía una URL rota que se guardaba tan tranquila en la opción.
+     */
+    public function uploadImage(Request $request)
+    {
+        $request->validate([
+            // WhatsApp acepta jpeg y png en mensajes de imagen, con tope de 5 MB.
+            'image' => 'required|image|mimes:jpeg,jpg,png|max:5120',
+        ], [
+            'image.mimes' => 'WhatsApp sólo envía imágenes JPG o PNG.',
+            'image.max' => 'La imagen no puede pasar de 5 MB.',
+        ]);
+
+        $path = $request->file('image')->storePublicly('whatsapp/menus', 's3_media');
+
+        if (!$path) {
+            \Illuminate\Support\Facades\Log::channel('whatsapp')->error('❌ No se pudo subir la imagen del menú', [
+                'company_id' => auth()->user()->company_id,
+                'original_name' => $request->file('image')->getClientOriginalName(),
+            ]);
+
+            return response()->json([
+                'message' => 'No se pudo guardar la imagen en el almacenamiento. Intenta de nuevo.',
+            ], 500);
+        }
+
+        return response()->json([
+            'url' => \Illuminate\Support\Facades\Storage::disk('s3_media')->url($path),
+        ]);
+    }
+
     private function validateOptions(array $options, int $companyId, $menuId): void
     {
         foreach ($options as $i => $option) {
@@ -348,6 +394,15 @@ class WhatsAppMenuController extends Controller
             }
 
             $config = is_array($option['config'] ?? null) ? $option['config'] : [];
+
+            // Una opción de imagen sin imagen manda al cliente el pie de foto
+            // suelto, o nada si tampoco lo hay. Es el fallo que sólo se
+            // descubre cuando ya lo tocó un cliente.
+            if ($type === WhatsAppMenuOption::ACTION_IMAGE && trim((string) ($config['image_url'] ?? '')) === '') {
+                throw ValidationException::withMessages([
+                    "options.$i.config.image_url" => 'Sube la imagen que recibirá el cliente.',
+                ]);
+            }
 
             // Un handoff "a un asesor concreto" sin asesor elegido no asigna
             // nada y el chat se queda en la bandeja, que es justo lo contrario

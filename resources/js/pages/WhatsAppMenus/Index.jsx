@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
-    Plug, Users, HelpCircle,
+    Plug, Users, HelpCircle, ImagePlus,
 } from 'lucide-react';
 import MenuHelp from './MenuHelp';
 import {
@@ -676,6 +676,27 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
                 />
             )}
 
+            {option.action_type === 'reply_image' && (
+                <>
+                    <ImageField
+                        url={config.image_url ?? ''}
+                        error={errors?.[`options.${index}.config.image_url`]}
+                        onChange={url => setConfig({ image_url: url })}
+                    />
+                    <textarea
+                        value={option.reply_text ?? ''}
+                        onChange={e => onChange({ reply_text: e.target.value })}
+                        rows={2} maxLength={1024}
+                        placeholder="Pie de foto (opcional). Ej: Paga en cualquiera de estos puntos 👆"
+                        className="flex w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                        El pie viaja con la imagen. Escríbelo pensando en quien no puede verla:
+                        si la imagen no carga, es lo único que le queda.
+                    </p>
+                </>
+            )}
+
             {option.action_type === 'submenu' && (
                 <>
                     <Select value={option.target_menu_id} onChange={v => onChange({ target_menu_id: v })} className="h-8 text-xs">
@@ -849,6 +870,86 @@ function OptionRow({ index, option, isList, limits, agents, submenuChoices, acti
  * iconos en las filas— pero el contenido, el formato y los recortes son
  * exactamente los que aplica el backend al construir el payload.
  */
+/**
+ * La imagen de una opción: se sube al elegirla y se guarda su URL.
+ *
+ * Sube al momento y no al guardar el menú porque Meta descarga la imagen desde
+ * esa URL cuando envía el mensaje: si el almacenamiento no la publica bien, el
+ * fallo aparecería con el primer cliente que tocara la opción. Subiéndola ya,
+ * el admin la ve —o ve el error— antes de encender nada.
+ */
+function ImageField({ url, error, onChange }) {
+    const [uploading, setUploading] = useState(false);
+    const [failed, setFailed] = useState(null);
+
+    const upload = async file => {
+        if (!file) return;
+
+        setUploading(true);
+        setFailed(null);
+
+        const body = new FormData();
+        body.append('image', file);
+
+        try {
+            const res = await fetch(route('whatsapp-menus.imagen'), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+                },
+                body,
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                setFailed(data.errors?.image?.[0] ?? data.message ?? 'No se pudo subir la imagen.');
+                return;
+            }
+
+            onChange(data.url);
+        } catch {
+            setFailed('No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo.');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    if (url) {
+        return (
+            <div className="space-y-1">
+                <div className="flex items-start gap-2 rounded-md border border-input p-2">
+                    <img src={url} alt="Imagen de la opción"
+                        className="size-16 shrink-0 rounded object-cover bg-muted" />
+                    <div className="min-w-0 flex-1 space-y-1">
+                        <p className="text-[11px] text-muted-foreground">
+                            Así la recibirá el cliente. Compruébala: si no se ve aquí, tampoco le llegará a él.
+                        </p>
+                        <button type="button" onClick={() => { onChange(''); setFailed(null); }}
+                            className="text-[11px] text-destructive hover:underline">
+                            Quitar imagen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-1">
+            <label className={`flex h-16 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed text-xs text-muted-foreground hover:bg-accent/50 ${error || failed ? 'border-destructive' : 'border-input'}`}>
+                <ImagePlus className="size-4" />
+                {uploading ? 'Subiendo…' : 'Elegir imagen (JPG o PNG, máx. 5 MB)'}
+                <input type="file" accept="image/jpeg,image/png" className="hidden" disabled={uploading}
+                    onChange={e => upload(e.target.files?.[0])} />
+            </label>
+            {(failed || error) && (
+                <p className="text-[11px] text-destructive">{failed ?? error}</p>
+            )}
+        </div>
+    );
+}
+
 function MenuPreview({ form, limits }) {
     const [listOpen, setListOpen] = useState(false);
 

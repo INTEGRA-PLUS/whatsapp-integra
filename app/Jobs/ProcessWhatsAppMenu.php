@@ -126,6 +126,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         match (true) {
             $option->action_type === 'submenu' => $this->openSubmenu($instance, $conversation, $option, $meta, $menus),
             $option->action_type === 'handoff' => $this->handoff($instance, $conversation, $option, $meta, $assignment),
+            $option->action_type === WhatsAppMenuOption::ACTION_IMAGE => $this->replyWithImage($instance, $conversation, $option, $meta),
             $option->action_type === WhatsAppMenuOption::ACTION_NONE => $this->acknowledgeWithoutAction($conversation, $option),
             $option->usesIntegra() => $this->runIntegraAction($instance, $conversation, $option, $meta, $actions, $assignment),
             $option->isPending() => $this->replyWithPendingNotice($instance, $conversation, $option, $meta),
@@ -312,6 +313,99 @@ class ProcessWhatsAppMenu implements ShouldQueue
         $this->deliverText($instance, $conversation, $meta, $text, [
             'menu_id' => $option->menu_id,
             'menu_option_id' => $option->id,
+        ]);
+    }
+
+    /**
+     * Responde con una imagen: el cartel de puntos de pago, la cobertura, la
+     * tabla de planes.
+     *
+     * Si la imagen no se puede enviar se cae al texto de la opción en vez de
+     * callar. El pie de foto suele llevar la información esencial ("paga en
+     * cualquiera de estos puntos"), así que llega mutilado pero llega, que es
+     * infinitamente mejor que un menú que no contesta.
+     */
+    private function replyWithImage(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        WhatsAppMenuOption $option,
+        MetaWhatsAppService $meta
+    ): void {
+        WhatsAppMenuSession::close($conversation->id);
+
+        $url = $option->imageUrl();
+
+        if (!$url) {
+            Log::channel('whatsapp')->warning('⚠️ Opción de imagen sin imagen configurada', [
+                'menu_option_id' => $option->id,
+                'conversation_id' => $conversation->id,
+            ]);
+            $this->deliverOptionText($instance, $conversation, $option, $meta);
+
+            return;
+        }
+
+        $caption = mb_substr(
+            $option->menu?->render((string) $option->reply_text, $conversation) ?? (string) $option->reply_text,
+            0,
+            WhatsAppMenuOption::MAX_CAPTION
+        );
+
+        $result = $meta->sendImage($instance->phone_number_id, $conversation->recipientId(), $url, $caption);
+
+        if (!($result['success'] ?? false)) {
+            Log::channel('whatsapp')->warning('⚠️ Imagen de menú no enviada; se responde el texto', [
+                'menu_option_id' => $option->id,
+                'conversation_id' => $conversation->id,
+                'image_url' => $url,
+                'error' => $result['error'] ?? null,
+            ]);
+            $this->deliverOptionText($instance, $conversation, $option, $meta);
+
+            return;
+        }
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'wamid' => $result['data']['messages'][0]['id'] ?? null,
+            'type' => 'image',
+            'content' => $caption,
+            'media_url' => $url,
+            'direction' => 'outbound',
+            'status' => 'sent',
+            'sent_at' => now(),
+            'metadata' => [
+                'menu_id' => $option->menu_id,
+                'menu_option_id' => $option->id,
+                'action_type' => $option->action_type,
+            ],
+        ]);
+
+        $conversation->update([
+            'last_message' => $caption !== '' ? $caption : 'Imagen',
+            'last_message_at' => now(),
+        ]);
+
+        $this->broadcastMessage($message, $instance);
+    }
+
+    /** El texto de la opción, cuando hay que caer a él. */
+    private function deliverOptionText(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        WhatsAppMenuOption $option,
+        MetaWhatsAppService $meta
+    ): void {
+        $text = $option->menu?->render((string) $option->reply_text, $conversation) ?? (string) $option->reply_text;
+
+        if (trim($text) === '') {
+            return;
+        }
+
+        $this->deliverText($instance, $conversation, $meta, $text, [
+            'menu_id' => $option->menu_id,
+            'menu_option_id' => $option->id,
+            'action_type' => $option->action_type,
         ]);
     }
 

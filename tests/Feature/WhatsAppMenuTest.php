@@ -28,13 +28,27 @@ class WhatsAppMenuTest extends TestCase
 
     private const PHONE = '573007852081';
 
+    /**
+     * Interruptor para que Meta rechace las imágenes.
+     *
+     * Es una propiedad y no un segundo Http::fake() dentro de la prueba: los
+     * stubs se apilan y gana el más antiguo, así que un fake posterior no
+     * sustituye al del setUp y la prueba acabaría comprobando el caso feliz sin
+     * enterarse.
+     */
+    private bool $imagenRechazada = false;
+
     protected function setUp(): void
     {
         parent::setUp();
         // Un wamid distinto por envío: la columna es única y Meta nunca repite
         // el identificador de dos mensajes salientes.
         $n = 0;
-        Http::fake(function () use (&$n) {
+        Http::fake(function ($request) use (&$n) {
+            if ($this->imagenRechazada && ($request['type'] ?? null) === 'image') {
+                return Http::response(['error' => ['message' => 'Media download failed']], 400);
+            }
+
             return Http::response(['messages' => [['id' => 'wamid.OUT' . (++$n)]]], 200);
         });
     }
@@ -415,6 +429,138 @@ class WhatsAppMenuTest extends TestCase
 
         $this->assertSame([], $this->textsSent());
         $this->assertSame(0, WhatsAppMenuSession::count());
+    }
+
+    // ------------------------------------------------------------------
+    // Responder con una imagen
+    // ------------------------------------------------------------------
+
+    /**
+     * Hay respuestas que son un cartel —los puntos de pago, la cobertura, la
+     * tabla de planes—: en texto no se leen, y la empresa ya lo tiene diseñado.
+     */
+    public function test_una_opcion_de_imagen_envia_la_imagen_con_su_pie(): void
+    {
+        $instance = $this->metaInstance();
+        $option = $this->imageOption($instance);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'graph.facebook.com')
+                && ($request['type'] ?? null) === 'image'
+                && ($request['image']['link'] ?? null) === 'https://cdn.test/puntos-de-pago.jpg'
+                && ($request['image']['caption'] ?? null) === 'Paga en cualquiera de estos puntos 👆';
+        });
+
+        $message = WhatsAppMessage::where('direction', 'outbound')->where('type', 'image')->first();
+        $this->assertNotNull($message);
+        $this->assertSame('https://cdn.test/puntos-de-pago.jpg', $message->media_url);
+        $this->assertSame('Paga en cualquiera de estos puntos 👆', $message->content);
+    }
+
+    /** El pie se escribe con las mismas variables que el resto del menú. */
+    public function test_el_pie_de_foto_reemplaza_las_variables(): void
+    {
+        $instance = $this->metaInstance();
+        $option = $this->imageOption($instance, '{name}, estos son tus puntos de pago');
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        $message = WhatsAppMessage::where('direction', 'outbound')->where('type', 'image')->first();
+        $this->assertStringNotContainsString('{name}', $message->content);
+    }
+
+    /**
+     * Si Meta no acepta la imagen, el cliente recibe al menos el pie. El pie
+     * suele llevar lo esencial, así que llega mutilado pero llega: callar es lo
+     * único que el menú no puede hacer.
+     */
+    public function test_si_la_imagen_no_se_puede_enviar_se_responde_el_pie(): void
+    {
+        $instance = $this->metaInstance();
+        $option = $this->imageOption($instance);
+
+        // Meta rechaza la imagen (no pudo descargarla) pero acepta texto.
+        $this->imagenRechazada = true;
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        $this->assertContains('Paga en cualquiera de estos puntos 👆', $this->textsSent());
+        $this->assertSame(0, WhatsAppMessage::where('type', 'image')->count());
+    }
+
+    /** Sin imagen configurada tampoco se calla: se responde el texto que haya. */
+    public function test_una_opcion_de_imagen_sin_imagen_responde_el_texto(): void
+    {
+        $instance = $this->metaInstance();
+        $option = $this->imageOption($instance);
+        $option->update(['config' => []]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        $this->assertContains('Paga en cualquiera de estos puntos 👆', $this->textsSent());
+    }
+
+    /** Una opción de imagen sin imagen no debería poder guardarse. */
+    public function test_guardar_una_opcion_de_imagen_exige_la_imagen(): void
+    {
+        $instance = $this->metaInstance();
+        $user = $this->admin($instance);
+
+        $this->actingAs($user)
+            ->post(route('whatsapp-menus.store'), [
+                'name' => 'Menú con cartel',
+                'body_text' => '¿En qué te ayudo?',
+                'is_root' => true,
+                'match_types' => ['welcome'],
+                'options' => [[
+                    'title' => 'Puntos de pago',
+                    'action_type' => WhatsAppMenuOption::ACTION_IMAGE,
+                    'reply_text' => 'Paga aquí',
+                    'config' => [],
+                ]],
+            ])
+            ->assertSessionHasErrors('options.0.config.image_url');
+    }
+
+    /**
+     * El primer usuario de una empresa recibe el rol admin con los permisos que
+     * existan en ese momento (User::booted), así que hay que crearlos antes.
+     */
+    private function admin(Instance $instance): User
+    {
+        foreach (['whatsapp_menus.view', 'whatsapp_menus.create', 'whatsapp_menus.update'] as $name) {
+            \Spatie\Permission\Models\Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+        }
+
+        return User::create([
+            'company_id' => $instance->company_id,
+            'name' => 'Admin',
+            'email' => 'admin-' . $instance->company_id . '@example.test',
+            'password' => bcrypt('secret'),
+            'role' => 'admin',
+            'active' => true,
+        ]);
+    }
+
+    /** Un menú de una opción que responde con imagen. */
+    private function imageOption(Instance $instance, string $caption = 'Paga en cualquiera de estos puntos 👆'): WhatsAppMenuOption
+    {
+        $menu = $this->menu($instance, ['Puntos de pago']);
+        $option = $menu->options->first();
+
+        $option->update([
+            'action_type' => WhatsAppMenuOption::ACTION_IMAGE,
+            'reply_text' => $caption,
+            'config' => ['image_url' => 'https://cdn.test/puntos-de-pago.jpg'],
+        ]);
+
+        return $option->fresh();
     }
 
     /**

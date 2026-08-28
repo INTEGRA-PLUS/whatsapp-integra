@@ -1,6 +1,6 @@
 import {
     MessageSquare, CornerDownRight, UserRound, FileText, CreditCard,
-    Wifi, Wrench, CircleSlash, Activity, Construction,
+    Wifi, Wrench, CircleSlash, Activity, Construction, Image,
 } from 'lucide-react';
 
 /**
@@ -53,6 +53,7 @@ export const KEYWORD_TYPES = ['exact', 'contains', 'starts_with'];
 
 export const ACTION_ICONS = {
     reply_text: MessageSquare,
+    reply_image: Image,
     submenu: CornerDownRight,
     handoff: UserRound,
     consultar_factura: FileText,
@@ -85,6 +86,10 @@ export const ACTION_HELP = {
     reply_text: {
         does: 'Responde con el texto que escribas. Para horarios, direcciones o los pasos para reiniciar el router.',
         needs: 'El mensaje que recibirá el cliente.',
+    },
+    reply_image: {
+        does: 'Responde con una imagen y un pie de foto. Para el cartel de puntos de pago, la cobertura o la tabla de planes: lo que ya tienes diseñado y en texto no se lee.',
+        needs: 'La imagen (JPG o PNG, máx. 5 MB). El pie es opcional, pero es lo único que le queda al cliente si la imagen no le carga.',
     },
     submenu: {
         does: 'Abre otro menú. Sirve para agrupar: una opción "Soporte" que despliega los tipos de falla.',

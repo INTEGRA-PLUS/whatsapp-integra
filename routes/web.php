@@ -251,6 +251,12 @@ Route::middleware('auth')->group(function () {
         // servidor: si Integra tarda, no debe retrasar la carga de la página.
         Route::get('/integra-catalogs', [App\Http\Controllers\WhatsAppMenuController::class, 'integraCatalogs'])
             ->middleware('permission:whatsapp_menus.view')->name('integra-catalogs');
+        // Sube la imagen de una opción y devuelve su URL pública. Se sube al
+        // elegir el archivo y no al guardar el menú: Meta descarga la imagen
+        // desde esa URL al enviar, así que el admin tiene que poder verla antes
+        // de encender el menú.
+        Route::post('/imagen', [App\Http\Controllers\WhatsAppMenuController::class, 'uploadImage'])
+            ->middleware('permission:whatsapp_menus.update')->name('imagen');
     });
 
     Route::resource('users', UserController::class)->middleware('permission:users.view');

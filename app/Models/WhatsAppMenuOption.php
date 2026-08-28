@@ -13,7 +13,17 @@ class WhatsAppMenuOption extends Model
     use HasFactory;
 
     /** Acciones que no necesitan salir del sistema. */
-    public const CORE_ACTION_TYPES = ['reply_text', 'submenu', 'handoff'];
+    public const CORE_ACTION_TYPES = ['reply_text', 'reply_image', 'submenu', 'handoff'];
+
+    /**
+     * Responder con una imagen.
+     *
+     * Existe porque hay respuestas que son un cartel: los puntos de pago, la
+     * cobertura, la tabla de planes. Mandarlas como texto obliga al cliente a
+     * leerse doce direcciones en un párrafo, y las empresas ya tienen ese
+     * cartel diseñado. El pie de foto es el `reply_text` de la opción.
+     */
+    public const ACTION_IMAGE = 'reply_image';
 
     /** La opción existe y sale en el menú, pero al elegirla no pasa nada. */
     public const ACTION_NONE = 'none';
@@ -63,14 +73,17 @@ class WhatsAppMenuOption extends Model
     ];
 
     public const ACTION_TYPES = [
-        'reply_text', 'submenu', 'handoff',
+        'reply_text', self::ACTION_IMAGE, 'submenu', 'handoff',
         'consultar_factura', 'pagar_en_linea', 'reportar_falla', 'estado_servicio',
         'cambiar_clave',
         self::ACTION_NONE,
     ];
 
     /** Tipos que guardan el texto de la opción como mensaje al cliente. */
-    public const TEXT_CARRYING_TYPES = ['reply_text', 'handoff'];
+    public const TEXT_CARRYING_TYPES = ['reply_text', self::ACTION_IMAGE, 'handoff'];
+
+    /** Pie de foto que acompaña a la imagen; WhatsApp corta más allá. */
+    public const MAX_CAPTION = 1024;
 
     /**
      * Qué parte del servicio muestra la opción.
@@ -235,6 +248,14 @@ class WhatsAppMenuOption extends Model
         return array_key_exists($segment, self::STATUS_SEGMENTS) ? $segment : self::SEGMENT_SUMMARY;
     }
 
+    /** La imagen que se envía al elegir la opción, si la hay. */
+    public function imageUrl(): ?string
+    {
+        $url = trim((string) $this->setting('image_url', ''));
+
+        return $url === '' ? null : $url;
+    }
+
     /** ¿El tipo guarda un texto para el cliente? */
     public static function carriesText(string $actionType): bool
     {
@@ -253,6 +274,7 @@ class WhatsAppMenuOption extends Model
     {
         $catalog = [
             ['value' => 'reply_text', 'label' => 'Responder con un mensaje', 'group' => 'core', 'reply' => null],
+            ['value' => self::ACTION_IMAGE, 'label' => 'Responder con una imagen', 'group' => 'core', 'reply' => null],
             ['value' => 'submenu', 'label' => 'Abrir otro menú', 'group' => 'core', 'reply' => null],
             ['value' => 'handoff', 'label' => 'Pasar a un asesor', 'group' => 'core', 'reply' => null],
         ];
