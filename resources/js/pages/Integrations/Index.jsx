@@ -3,7 +3,7 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import ProviderConnectForm from '@/components/ProviderConnectForm';
+import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight,
@@ -745,11 +745,11 @@ function StepActivate({ integration, onUpdated, showToast }) {
                     </div>
                 </div>
 
-                <WField label="Palabra del disparador" icon={CreditCard} error={errors.trigger_command?.[0]}>
+                <Field label="Palabra del disparador" icon={CreditCard} error={errors.trigger_command?.[0]}>
                     <div className="flex items-center gap-2">
                         <span className="font-mono text-lg font-bold text-muted-foreground">{prefix}</span>
                         <input
-                            className={wInput}
+                            className={inputClass}
                             value={form.trigger_command}
                             onChange={e => setForm(f => ({ ...f, trigger_command: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '') }))}
                             placeholder="pagos"
@@ -758,7 +758,7 @@ function StepActivate({ integration, onUpdated, showToast }) {
                     <p className="text-[11px] text-muted-foreground mt-1">
                         Los agentes escribirán <code className="font-mono font-semibold text-teal-600 dark:text-teal-400">{prefix}{form.trigger_command || 'pagos'}</code> en el chat para abrir el formulario de pago.
                     </p>
-                </WField>
+                </Field>
 
                 <Button type="submit" disabled={saving} className="gap-2">
                     {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Guardar
