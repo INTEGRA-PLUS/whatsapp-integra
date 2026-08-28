@@ -7,6 +7,8 @@ use App\Models\CompanyIntegration;
 use App\Services\Integra;
 use App\Services\IntegraClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -56,14 +58,66 @@ class IntegraConnectionTest extends TestCase
         );
     }
 
-    /** Con las dos conectadas manda la de pagos, que es la que se conecta primero. */
-    public function test_con_las_dos_conectadas_manda_la_de_pagos(): void
+    /**
+     * Con las dos conectadas manda la MÁS RECIENTE, y no la de pagos.
+     *
+     * Es el fallo que dejó a varias empresas con todo en 401 mientras el panel
+     * mostraba las dos tarjetas en verde: Integra desactiva los tokens
+     * anteriores al emitir uno nuevo con el mismo nombre, y las dos tarjetas se
+     * conectan con el mismo. Así que conectar Contactos revoca el token que
+     * guardó Pagos, y preferir siempre Pagos era quedarse justo con el muerto.
+     */
+    public function test_con_las_dos_conectadas_manda_la_ultima_en_conectarse(): void
     {
         $company = $this->company();
-        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC, 'https://contactos.test');
-        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS, 'https://pagos.test');
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS, 'https://pagos.test')
+            ->update(['connected_at' => now()->subMonths(2)]);
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC, 'https://contactos.test')
+            ->update(['connected_at' => now()]);
+
+        $this->assertSame('https://contactos.test', Integra::connection($company->id)->base_url);
+    }
+
+    /** Y al revés, para que no sea la tarjeta la que decide sino la fecha. */
+    public function test_si_pagos_se_conecto_despues_manda_pagos(): void
+    {
+        $company = $this->company();
+        $this->connect($company, CompanyIntegration::KEY_CONTACTS_SYNC, 'https://contactos.test')
+            ->update(['connected_at' => now()->subMonths(2)]);
+        $this->connect($company, CompanyIntegration::KEY_INVOICE_PAYMENTS, 'https://pagos.test')
+            ->update(['connected_at' => now()]);
 
         $this->assertSame('https://pagos.test', Integra::connection($company->id)->base_url);
+    }
+
+    /**
+     * Al emitir el token se piden los scopes explícitamente.
+     *
+     * `POST /api/v1/tokens` sin `abilities` NO da todos los permisos: da sólo
+     * los cuatro del flujo de pagos. Como el wizard nunca los mandaba, ninguna
+     * empresa conectada podía leer contratos ni crear radicados, y el menú de
+     * WhatsApp derivaba a un asesor cada vez que alguien preguntaba por su
+     * servicio — sin un solo error visible en el panel.
+     */
+    public function test_al_conectar_se_piden_todos_los_scopes_que_usa_la_integracion(): void
+    {
+        Http::fake([
+            '*/api/v1/tokens' => Http::response([
+                'success' => true,
+                'data' => ['token' => 'itg_nuevo', 'abilities' => IntegraClient::ABILITIES],
+            ], 201),
+        ]);
+
+        IntegraClient::connectWithLogin('https://demo.test', 'admin@empresa.test', 'secreto');
+
+        Http::assertSent(function (Request $request) {
+            return str_contains($request->url(), '/api/v1/tokens')
+                && $request['abilities'] === IntegraClient::ABILITIES;
+        });
+
+        // Los dos que faltaban en producción, por si alguien recorta la lista.
+        $this->assertContains('contratos.leer', IntegraClient::ABILITIES);
+        $this->assertContains('radicados.crear', IntegraClient::ABILITIES);
     }
 
     /** Una tarjeta en estado de error no cuenta como conexión. */

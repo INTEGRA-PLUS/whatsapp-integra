@@ -44,7 +44,15 @@ class Integra
             ->whereIn('key', self::SOURCES)
             ->get()
             ->filter->isConnected()
-            ->sortBy(fn (CompanyIntegration $i) => array_search($i->key, self::SOURCES, true))
+            // Manda la conexión MÁS RECIENTE, no la tarjeta de pagos.
+            //
+            // Integra desactiva los tokens anteriores de la empresa al emitir
+            // uno nuevo con el mismo nombre, y las dos tarjetas se conectan con
+            // el mismo ('wpp-integraciones'). Así que conectar Contactos mata
+            // el token que había guardado Pagos: preferir siempre Pagos era
+            // elegir justo el token revocado, y la empresa quedaba con todo en
+            // 401 mientras el panel mostraba las dos tarjetas en verde.
+            ->sortByDesc(fn (CompanyIntegration $i) => $i->connected_at?->timestamp ?? 0)
             ->first();
     }
 

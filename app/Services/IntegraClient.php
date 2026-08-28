@@ -55,6 +55,28 @@ class IntegraClient
      */
     public const CODE_ENDPOINT_MISSING = 4404;
 
+    /**
+     * Los scopes que hay que pedirle a Integra al emitir el token.
+     *
+     * Se piden TODOS y explícitamente porque `POST /api/v1/tokens` sin
+     * `abilities` no da todos: da sólo los cuatro del flujo de pagos
+     * (contactos.leer, facturas.leer, pagos.leer, pagos.registrar). Como el
+     * wizard nunca los mandaba, ninguna empresa conectada tenía permiso para
+     * leer contratos ni crear radicados, y el menú de WhatsApp derivaba a un
+     * asesor cada vez que un cliente preguntaba por su servicio o reportaba una
+     * falla — sin un solo error visible en el panel.
+     */
+    public const ABILITIES = [
+        'contactos.leer',
+        'facturas.leer',
+        'pagos.leer',
+        'pagos.registrar',
+        'radicados.leer',
+        'radicados.crear',
+        'contratos.leer',
+        'contratos.prorroga',
+    ];
+
     protected string $baseUrl;
     protected ?string $token;
 
@@ -125,9 +147,10 @@ class IntegraClient
                     ->acceptJson()
                     ->timeout(20)
                     ->post('/api/v1/tokens', [
-                        'email'    => $email,
-                        'password' => $password,
-                        'nombre'   => 'wpp-integraciones',
+                        'email'     => $email,
+                        'password'  => $password,
+                        'nombre'    => 'wpp-integraciones',
+                        'abilities' => self::ABILITIES,
                     ]);
             } catch (\Throwable $e) {
                 Log::warning('Integra: error de red al emitir token', ['base' => $candidate, 'msg' => $e->getMessage()]);
