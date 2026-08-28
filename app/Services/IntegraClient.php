@@ -40,6 +40,11 @@ use Illuminate\Support\Facades\Log;
  *                contrato?, medio?, telefono?, ip?, mac_address? }
  *   GET  /api/v1/contratos/{nro}/estado               (contratos.leer)
  *        estado de internet/TV + facturas pendientes del contrato
+ *   GET  /api/v1/contratos/{nro}/resumen              (contratos.leer)
+ *        todo lo que el suscriptor puede preguntar de SU servicio, en una
+ *        llamada; sin datos de infraestructura (IP, MAC, ONU, MikroTik)
+ *   POST /api/v1/contratos/{nro}/prorroga             (contratos.prorroga)
+ *        body: { factura_id, fecha, comentario?, identificacion? }
  */
 class IntegraClient
 {
@@ -438,5 +443,85 @@ class IntegraClient
         }
 
         return $res->json('data') ?? null;
+    }
+
+    /**
+     * Todo lo que un suscriptor puede preguntar sobre SU servicio, en una sola
+     * llamada: por qué está suspendido y cuánto cuesta reactivarlo, facturas,
+     * saldo a favor, ciclo de facturación, promesa de pago, últimos pagos,
+     * reportes de soporte abiertos, consumo, contrato firmado y clave WiFi.
+     *
+     * Es el hermano de contractStatus() pensado para leerlo el cliente final:
+     * deliberadamente no trae IP, MAC, serial de la ONU ni MikroTik, así que es
+     * el que debe usar el bot. contractStatus() se queda para el panel interno.
+     *
+     * `$identificacion` es obligatorio y no por capricho: los números de
+     * contrato son secuenciales, de modo que sin comprobar la titularidad
+     * cualquiera que pruebe el número siguiente leería la factura, la dirección
+     * y la clave WiFi del vecino. Integra responde 404 —no 403— cuando el
+     * documento no corresponde, para no confirmar siquiera que el contrato
+     * existe; aquí eso llega como null, igual que un contrato inexistente, y
+     * esa ambigüedad es la que protege al titular.
+     *
+     * @param string $nro Número de contrato (contracts.nro), no el id.
+     * @param string $identificacion Cédula/NIT de quien dice ser el titular.
+     * @param int $diasConsumo Días de detalle en `consumo.por_dia` (1–90).
+     * @return array|null null si el contrato no existe o no es de esa persona.
+     * @throws \RuntimeException
+     */
+    public function contractSummary(string $nro, string $identificacion, int $diasConsumo = 7): ?array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/contratos/'.rawurlencode($nro).'/resumen', [
+                'identificacion' => $identificacion,
+                'dias_consumo' => max(1, min(90, $diasConsumo)),
+            ]);
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return null;
+            }
+            throw $e;
+        }
+
+        return $res->json('data') ?? null;
+    }
+
+    /**
+     * Pide una prórroga (promesa de pago) sobre una factura del contrato.
+     *
+     * NO concede el plazo: deja una solicitud pendiente de que alguien del
+     * proveedor la apruebe, en la misma bandeja que las de la app de clientes.
+     * Un bot no puede regalar plazos por su cuenta, así que lo único honesto
+     * que puede decirle al cliente es "queda radicada, te avisamos".
+     *
+     * Integra aplica sus propios topes —días de plazo, máximo de promesas al
+     * año, y nada de una segunda solicitud si ya hay una sin atender— y los
+     * rechaza con 422. Ese mensaje viene redactado y es el que hay que
+     * mostrarle al cliente: explica por qué no se pudo, que es justo lo que
+     * evita que insista.
+     *
+     * @param string $nro Número de contrato (no el id).
+     * @param int $facturaId Factura pendiente, de resumen.facturacion.pendientes.items.
+     * @param string $fecha Fecha propuesta de pago (Y-m-d), posterior a hoy.
+     * @param string $identificacion Documento del titular; si no coincide, 404.
+     * @return array{id?: int, tipo?: string, estado?: string, fecha_propuesta?: string, factura?: string}
+     * @throws \RuntimeException 422 con el motivo listo para el cliente; 404 si
+     *         el contrato no existe o no es de esa persona.
+     */
+    public function requestPaymentExtension(
+        string $nro,
+        int $facturaId,
+        string $fecha,
+        string $identificacion,
+        ?string $comentario = null
+    ): array {
+        $res = $this->call('post', '/api/v1/contratos/'.rawurlencode($nro).'/prorroga', array_filter([
+            'factura_id' => $facturaId,
+            'fecha' => $fecha,
+            'identificacion' => $identificacion,
+            'comentario' => $comentario,
+        ], fn ($v) => $v !== null && $v !== ''));
+
+        return $res->json('data.solicitud') ?? [];
     }
 }
