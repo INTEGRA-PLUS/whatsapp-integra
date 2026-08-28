@@ -118,7 +118,7 @@ class WebhookEndpoint extends Model
             'says' => $healthy
                 ? 'La última entrega salió bien.'
                 : 'La última entrega falló' . ($last->status_code ? ' con HTTP ' . $last->status_code : ' sin respuesta') . '.',
-            'fix' => $healthy ? null : self::hintFor($last->status_code),
+            'fix' => $healthy ? null : self::hintForStatus($last->status_code),
         ];
     }
 
@@ -129,7 +129,7 @@ class WebhookEndpoint extends Model
      * cuando alguien pega la URL de una web en vez de la de un endpoint, y es
      * con diferencia el error más común de los que hemos visto.
      */
-    private static function hintFor(?int $code): string
+    public static function hintForStatus(?int $code): string
     {
         return match (true) {
             $code === 405 => 'Esa URL existe pero no acepta POST: casi siempre significa que apunta a una página web y no a una ruta preparada para recibir eventos. Pide a tu proveedor la ruta que escucha los webhooks.',

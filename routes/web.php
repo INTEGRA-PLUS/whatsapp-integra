@@ -492,6 +492,10 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:integrations.view');
         Route::post('/', [App\Http\Controllers\WebhookEndpointController::class, 'store'])
             ->middleware('permission:integrations.create');
+        // Prueba una dirección antes de guardarla, para no crear un webhook
+        // que nunca va a entregar.
+        Route::post('/probe', [App\Http\Controllers\WebhookEndpointController::class, 'probe'])
+            ->middleware('permission:integrations.create');
         Route::put('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'update'])
             ->middleware('permission:integrations.update');
         Route::delete('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'destroy'])

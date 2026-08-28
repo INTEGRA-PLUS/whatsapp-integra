@@ -301,12 +301,65 @@ function WebhookHealth({ health }) {
     );
 }
 
+
+/**
+ * Prueba la dirección antes de guardarla.
+ *
+ * El fallo típico no se ve al escribir: la URL parece correcta, el webhook se
+ * guarda, sale "activo" en verde, y meses después alguien descubre que todas
+ * las entregas devolvían 405 porque apuntaba a una página web. Un evento de
+ * prueba en el momento convierte eso en una frase antes de guardar nada.
+ */
+function UrlProbe({ url, probe, setProbe }) {
+    const [testing, setTesting] = useState(false);
+
+    async function run() {
+        setTesting(true);
+        try {
+            const { data } = await axios.post('/api/webhooks/probe', { url: url.trim() });
+            setProbe(data);
+        } catch (err) {
+            setProbe({
+                ok: false,
+                says: err?.response?.data?.message ?? 'No se pudo probar la dirección.',
+                fix: null,
+            });
+        } finally {
+            setTesting(false);
+        }
+    }
+
+    const usable = /^https?:\/\/.+\..+/i.test(url.trim());
+
+    return (
+        <div className="space-y-1.5 pt-1">
+            <button
+                type="button"
+                onClick={run}
+                disabled={!usable || testing}
+                className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+            >
+                {testing ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                {testing ? 'Probando…' : 'Probar esta dirección'}
+            </button>
+
+            {probe && (
+                <div className={`rounded-md px-2.5 py-2 text-xs ${probe.ok ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                    <p className="font-medium">{probe.says}</p>
+                    {probe.fix && <p className="mt-1 opacity-90">{probe.fix}</p>}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function WebhookFormModal({ eventCatalog, initial, onClose, onSaved }) {
     const [name, setName] = useState(initial?.name ?? '');
     const [url, setUrl] = useState(initial?.url ?? '');
     const [events, setEvents] = useState(initial?.events ?? []);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
+    const [probe, setProbe] = useState(null);
 
     function toggleEvent(ev) {
         setEvents(prev => prev.includes(ev) ? prev.filter(e => e !== ev) : [...prev, ev]);
@@ -376,11 +429,17 @@ function WebhookFormModal({ eventCatalog, initial, onClose, onSaved }) {
                         <input
                             type="url"
                             value={url}
-                            onChange={e => setUrl(e.target.value)}
+                            onChange={e => { setUrl(e.target.value); setProbe(null); }}
                             placeholder="https://tu-sistema.com/webhooks/whatsapp"
                             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                         />
-                        {errors.url && <p className="text-xs text-destructive font-medium">{errors.url}</p>}
+                        <p className="text-[11px] text-muted-foreground">
+                            La ruta de tu servidor que recibe los avisos, no la página de tu software.
+                            Tiene que aceptar peticiones <code className="font-mono">POST</code>.
+                        </p>
+                        {errors.url && <p className="text-xs font-medium text-destructive">{errors.url}</p>}
+
+                        <UrlProbe url={url} probe={probe} setProbe={setProbe} />
                     </div>
 
                     <div className="space-y-1.5">

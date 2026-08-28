@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\DeliverWebhook;
 use App\Models\WebhookEndpoint;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use App\Support\IntegrationProvider;
 use Inertia\Inertia;
 
@@ -96,6 +97,58 @@ class WebhookEndpointController extends Controller
                 ->limit(50)
                 ->get(['id', 'event', 'status_code', 'success', 'error', 'attempts', 'delivered_at'])
         );
+    }
+
+    /**
+     * POST /api/webhooks/probe — ¿esa dirección acepta de verdad un evento?
+     *
+     * Se prueba ANTES de guardar porque el fallo típico no se ve al escribir:
+     * la URL parece bien, el webhook se guarda, sale "activo" en verde, y sólo
+     * meses después alguien descubre que todas las entregas devolvían 405
+     * porque apuntaba a una página web. Mandar un evento de prueba en el
+     * momento convierte eso en una frase antes de guardar nada.
+     *
+     * Va firmado igual que una entrega real, así que además sirve para que el
+     * receptor compruebe su verificación de firma con algo inofensivo.
+     */
+    public function probe(Request $request)
+    {
+        $data = $request->validate(['url' => 'required|url|max:2048']);
+
+        $payload = json_encode([
+            'event' => 'webhook.probe',
+            'data' => ['mensaje' => 'Prueba de conexión desde tu plataforma de WhatsApp.'],
+            'sent_at' => now()->toIso8601String(),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'X-Webhook-Event' => 'webhook.probe',
+                // Sin webhook guardado todavía no hay secreto: la firma va con
+                // uno de prueba para que el receptor vea llegar la cabecera,
+                // aunque no le cuadre. La de verdad sale al guardar.
+                'X-Webhook-Signature' => hash_hmac('sha256', $payload, 'probe'),
+            ])->timeout(12)->withBody($payload, 'application/json')->post($data['url']);
+
+            $code = $response->status();
+
+            return response()->json([
+                'ok' => $response->successful(),
+                'status_code' => $code,
+                'says' => $response->successful()
+                    ? 'Tu servidor recibió el evento de prueba (HTTP ' . $code . ').'
+                    : 'Tu servidor respondió HTTP ' . $code . ' y no aceptó el evento.',
+                'fix' => $response->successful() ? null : WebhookEndpoint::hintForStatus($code),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'status_code' => null,
+                'says' => 'No se pudo contactar esa dirección.',
+                'fix' => WebhookEndpoint::hintForStatus(null),
+            ]);
+        }
     }
 
     private function companyWebhooks()

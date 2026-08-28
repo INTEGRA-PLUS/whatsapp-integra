@@ -19,6 +19,7 @@ export default function IntegrationsHelp({ onClose }) {
             <Complements />
             <Webhooks />
             <Choosing />
+            <FromIntegra />
             <Health />
 
             <div className="flex justify-end border-t pt-4">
@@ -206,6 +207,54 @@ function Choosing() {
                 cliente</strong> en su chat, es un complemento. Si la necesita{' '}
                 <strong className="text-foreground">tu sistema</strong>, es un webhook. Se pueden usar los
                 dos a la vez, y es lo normal.
+            </p>
+        </Section>
+    );
+}
+
+/**
+ * El caso concreto de quien viene de Integra, que es casi todo el mundo.
+ *
+ * Se dice explícitamente que su API no recibe webhooks porque es la conclusión
+ * que nadie puede sacar solo: la documentación de Integra no menciona la
+ * palabra, y probando URLs a mano lo único que se obtiene es un 405 confuso.
+ */
+function FromIntegra() {
+    return (
+        <Section title="Si tu software es Integra">
+            <p className="text-muted-foreground">
+                Integra encaja perfecto como <strong className="text-foreground">complemento</strong>: su API
+                pública está hecha justo para eso y con conectarlo una vez responde facturas, contratos,
+                soporte y clientes.
+            </p>
+
+            <div className="flex gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                <div className="text-xs text-amber-800 dark:text-amber-300">
+                    <p className="font-medium">Para webhooks, hoy Integra no tiene dónde recibirlos.</p>
+                    <p className="mt-1">
+                        Su API pública (v1) es de lectura: sirve para que nosotros le preguntemos, no para
+                        que nosotros le avisemos. Revisamos su documentación entera y no expone ninguna
+                        ruta que acepte eventos.
+                    </p>
+                    <p className="mt-1">
+                        Si quieres que Integra se entere de lo que pasa en los chats, hay que pedirle a tu
+                        proveedor que <strong>cree una ruta que acepte POST</strong> —por ejemplo{' '}
+                        <code className="font-mono">/software/api/webhooks/whatsapp</code>— y verifique la
+                        cabecera <code className="font-mono">X-Webhook-Signature</code>. Mientras no exista,
+                        cualquier webhook que apunte a Integra fallará.
+                    </p>
+                    <p className="mt-1">
+                        Poner la dirección de tu entorno a secas —la misma del complemento— no funciona: esa
+                        es la página web y responde 405.
+                    </p>
+                </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+                Un webhook no tiene por qué apuntar a Integra: puede ir a tu propio servidor, a n8n, a
+                Zapier o a cualquier cosa que sepa recibir un POST. Usa el botón{' '}
+                <em>Probar esta dirección</em> antes de guardar y sales de dudas en un segundo.
             </p>
         </Section>
     );
