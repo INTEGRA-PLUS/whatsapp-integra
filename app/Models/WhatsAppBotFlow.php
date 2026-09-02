@@ -23,6 +23,17 @@ class WhatsAppBotFlow extends Model
     public const STEP_CONTRACT = 'awaiting_contract';
     public const STEP_REPORT = 'awaiting_report';
 
+    /**
+     * La pregunta la hizo la IA, no una opción del menú.
+     *
+     * Importa quién preguntó porque la respuesta tiene que volver al mismo
+     * sitio: `WhatsAppMenuActionService` sabe retomar los flujos de las
+     * opciones de Integra, pero no los de la IA —para él sería una acción
+     * desconocida y contestaría con silencio, dejando al cliente hablando
+     * solo—. Con esta marca, el mensaje vuelve al flujo de IA.
+     */
+    public const ACTION_AI = 'ia';
+
     /** Cuánto sigue en pie una pregunta sin responder. */
     public const MINUTES = 30;
 

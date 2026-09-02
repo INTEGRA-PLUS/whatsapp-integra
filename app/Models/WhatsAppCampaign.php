@@ -20,6 +20,9 @@ class WhatsAppCampaign extends Model
         'name',
         'message',
         'message_type',
+        'template_name',
+        'template_language',
+        'template_payload',
         'status',
         'schedule_type',
         'schedule_days',
@@ -40,6 +43,7 @@ class WhatsAppCampaign extends Model
         'last_run_at' => 'datetime',
         'next_run_at' => 'datetime',
         'schedule_days' => 'array',
+        'template_payload' => 'array',
     ];
 
     public function instance()
@@ -65,6 +69,11 @@ class WhatsAppCampaign extends Model
     public function pendingRecipients()
     {
         return $this->recipients()->where('status', 'pending');
+    }
+
+    public function isTemplate(): bool
+    {
+        return $this->message_type === 'template';
     }
 
     public function isLaunchable(): bool

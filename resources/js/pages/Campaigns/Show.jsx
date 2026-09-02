@@ -1,7 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Send, RefreshCw, CheckCircle2, XCircle, Clock, CalendarClock } from 'lucide-react';
+import { ArrowLeft, Send, RefreshCw, CheckCircle2, XCircle, Clock, CalendarClock, FileText, Paperclip } from 'lucide-react';
 
 const DAY_LABEL = { mon: 'Lun', tue: 'Mar', wed: 'Mié', thu: 'Jue', fri: 'Vie', sat: 'Sáb', sun: 'Dom' };
 
@@ -25,6 +25,9 @@ const STATUS_CLASS = {
 
 export default function CampaignsShow({ campaign, recipients }) {
     const isRecurring = campaign.schedule_type === 'recurring';
+    const isTemplateCampaign = campaign.message_type === 'template';
+    const header = campaign.template_payload?.header ?? null;
+    const bodyVars = campaign.template_payload?.body_vars ?? [];
     const launchable = !isRecurring && (campaign.status === 'draft' || campaign.status === 'failed');
 
     function handleSend() {
@@ -92,8 +95,40 @@ export default function CampaignsShow({ campaign, recipients }) {
                 )}
 
                 <div className="rounded-xl border bg-card p-5">
-                    <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Mensaje</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase mb-2 flex items-center gap-1.5">
+                        {isTemplateCampaign ? <><FileText className="size-3.5" /> Plantilla</> : 'Mensaje'}
+                    </p>
+
+                    {isTemplateCampaign && (
+                        <div className="mb-3 space-y-1 text-sm">
+                            <div className="font-mono text-xs text-foreground">
+                                {campaign.template_name}
+                                <span className="text-muted-foreground"> · {campaign.template_language}</span>
+                            </div>
+                            {header && (
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Paperclip className="size-3" />
+                                    Encabezado {header.format}
+                                    {header.filename ? ` · ${header.filename}` : ''}
+                                </div>
+                            )}
+                            {bodyVars.length > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                    Variables: {bodyVars.map((v, i) => (
+                                        <span key={i} className="font-mono">{i > 0 ? ' · ' : ''}{`{{${i + 1}}}`}={v || '—'}</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <p className="text-sm whitespace-pre-wrap text-foreground">{campaign.message}</p>
+
+                    {isTemplateCampaign && bodyVars.some(v => /{{(nombre|telefono)}}/.test(v)) && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                            Los tokens {'{{nombre}}'} y {'{{telefono}}'} se reemplazan por los datos de cada destinatario al enviar.
+                        </p>
+                    )}
                 </div>
 
                 <div className="rounded-xl border bg-card overflow-hidden">

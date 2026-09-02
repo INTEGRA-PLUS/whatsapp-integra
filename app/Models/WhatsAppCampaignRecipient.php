@@ -17,6 +17,7 @@ class WhatsAppCampaignRecipient extends Model
         'name',
         'status',
         'wamid',
+        'message_id',
         'error_message',
         'sent_at',
     ];
@@ -28,5 +29,10 @@ class WhatsAppCampaignRecipient extends Model
     public function campaign()
     {
         return $this->belongsTo(WhatsAppCampaign::class, 'campaign_id');
+    }
+
+    public function message()
+    {
+        return $this->belongsTo(WhatsAppMessage::class, 'message_id');
     }
 }

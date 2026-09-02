@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
+import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Megaphone, Send, Trash2, Eye, RefreshCw, X, Search, Loader2, CalendarClock } from 'lucide-react';
+import { Plus, Megaphone, Send, Trash2, Eye, RefreshCw, X, Search, Loader2, CalendarClock, FileText, Upload, Paperclip } from 'lucide-react';
 
 const STATUS_LABEL = {
     draft: 'Borrador',
@@ -34,10 +35,49 @@ const DAY_OPTIONS = [
 
 const DAY_LABEL = Object.fromEntries(DAY_OPTIONS.map(d => [d.key, d.label]));
 
+// ── Plantillas ───────────────────────────────────────────────────────────────
+const MEDIA_HEADERS = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+const HEADER_ACCEPT = {
+    IMAGE: 'image/jpeg,image/png',
+    VIDEO: 'video/mp4,video/3gpp',
+    DOCUMENT: 'application/pdf',
+};
+const HEADER_LABEL = { IMAGE: 'Imagen', VIDEO: 'Video', DOCUMENT: 'Documento', LOCATION: 'Ubicación' };
+
+// Tokens que el backend sustituye por los datos de cada destinatario al enviar.
+const TOKENS = [
+    { token: '{{nombre}}', label: 'Nombre' },
+    { token: '{{telefono}}', label: 'Teléfono' },
+];
+
+function templateBody(t) {
+    return (t?.components || []).find(c => (c.type || '').toUpperCase() === 'BODY')?.text ?? '';
+}
+
+// IMAGE/VIDEO/DOCUMENT/LOCATION, o null si el encabezado es de texto o no existe.
+function templateHeaderFormat(t) {
+    const h = (t?.components || []).find(c => (c.type || '').toUpperCase() === 'HEADER');
+    const f = (h?.format || '').toUpperCase();
+    return [...MEDIA_HEADERS, 'LOCATION'].includes(f) ? f : null;
+}
+
+function countVars(text) {
+    const m = (text || '').match(/{{\s*\d+\s*}}/g);
+    return m ? new Set(m.map(x => x.replace(/\D/g, ''))).size : 0;
+}
+
+function fillVars(text, vars) {
+    return (text || '').replace(/{{\s*(\d+)\s*}}/g, (_, n) => vars[Number(n) - 1] || `{{${n}}}`);
+}
+
 const emptyForm = {
     name: '',
     instance_id: '',
+    message_type: 'text',
     message: '',
+    template: null,       // plantilla completa tal como la devuelve Meta
+    template_vars: [],    // valor de cada {{n}} del cuerpo (admite tokens)
+    header: null,         // { format, path, filename, mime_type, lat, lng, ... }
     contacts: [],
     launch_now: false,
     schedule_type: 'manual',
@@ -50,13 +90,16 @@ export default function CampaignsIndex({ campaigns, instances }) {
     const [form, setForm] = useState(emptyForm);
     const [errors, setErrors] = useState({});
 
+    const isTemplate = form.message_type === 'template';
+
     function handleCreate(e) {
         e.preventDefault();
         const isRecurring = form.schedule_type === 'recurring';
         const payload = {
             name: form.name,
             instance_id: form.instance_id,
-            message: form.message,
+            message_type: form.message_type,
+            message: isTemplate ? null : form.message,
             launch_now: !isRecurring && form.launch_now,
             contact_ids: form.contacts.filter(c => c.id != null).map(c => c.id),
             manual_recipients: form.contacts
@@ -66,10 +109,46 @@ export default function CampaignsIndex({ campaigns, instances }) {
             schedule_days: isRecurring ? form.schedule_days : [],
             schedule_time: isRecurring ? form.schedule_time : null,
         };
+
+        if (isTemplate) {
+            if (!form.template) { setErrors({ template_name: 'Selecciona una plantilla.' }); return; }
+            payload.template_name = form.template.name;
+            payload.template_language = form.template.language;
+            payload.template_payload = {
+                body_vars: form.template_vars,
+                header: form.header
+                    ? {
+                        format: form.header.format,
+                        path: form.header.path ?? null,
+                        filename: form.header.filename ?? null,
+                        mime_type: form.header.mime_type ?? null,
+                        lat: form.header.lat || null,
+                        lng: form.header.lng || null,
+                        name: form.header.name || null,
+                        address: form.header.address || null,
+                    }
+                    : null,
+            };
+        }
+
         router.post(route('campaigns.store'), payload, {
             onSuccess: () => { setShowCreate(false); setForm(emptyForm); setErrors({}); },
             onError: (err) => setErrors(err),
         });
+    }
+
+    // Al elegir plantilla se reinicia el relleno: el número de variables y el
+    // tipo de encabezado son distintos en cada una.
+    function pickTemplate(tpl) {
+        const format = templateHeaderFormat(tpl);
+        setForm(f => ({
+            ...f,
+            template: tpl,
+            template_vars: Array.from({ length: countVars(templateBody(tpl)) }, () => ''),
+            header: format
+                ? { format, path: '', filename: '', mime_type: '', lat: '', lng: '', name: '', address: '' }
+                : null,
+        }));
     }
 
     function toggleDay(day) {
@@ -99,7 +178,8 @@ export default function CampaignsIndex({ campaigns, instances }) {
                     <div>
                         <h1 className="text-2xl font-semibold text-foreground">Campañas masivas</h1>
                         <p className="text-sm text-muted-foreground mt-1">
-                            Envía un mismo mensaje a una lista de contactos. Recuerda que WhatsApp solo permite mensajes libres dentro de una sesión activa de 24 horas.
+                            Envía un mismo mensaje a una lista de contactos. El mensaje libre solo llega dentro de la
+                            sesión de 24 horas; para escribirle a quien no ha respondido, usa una plantilla aprobada.
                         </p>
                     </div>
                     <Button onClick={() => setShowCreate(true)} className="gap-2" disabled={instances.length === 0}>
@@ -136,7 +216,17 @@ export default function CampaignsIndex({ campaigns, instances }) {
                                 {campaigns.map(c => (
                                     <tr key={c.id} className="border-t hover:bg-muted/30">
                                         <td className="px-4 py-3">
-                                            <div className="font-medium text-foreground">{c.name}</div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-medium text-foreground">{c.name}</span>
+                                                {c.message_type === 'template' && (
+                                                    <span
+                                                        title={c.template_name}
+                                                        className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 px-2 py-0.5 text-[11px] font-medium"
+                                                    >
+                                                        <FileText className="size-3" /> Plantilla
+                                                    </span>
+                                                )}
+                                            </div>
                                             {c.schedule_type === 'recurring' && (
                                                 <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
                                                     <CalendarClock className="size-3.5" />
@@ -207,7 +297,7 @@ export default function CampaignsIndex({ campaigns, instances }) {
                             <label className="text-sm font-medium text-foreground">Instancia</label>
                             <select
                                 value={form.instance_id}
-                                onChange={e => setForm(f => ({ ...f, instance_id: e.target.value, contacts: [] }))}
+                                onChange={e => setForm(f => ({ ...f, instance_id: e.target.value, contacts: [], template: null, template_vars: [], header: null }))}
                                 required
                                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                             >
@@ -221,18 +311,62 @@ export default function CampaignsIndex({ campaigns, instances }) {
                             {errors.instance_id && <p className="text-xs text-red-600">{errors.instance_id}</p>}
                         </div>
 
-                        <div className="space-y-1.5">
-                            <label className="text-sm font-medium text-foreground">Mensaje</label>
-                            <textarea
-                                value={form.message}
-                                onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
-                                required
-                                rows={4}
-                                placeholder="Hola 👋, queríamos contarte..."
-                                className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                            />
-                            {errors.message && <p className="text-xs text-red-600">{errors.message}</p>}
+                        <div className="space-y-2 rounded-md border border-input p-3">
+                            <p className="text-sm font-medium text-foreground">Tipo de mensaje</p>
+                            <div className="flex gap-4 text-sm">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="message_type"
+                                        checked={!isTemplate}
+                                        onChange={() => setForm(f => ({ ...f, message_type: 'text' }))}
+                                        className="accent-green-600"
+                                    />
+                                    Mensaje libre
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="message_type"
+                                        checked={isTemplate}
+                                        onChange={() => setForm(f => ({ ...f, message_type: 'template' }))}
+                                        className="accent-green-600"
+                                    />
+                                    Plantilla aprobada
+                                </label>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                {isTemplate
+                                    ? 'Una plantilla aprobada llega aunque el cliente no haya escrito antes: es la única forma de abrir conversación.'
+                                    : 'El mensaje libre solo llega a quien haya escrito en las últimas 24 horas. Al resto WhatsApp lo rechaza.'}
+                            </p>
                         </div>
+
+                        {isTemplate ? (
+                            <TemplateComposer
+                                instanceId={form.instance_id}
+                                template={form.template}
+                                vars={form.template_vars}
+                                header={form.header}
+                                onPick={pickTemplate}
+                                onVarsChange={vars => setForm(f => ({ ...f, template_vars: vars }))}
+                                onHeaderChange={header => setForm(f => ({ ...f, header }))}
+                                errors={errors}
+                            />
+                        ) : (
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-medium text-foreground">Mensaje</label>
+                                <textarea
+                                    value={form.message}
+                                    onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+                                    required
+                                    rows={4}
+                                    placeholder="Hola 👋, queríamos contarte..."
+                                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                                />
+                                {errors.message && <p className="text-xs text-red-600">{errors.message}</p>}
+                            </div>
+                        )}
 
                         <ContactPicker
                             instanceId={form.instance_id}
@@ -326,6 +460,224 @@ export default function CampaignsIndex({ campaigns, instances }) {
                 </Modal>
             )}
         </>
+    );
+}
+
+/**
+ * Selección y relleno de una plantilla aprobada. Las variables admiten los
+ * tokens {{nombre}} y {{telefono}}, que el backend sustituye por los datos de
+ * cada destinatario en el momento del envío: son el motivo de que una campaña
+ * de plantilla pueda seguir siendo personalizada.
+ */
+function TemplateComposer({ instanceId, template, vars, header, onPick, onVarsChange, onHeaderChange, errors }) {
+    const [templates, setTemplates] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+    const varRefs = useRef([]);
+
+    useEffect(() => {
+        if (!instanceId) { setTemplates([]); return; }
+        let active = true;
+        setLoading(true);
+        setLoadError('');
+        axios.get(route('campaigns.templates'), { params: { instance_id: instanceId } })
+            .then(res => {
+                if (!active) return;
+                const approved = (res.data.data ?? []).filter(t => (t.status || '').toUpperCase() === 'APPROVED');
+                setTemplates(approved);
+                if (approved.length === 0) {
+                    setLoadError(res.data.message || 'Esta instancia no tiene plantillas aprobadas.');
+                }
+            })
+            .catch(() => active && setLoadError('No se pudieron cargar las plantillas.'))
+            .finally(() => active && setLoading(false));
+        return () => { active = false; };
+    }, [instanceId]);
+
+    // Inserta el token en la posición del cursor, para poder combinarlo con
+    // texto fijo ("Hola {{nombre}}, tu cita es el lunes").
+    function insertToken(index, token) {
+        const el = varRefs.current[index];
+        const current = vars[index] ?? '';
+        const at = el ? el.selectionStart ?? current.length : current.length;
+        const next = current.slice(0, at) + token + current.slice(el ? el.selectionEnd ?? at : at);
+        onVarsChange(vars.map((v, i) => (i === index ? next : v)));
+        requestAnimationFrame(() => {
+            if (!el) return;
+            el.focus();
+            el.setSelectionRange(at + token.length, at + token.length);
+        });
+    }
+
+    async function uploadHeaderFile(file) {
+        if (!file) return;
+        setUploading(true);
+        setUploadError('');
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('instance_id', instanceId);
+            fd.append('format', header.format);
+            const res = await axios.post(route('campaigns.template-media'), fd, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            onHeaderChange({
+                ...header,
+                path: res.data.path,
+                filename: res.data.filename,
+                mime_type: res.data.mime_type,
+            });
+        } catch (err) {
+            setUploadError(err?.response?.data?.error || 'No se pudo subir el archivo.');
+        } finally {
+            setUploading(false);
+        }
+    }
+
+    const body = templateBody(template);
+    // Vista previa con un destinatario de ejemplo, para que se vea qué hacen los tokens.
+    const preview = useMemo(() => {
+        const sample = vars.map(v => (v || '')
+            .replaceAll('{{nombre}}', 'Daniela Galindo')
+            .replaceAll('{{telefono}}', '573245637786'));
+        return fillVars(body, sample);
+    }, [body, vars]);
+
+    if (!instanceId) {
+        return (
+            <p className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground text-center">
+                Selecciona una instancia para ver sus plantillas.
+            </p>
+        );
+    }
+
+    return (
+        <div className="space-y-3">
+            <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <FileText className="size-3.5" /> Plantilla
+                </label>
+                <div className="relative">
+                    <select
+                        value={template ? `${template.name}::${template.language}` : ''}
+                        onChange={e => {
+                            const [name, language] = e.target.value.split('::');
+                            onPick(templates.find(t => t.name === name && t.language === language) ?? null);
+                        }}
+                        disabled={loading || templates.length === 0}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+                    >
+                        <option value="">{loading ? 'Cargando plantillas…' : 'Selecciona una plantilla aprobada'}</option>
+                        {templates.map(t => (
+                            <option key={`${t.name}::${t.language}`} value={`${t.name}::${t.language}`}>
+                                {t.name} ({t.language})
+                            </option>
+                        ))}
+                    </select>
+                    {loading && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 size-4 text-muted-foreground animate-spin" />}
+                </div>
+                {loadError && <p className="text-xs text-amber-600">{loadError}</p>}
+                {errors.template_name && <p className="text-xs text-red-600">{errors.template_name}</p>}
+            </div>
+
+            {template && (
+                <>
+                    {header && (
+                        <div className="space-y-1.5 rounded-md border border-input p-3">
+                            <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                                <Paperclip className="size-3.5" /> Encabezado · {HEADER_LABEL[header.format]}
+                            </p>
+
+                            {header.format === 'LOCATION' ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input type="text" inputMode="decimal" placeholder="Latitud" value={header.lat}
+                                        onChange={e => onHeaderChange({ ...header, lat: e.target.value })}
+                                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                                    <input type="text" inputMode="decimal" placeholder="Longitud" value={header.lng}
+                                        onChange={e => onHeaderChange({ ...header, lng: e.target.value })}
+                                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                                    <input type="text" placeholder="Nombre del lugar (opcional)" value={header.name}
+                                        onChange={e => onHeaderChange({ ...header, name: e.target.value })}
+                                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                                    <input type="text" placeholder="Dirección (opcional)" value={header.address}
+                                        onChange={e => onHeaderChange({ ...header, address: e.target.value })}
+                                        className="h-9 rounded-md border border-input bg-transparent px-3 text-sm" />
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2">
+                                    <label className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 h-9 text-sm cursor-pointer hover:bg-muted">
+                                        {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                                        {header.path ? 'Cambiar archivo' : 'Subir archivo'}
+                                        <input
+                                            type="file"
+                                            accept={HEADER_ACCEPT[header.format]}
+                                            className="hidden"
+                                            disabled={uploading}
+                                            onChange={e => uploadHeaderFile(e.target.files?.[0])}
+                                        />
+                                    </label>
+                                    {header.filename && (
+                                        <span className="text-xs text-muted-foreground truncate">{header.filename}</span>
+                                    )}
+                                </div>
+                            )}
+
+                            {uploadError && <p className="text-xs text-red-600">{uploadError}</p>}
+                            {errors.template_header && <p className="text-xs text-red-600">{errors.template_header}</p>}
+                            <p className="text-xs text-muted-foreground">
+                                El archivo se guarda y se vuelve a subir a WhatsApp en cada envío, así que las
+                                campañas recurrentes no se rompen cuando caduca.
+                            </p>
+                        </div>
+                    )}
+
+                    {vars.length > 0 && (
+                        <div className="space-y-2 rounded-md border border-input p-3">
+                            <p className="text-sm font-medium text-foreground">Variables del mensaje</p>
+                            {vars.map((v, i) => (
+                                <div key={i} className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-mono text-muted-foreground w-10 shrink-0">{`{{${i + 1}}}`}</span>
+                                        <input
+                                            ref={el => { varRefs.current[i] = el; }}
+                                            type="text"
+                                            value={v}
+                                            onChange={e => onVarsChange(vars.map((x, j) => (j === i ? e.target.value : x)))}
+                                            placeholder="Texto fijo o token"
+                                            className="h-9 flex-1 rounded-md border border-input bg-transparent px-3 text-sm"
+                                        />
+                                    </div>
+                                    <div className="flex gap-1.5 pl-12">
+                                        {TOKENS.map(t => (
+                                            <button
+                                                key={t.token}
+                                                type="button"
+                                                onClick={() => insertToken(i, t.token)}
+                                                className="rounded-full border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                                            >
+                                                + {t.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                            <p className="text-xs text-muted-foreground">
+                                Los tokens se reemplazan por los datos de cada destinatario. Si un contacto no
+                                tiene nombre guardado, {'{{nombre}}'} se envía como «cliente».
+                            </p>
+                            {errors.template_payload && <p className="text-xs text-red-600">{errors.template_payload}</p>}
+                        </div>
+                    )}
+
+                    <div className="rounded-md bg-muted/40 border border-input p-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Vista previa (ejemplo)</p>
+                        <p className="text-sm whitespace-pre-wrap text-foreground">{preview || '—'}</p>
+                    </div>
+                </>
+            )}
+        </div>
     );
 }
 

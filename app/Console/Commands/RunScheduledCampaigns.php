@@ -34,7 +34,7 @@ class RunScheduledCampaigns extends Command
             try {
                 DB::transaction(function () use ($campaign) {
                     WhatsAppCampaignRecipient::where('campaign_id', $campaign->id)
-                        ->update(['status' => 'pending', 'wamid' => null, 'error_message' => null, 'sent_at' => null, 'updated_at' => now()]);
+                        ->update(['status' => 'pending', 'wamid' => null, 'message_id' => null, 'error_message' => null, 'sent_at' => null, 'updated_at' => now()]);
 
                     $campaign->update([
                         'status' => 'queued',

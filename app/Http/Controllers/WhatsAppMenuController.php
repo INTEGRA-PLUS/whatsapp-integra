@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMenu;
@@ -9,6 +10,7 @@ use App\Models\WhatsAppMenuOption;
 use App\Services\Integra;
 use App\Services\IntegraCapabilities;
 use App\Services\IntegraClient;
+use App\Support\DefaultAiMenusIntegration;
 use App\Support\MenuReview;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -69,7 +71,56 @@ class WhatsAppMenuController extends Controller
             'integra' => [
                 'connected' => Integra::connected($user->company_id),
             ],
+            // El interruptor de la IA. Vive aquí y no en Integraciones porque
+            // es la IA DE LOS MENÚS: se enciende donde se configuran.
+            'ai' => [
+                'enabled' => (bool) $this->aiIntegration($user->company_id)?->enabled,
+                // Sin el flujo configurado en el servidor no hay a quién
+                // preguntar. No lo puede arreglar el admin de la empresa, así
+                // que la pantalla lo dice en vez de dejar un botón que falla.
+                'available' => filled(config('services.ai_menus.webhook_url')),
+            ],
         ]);
+    }
+
+    private function aiIntegration(int $companyId): ?CompanyIntegration
+    {
+        return CompanyIntegration::where('company_id', $companyId)
+            ->where('key', CompanyIntegration::KEY_AI_MENUS)
+            ->first();
+    }
+
+    /**
+     * POST /whatsapp-menus/ai — enciende o apaga la IA de esta empresa.
+     *
+     * Es lo único que la empresa decide sobre la IA: el servidor, el modelo y
+     * los permisos son los mismos para toda la plataforma y viven en el flujo.
+     */
+    public function toggleAi(Request $request)
+    {
+        $data = $request->validate(['enabled' => 'required|boolean']);
+        $user = auth()->user();
+
+        $integration = $this->aiIntegration($user->company_id);
+
+        if (! $integration) {
+            // Toda empresa nace con su fila (observer + migración), pero si
+            // faltara se crea al vuelo antes que devolver un error que el admin
+            // no puede resolver.
+            $integration = DefaultAiMenusIntegration::createFor($user->company);
+        }
+
+        if ($data['enabled'] && blank(config('services.ai_menus.webhook_url'))) {
+            return back()->withErrors([
+                'ai' => 'Falta configurar el flujo de IA en el servidor. Avisa al equipo técnico.',
+            ]);
+        }
+
+        $integration->update(['enabled' => $data['enabled']]);
+
+        return back()->with('success', $data['enabled']
+            ? 'IA activada. Ya atiende los mensajes que ningún menú reconozca.'
+            : 'IA desactivada. Los menús siguen funcionando igual.');
     }
 
     public function store(Request $request)

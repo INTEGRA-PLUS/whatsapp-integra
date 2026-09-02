@@ -224,9 +224,14 @@ class IntegraConnectionTest extends TestCase
 
         // Pero sus credenciales siguen ahí para poder reintentar: es lo que hace
         // el botón "Verificar" sin obligar a reescribir la URL y el token.
+        // Se pide por clave: una empresa tiene varias tarjetas —incluida la de
+        // IA, que se siembra sola— y first() sin filtro devolvería otra.
         $this->assertInstanceOf(
             IntegraClient::class,
-            CompanyIntegration::where('company_id', $company->id)->first()->client()
+            CompanyIntegration::where('company_id', $company->id)
+                ->where('key', CompanyIntegration::KEY_INVOICE_PAYMENTS)
+                ->first()
+                ->client()
         );
     }
 
