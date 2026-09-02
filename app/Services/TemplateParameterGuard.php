@@ -272,6 +272,19 @@ class TemplateParameterGuard
             );
         }
 
+        // Primero se pregunta el tamaño. Descargar a ciegas un PDF de 100 MB en un
+        // worker de 512 MB de memoria es la forma de tumbar la cola entera por un
+        // archivo que además íbamos a rechazar.
+        $peso = $this->pesoDeclarado($link);
+        if ($peso !== null && $peso > self::MAX_BYTES[$expected]) {
+            $max = round(self::MAX_BYTES[$expected] / 1048576);
+            return $this->fail(
+                'template_header_too_big',
+                "El archivo del encabezado de «{$templateName}» pesa " . round($peso / 1048576, 1)
+                . " MB y WhatsApp acepta como mucho {$max} MB."
+            );
+        }
+
         try {
             $response = Http::timeout(20)->withOptions(['stream' => false])->get($link);
         } catch (\Throwable $e) {
@@ -327,6 +340,24 @@ class TemplateParameterGuard
         }
 
         return ['ok' => true, 'code' => null, 'error' => null, 'media_id' => (string) $upload['id'], 'components' => []];
+    }
+
+    /**
+     * El `Content-Length` que anuncia el servidor, o null si no lo dice o no
+     * admite HEAD. Es una pista, no una garantía: el tamaño real se vuelve a
+     * comprobar sobre los bytes descargados.
+     */
+    private function pesoDeclarado(string $link): ?int
+    {
+        try {
+            $head = Http::timeout(8)->head($link);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $length = $head->header('Content-Length');
+
+        return is_numeric($length) ? (int) $length : null;
     }
 
     private function sniffMime(string $body, ?string $declared): string

@@ -109,7 +109,14 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
     }
 
     function enviar(launchNow) {
-        if (![1, 2, 3, 4].every(validar)) return;
+        // Si algo falta, el aviso solo sirve si te deja delante del campo que lo
+        // provoca: quedarte en el paso 4 leyendo «completa las variables» no dice
+        // dónde están.
+        const falla = [1, 2, 3, 4].find(n => !validar(n));
+        if (falla) {
+            setStep(falla);
+            return;
+        }
 
         setSaving(true);
         const esRecurrente = form.schedule_type === 'recurring';
@@ -570,7 +577,9 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
             params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds, page },
         })
             .then(res => {
-                setResultados(page === 1 ? res.data.contacts : [...resultados, ...res.data.contacts]);
+                // Funcional a propósito: `buscar` está memoizado por filtros, así
+                // que leer `resultados` del closure apilaría sobre una lista vieja.
+                setResultados(prev => page === 1 ? res.data.contacts : [...prev, ...res.data.contacts]);
                 setTotal(res.data.total);
                 setPagina(page);
             })
