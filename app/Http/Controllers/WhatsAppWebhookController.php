@@ -770,6 +770,14 @@ class WhatsAppWebhookController extends Controller
 
         $conversation->update($conversationUpdate);
 
+        // «STOP», «BAJA», «no más mensajes»: se anota la petición y se cuenta en
+        // el hilo, pero la baja la confirma un agente. En Colombia «baja» es
+        // también dar de baja el servicio, y apuntarlo solo por la palabra
+        // significaría dejar de avisarle de su factura a quien no lo pidió.
+        if (!$isSystemNotice && ($messageData['type'] ?? null) === 'text') {
+            \App\Support\OptOutRequest::flag($conversation, $messageData['content'] ?? null);
+        }
+
         if (!$isSystemNotice) {
             $conversation->incrementUnread();
         }

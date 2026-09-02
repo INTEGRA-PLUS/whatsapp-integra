@@ -122,12 +122,28 @@ el chat y le siguen llegando los avisos del ERP.
 campaña sigue cuadrando con lo que se seleccionó y se ve cuánta gente quedó
 fuera. Si **todos** los seleccionados están dados de baja, la campaña no se crea.
 
-Se marca a mano desde Contactos (`POST /api/contacts/{id}/opt-out`).
+Se marca a mano desde Contactos (`POST /api/contacts/{id}/opt-out`), y también
+la sugiere el propio sistema.
+
+### La petición escrita por el cliente
+
+`App\Support\OptOutRequest` reconoce, en los mensajes entrantes, las frases que
+no admiten otra lectura siendo el mensaje **entero** («STOP», «BAJA», «no más
+mensajes», «no molestar»…). Cuando la ve, marca
+`whatsapp_conversations.opt_out_requested_at` y deja una pastilla en el hilo.
+
+**No aplica la baja.** En Colombia «baja» es también dar de baja el *servicio*:
+marcar por la palabra dejaría sin avisos de facturación a quien nunca lo pidió.
+La petición aparece en Contactos y la confirma una persona con el mensaje
+delante (`POST /api/contacts/opt-out-requests/{conversation}` con
+`apply=true|false`). Al confirmarla se crea la ficha del contacto si no existía,
+porque la baja vive en el contacto, que es lo que mira la campaña.
+
+Al ampliar la lista de frases, la prueba está en `OptOutRequestTest`: importa
+más lo que **no** debe reconocerse («quiero dar de baja mi servicio de
+internet») que lo que sí.
 
 ## Lo que falta
 
-- La baja hay que marcarla a mano. Detectar automáticamente un «BAJA» o un
-  «STOP» del cliente y marcarlo desde el webhook está por hacer, y es lo que
-  haría que la lista se mantenga sola.
 - Las etiquetas cuelgan de las conversaciones, no de los contactos, así que los
   segmentos por etiqueta solo funcionan sobre conversaciones.

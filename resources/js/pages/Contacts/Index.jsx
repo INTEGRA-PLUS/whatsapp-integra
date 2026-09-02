@@ -1,11 +1,11 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
-export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered }) {
+export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered, optOutRequests: initialOptOutRequests = [] }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
@@ -16,6 +16,7 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
     const [showCreate, setShowCreate] = useState(false);
     const [editing, setEditing] = useState(null);
     const [registering, setRegistering] = useState(null);
+    const [optOutRequests, setOptOutRequests] = useState(initialOptOutRequests ?? []);
 
     const filtered = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -48,6 +49,21 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
 
     function removeLocal(id) {
         setContacts(prev => prev.filter(c => c.id !== id));
+    }
+
+    /**
+     * Resuelve una petición de baja escrita por el cliente. La decide una
+     * persona con el mensaje delante: «baja» también puede referirse al
+     * servicio, y confundirlo dejaría a alguien sin sus avisos de facturación.
+     */
+    async function resolverPeticion(peticion, aplicar) {
+        try {
+            await axios.post(`/api/contacts/opt-out-requests/${peticion.conversation_id}`, { apply: aplicar });
+            setOptOutRequests(prev => prev.filter(p => p.conversation_id !== peticion.conversation_id));
+            if (aplicar) router.reload({ only: ['contacts'] });
+        } catch (err) {
+            alert(err?.response?.data?.message ?? 'No se pudo resolver la petición.');
+        }
     }
 
     /**
@@ -128,6 +144,46 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                         </Button>
                     )}
                 </div>
+
+                {optOutRequests.length > 0 && can('contacts.update') && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
+                        <div className="flex items-start gap-2">
+                            <BellOff className="size-4 mt-0.5 text-amber-700 dark:text-amber-400 shrink-0" />
+                            <div className="text-sm text-amber-900 dark:text-amber-100">
+                                <p className="font-medium">
+                                    {optOutRequests.length === 1
+                                        ? 'Un cliente pidió no recibir campañas'
+                                        : `${optOutRequests.length} clientes pidieron no recibir campañas`}
+                                </p>
+                                <p className="opacity-80">
+                                    Lo escribieron en el chat. Confírmalo si iba por las campañas, o descártalo si hablaba
+                                    de dar de baja su servicio: al excluirlo se le seguirá respondiendo y le seguirán
+                                    llegando los avisos de facturación.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            {optOutRequests.map(p => (
+                                <div key={p.conversation_id} className="flex flex-wrap items-center gap-3 rounded-lg bg-card border px-3 py-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-sm text-foreground truncate">
+                                            {p.name || p.phone_number}
+                                            <span className="text-muted-foreground font-mono text-xs ml-2">{p.phone_number}</span>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground truncate">«{p.message}»</div>
+                                    </div>
+                                    <Button size="sm" variant="outline" onClick={() => resolverPeticion(p, true)} className="gap-1.5">
+                                        <BellOff className="size-3.5" /> Excluir de campañas
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => resolverPeticion(p, false)}>
+                                        Descartar
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex items-center gap-1 border-b border-border">

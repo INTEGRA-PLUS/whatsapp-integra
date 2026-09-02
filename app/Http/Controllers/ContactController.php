@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\WhatsAppConversation;
+use App\Support\ConversationNotice;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -23,6 +24,7 @@ class ContactController extends Controller
         return Inertia::render('Contacts/Index', $this->sanitizeUtf8([
             'contacts' => $contacts->toArray(),
             'unregistered' => $this->unregisteredConversations($companyId)->toArray(),
+            'optOutRequests' => $this->optOutRequests($companyId)->toArray(),
             'filters' => ['search' => $request->search ?? ''],
         ]));
     }
@@ -163,6 +165,82 @@ class ContactController extends Controller
         $contact->delete();
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Clientes que escribieron pidiendo no recibir campañas y nadie ha resuelto
+     * todavía.
+     *
+     * La petición la detecta el webhook, pero **no** la aplica: en Colombia
+     * «baja» es también dar de baja el servicio, y confundir las dos cosas
+     * significaría dejar de avisarle de su factura a quien nunca lo pidió. Aquí
+     * es donde una persona decide, con el mensaje delante.
+     */
+    private function optOutRequests(int $companyId)
+    {
+        $instanceIds = \App\Models\Instance::where('company_id', $companyId)->pluck('id');
+
+        if ($instanceIds->isEmpty()) {
+            return collect();
+        }
+
+        return WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->whereNotNull('opt_out_requested_at')
+            ->orderByDesc('opt_out_requested_at')
+            ->limit(100)
+            ->get(['id', 'name', 'phone_number', 'last_message', 'opt_out_requested_at'])
+            ->map(fn ($c) => [
+                'conversation_id' => $c->id,
+                'name' => $c->name,
+                'phone_number' => $c->phone_number,
+                'message' => $c->last_message,
+                'requested_at' => $c->opt_out_requested_at?->toIso8601String(),
+            ]);
+    }
+
+    /**
+     * Resuelve una petición de baja: aplicarla o descartarla.
+     *
+     * Aplicarla crea el contacto si el número no tenía ficha —lo normal en quien
+     * escribe una sola vez— porque la baja se guarda en el contacto, que es lo
+     * que mira la campaña al armar la lista.
+     */
+    public function resolveOptOutRequest(Request $request, $conversationId)
+    {
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $aplicar = $request->boolean('apply');
+
+        if ($aplicar) {
+            $phone = WhatsAppConversation::normalizeRecipient((string) $conversation->phone_number);
+
+            $contact = Contact::firstOrNew([
+                'company_id' => $user->company_id,
+                'phone_number' => $phone,
+            ]);
+
+            $contact->name = $contact->name ?: ($conversation->name ?: $phone);
+            $contact->source = $contact->source ?: 'opt_out';
+            $contact->opted_out_at = now();
+            $contact->opt_out_source = 'client';
+            $contact->opted_out_by = $user->id;
+            $contact->save();
+
+            ConversationNotice::record(
+                $conversation,
+                "{$user->name} confirmó la baja de campañas de este cliente."
+            );
+        }
+
+        $conversation->forceFill(['opt_out_requested_at' => null])->save();
+
+        return response()->json(['success' => true, 'applied' => $aplicar]);
     }
 
     /**

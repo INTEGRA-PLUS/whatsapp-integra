@@ -33,6 +33,7 @@ class WhatsAppConversation extends Model
     protected $casts = [
         'last_message_at' => 'datetime',
         'closed_at' => 'datetime',
+        'opt_out_requested_at' => 'datetime',
         'metadata' => 'array',
     ];
 
