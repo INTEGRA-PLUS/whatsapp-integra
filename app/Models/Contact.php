@@ -22,11 +22,15 @@ class Contact extends Model
         'source',
         'identificacion',
         'external_id',
+        'opted_out_at',
+        'opt_out_source',
+        'opted_out_by',
     ];
 
     protected $casts = [
         'metadata' => 'array',
         'phone_numbers' => 'array',
+        'opted_out_at' => 'datetime',
     ];
 
     protected $appends = ['all_numbers'];
@@ -67,6 +71,20 @@ class Contact extends Model
     public function scopeForCompany($query, $companyId)
     {
         return $query->where('company_id', $companyId);
+    }
+
+    /**
+     * Quien pidió no recibir campañas. Es la baja de los envíos masivos, no del
+     * servicio: al cliente se le sigue respondiendo en el chat.
+     */
+    public function hasOptedOut(): bool
+    {
+        return $this->opted_out_at !== null;
+    }
+
+    public function scopeOptedOut($query)
+    {
+        return $query->whereNotNull('opted_out_at');
     }
 
     public function scopeSearch($query, $search)

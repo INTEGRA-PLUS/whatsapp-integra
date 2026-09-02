@@ -220,6 +220,98 @@ class CampaignWizardTest extends TestCase
         $this->assertSame(0, WhatsAppCampaign::count());
     }
 
+    /**
+     * Quien pidió no recibir campañas no recibe la campaña, y se ve que no la
+     * recibió: descartarlo en silencio dejaría un total que no cuadra con lo
+     * que se seleccionó.
+     */
+    public function test_un_contacto_dado_de_baja_queda_omitido(): void
+    {
+        $baja = Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Daniela',
+            'phone_number' => '573007852081',
+            'opted_out_at' => now(),
+            'opt_out_source' => 'manual',
+        ]);
+
+        $otro = Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Andrés',
+            'phone_number' => '573145550011',
+        ]);
+
+        $this->actingAs($this->user)
+            ->post('/campaigns', $this->payload([
+                'contact_ids' => [$baja->id, $otro->id],
+                'manual_recipients' => [],
+                'launch_now' => true,
+            ]))
+            ->assertRedirect();
+
+        $campaign = WhatsAppCampaign::first();
+
+        $this->assertSame('skipped', $campaign->recipients()->where('contact_id', $baja->id)->first()->status);
+        $this->assertStringContainsString(
+            'no recibir campañas',
+            $campaign->recipients()->where('contact_id', $baja->id)->first()->error_message
+        );
+
+        // Y al otro sí se le escribió.
+        $enviadas = collect(Http::recorded())
+            ->map(fn ($par) => $par[0]->data())
+            ->filter(fn ($data) => ($data['type'] ?? null) === 'template');
+
+        $this->assertCount(1, $enviadas);
+        $this->assertSame('573145550011', $enviadas->first()['to']);
+    }
+
+    public function test_si_todos_pidieron_la_baja_no_se_crea_la_campana(): void
+    {
+        $baja = Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Daniela',
+            'phone_number' => '573007852081',
+            'opted_out_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->post('/campaigns', $this->payload([
+                'contact_ids' => [$baja->id],
+                'manual_recipients' => [],
+            ]))
+            ->assertSessionHasErrors('recipients');
+
+        $this->assertSame(0, WhatsAppCampaign::count());
+    }
+
+    public function test_el_agente_puede_dar_de_baja_y_de_alta_a_un_contacto(): void
+    {
+        Permission::firstOrCreate(['name' => 'contacts.update', 'guard_name' => 'web']);
+        setPermissionsTeamId($this->company->id);
+        Role::where('name', 'admin')->where('company_id', $this->company->id)->first()
+            ->givePermissionTo('contacts.update');
+
+        $contact = Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Daniela',
+            'phone_number' => '573007852081',
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/contacts/{$contact->id}/opt-out", ['opted_out' => true])
+            ->assertOk();
+
+        $this->assertNotNull($contact->fresh()->opted_out_at);
+        $this->assertSame($this->user->id, $contact->fresh()->opted_out_by);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/contacts/{$contact->id}/opt-out", ['opted_out' => false])
+            ->assertOk();
+
+        $this->assertNull($contact->fresh()->opted_out_at);
+    }
+
     public function test_el_buscador_encuentra_contactos_del_crm(): void
     {
         Contact::create([

@@ -166,6 +166,32 @@ class ContactController extends Controller
     }
 
     /**
+     * Da de baja (o vuelve a dar de alta) a un contacto para las campañas.
+     *
+     * Es la baja de los envíos masivos, no del servicio: al cliente se le sigue
+     * respondiendo en el chat y le siguen llegando los avisos que dispara el
+     * ERP. Sin este interruptor no había dónde anotar un «no me manden más
+     * publicidad», y la campaña siguiente volvía a escribirle.
+     */
+    public function toggleOptOut(Request $request, Contact $contact)
+    {
+        $this->authorizeOwnership($contact);
+
+        $baja = $request->boolean('opted_out');
+
+        $contact->update([
+            'opted_out_at' => $baja ? now() : null,
+            'opt_out_source' => $baja ? ($request->input('source', 'manual')) : null,
+            'opted_out_by' => $baja ? auth()->id() : null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'opted_out_at' => $contact->opted_out_at?->toIso8601String(),
+        ]);
+    }
+
+    /**
      * Associate a conversation's phone number with an existing contact, or
      * create a brand new contact from the conversation and link it.
      */

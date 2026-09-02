@@ -111,10 +111,23 @@ Los segmentos (`whatsapp_campaign_segments`) guardan el **criterio**, no la list
 «los contactos con etiqueta morosos» debe significar quienes lo sean el día que se
 lance la campaña.
 
+## Baja de campañas (opt-out)
+
+`contacts.opted_out_at` marca a quien pidió no recibir campañas. Es la baja de
+los **envíos masivos**, no del servicio: al cliente se le sigue respondiendo en
+el chat y le siguen llegando los avisos del ERP.
+
+`resolveRecipients()` los cruza por teléfono normalizado y crea su fila como
+`skipped` con el motivo, en vez de descartarlos en silencio: así el total de la
+campaña sigue cuadrando con lo que se seleccionó y se ve cuánta gente quedó
+fuera. Si **todos** los seleccionados están dados de baja, la campaña no se crea.
+
+Se marca a mano desde Contactos (`POST /api/contacts/{id}/opt-out`).
+
 ## Lo que falta
 
-- No existe opt-out: si alguien pide no recibir campañas, hoy no hay dónde
-  anotarlo. El sitio natural es `contacts.opted_out_at` + filtro en
-  `resolveRecipients()` y un `skipped` explícito en el detalle.
+- La baja hay que marcarla a mano. Detectar automáticamente un «BAJA» o un
+  «STOP» del cliente y marcarlo desde el webhook está por hacer, y es lo que
+  haría que la lista se mantenga sola.
 - Las etiquetas cuelgan de las conversaciones, no de los contactos, así que los
   segmentos por etiqueta solo funcionan sobre conversaciones.

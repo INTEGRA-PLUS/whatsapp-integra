@@ -3,7 +3,7 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
 export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered }) {
     const { auth } = usePage().props;
@@ -48,6 +48,23 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
 
     function removeLocal(id) {
         setContacts(prev => prev.filter(c => c.id !== id));
+    }
+
+    /**
+     * Baja (o alta) de campañas. No borra nada ni cierra el chat: solo deja de
+     * incluirlo en los envíos masivos, que es lo que pide quien dice «no me
+     * manden más publicidad».
+     */
+    async function handleOptOut(contact) {
+        const baja = !contact.opted_out_at;
+        if (baja && !confirm(`¿Excluir a "${contact.name}" de las campañas? Se le podrá seguir respondiendo en el chat.`)) return;
+
+        try {
+            const res = await axios.post(`/api/contacts/${contact.id}/opt-out`, { opted_out: baja });
+            upsertLocal({ ...contact, opted_out_at: res.data.opted_out_at });
+        } catch (err) {
+            alert(err?.response?.data?.message ?? 'No se pudo cambiar la preferencia de campañas.');
+        }
     }
 
     async function handleDelete(contact) {
@@ -152,6 +169,7 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                         onCreate={() => setShowCreate(true)}
                         onEdit={setEditing}
                         onDelete={handleDelete}
+                        onOptOut={handleOptOut}
                     />
                 ) : (
                     <UnregisteredTab
@@ -202,7 +220,7 @@ function tabClass(active) {
     return `relative px-4 py-2.5 text-sm font-semibold transition-colors -mb-px border-b-2 ${active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`;
 }
 
-function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDelete }) {
+function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDelete, onOptOut }) {
     if (contacts.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
@@ -240,6 +258,14 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                             <td className="px-4 py-3 align-top font-medium text-foreground">
                                 <div className="flex items-center gap-2">
                                     <span>{contact.name}</span>
+                                    {contact.opted_out_at && (
+                                        <span
+                                            title="Pidió no recibir campañas. Se le puede seguir respondiendo en el chat."
+                                            className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                                        >
+                                            <BellOff className="size-3" /> Sin campañas
+                                        </span>
+                                    )}
                                     {contact.metadata?.integra_contactos && (
                                         <span
                                             title={`Visto en Contactos como "${contact.metadata.integra_contactos.nombre_api}"`}
@@ -274,6 +300,17 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                             </td>
                             <td className="px-4 py-3 align-top">
                                 <div className="flex justify-end gap-1">
+                                    {can('contacts.update') && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            title={contact.opted_out_at ? 'Volver a incluirlo en las campañas' : 'Excluirlo de las campañas'}
+                                            className={contact.opted_out_at ? 'text-amber-600' : ''}
+                                            onClick={() => onOptOut(contact)}
+                                        >
+                                            {contact.opted_out_at ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+                                        </Button>
+                                    )}
                                     {can('contacts.update') && (
                                         <Button variant="ghost" size="icon" onClick={() => onEdit(contact)}><Pencil className="size-4" /></Button>
                                     )}

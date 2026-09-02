@@ -194,7 +194,7 @@ const ESTADOS = [
     ['Entregado', 'Llegó al teléfono del cliente (el doble check gris).'],
     ['Leído', 'El cliente abrió la conversación (el doble check azul).'],
     ['Fallido', 'WhatsApp lo rechazó. El motivo aparece en la misma fila, explicado.'],
-    ['Omitido', 'La campaña se canceló antes de llegar a este destinatario.'],
+    ['Omitido', 'No se le envió a propósito: pidió no recibir campañas, o se canceló el envío antes de llegarle.'],
 ];
 
 function TabEstados() {
@@ -299,6 +299,16 @@ function TabDetalles() {
                 <p className="text-muted-foreground">
                     La campaña no se manda de golpe: se escalona según la velocidad que elijas (60 mensajes por minuto por
                     defecto). Si Meta empieza a rechazar por exceso, pausa y baja el ritmo.
+                </p>
+            </Section>
+
+            <Section title="Quien pide no recibir campañas">
+                <p className="text-muted-foreground">
+                    En <Field>Contactos</Field> cada ficha tiene un interruptor para excluirla de las campañas. Es la baja de
+                    los envíos masivos, no del servicio: al cliente se le sigue respondiendo en el chat y le siguen llegando
+                    los avisos que dispara el ERP (facturas, cortes, soportes). Si aun así lo seleccionas en una campaña,
+                    aparecerá como <Field>omitido</Field> en el detalle, para que se vea cuánta gente quedó fuera y por qué.
+                    Respetarlo no es solo cortesía: cada reporte de un cliente molesto baja la calidad de la línea.
                 </p>
             </Section>
 

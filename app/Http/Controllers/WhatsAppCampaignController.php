@@ -160,6 +160,12 @@ class WhatsAppCampaignController extends Controller
             return back()->withErrors(['recipients' => 'No se encontraron destinatarios válidos.']);
         }
 
+        if (collect($recipients)->every(fn ($r) => !empty($r['opted_out']))) {
+            return back()->withErrors([
+                'recipients' => 'Todos los destinatarios seleccionados pidieron no recibir campañas.',
+            ]);
+        }
+
         // Misma puerta que usan el chat y el ERP: si el encabezado o el número de
         // datos no cuadran con la plantilla aprobada, se dice ahora y no después
         // de cientos de envíos silenciosamente rechazados.
@@ -224,7 +230,10 @@ class WhatsAppCampaignController extends Controller
                 'phone_number' => $r['phone_number'],
                 'name' => $r['name'],
                 'variables' => json_encode($r['variables'], JSON_UNESCAPED_UNICODE),
-                'status' => 'pending',
+                'status' => empty($r['opted_out']) ? 'pending' : 'skipped',
+                'error_message' => empty($r['opted_out'])
+                    ? null
+                    : 'Este contacto pidió no recibir campañas.',
                 'created_at' => $now,
                 'updated_at' => $now,
             ], $recipients);
@@ -738,7 +747,18 @@ class WhatsAppCampaignController extends Controller
         $seen = [];
         $out = [];
 
-        $push = function (?string $raw, ?string $name, ?int $contactId, ?int $conversationId, array $variables = []) use (&$seen, &$out) {
+        // Quien pidió no recibir campañas no entra. No se descarta en silencio:
+        // se guarda como omitido para que en el detalle se vea cuánta gente se
+        // quedó fuera y por qué, en vez de un número de destinatarios que no
+        // cuadra con lo que se seleccionó.
+        $bajas = Contact::where('company_id', $companyId)
+            ->optedOut()
+            ->pluck('phone_number')
+            ->map(fn ($p) => WhatsAppConversation::normalizeRecipient((string) $p))
+            ->filter()
+            ->flip();
+
+        $push = function (?string $raw, ?string $name, ?int $contactId, ?int $conversationId, array $variables = []) use (&$seen, &$out, $bajas) {
             $phone = WhatsAppConversation::normalizeRecipient((string) $raw);
 
             if ($phone === '' || isset($seen[$phone])) {
@@ -756,6 +776,7 @@ class WhatsAppCampaignController extends Controller
                 'contact_id' => $contactId,
                 'conversation_id' => $conversationId,
                 'variables' => $variables,
+                'opted_out' => $bajas->has($phone),
             ];
         };
 

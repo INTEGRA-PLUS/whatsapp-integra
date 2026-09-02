@@ -452,6 +452,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/', [App\Http\Controllers\ContactController::class, 'store'])->middleware('permission:contacts.create');
         Route::put('/{contact}', [App\Http\Controllers\ContactController::class, 'update'])->middleware('permission:contacts.update');
         Route::delete('/{contact}', [App\Http\Controllers\ContactController::class, 'destroy'])->middleware('permission:contacts.delete');
+        Route::post('/{contact}/opt-out', [App\Http\Controllers\ContactController::class, 'toggleOptOut'])
+            ->middleware('permission:contacts.update')->name('contacts.opt-out');
     });
 
     // Kanban API routes

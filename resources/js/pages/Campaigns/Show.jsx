@@ -18,6 +18,7 @@ const FILTROS = [
     { key: 'sent', label: 'Enviados' },
     { key: 'failed', label: 'Fallidos' },
     { key: 'pending', label: 'Pendientes' },
+    { key: 'skipped', label: 'Omitidos' },
 ];
 
 export default function CampaignsShow({ campaign: campaignInicial, recipients: recipientsIniciales }) {
@@ -183,7 +184,9 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                                             </span>
                                         </td>
                                         <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-md">
-                                            {r.status === 'failed' ? (
+                                            {r.status === 'skipped' ? (
+                                                <span className="text-amber-600 dark:text-amber-400">{r.reason_detail}</span>
+                                            ) : r.status === 'failed' ? (
                                                 <>
                                                     <div className="text-red-600 dark:text-red-400">{r.reason}</div>
                                                     {r.reason_detail && <div className="opacity-70 line-clamp-2">{r.reason_detail}</div>}
