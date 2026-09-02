@@ -530,6 +530,35 @@ class MetaWhatsAppService
         }
     }
 
+    /**
+     * Ficha de un media de Meta sin descargarlo: mime, tamaño y url temporal.
+     *
+     * `downloadMedia()` se trae el archivo entero a S3, que es carísimo cuando lo
+     * único que se quiere saber es si el id sigue vivo y de qué tipo es —el caso
+     * de validar el encabezado de una plantilla antes de enviarla.
+     */
+    public function mediaInfo(string $mediaId, string $accessToken): ?array
+    {
+        try {
+            $response = Http::withToken($accessToken)
+                ->timeout(15)
+                ->get("{$this->baseUri}/{$mediaId}");
+
+            if (!$response->successful()) {
+                return null;
+            }
+
+            return [
+                'mime_type' => $response->json('mime_type'),
+                'file_size' => (int) $response->json('file_size'),
+                'url'       => $response->json('url'),
+            ];
+        } catch (\Exception $e) {
+            Log::warning('WhatsApp mediaInfo exception', ['media_id' => $mediaId, 'message' => $e->getMessage()]);
+            return null;
+        }
+    }
+
     private function getExtensionFromMime(string $mimeType): string
     {
         $mimeMap = [

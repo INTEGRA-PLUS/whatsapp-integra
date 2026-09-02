@@ -33,8 +33,22 @@ class RunScheduledCampaigns extends Command
         foreach ($due as $campaign) {
             try {
                 DB::transaction(function () use ($campaign) {
+                    // Una recurrente vuelve a empezar de cero cada vez: se limpian
+                    // también los acuses del envío anterior, que si no quedarían
+                    // mezclados con los de esta vuelta.
                     WhatsAppCampaignRecipient::where('campaign_id', $campaign->id)
-                        ->update(['status' => 'pending', 'wamid' => null, 'error_message' => null, 'sent_at' => null, 'updated_at' => now()]);
+                        ->update([
+                            'status' => 'pending',
+                            'wamid' => null,
+                            'error_message' => null,
+                            'error_code' => null,
+                            'error_details' => null,
+                            'sent_at' => null,
+                            'delivered_at' => null,
+                            'read_at' => null,
+                            'message_id' => null,
+                            'updated_at' => now(),
+                        ]);
 
                     $campaign->update([
                         'status' => 'queued',

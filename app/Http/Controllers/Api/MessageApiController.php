@@ -10,6 +10,7 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
+use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFallbackTemplateService;
 use Carbon\Carbon;
 
@@ -19,7 +20,8 @@ class MessageApiController extends Controller
 
     public function __construct(
         MetaWhatsAppService $metaService,
-        private WhatsAppFallbackTemplateService $fallbackTemplates
+        private WhatsAppFallbackTemplateService $fallbackTemplates,
+        private TemplateParameterGuard $templateGuard
     ) {
         $this->metaService = $metaService;
     }
@@ -304,6 +306,30 @@ class MessageApiController extends Controller
                 'last_message_at' => now()
             ]
         );
+
+        // Guardarraíl: un encabezado que Meta no pueda resolver se acepta con un
+        // 200 y muere después por webhook, así que quien llama nunca se entera de
+        // que el aviso no llegó. Aquí se entera ahora, con el motivo concreto.
+        $guard = $this->templateGuard->check($instance, $templateName, $languageCode, $components);
+
+        if (!$guard['ok']) {
+            Log::channel('whatsapp')->warning('⛔ Plantilla rechazada antes de llegar a Meta', [
+                'company_id'   => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template'     => $templateName,
+                'guard_code'   => $guard['code'],
+                'guard_error'  => $guard['error'],
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'code'    => TemplateParameterGuard::CODE,
+                'reason'  => $guard['code'],
+                'error'   => $guard['error'],
+            ], 422);
+        }
+
+        $components = $guard['components'];
 
         $result = $this->metaService->sendTemplate(
             $instance->phone_number_id,
@@ -719,12 +745,33 @@ class MessageApiController extends Controller
             'language' => $fallback['language'],
         ]);
 
+        $guard = $this->templateGuard->check(
+            $instance,
+            $fallback['name'],
+            $fallback['language'],
+            $fallback['components']
+        );
+
+        if (!$guard['ok']) {
+            Log::channel('whatsapp')->error('❌ La plantilla de respaldo no cuadra con su definición en Meta', [
+                'company_id'  => $instance->company_id,
+                'template'    => $fallback['name'],
+                'guard_error' => $guard['error'],
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'code'    => 'fallback_template_failed',
+                'error'   => $guard['error'],
+            ], 500);
+        }
+
         $result = $this->metaService->sendTemplate(
             $instance->phone_number_id,
             $to,
             $fallback['name'],
             $fallback['language'],
-            $fallback['components']
+            $guard['components']
         );
 
         if (!($result['success'] ?? false)) {

@@ -69,6 +69,19 @@ class DeliverWhatsAppMessage implements ShouldQueue
                 );
                 return;
             }
+
+            // Un encabezado que Meta no sabe resolver se acepta con 200 y se
+            // rechaza después por webhook, cuando ya nadie mira. El motivo real
+            // se escribe aquí, en la propia burbuja, antes de gastar el envío.
+            $guard = app(\App\Services\TemplateParameterGuard::class)
+                ->check($instance, $template['name'], $template['language'], $template['components']);
+
+            if (! $guard['ok']) {
+                $this->markFailed($message, $guard['error'], null, $guard['code']);
+                return;
+            }
+
+            $template['components'] = $guard['components'];
         }
 
         $result = match ($message->type) {

@@ -274,11 +274,14 @@ class FallbackTemplateTest extends TestCase
 
         // Una consulta al Graph por aviso agotaría el rate limit del tenant en
         // cuanto la facturación mensual dispare unos miles de avisos de golpe.
+        // Son dos lecturas del catálogo y no una porque el guardarraíl de
+        // parámetros (TemplateParameterGuard) también lo lee antes de enviar;
+        // las dos están cacheadas, así que el número no crece con los avisos.
         $consultas = collect(Http::recorded())
             ->filter(fn ($par) => $par[0]->method() === 'GET' && str_contains($par[0]->url(), '/message_templates'))
             ->count();
 
-        $this->assertSame(1, $consultas);
+        $this->assertSame(2, $consultas);
         $this->assertCount(3, WhatsAppMessage::where('direction', 'outbound')->get());
     }
 

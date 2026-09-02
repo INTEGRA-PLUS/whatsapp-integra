@@ -4,6 +4,15 @@ import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import axios from 'axios';
 import { clsx } from 'clsx';
+import {
+    templateBodyComponent,
+    templateHeaderFormat,
+    buildTemplateHeaderComponent,
+    countTemplateVars,
+    fillTemplate,
+    HEADER_MEDIA_ACCEPT,
+    HEADER_MEDIA_LABEL,
+} from '@/lib/templates';
 import { 
     Search, 
     Send, 
@@ -115,25 +124,8 @@ function escapeRegExp(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ── Helpers de plantillas de WhatsApp ────────────────────────────────────────
-function templateBodyComponent(t) {
-    return (t?.components || []).find(c => c.type === 'BODY');
-}
-
-// Formato del encabezado multimedia de la plantilla (IMAGE/VIDEO/DOCUMENT/LOCATION)
-// o null si no tiene encabezado o es de texto.
-function templateHeaderFormat(t) {
-    const h = (t?.components || []).find(c => c.type === 'HEADER');
-    const f = (h?.format || '').toUpperCase();
-    return ['IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'].includes(f) ? f : null;
-}
-
-const HEADER_MEDIA_ACCEPT = {
-    IMAGE: 'image/jpeg,image/png',
-    VIDEO: 'video/mp4,video/3gpp',
-    DOCUMENT: 'application/pdf',
-};
-const HEADER_MEDIA_LABEL = { IMAGE: 'Imagen', VIDEO: 'Video', DOCUMENT: 'Documento', LOCATION: 'Ubicación' };
+// Los helpers de plantillas viven en @/lib/templates.js: el asistente de
+// campañas construye exactamente el mismo payload y no debe divergir de aquí.
 
 // Adjuntos del composer. La lista debe coincidir con la validación de
 // ChatController::sendDocument (regla `extensions`), y el tope de 30 MB con
@@ -190,23 +182,6 @@ async function normalizeImageForUpload(file) {
         }
     }
     return null;
-}
-
-// Construye el componente header para el envío. Para IMAGE/VIDEO/DOCUMENT se usa
-// el media_id que Meta devuelve al subir el archivo a /{phone_number_id}/media.
-function buildTemplateHeaderComponent(h) {
-    if (!h) return null;
-    if (h.format === 'LOCATION') {
-        const location = { latitude: String(h.lat ?? ''), longitude: String(h.lng ?? '') };
-        if (h.name?.trim()) location.name = h.name.trim();
-        if (h.address?.trim()) location.address = h.address.trim();
-        return { type: 'header', parameters: [{ type: 'location', location }] };
-    }
-    if (!h.mediaId) return null;
-    const kind = h.format.toLowerCase(); // image | video | document
-    const media = { id: h.mediaId };
-    if (h.format === 'DOCUMENT') media.filename = h.filename || 'documento.pdf';
-    return { type: 'header', parameters: [{ type: kind, [kind]: media }] };
 }
 
 // ── Adjuntos ─────────────────────────────────────────────────────────────────
@@ -321,18 +296,6 @@ function DocumentAttachment({ msg, label, className = '' }) {
             )}
         </div>
     );
-}
-
-// Número de variables distintas {{n}} en el cuerpo de la plantilla.
-function countTemplateVars(text) {
-    const matches = (text || '').match(/{{\s*\d+\s*}}/g);
-    if (!matches) return 0;
-    return new Set(matches.map(x => x.replace(/\D/g, ''))).size;
-}
-
-// Reemplaza {{n}} por los valores escritos para construir la vista previa.
-function fillTemplate(text, vars) {
-    return (text || '').replace(/{{\s*(\d+)\s*}}/g, (_, n) => vars[Number(n) - 1] || `{{${n}}}`);
 }
 
 // Detecta si el agente terminó de escribir el disparador de una integración

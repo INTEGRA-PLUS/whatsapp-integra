@@ -1168,10 +1168,6 @@ class WhatsAppWebhookController extends Controller
 
         $message = WhatsAppMessage::where('wamid', $wamid)->first();
 
-        if (!$message) {
-            return;
-        }
-
         $updateData = ['status' => $newStatus];
 
         if ($newStatus === 'delivered') {
@@ -1203,6 +1199,16 @@ class WhatsAppWebhookController extends Controller
             ]);
         }
 
+        // El destinatario de campaña se actualiza aunque no exista la burbuja: los
+        // envíos anteriores a que las campañas escribieran en el chat solo dejaron
+        // el wamid en la fila del destinatario, y sin esto su estado se quedaba
+        // congelado en "enviado" para siempre.
+        $this->updateCampaignRecipientStatus($wamid, $newStatus, $updateData);
+
+        if (!$message) {
+            return;
+        }
+
         $message->update($updateData);
 
         // Tiempo real: refleja el check (enviado/entregado/leído/fallido) en la UI.
@@ -1212,5 +1218,46 @@ class WhatsAppWebhookController extends Controller
             'wamid' => $wamid,
             'status' => $newStatus
         ]);
+    }
+
+    /**
+     * Lleva el acuse de Meta a la fila del destinatario de la campaña.
+     *
+     * Sin esto una campaña reporta "enviada" y nada más: entregado, leído y
+     * fallido son justo lo que hay que mirar después de un envío masivo, y esa
+     * información llega siempre por webhook, nunca en la respuesta del envío.
+     */
+    private function updateCampaignRecipientStatus(string $wamid, string $newStatus, array $messageUpdate): void
+    {
+        $recipient = \App\Models\WhatsAppCampaignRecipient::where('wamid', $wamid)->first();
+
+        if (!$recipient) {
+            return;
+        }
+
+        // Un acuse viejo no debe pisar a uno más avanzado: Meta no garantiza el
+        // orden, y "delivered" llegando después de "read" borraría la lectura.
+        $rank = ['pending' => 0, 'sending' => 1, 'sent' => 2, 'delivered' => 3, 'read' => 4];
+        if (($rank[$newStatus] ?? 0) > 0
+            && ($rank[$newStatus] ?? 0) <= ($rank[$recipient->status] ?? 0)
+            && $newStatus !== 'failed') {
+            return;
+        }
+
+        $update = ['status' => $newStatus];
+
+        if ($newStatus === 'delivered') {
+            $update['delivered_at'] = now();
+        } elseif ($newStatus === 'read') {
+            $update['read_at'] = now();
+            $update['delivered_at'] = $recipient->delivered_at ?: now();
+        } elseif ($newStatus === 'failed') {
+            $update['error_message'] = $messageUpdate['error_message'] ?? null;
+            $update['error_code'] = $messageUpdate['error_code'] ?? null;
+            $update['error_details'] = $messageUpdate['error_details'] ?? null;
+        }
+
+        $recipient->update($update);
+        $recipient->campaign?->refreshCounters();
     }
 }

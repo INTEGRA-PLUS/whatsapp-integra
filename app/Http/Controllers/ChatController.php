@@ -26,8 +26,10 @@ class ChatController extends Controller
 {
     private $metaService;
 
-    public function __construct(MetaWhatsAppService $metaService)
-    {
+    public function __construct(
+        MetaWhatsAppService $metaService,
+        private \App\Services\TemplateParameterGuard $templateGuard
+    ) {
         // $this->middleware('auth'); // Middleware is usually applied in routes in Laravel 11
         $this->metaService = $metaService;
     }
@@ -464,6 +466,21 @@ class ChatController extends Controller
         $components   = $request->components ?? [];
 
         $preview = $request->preview ?: "[Plantilla: {$templateName}]";
+
+        // Antes de crear la burbuja: si el encabezado o los datos no cuadran con
+        // la plantilla aprobada, el agente lo sabe ahora y no dentro de diez
+        // minutos por un acuse de fallo.
+        $guard = $this->templateGuard->check($instance, $templateName, $languageCode, $components);
+
+        if (!$guard['ok']) {
+            return response()->json([
+                'success' => false,
+                'code'    => \App\Services\TemplateParameterGuard::CODE,
+                'error'   => $guard['error'],
+            ], 422);
+        }
+
+        $components = $guard['components'];
 
         // La llamada a Meta y la descarga de la copia S3 del header multimedia se
         // hacen en DeliverWhatsAppMessage (cola). Aquí solo persistimos "pending".

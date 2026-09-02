@@ -166,7 +166,27 @@ export function WhatsAppPreview({ model, verifiedName, empty }) {
                             style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
                         />
 
-                        {hasHeader && model.header.mediaFormat && (
+                        {/* Con el archivo ya elegido se enseña el archivo, no la
+                            palabra "[IMAGE]": ver la foto real antes de mandarla a
+                            mil personas es justo lo que evita el susto. */}
+                        {hasHeader && model.header.mediaFormat && model.header.mediaUrl && (
+                            model.header.mediaFormat === 'IMAGE' ? (
+                                <img
+                                    src={model.header.mediaUrl}
+                                    alt=""
+                                    className="mb-2 rounded-md w-full max-h-56 object-cover"
+                                />
+                            ) : model.header.mediaFormat === 'VIDEO' ? (
+                                <video src={model.header.mediaUrl} className="mb-2 rounded-md w-full max-h-56" controls />
+                            ) : (
+                                <div className="mb-2 rounded-md bg-black/5 dark:bg-white/5 px-3 py-3 text-[12px] flex items-center gap-2">
+                                    <span className="text-lg">📄</span>
+                                    <span className="truncate">{model.header.filename || 'Documento adjunto'}</span>
+                                </div>
+                            )
+                        )}
+
+                        {hasHeader && model.header.mediaFormat && !model.header.mediaUrl && (
                             <div className="mb-2 rounded-md bg-black/5 dark:bg-white/5 py-6 text-center text-[11px] text-muted-foreground">
                                 [{model.header.mediaFormat}]
                             </div>

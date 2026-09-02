@@ -175,16 +175,42 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:reports.view')->name('reports.index');
 
     Route::prefix('campaigns')->name('campaigns.')->group(function () {
+        // Las rutas fijas van antes que /{campaign}: si no, "create" se toma por
+        // el id de una campaña y la página del asistente devuelve un 404.
         Route::get('/contacts/search', [App\Http\Controllers\WhatsAppCampaignController::class, 'searchContacts'])
             ->middleware('permission:campaigns.view')->name('contacts.search');
+        Route::get('/contacts/resolve', [App\Http\Controllers\WhatsAppCampaignController::class, 'resolveSelection'])
+            ->middleware('permission:campaigns.view')->name('contacts.resolve');
+        Route::get('/templates', [App\Http\Controllers\WhatsAppCampaignController::class, 'templates'])
+            ->middleware('permission:campaigns.view')->name('templates');
+        Route::post('/template-media', [App\Http\Controllers\WhatsAppCampaignController::class, 'uploadTemplateMedia'])
+            ->middleware('permission:campaigns.create')->name('template-media');
+        Route::post('/segments', [App\Http\Controllers\WhatsAppCampaignController::class, 'storeSegment'])
+            ->middleware('permission:campaigns.create')->name('segments.store');
+        Route::delete('/segments/{segment}', [App\Http\Controllers\WhatsAppCampaignController::class, 'destroySegment'])
+            ->middleware('permission:campaigns.create')->name('segments.destroy');
+        Route::get('/create', [App\Http\Controllers\WhatsAppCampaignController::class, 'create'])
+            ->middleware('permission:campaigns.create')->name('create');
         Route::get('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'index'])
             ->middleware('permission:campaigns.view')->name('index');
         Route::get('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'show'])
             ->middleware('permission:campaigns.view')->name('show');
+        Route::get('/{campaign}/progress', [App\Http\Controllers\WhatsAppCampaignController::class, 'progress'])
+            ->middleware('permission:campaigns.view')->name('progress');
+        Route::get('/{campaign}/export', [App\Http\Controllers\WhatsAppCampaignController::class, 'export'])
+            ->middleware('permission:campaigns.view')->name('export');
         Route::post('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'store'])
             ->middleware('permission:campaigns.create')->name('store');
         Route::post('/{campaign}/send', [App\Http\Controllers\WhatsAppCampaignController::class, 'send'])
             ->middleware('permission:campaigns.update')->name('send');
+        Route::post('/{campaign}/pause', [App\Http\Controllers\WhatsAppCampaignController::class, 'pause'])
+            ->middleware('permission:campaigns.update')->name('pause');
+        Route::post('/{campaign}/resume', [App\Http\Controllers\WhatsAppCampaignController::class, 'resume'])
+            ->middleware('permission:campaigns.update')->name('resume');
+        Route::post('/{campaign}/cancel', [App\Http\Controllers\WhatsAppCampaignController::class, 'cancel'])
+            ->middleware('permission:campaigns.update')->name('cancel');
+        Route::post('/{campaign}/retry-failed', [App\Http\Controllers\WhatsAppCampaignController::class, 'retryFailed'])
+            ->middleware('permission:campaigns.update')->name('retry-failed');
         Route::delete('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'destroy'])
             ->middleware('permission:campaigns.delete')->name('destroy');
     });
