@@ -706,6 +706,48 @@ function formatCOP(value) {
     return '$' + Number(value).toLocaleString('es-CO');
 }
 
+/**
+ * Resultado de la emisión electrónica que acompaña al pago, cuando la empresa
+ * activó "Emitir a la DIAN al registrar el pago" en la integración.
+ *
+ * Lo normal es `en_proceso`: Integra convierte la factura al momento (por eso
+ * ya trae número) pero la emisión real la hace su cron, así que el CUFE llega
+ * después. Los otros tres estados son informativos y ninguno significa que el
+ * pago haya fallado — el pago siempre queda registrado.
+ *
+ * El número importa y se muestra siempre: al convertirse, la factura deja de
+ * ser EST-xxxx y pasa a FVE-xxxx, así que el consecutivo que el cliente va a
+ * ver en su correo NO es el que el agente tenía en pantalla al cobrar.
+ */
+function ElectronicInvoiceNotice({ fe }) {
+    if (!fe) return null;
+
+    const STATES = {
+        emitida:    { cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', label: 'Factura electrónica emitida a la DIAN' },
+        en_proceso: { cls: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400',                 label: 'Factura electrónica en camino a la DIAN' },
+        rechazada:  { cls: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400',                 label: 'La DIAN rechazó la factura electrónica' },
+        no_aplica:  { cls: 'border-border/70 bg-muted/40 text-muted-foreground',                             label: 'No se emitió factura electrónica' },
+    };
+    const state = STATES[fe.estado] ?? STATES.no_aplica;
+
+    return (
+        <div className={`rounded-xl border px-3.5 py-3 text-left text-xs space-y-1 ${state.cls}`}>
+            <p className="font-semibold">{state.label}</p>
+            {fe.numero && (
+                <p className="opacity-90">
+                    Número: <span className="font-mono font-semibold">{fe.numero}</span>
+                    <span className="opacity-75"> · es el que verá el cliente, ya no el anterior</span>
+                </p>
+            )}
+            {fe.cufe && <p className="font-mono text-[10px] break-all opacity-75">CUFE: {fe.cufe}</p>}
+            {fe.estado === 'en_proceso' && (
+                <p className="opacity-90">Se emite en los próximos minutos. El pago ya quedó registrado.</p>
+            )}
+            {fe.motivo && <p className="opacity-90">{fe.motivo}</p>}
+        </div>
+    );
+}
+
 function PaymentModal({ integration, conversation, onClose }) {
     const initialPhone = normalizePhoneForIntegra(conversation?.phone_number);
 
@@ -904,6 +946,8 @@ function PaymentModal({ integration, conversation, onClose }) {
                                 </p>
                             )}
                         </div>
+
+                        <ElectronicInvoiceNotice fe={success.factura_electronica} />
                         <div className="flex gap-2">
                             <button onClick={() => backToInvoices({ refresh: true })} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                 Registrar otro pago

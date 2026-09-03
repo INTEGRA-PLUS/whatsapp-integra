@@ -31,7 +31,9 @@ use Illuminate\Support\Facades\Log;
  *        contacto trae total_por_pagar y sus facturas_pendientes resumidas
  *   GET  /api/v1/facturas/pendientes?nit=|cliente_id= (facturas.leer)
  *   GET  /api/v1/pagos/catalogos                      (pagos.leer)
- *   POST /api/v1/facturas/{factura}/pagos             (pagos.registrar)
+ *   POST /api/v1/facturas/{factura}/pagos             (pagos.registrar; + facturas.emitir
+ *        si el pago lleva emitir_electronica, que convierte la factura a
+ *        electrónica y la emite a la DIAN)
  *        body: { cuenta, metodo_pago, monto, fecha?, observaciones?,
  *                comprobante_pago?, forma_pago? }
  *   GET  /api/v1/radicados/catalogos                  (radicados.leer)
@@ -75,6 +77,27 @@ class IntegraClient
         'radicados.crear',
         'contratos.leer',
         'contratos.prorroga',
+    ];
+
+    /**
+     * Scopes que pedimos si el entorno los conoce, y de los que prescindimos si
+     * no.
+     *
+     * `facturas.emitir` es nuevo en Integra: autoriza convertir la factura a
+     * electrónica y emitirla a la DIAN al registrar el pago. Va aparte porque
+     * cada empresa conecta con SU propio entorno Integra y no todos corren la
+     * misma versión: pedirlo dentro de ABILITIES rompería el asistente de
+     * conexión —entero, no sólo la emisión— en cualquier entorno que valide
+     * las abilities contra una lista blanca que aún no lo incluye.
+     *
+     * connectWithLogin los pide primero y reintenta sin ellos si el entorno
+     * los rechaza, así que una empresa atrasada conecta igual y simplemente se
+     * queda sin la casilla de emisión hasta que actualice.
+     */
+    public const ABILITY_EMIT = 'facturas.emitir';
+
+    public const ABILITIES_OPTIONAL = [
+        self::ABILITY_EMIT,
     ];
 
     protected string $baseUrl;
@@ -133,7 +156,8 @@ class IntegraClient
      * email + contraseña por un token itg_ recién emitido (POST /api/v1/tokens,
      * scopes del flujo de pagos) sondeando los mismos prefijos que probeBase.
      *
-     * @return array{0: self, 1: string} cliente apuntando a la base que funcionó + token en claro.
+     * @return array{0: self, 1: string, 2: string[]} cliente apuntando a la base que funcionó,
+     *         token en claro y los scopes que el entorno concedió.
      * @throws \RuntimeException con mensaje apto para UI (401 credenciales, 422 validación,
      *                           CODE_ENDPOINT_MISSING si el entorno no expone /tokens).
      */
@@ -142,16 +166,19 @@ class IntegraClient
         $lastError = null;
 
         foreach (self::baseCandidates($inputUrl) as $candidate) {
+            $requested = array_merge(self::ABILITIES, self::ABILITIES_OPTIONAL);
+
             try {
-                $res = Http::baseUrl($candidate)
-                    ->acceptJson()
-                    ->timeout(20)
-                    ->post('/api/v1/tokens', [
-                        'email'     => $email,
-                        'password'  => $password,
-                        'nombre'    => 'wpp-integraciones',
-                        'abilities' => self::ABILITIES,
-                    ]);
+                $res = self::issueToken($candidate, $email, $password, $requested);
+
+                // El entorno no conoce alguno de los scopes opcionales: se
+                // reintenta sin ellos antes de dar la conexión por perdida.
+                // Perder la emisión electrónica es aceptable; perder la
+                // conexión entera por un scope que no existe, no.
+                if (self::rejectedAbilities($res)) {
+                    $requested = self::ABILITIES;
+                    $res = self::issueToken($candidate, $email, $password, $requested);
+                }
             } catch (\Throwable $e) {
                 Log::warning('Integra: error de red al emitir token', ['base' => $candidate, 'msg' => $e->getMessage()]);
                 $lastError = new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL del entorno.', 0);
@@ -160,7 +187,11 @@ class IntegraClient
 
             $token = $res->json('data.token');
             if ($res->successful() && $res->json('success') === true && $token) {
-                return [new self($candidate, $token), $token];
+                // Si Integra dice qué scopes concedió, esa es la verdad; si no
+                // la dice, lo pedido es la mejor aproximación que tenemos.
+                $granted = $res->json('data.abilities') ?: $requested;
+
+                return [new self($candidate, $token), $token, array_values((array) $granted)];
             }
 
             // Credenciales malas o validación: el envelope trae el mensaje y
@@ -176,6 +207,39 @@ class IntegraClient
         }
 
         throw $lastError ?? new \RuntimeException('No se pudo conectar con el entorno Integra.');
+    }
+
+    /** Una sola petición de emisión de token, con los scopes indicados. */
+    protected static function issueToken(string $base, string $email, string $password, array $abilities): Response
+    {
+        return Http::baseUrl($base)
+            ->acceptJson()
+            ->timeout(20)
+            ->post('/api/v1/tokens', [
+                'email'     => $email,
+                'password'  => $password,
+                'nombre'    => 'wpp-integraciones',
+                'abilities' => $abilities,
+            ]);
+    }
+
+    /**
+     * ¿El 422 fue por las abilities y no por las credenciales?
+     *
+     * Se mira el detalle de validación y no sólo el código, porque una
+     * contraseña equivocada también responde 422 y reintentar con menos
+     * scopes no la va a arreglar: sólo cambiaría el mensaje que ve el usuario
+     * por uno igual de inútil, después de un viaje de más.
+     */
+    protected static function rejectedAbilities(Response $res): bool
+    {
+        if ($res->status() !== 422) {
+            return false;
+        }
+
+        $fields = array_keys((array) $res->json('errors'));
+
+        return (bool) array_filter($fields, fn ($f) => str_starts_with((string) $f, 'abilities'));
     }
 
     /**

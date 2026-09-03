@@ -39,9 +39,11 @@ class CompanyIntegration extends Model
         'access_token',
         'token_expires_at',
         'account',
+        'abilities',
         'enabled',
         'trigger_type',
         'trigger_command',
+        'emit_electronic_invoice',
         'last_error',
         'connected_at',
         'last_synced_at',
@@ -50,7 +52,9 @@ class CompanyIntegration extends Model
 
     protected $casts = [
         'account'          => 'array',
+        'abilities'        => 'array',
         'enabled'          => 'boolean',
+        'emit_electronic_invoice' => 'boolean',
         'access_token'     => 'encrypted',
         'token_expires_at' => 'datetime',
         'connected_at'     => 'datetime',
@@ -99,6 +103,22 @@ class CompanyIntegration extends Model
     public function tokenExpired(): bool
     {
         return $this->token_expires_at !== null && $this->token_expires_at->isPast();
+    }
+
+    /**
+     * ¿El token de esta empresa autoriza emitir la factura a la DIAN?
+     *
+     * Devuelve null —y no false— cuando no lo sabemos: token pegado a mano, o
+     * empresa conectada antes de que empezáramos a guardar los scopes. La
+     * diferencia importa: ante "no sabemos" se avisa y se deja intentar, y es
+     * Integra quien decide; ante un "no" cierto se bloquea el interruptor,
+     * porque encenderlo no haría absolutamente nada.
+     */
+    public function grantsEmission(): ?bool
+    {
+        return $this->abilities === null
+            ? null
+            : in_array(IntegraClient::ABILITY_EMIT, $this->abilities, true);
     }
 
     /** Prefijo del disparador para el chat: '/' o '@'. */

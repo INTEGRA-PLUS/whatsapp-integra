@@ -8,7 +8,7 @@ import IntegrationsHelp from './IntegrationsHelp';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
-    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users, FileCheck2,
 } from 'lucide-react';
 
 // Los complementos son los proveedores del catálogo; los webhooks son cosa
@@ -909,11 +909,19 @@ function StepActivate({ integration, onUpdated, showToast }) {
         enabled: integration.enabled ?? false,
         trigger_type: integration.trigger_type ?? 'slash',
         trigger_command: integration.trigger_command ?? 'pagos',
+        // Si el token no lo autoriza nace apagado, y no marcado-pero-deshabilitado:
+        // así no queda una casilla que el admin no puede desmarcar bloqueándole
+        // el guardado del resto del formulario.
+        emit_electronic_invoice: integration.can_emit_electronic === false
+            ? false
+            : (integration.emit_electronic_invoice ?? false),
     });
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
 
     const prefix = form.trigger_type === 'at' ? '@' : '/';
+    // true = el token lo autoriza · false = no · null = no lo sabemos.
+    const canEmit = integration.can_emit_electronic;
 
     async function submit(e) {
         e.preventDefault();
@@ -994,6 +1002,54 @@ function StepActivate({ integration, onUpdated, showToast }) {
                         Los agentes escribirán <code className="font-mono font-semibold text-teal-600 dark:text-teal-400">{prefix}{form.trigger_command || 'pagos'}</code> en el chat para abrir el formulario de pago.
                     </p>
                 </Field>
+
+                <div>
+                    <p className="text-sm font-medium text-foreground mb-2">Facturación electrónica</p>
+                    <label className={`flex items-start gap-3 rounded-xl border border-border/60 p-4 transition-colors ${
+                        canEmit === false ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/30'
+                    }`}>
+                        <input
+                            type="checkbox"
+                            disabled={canEmit === false}
+                            checked={form.emit_electronic_invoice}
+                            onChange={e => setForm(f => ({ ...f, emit_electronic_invoice: e.target.checked }))}
+                            className="size-4 mt-0.5 rounded border-input accent-primary disabled:cursor-not-allowed"
+                        />
+                        <div>
+                            <p className="text-sm font-medium text-foreground">Emitir a la DIAN al registrar el pago</p>
+                            <p className="text-xs text-muted-foreground">
+                                Integra convierte la factura estándar en electrónica y la emite a la DIAN
+                                en el mismo momento en que se registra el pago.
+                            </p>
+                        </div>
+                    </label>
+
+                    {/* El token no trae el permiso: encender esto no haría nada. */}
+                    {canEmit === false && (
+                        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground mt-2">
+                            <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                            El token de esta empresa no autoriza emitir a la DIAN. Reconecta la
+                            integración arriba para pedir uno nuevo con ese permiso.
+                        </p>
+                    )}
+
+                    {/* Token pegado a mano o conexión anterior: no sabemos qué autoriza. */}
+                    {canEmit == null && form.emit_electronic_invoice && (
+                        <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground mt-2">
+                            <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                            No sabemos si este token autoriza emitir a la DIAN. Si conectaste esta
+                            integración antes de que existiera ese permiso, reconéctala para pedirlo.
+                        </p>
+                    )}
+
+                    {canEmit !== false && form.emit_electronic_invoice && (
+                        <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-500 mt-2">
+                            <FileCheck2 className="size-3.5 shrink-0 mt-px" />
+                            Cada pago desde el chat emitirá un documento fiscal real. Una factura ya
+                            emitida no se puede deshacer desde aquí: se corrige con nota crédito en Integra.
+                        </p>
+                    )}
+                </div>
 
                 <Button type="submit" disabled={saving} className="gap-2">
                     {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />} Guardar

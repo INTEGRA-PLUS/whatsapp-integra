@@ -110,14 +110,78 @@ class IntegraConnectionTest extends TestCase
 
         IntegraClient::connectWithLogin('https://demo.test', 'admin@empresa.test', 'secreto');
 
-        Http::assertSent(function (Request $request) {
+        $esperados = array_merge(IntegraClient::ABILITIES, IntegraClient::ABILITIES_OPTIONAL);
+
+        Http::assertSent(function (Request $request) use ($esperados) {
             return str_contains($request->url(), '/api/v1/tokens')
-                && $request['abilities'] === IntegraClient::ABILITIES;
+                && $request['abilities'] === $esperados;
         });
 
         // Los dos que faltaban en producción, por si alguien recorta la lista.
         $this->assertContains('contratos.leer', IntegraClient::ABILITIES);
         $this->assertContains('radicados.crear', IntegraClient::ABILITIES);
+    }
+
+    /**
+     * Un entorno Integra que no conoce `facturas.emitir` debe poder conectarse
+     * igual, sin la emisión electrónica.
+     *
+     * Cada empresa apunta a SU propio Integra y no todos corren la misma
+     * versión. Si pedir un scope nuevo abortara la conexión, estrenar la
+     * emisión a la DIAN dejaría fuera del chat —pagos, contactos, menús, todo—
+     * a cada empresa que fuera un release atrás.
+     */
+    public function test_si_el_entorno_no_conoce_el_scope_de_emision_se_conecta_sin_el(): void
+    {
+        $intentos = [];
+
+        Http::fake(function (Request $request) use (&$intentos) {
+            $intentos[] = $request['abilities'];
+
+            if (in_array(IntegraClient::ABILITY_EMIT, $request['abilities'], true)) {
+                return Http::response([
+                    'success' => false,
+                    'message' => 'Los datos proporcionados no son válidos.',
+                    'errors'  => ['abilities.8' => ['El scope seleccionado no es válido.']],
+                ], 422);
+            }
+
+            return Http::response([
+                'success' => true,
+                'data' => ['token' => 'itg_sin_emision', 'abilities' => IntegraClient::ABILITIES],
+            ], 201);
+        });
+
+        [, $token, $abilities] = IntegraClient::connectWithLogin('https://viejo.test', 'admin@empresa.test', 'secreto');
+
+        $this->assertSame('itg_sin_emision', $token);
+        $this->assertNotContains(IntegraClient::ABILITY_EMIT, $abilities);
+        $this->assertCount(2, $intentos, 'Debe reintentar una sola vez, sin los scopes opcionales.');
+    }
+
+    /**
+     * Y el reintento no se dispara con cualquier 422: una contraseña mala
+     * también responde 422, y volver a pedir con menos scopes sólo gastaría un
+     * viaje para mostrar el mismo error.
+     */
+    public function test_un_422_de_credenciales_no_reintenta(): void
+    {
+        Http::fake([
+            '*/api/v1/tokens' => Http::response([
+                'success' => false,
+                'message' => 'Las credenciales no son correctas.',
+                'errors'  => ['email' => ['Las credenciales no son correctas.']],
+            ], 422),
+        ]);
+
+        try {
+            IntegraClient::connectWithLogin('https://demo.test', 'admin@empresa.test', 'mala');
+            $this->fail('Se esperaba una excepción por credenciales inválidas.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Las credenciales no son correctas.', $e->getMessage());
+        }
+
+        Http::assertSentCount(1);
     }
 
     /**

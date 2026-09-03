@@ -50,6 +50,9 @@ class IntegrationController extends Controller
             'enabled'         => (bool) ($i->enabled ?? false),
             'trigger_type'    => $i->trigger_type ?? 'slash',
             'trigger_command' => $i->trigger_command ?? null,
+            'emit_electronic_invoice' => (bool) ($i->emit_electronic_invoice ?? false),
+            // true / false / null ("no sabemos"): la UI trata cada caso distinto.
+            'can_emit_electronic'     => $i?->grantsEmission(),
             'last_error'      => $i->last_error ?? null,
             'connected_at'    => optional($i->connected_at ?? null)->toIso8601String(),
             'token_expired'   => $i ? $i->tokenExpired() : false,
@@ -130,8 +133,10 @@ class IntegrationController extends Controller
             if (! empty($data['token'])) {
                 $client = IntegraClient::probeBase($inputUrl, $data['token'], fn (IntegraClient $c) => $this->pingForKey($key, $c));
                 $plainToken = $data['token'];
+                // Un token ajeno no dice qué autoriza: null es "no sabemos".
+                $abilities = null;
             } else {
-                [$client, $plainToken] = IntegraClient::connectWithLogin($inputUrl, $data['email'], (string) $data['password']);
+                [$client, $plainToken, $abilities] = IntegraClient::connectWithLogin($inputUrl, $data['email'], (string) $data['password']);
                 // El token recién emitido trae los scopes de esta integración;
                 // esta llamada valida además que la API responda con él.
                 $this->pingForKey($key, $client);
@@ -152,6 +157,7 @@ class IntegrationController extends Controller
             'access_token'     => $plainToken,
             'token_expires_at' => null, // los tokens de API de Integra no expiran
             'account'          => ['api' => 'integra2-v1'],
+            'abilities'        => $abilities,
             'last_error'       => null,
             'connected_at'     => now(),
         ];
@@ -258,6 +264,7 @@ class IntegrationController extends Controller
             'enabled'         => 'required|boolean',
             'trigger_type'    => 'required|in:slash,at',
             'trigger_command' => 'required_if:enabled,true|nullable|alpha_dash|max:64',
+            'emit_electronic_invoice' => 'sometimes|boolean',
         ]);
 
         $integration = $this->find($key);
@@ -265,10 +272,22 @@ class IntegrationController extends Controller
             return response()->json(['message' => 'Primero debes conectar la integración.'], 422);
         }
 
+        // Emitir a la DIAN necesita un scope aparte del de registrar pagos, y
+        // a un token sin él Integra no le responde 403: le responde "no_aplica"
+        // y registra el pago igual. Encender el interruptor sobre un token así
+        // no produce ningún error visible — produce una casilla marcada que no
+        // hace nada. Se corta aquí, donde todavía hay a quién decírselo.
+        if (($data['emit_electronic_invoice'] ?? false) && $integration->grantsEmission() === false) {
+            return response()->json([
+                'message' => 'El token de esta empresa no autoriza emitir facturas a la DIAN. Reconecta la integración para pedir uno nuevo con ese permiso.',
+            ], 422);
+        }
+
         $integration->update([
             'enabled'         => $data['enabled'],
             'trigger_type'    => $data['trigger_type'],
             'trigger_command' => $data['trigger_command'] ? ltrim($data['trigger_command'], '/@') : null,
+            'emit_electronic_invoice' => $data['emit_electronic_invoice'] ?? $integration->emit_electronic_invoice,
         ]);
 
         return response()->json($this->present($key, $integration->fresh()));
@@ -291,7 +310,13 @@ class IntegrationController extends Controller
                 'status'           => 'disconnected',
                 'access_token'     => null,
                 'token_expires_at' => null,
+                'abilities'        => null,
                 'enabled'          => false,
+                // La emisión electrónica cuelga del token que se acaba de
+                // borrar: dejarla encendida haría que la siguiente conexión
+                // —quizá con un token sin ese permiso— heredara en silencio
+                // una casilla marcada que nadie volvió a decidir.
+                'emit_electronic_invoice' => false,
                 'last_error'       => null,
             ]));
 
@@ -428,6 +453,15 @@ class IntegrationController extends Controller
      * factura en Integra 2.0 (POST /api/v1/facturas/{id}/pagos). Integra genera
      * el recibo de caja, el movimiento contable, cierra la factura si se cubre
      * el saldo y reactiva el servicio si corresponde.
+     *
+     * Si la empresa activó "emitir electrónica al pagar" en la tarjeta de la
+     * integración, el pago viaja además con `emitir_electronica`, y es Integra
+     * quien convierte la factura estándar en electrónica y la emite a la DIAN.
+     * El agente no decide esto desde el chat: es política de la empresa.
+     *
+     * El parámetro sólo se manda cuando está encendido. Un pago es una
+     * operación fiscal y no vale la pena arriesgar los que ya funcionan
+     * mandándole al ERP una llave que todavía podría no esperar.
      */
     public function pay(Request $request)
     {
@@ -440,15 +474,16 @@ class IntegrationController extends Controller
         ]);
 
         $agente = auth()->user()->name ?? 'agente';
+        $emitir = (bool) ($this->find(CompanyIntegration::KEY_INVOICE_PAYMENTS)?->emit_electronic_invoice);
 
         return $this->payments(fn (IntegraClient $client) => [
             'message' => 'Pago registrado correctamente.',
-            'result'  => $client->registerPayment((int) $data['factura_id'], [
+            'result'  => $client->registerPayment((int) $data['factura_id'], array_merge([
                 'cuenta'        => $data['cuenta'],
                 'metodo_pago'   => $data['metodo_pago'],
                 'monto'         => $data['monto'],
                 'observaciones' => $data['observaciones'] ?? "Pago registrado desde WhatsApp ({$agente})",
-            ]),
+            ], $emitir ? ['emitir_electronica' => true] : [])),
         ]);
     }
 
