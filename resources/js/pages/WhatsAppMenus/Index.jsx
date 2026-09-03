@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
-    Plug, Users, HelpCircle, ImagePlus, CheckCircle2,
+    Plug, Users, HelpCircle, ImagePlus, CheckCircle2, Bot,
 } from 'lucide-react';
 import MenuHelp from './MenuHelp';
 import ProviderConnectForm from '@/components/ProviderConnectForm';
@@ -87,7 +87,7 @@ const emptyForm = () => ({
     options: [emptyOption()],
 });
 
-export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {} }) {
+export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, ai = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
@@ -189,6 +189,8 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         </Button>
                     </div>
                 </div>
+
+                <AiSwitch ai={ai} />
 
                 {menus.length > 0 && (
                     <ReviewPanel onEditMenu={(id, optionId) => {
@@ -1635,3 +1637,69 @@ function Select({ value, onChange, children, className = '' }) {
 }
 
 WhatsAppMenusIndex.layout = page => <AppLayout breadcrumb={['Menús de WhatsApp']}>{page}</AppLayout>;
+
+/**
+ * El interruptor de la IA.
+ *
+ * Es lo único que la empresa decide sobre la IA: el servidor, el modelo y los
+ * permisos son los mismos para toda la plataforma y se configuran en el flujo.
+ * Por eso aquí no hay formulario, sólo un botón.
+ *
+ * Vive en esta pantalla y no en Integraciones porque es la IA *de los menús*:
+ * se enciende donde se configuran, y así se lee junto a lo que complementa.
+ */
+function AiSwitch({ ai }) {
+    const [busy, setBusy] = useState(false);
+    const encendida = ai.enabled === true;
+
+    function toggle() {
+        setBusy(true);
+        router.post(route('whatsapp-menus.ai'), { enabled: !encendida }, {
+            preserveScroll: true,
+            onFinish: () => setBusy(false),
+        });
+    }
+
+    return (
+        <div className={`rounded-xl border p-4 ${encendida ? 'border-violet-500/40 bg-violet-500/5' : 'bg-card'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-start gap-3 min-w-0">
+                    <div className={`size-10 shrink-0 rounded-xl flex items-center justify-center ${
+                        encendida ? 'bg-violet-500 text-white' : 'bg-muted text-muted-foreground'
+                    }`}>
+                        <Bot className="size-5" />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">
+                            {encendida ? 'La IA está atendiendo' : 'IA para los menús'}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
+                            {encendida
+                                ? 'Cuando el cliente escribe con sus propias palabras y ningún menú lo reconoce, la IA entiende qué pide y ejecuta la opción que corresponde. Si un agente toma el chat, se calla.'
+                                : 'Entiende al cliente que escribe con sus propias palabras —"no me funciona el internet desde ayer"— y ejecuta la opción del menú que corresponde, en vez de dejarlo sin respuesta.'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1.5">
+                            Tus menús y disparadores mandan sobre ella: la IA sólo entra cuando ninguno reconoce el mensaje.
+                            Las cifras y las fechas las sigue calculando el sistema, no el modelo.
+                        </p>
+                        {!ai.available && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                                Falta configurar el flujo de IA en el servidor. Avisa al equipo técnico.
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                <Button
+                    variant={encendida ? 'outline' : 'default'}
+                    onClick={toggle}
+                    disabled={busy || (!encendida && !ai.available)}
+                    className="gap-2"
+                >
+                    <Power className="size-4" />
+                    {encendida ? 'Apagar la IA' : 'Encender la IA'}
+                </Button>
+            </div>
+        </div>
+    );
+}

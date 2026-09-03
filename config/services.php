@@ -58,4 +58,26 @@ return [
     // Integra es multi-tenant: cada empresa indica la URL de SU entorno al conectar
     // (se guarda en company_integrations.base_url), por eso NO se configura aquí.
 
+    /*
+    |--------------------------------------------------------------------------
+    | IA de los menús de WhatsApp (flujo n8n)
+    |--------------------------------------------------------------------------
+    |
+    | El razonamiento vive en un flujo de n8n, no aquí: recibe el mensaje del
+    | cliente con su contexto y devuelve una decisión con la forma de
+    | MenuActionResult. Es de la plataforma y no de cada empresa —una sola URL
+    | para todas—; lo que cambia por empresa es su Ollama y sus permisos, y eso
+    | va en company_integrations.
+    |
+    | Sin la URL configurada la IA no se puede encender: el panel lo dice y
+    | ninguna empresa queda a medias.
+    |
+    */
+    'ai_menus' => [
+        'webhook_url' => env('AI_MENUS_WEBHOOK_URL'),
+        // Margen sobre el timeout que la empresa le da a Ollama: si n8n espera
+        // 120 s por el modelo, cortar a los 30 s aquí tiraría respuestas buenas.
+        'timeout' => (int) env('AI_MENUS_TIMEOUT', 180),
+    ],
+
 ];

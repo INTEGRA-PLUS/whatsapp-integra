@@ -43,6 +43,11 @@ class ProcessWhatsAppMenu implements ShouldQueue
      *                           pregunta del bot ("dime tu cédula"). Cuando
      *                           llega, el job retoma el flujo en curso en vez
      *                           de mandar un menú o ejecutar una opción.
+     * @param ?MenuActionResult $aiResult Decisión que ya tomó la IA (ver
+     *                           ProcessWhatsAppAi). Llega resuelta: aquí sólo
+     *                           se ejecuta, con las mismas comprobaciones y el
+     *                           mismo camino de envío que una opción del menú.
+     * @param ?string $aiNote    Resumen de la IA para el asesor cuando deriva.
      */
     public function __construct(
         public int $instanceId,
@@ -50,7 +55,9 @@ class ProcessWhatsAppMenu implements ShouldQueue
         public ?int $menuId,
         public ?int $optionId,
         public string $inboundWamid,
-        public ?string $flowInput = null
+        public ?string $flowInput = null,
+        public ?MenuActionResult $aiResult = null,
+        public ?string $aiNote = null
     ) {}
 
     public function handle(
@@ -84,6 +91,27 @@ class ProcessWhatsAppMenu implements ShouldQueue
             Log::channel('whatsapp')->info('⏭️ Menú omitido: ventana de 24h cerrada', [
                 'conversation_id' => $conversation->id,
             ]);
+            return;
+        }
+
+        // La IA ya decidió y este job sólo ejecuta. Va antes que todo lo demás
+        // porque una decisión de IA no lleva menú ni opción que resolver.
+        //
+        // Que la ejecución sea un job aparte del que llamó a la IA no es un
+        // rodeo: la llamada al modelo tarda segundos, y así las comprobaciones
+        // de arriba —agente asignado, hilo cerrado, ventana de 24 h— se
+        // reevalúan con el estado de AHORA y no con el de antes de preguntar.
+        if ($this->aiResult !== null) {
+            $this->applyResult(
+                $instance,
+                $conversation,
+                null,
+                $this->aiResult,
+                $meta,
+                $assignment,
+                WhatsAppBotFlow::ACTION_AI,
+                $this->aiNote
+            );
             return;
         }
 
@@ -198,7 +226,8 @@ class ProcessWhatsAppMenu implements ShouldQueue
         MenuActionResult $result,
         MetaWhatsAppService $meta,
         AgentAssignmentService $assignment,
-        ?string $fallbackAction = null
+        ?string $fallbackAction = null,
+        ?string $handoffNote = null
     ): void {
         // El menú queda consumido en cuanto se ejecuta una opción: dejar la
         // sesión abierta haría que el siguiente "1" del cliente —que ahora es
@@ -235,7 +264,10 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 $conversation,
                 $option,
                 WhatsAppMenuOption::ASSIGN_LEAST_BUSY,
-                'El bot no pudo resolver la solicitud del cliente y derivó el chat',
+                // Cuando la IA deriva trae su propio resumen de lo que el
+                // cliente pidió, que es mucho más útil que el aviso genérico:
+                // el asesor abre el chat sabiendo de qué va.
+                $handoffNote ?: 'El bot no pudo resolver la solicitud del cliente y derivó el chat',
                 $assignment
             );
         }

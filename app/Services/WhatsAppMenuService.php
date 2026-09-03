@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessWhatsAppAi;
 use App\Jobs\ProcessWhatsAppMenu;
 use App\Models\Instance;
 use App\Models\WhatsAppBotFlow;
@@ -62,15 +63,18 @@ class WhatsAppMenuService
         // Va antes de los disparadores a propósito: quien contesta "no tengo
         // internet desde ayer" a nuestra pregunta está describiendo su falla,
         // no pidiendo el menú, y reenviárselo aquí perdería lo que escribió.
-        if ($this->isAwaitingAnswer($conversation, $messageData)) {
-            ProcessWhatsAppMenu::dispatch(
-                $instance->id,
-                $conversation->id,
-                null,
-                null,
-                $wamid,
-                (string) ($messageData['content'] ?? '')
-            );
+        if ($flow = $this->awaitingAnswer($conversation, $messageData)) {
+            $text = (string) ($messageData['content'] ?? '');
+
+            // La respuesta vuelve a quien preguntó. Si preguntó la IA, mandarla
+            // al servicio de acciones del menú sería silencio: para él "ia" es
+            // una acción desconocida y el cliente se quedaría hablando solo.
+            if ($flow->action_type === WhatsAppBotFlow::ACTION_AI) {
+                ProcessWhatsAppAi::dispatch($instance->id, $conversation->id, $text, true);
+            } else {
+                ProcessWhatsAppMenu::dispatch($instance->id, $conversation->id, null, null, $wamid, $text);
+            }
+
             return true;
         }
 
@@ -78,7 +82,16 @@ class WhatsAppMenuService
         $menu = $this->findTriggeredMenu($instance, $conversation, (string) ($messageData['content'] ?? ''), $wamid);
 
         if (!$menu) {
-            return false;
+            // 4. Nadie reconoció el mensaje. Es el caso más común y el que peor
+            // quedaba: el cliente que escribe "no me funciona el internet desde
+            // ayer" no usa ninguna palabra clave, así que ningún menú se dispara
+            // y su problema acaba en una respuesta automática genérica.
+            //
+            // Aquí es donde entra la IA: entiende la petición y ejecuta la
+            // acción que corresponde. Va en último lugar a propósito —los
+            // disparadores que el admin configuró mandan sobre ella— y sólo si
+            // la empresa la encendió.
+            return $this->handOverToAi($instance, $conversation, $messageData);
         }
 
         if ($this->isInCooldown($menu, $conversation)) {
@@ -276,19 +289,53 @@ class WhatsAppMenuService
     }
 
     /**
-     * ¿Hay una pregunta del bot esperando respuesta en esta conversación?
+     * El flujo abierto que este mensaje contesta, si lo hay.
      *
      * Sólo cuenta el texto: una foto o un audio no responden a "dime tu
      * cédula", y tratarlos como respuesta gastaría uno de los intentos del
      * cliente con algo que nunca íbamos a poder leer.
+     *
+     * Devuelve el flujo y no un booleano porque quien llama necesita saber
+     * quién hizo la pregunta —una opción del menú o la IA— para devolverle la
+     * respuesta al sitio correcto.
      */
-    private function isAwaitingAnswer(WhatsAppConversation $conversation, array $messageData): bool
+    private function awaitingAnswer(WhatsAppConversation $conversation, array $messageData): ?WhatsAppBotFlow
     {
         if (trim((string) ($messageData['content'] ?? '')) === '') {
+            return null;
+        }
+
+        return WhatsAppBotFlow::activeFor($conversation->id);
+    }
+
+    /**
+     * Le pasa el mensaje a la IA, si la empresa la tiene lista.
+     *
+     * Sólo texto. Un audio o una imagen no los entiende el modelo, y hacerse
+     * cargo de ellos para no contestar nada sería peor que dejarlos seguir su
+     * camino: al menos así la respuesta automática o un agente los atienden.
+     *
+     * @return bool true si la IA se hace cargo y nadie más debe responder.
+     */
+    private function handOverToAi(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        array $messageData
+    ): bool {
+        $text = trim((string) ($messageData['content'] ?? ''));
+
+        if ($text === '' || !WhatsAppAiClient::enabled($instance->company_id)) {
             return false;
         }
 
-        return WhatsAppBotFlow::activeFor($conversation->id) !== null;
+        ProcessWhatsAppAi::dispatch($instance->id, $conversation->id, $text);
+
+        Log::channel('whatsapp')->info('🤖 Mensaje sin menú que lo reconozca: va a la IA', [
+            'conversation_id' => $conversation->id,
+            'company_id' => $instance->company_id,
+        ]);
+
+        return true;
     }
 
     private function isFirstInbound(WhatsAppConversation $conversation, string $wamid): bool

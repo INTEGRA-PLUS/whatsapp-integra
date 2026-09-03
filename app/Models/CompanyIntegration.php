@@ -13,6 +13,24 @@ class CompanyIntegration extends Model
     public const KEY_INVOICE_PAYMENTS = 'invoice_payments';
     public const KEY_CONTACTS_SYNC = 'contacts_sync';
 
+    /**
+     * IA de los menús de WhatsApp.
+     *
+     * De esta fila **sólo se usa `enabled`**: es el interruptor de la empresa y
+     * nada más. El servidor de Ollama, el modelo y los ajustes son los mismos
+     * para toda la plataforma y viven en el flujo de n8n, así que aquí no hay
+     * `base_url`, ni token, ni estado de conexión que mantener.
+     *
+     * Se guarda en esta tabla y no en una columna de `companies` porque ya
+     * existe con la clave única (empresa, integración), que es exactamente la
+     * forma de un interruptor por empresa.
+     *
+     * A diferencia de las otras dos, esta NO habla con Integra: apunta al
+     * flujo de n8n, que es quien consulta Integra por su cuenta. Por eso no
+     * está en Integra::SOURCES y no puede confundirse con una credencial.
+     */
+    public const KEY_AI_MENUS = 'ai_menus';
+
     protected $fillable = [
         'company_id',
         'key',
@@ -96,5 +114,11 @@ class CompanyIntegration extends Model
             return null;
         }
         return $this->triggerPrefix() . $this->trigger_command;
+    }
+
+    /** ¿Esta empresa tiene la IA encendida? */
+    public function aiReady(): bool
+    {
+        return $this->key === self::KEY_AI_MENUS && (bool) $this->enabled;
     }
 }

@@ -149,7 +149,11 @@ class IntegraConnectionTest extends TestCase
             ])
             ->assertOk();
 
-        $rows = CompanyIntegration::where('company_id', $company->id)->get();
+        // Solo las del proveedor: desde que cada empresa nace con la integración
+        // de menús con IA, contar todas las filas contaría también esa.
+        $rows = CompanyIntegration::where('company_id', $company->id)
+            ->whereIn('key', [CompanyIntegration::KEY_INVOICE_PAYMENTS, CompanyIntegration::KEY_CONTACTS_SYNC])
+            ->get();
 
         $this->assertCount(2, $rows, 'Las dos funciones del proveedor quedan conectadas.');
 
@@ -224,9 +228,14 @@ class IntegraConnectionTest extends TestCase
 
         // Pero sus credenciales siguen ahí para poder reintentar: es lo que hace
         // el botón "Verificar" sin obligar a reescribir la URL y el token.
+        // Se pide por clave: una empresa tiene varias tarjetas —incluida la de
+        // IA, que se siembra sola— y first() sin filtro devolvería otra.
         $this->assertInstanceOf(
             IntegraClient::class,
-            CompanyIntegration::where('company_id', $company->id)->first()->client()
+            CompanyIntegration::where('company_id', $company->id)
+                ->where('key', CompanyIntegration::KEY_INVOICE_PAYMENTS)
+                ->first()
+                ->client()
         );
     }
 

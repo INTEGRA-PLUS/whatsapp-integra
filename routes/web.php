@@ -194,6 +194,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'index'])
             ->middleware('permission:campaigns.view')->name('index');
         Route::get('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'show'])
+            ->where('campaign', '[0-9]+')
             ->middleware('permission:campaigns.view')->name('show');
         Route::get('/{campaign}/progress', [App\Http\Controllers\WhatsAppCampaignController::class, 'progress'])
             ->middleware('permission:campaigns.view')->name('progress');
@@ -272,6 +273,9 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:whatsapp_menus.update')->name('update');
         Route::delete('/{menu}', [App\Http\Controllers\WhatsAppMenuController::class, 'destroy'])
             ->middleware('permission:whatsapp_menus.delete')->name('destroy');
+        // El interruptor de la IA de los menús.
+        Route::post('/ai', [App\Http\Controllers\WhatsAppMenuController::class, 'toggleAi'])
+            ->middleware('permission:whatsapp_menus.update')->name('ai');
         // Catálogos de Integra (tipos de falla, prioridades, técnicos) para el
         // formulario. Va aparte de index porque es una llamada HTTP a otro
         // servidor: si Integra tarda, no debe retrasar la carga de la página.
