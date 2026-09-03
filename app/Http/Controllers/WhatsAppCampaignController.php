@@ -705,7 +705,9 @@ class WhatsAppCampaignController extends Controller
             $data['header_media_url'] = $campaign->header_media_url;
             $data['rate_per_minute'] = (int) $campaign->rate_per_minute;
             $data['created_by'] = $campaign->creator?->name;
-            $data['preview'] = $this->builder->preview($campaign, $campaign->recipients()->orderBy('id')->first());
+            $primero = $campaign->recipients()->orderBy('id')->first();
+            $data['preview'] = $this->builder->preview($campaign, $primero);
+            $data['preview_header'] = $this->builder->previewHeader($campaign, $primero);
         }
 
         return $data;

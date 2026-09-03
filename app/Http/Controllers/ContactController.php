@@ -216,6 +216,7 @@ class ContactController extends Controller
         }
 
         $aplicar = $request->boolean('apply');
+        $contact = null;
 
         if ($aplicar) {
             $phone = WhatsAppConversation::normalizeRecipient((string) $conversation->phone_number);
@@ -240,7 +241,13 @@ class ContactController extends Controller
 
         $conversation->forceFill(['opt_out_requested_at' => null])->save();
 
-        return response()->json(['success' => true, 'applied' => $aplicar]);
+        // La ficha viaja de vuelta: la pantalla marca la fila sin recargar, y sin
+        // esto el agente pulsaba "Excluir" y no veía cambiar nada.
+        return response()->json([
+            'success' => true,
+            'applied' => $aplicar,
+            'contact' => $contact,
+        ]);
     }
 
     /**

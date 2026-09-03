@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -58,9 +58,9 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
      */
     async function resolverPeticion(peticion, aplicar) {
         try {
-            await axios.post(`/api/contacts/opt-out-requests/${peticion.conversation_id}`, { apply: aplicar });
+            const res = await axios.post(`/api/contacts/opt-out-requests/${peticion.conversation_id}`, { apply: aplicar });
             setOptOutRequests(prev => prev.filter(p => p.conversation_id !== peticion.conversation_id));
-            if (aplicar) router.reload({ only: ['contacts'] });
+            if (res.data.contact) upsertLocal(res.data.contact);
         } catch (err) {
             alert(err?.response?.data?.message ?? 'No se pudo resolver la petición.');
         }

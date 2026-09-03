@@ -263,7 +263,9 @@ function modeloDePlantilla(campaign) {
     return {
         header: header
             ? (formato === 'TEXT'
-                ? { text: header.text ?? '' }
+                // Ya resuelto en el backend, que es quien sabe de dónde salió
+                // cada dato; el texto crudo llevaría los {{1}} a la vista.
+                ? { text: campaign.preview_header ?? header.text ?? '' }
                 : { text: '', mediaFormat: formato, mediaUrl: campaign.header_media_url })
             : null,
         body: { text: campaign.preview ?? '' },

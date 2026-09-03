@@ -81,11 +81,15 @@ class CampaignTemplateBuilder
             return "[Plantilla: {$campaign->template_name}]";
         }
 
-        $values = array_map(
-            fn ($slot) => $this->resolve($slot, $recipient),
-            $campaign->variable_map['body'] ?? []
-        );
+        return $this->fill($body, $campaign->variable_map['body'] ?? [], $recipient);
+    }
 
+    /**
+     * Sustituye los {{n}} de un texto por los valores de este destinatario.
+     */
+    private function fill(string $texto, array $slots, ?WhatsAppCampaignRecipient $recipient): string
+    {
+        $values = array_map(fn ($slot) => $this->resolve($slot, $recipient), $slots);
         $i = 0;
 
         return preg_replace_callback(
@@ -99,8 +103,29 @@ class CampaignTemplateBuilder
 
                 return ($value === null || $value === '') ? $matches[0] : $value;
             },
-            $body
+            $texto
         );
+    }
+
+    /**
+     * El encabezado de texto, ya resuelto. Se pintaba crudo en el detalle de la
+     * campaña —«Tu factura de {{1}}»—, que es justo lo que nadie recibió.
+     */
+    public function previewHeader(WhatsAppCampaign $campaign, ?WhatsAppCampaignRecipient $recipient = null): ?string
+    {
+        foreach ($campaign->template_components ?? [] as $component) {
+            if (strtoupper($component['type'] ?? '') !== 'HEADER') {
+                continue;
+            }
+
+            if (strtoupper($component['format'] ?? 'TEXT') !== 'TEXT') {
+                return null;
+            }
+
+            return $this->fill((string) ($component['text'] ?? ''), $campaign->variable_map['header'] ?? [], $recipient);
+        }
+
+        return null;
     }
 
     /**
