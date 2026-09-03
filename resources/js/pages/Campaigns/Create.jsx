@@ -65,7 +65,8 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
         [form.template, form.bodyVars, form.headerVars, form.headerMedia, primerDestinatario]
     );
 
-    function validar(n) {
+    /** Qué falta en un paso, sin tocar el estado. */
+    function faltantes(n) {
         const e = {};
         if (n === 1) {
             if (!form.name.trim()) e.name = 'Ponle un nombre para reconocerla después.';
@@ -77,13 +78,14 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
             else {
                 const fmt = templateHeaderFormat(form.template);
                 if (fmt && fmt !== 'LOCATION' && !form.headerMedia?.mediaId) {
-                    e.header = `Esta plantilla lleva ${HEADER_MEDIA_LABEL[fmt].toLowerCase()} en el encabezado: sube el archivo.`;
+                    e.header = `Esta plantilla lleva ${HEADER_MEDIA_LABEL[fmt].toLowerCase()} en el encabezado: sube el archivo antes de continuar.`;
                 }
-                if (form.bodyVars.some(v => !slotCompleto(v))) {
-                    e.vars = 'Completa todos los datos variables de la plantilla.';
-                }
-                if (form.headerVars.some(v => !slotCompleto(v))) {
-                    e.vars = 'Completa los datos variables del encabezado.';
+                const pendientes = form.headerVars.filter(v => !slotCompleto(v)).length
+                    + form.bodyVars.filter(v => !slotCompleto(v)).length;
+                if (pendientes > 0) {
+                    e.vars = pendientes === 1
+                        ? 'Falta un dato por rellenar: esta plantilla tiene un hueco que cambia en cada mensaje.'
+                        : `Faltan ${pendientes} datos por rellenar: son los huecos de la plantilla que cambian en cada mensaje.`;
                 }
             }
         }
@@ -93,12 +95,69 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
         if (n === 4 && form.schedule_type === 'recurring' && form.schedule_days.length === 0) {
             e.schedule_days = 'Elige al menos un día de la semana.';
         }
+        return e;
+    }
+
+    function validar(n) {
+        const e = faltantes(n);
         setErrors(e);
         return Object.keys(e).length === 0;
     }
 
+    /**
+     * Deja al usuario delante de lo que falta.
+     *
+     * El aviso estaba, pero debajo del propio botón que se acababa de pulsar y
+     * fuera de la pantalla: se pulsaba "Siguiente" y no pasaba nada visible.
+     */
+    function llevarAlError(e) {
+        const seccion = e.template ? 'seccion-plantilla'
+            : e.header ? 'seccion-encabezado'
+            : e.vars ? 'seccion-variables'
+            : e.recipients ? 'seccion-destinatarios'
+            : null;
+
+        if (!seccion) return;
+
+        // Tras el render, para que la sección exista aunque se venga de otro paso.
+        requestAnimationFrame(() => {
+            const nodo = document.getElementById(seccion);
+            if (!nodo) return;
+            nodo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            nodo.querySelector('[data-pendiente="1"]')?.focus({ preventScroll: true });
+        });
+    }
+
+    // El aviso se corrige solo según se rellena: seguir leyendo "faltan 2" con uno
+    // ya escrito hace dudar de si el formulario se está enterando. Solo quita o
+    // actualiza lo ya avisado; no estrena reproches mientras se escribe.
+    useEffect(() => {
+        setErrors(previos => {
+            const claves = Object.keys(previos);
+            if (claves.length === 0) return previos;
+
+            const ahora = faltantes(step);
+            const vigentes = Object.fromEntries(
+                Object.entries(ahora).filter(([clave]) => clave in previos)
+            );
+
+            const igual = Object.keys(vigentes).length === claves.length
+                && claves.every(clave => vigentes[clave] === previos[clave]);
+
+            return igual ? previos : vigentes;
+        });
+    }, [form, step]);
+
     function siguiente() {
-        if (validar(step)) setStep(s => Math.min(4, s + 1));
+        const e = faltantes(step);
+        setErrors(e);
+
+        if (Object.keys(e).length === 0) {
+            setStep(s => Math.min(4, s + 1));
+            return;
+        }
+
+        llevarAlError(e);
     }
 
     function irA(n) {
@@ -112,9 +171,12 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
         // Si algo falta, el aviso solo sirve si te deja delante del campo que lo
         // provoca: quedarte en el paso 4 leyendo «completa las variables» no dice
         // dónde están.
-        const falla = [1, 2, 3, 4].find(n => !validar(n));
+        const falla = [1, 2, 3, 4].find(n => Object.keys(faltantes(n)).length > 0);
         if (falla) {
+            const e = faltantes(falla);
+            setErrors(e);
             setStep(falla);
+            llevarAlError(e);
             return;
         }
 
@@ -216,9 +278,24 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
                         <Link href={route('campaigns.index')} className="text-sm text-muted-foreground hover:text-foreground">
                             Cancelar
                         </Link>
+
+                        {/* El motivo, donde se acaba de pulsar. Antes vivía al pie
+                            de la sección correspondiente, casi siempre fuera de la
+                            pantalla: parecía que el botón no hacía nada. */}
+                        {Object.keys(errors).length > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => llevarAlError(errors)}
+                                className="flex items-start gap-2 text-left text-sm text-rose-600 dark:text-rose-400 max-w-xl"
+                            >
+                                <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                                <span>{Object.values(errors)[0]}</span>
+                            </button>
+                        )}
+
                         <div className="flex-1" />
                         {step > 1 && (
-                            <Button variant="outline" onClick={() => setStep(s => s - 1)} className="gap-1">
+                            <Button variant="outline" onClick={() => { setErrors({}); setStep(s => s - 1); }} className="gap-1">
                                 <ChevronLeft className="size-4" /> Anterior
                             </Button>
                         )}
@@ -314,6 +391,10 @@ function PasoPlantilla({ form, update, errors, fields }) {
         return () => { vivo = false; };
     }, [form.instance_id]);
 
+    // Cuántos huecos quedan sin rellenar, visible desde el primer momento y no
+    // solo al chocar con el botón.
+    const pendientes = [...form.headerVars, ...form.bodyVars].filter(v => !slotCompleto(v)).length;
+
     const filtradas = useMemo(() => {
         const q = busqueda.trim().toLowerCase();
         if (!q) return templates;
@@ -340,6 +421,8 @@ function PasoPlantilla({ form, update, errors, fields }) {
     return (
         <div className="space-y-6">
             <Card
+                id="seccion-plantilla"
+                resaltada={!!errors.template}
                 title="¿Qué plantilla se enviará?"
                 description="Solo aparecen las plantillas que Meta ya aprobó para esta línea. Si falta alguna, créala en Plantillas y espera su aprobación."
             >
@@ -408,8 +491,22 @@ function PasoPlantilla({ form, update, errors, fields }) {
 
             {form.template && (form.bodyVars.length > 0 || form.headerVars.length > 0) && (
                 <Card
+                    id="seccion-variables"
+                    resaltada={!!errors.vars}
                     title="Los datos que cambian en cada mensaje"
-                    description="Cada dato puede ser el mismo para todos, o salir del propio destinatario."
+                    badge={
+                        pendientes > 0 ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-2.5 py-0.5 text-xs font-medium">
+                                <AlertTriangle className="size-3" />
+                                {pendientes === 1 ? 'Falta 1 por rellenar' : `Faltan ${pendientes} por rellenar`}
+                            </span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 px-2.5 py-0.5 text-xs font-medium">
+                                <Check className="size-3" /> Completo
+                            </span>
+                        )
+                    }
+                    description="Esta plantilla tiene huecos que se rellenan en cada envío. Cada uno puede ser el mismo texto para todos, o salir del propio destinatario (su nombre, su teléfono…). Sin rellenarlos no se puede continuar."
                 >
                     {form.headerVars.map((slot, i) => (
                         <SlotVariable
@@ -417,6 +514,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                             etiqueta={`Encabezado · dato {{${i + 1}}}`}
                             slot={slot}
                             fields={fields}
+                            pendiente={!slotCompleto(slot)}
                             onChange={s => update(f => ({ headerVars: f.headerVars.map((x, j) => j === i ? s : x) }))}
                         />
                     ))}
@@ -426,6 +524,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                             etiqueta={`Dato {{${i + 1}}}`}
                             slot={slot}
                             fields={fields}
+                            pendiente={!slotCompleto(slot)}
                             onChange={s => update(f => ({ bodyVars: f.bodyVars.map((x, j) => j === i ? s : x) }))}
                         />
                     ))}
@@ -436,10 +535,13 @@ function PasoPlantilla({ form, update, errors, fields }) {
     );
 }
 
-function SlotVariable({ etiqueta, slot, fields, onChange }) {
+function SlotVariable({ etiqueta, slot, fields, onChange, pendiente }) {
     return (
-        <div className="rounded-xl border p-3 space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">{etiqueta}</div>
+        <div className={`rounded-xl border p-3 space-y-2 ${pendiente ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <span>{etiqueta}</span>
+                {pendiente && <span className="text-amber-700 dark:text-amber-300">· sin rellenar</span>}
+            </div>
             <div className="flex flex-wrap gap-2">
                 <label className="flex items-center gap-1.5 text-sm">
                     <input
@@ -461,14 +563,16 @@ function SlotVariable({ etiqueta, slot, fields, onChange }) {
 
             {slot.source === 'fixed' ? (
                 <input
-                    className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm"
+                    data-pendiente={pendiente ? '1' : undefined}
+                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-amber-400' : ''}`}
                     value={slot.value}
                     onChange={e => onChange({ ...slot, value: e.target.value })}
-                    placeholder="Lo mismo para todos"
+                    placeholder="Escribe el texto que verán todos"
                 />
             ) : (
                 <select
-                    className="w-full rounded-lg border bg-background px-3 py-1.5 text-sm"
+                    data-pendiente={pendiente ? '1' : undefined}
+                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-amber-400' : ''}`}
                     value={slot.field}
                     onChange={e => onChange({ ...slot, field: e.target.value })}
                 >
@@ -519,7 +623,14 @@ function SubidaEncabezado({ form, update, error }) {
 
     return (
         <Card
+            id="seccion-encabezado"
+            resaltada={!!error}
             title={`Encabezado · ${HEADER_MEDIA_LABEL[fmt]}`}
+            badge={!form.headerMedia.mediaId && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-2.5 py-0.5 text-xs font-medium">
+                    <AlertTriangle className="size-3" /> Falta el archivo
+                </span>
+            )}
             description="Esta plantilla lleva un archivo arriba del texto. Se sube una vez y se usa para todos los envíos."
         >
             <label className="flex items-center gap-3 rounded-xl border border-dashed px-4 py-4 cursor-pointer hover:bg-muted/40">
@@ -768,7 +879,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                 )}
             </Card>
 
-            <Card title={`Seleccionados (${seleccionados.length})`}>
+            <Card id="seccion-destinatarios" resaltada={!!errors.recipients} title={`Seleccionados (${seleccionados.length})`}>
                 {seleccionados.length === 0 ? (
                     <p className="text-sm text-muted-foreground">Aún no hay destinatarios.</p>
                 ) : (
@@ -1041,12 +1152,22 @@ function Stepper({ step, onGo }) {
     );
 }
 
-function Card({ title, description, children }) {
+function Card({ title, description, children, id, badge, resaltada }) {
     return (
-        <section className="rounded-2xl border bg-card p-5 space-y-4">
+        <section
+            id={id}
+            className={`rounded-2xl border bg-card p-5 space-y-4 transition-colors ${
+                resaltada ? 'border-rose-400 ring-1 ring-rose-400/40' : ''
+            }`}
+        >
             {(title || description) && (
                 <div className="space-y-1">
-                    {title && <h2 className="text-base font-semibold text-foreground">{title}</h2>}
+                    {(title || badge) && (
+                        <div className="flex flex-wrap items-center gap-2">
+                            {title && <h2 className="text-base font-semibold text-foreground">{title}</h2>}
+                            {badge}
+                        </div>
+                    )}
                     {description && <p className="text-sm text-muted-foreground">{description}</p>}
                 </div>
             )}
