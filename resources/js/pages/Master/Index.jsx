@@ -64,7 +64,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
         }));
     }, [messages_volume]);
 
-    const applyFilters = useCallback((params) => {
+    // Buscar y filtrar por estado sólo cambian la tabla de empresas, así que
+    // piden sólo eso. En el servidor los bloques del dashboard son closures:
+    // los que no se piden ni se ejecutan, y eso es justo lo que hacía que
+    // teclear en el buscador tardara segundos. Lo que quede fuera de esta
+    // lista conserva el valor que ya tenía en pantalla.
+    const LIST_ONLY = ['companies', 'filters'];
+
+    const applyFilters = useCallback((params, { only } = {}) => {
         router.get(route('master.index'), { 
             search: search, 
             status: status, 
@@ -72,14 +79,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             start_date: startDate,
             end_date: endDate,
             ...params 
-        }, { preserveState: true, replace: true });
+        }, { preserveState: true, replace: true, ...(only ? { only } : {}) });
     }, [search, status, range, startDate, endDate]);
 
     function handleSearchChange(e) {
         const val = e.target.value;
         setSearch(val);
         clearTimeout(window._st);
-        window._st = setTimeout(() => applyFilters({ search: val }), 500);
+        window._st = setTimeout(() => applyFilters({ search: val }, { only: LIST_ONLY }), 500);
     }
 
     function handleRangeChange(e) {
@@ -328,7 +335,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                         <input type="text" placeholder="Auditar empresas, emails o administradores activos..." value={search} onChange={handleSearchChange} className="w-full h-14 pl-14 pr-6 bg-background border border-border/40 focus:border-indigo-500/60 rounded-2xl text-base transition-all focus:ring-8 focus:ring-indigo-500/5 outline-none font-medium shadow-inner" />
                                     </div>
                                     <div className="flex gap-4">
-                                        <select value={status} onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }); }} className="h-14 rounded-2xl border border-border/40 bg-background px-8 text-sm outline-none font-black uppercase tracking-widest cursor-pointer hover:border-indigo-500/40 transition-all shadow-sm">
+                                        <select value={status} onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }, { only: LIST_ONLY }); }} className="h-14 rounded-2xl border border-border/40 bg-background px-8 text-sm outline-none font-black uppercase tracking-widest cursor-pointer hover:border-indigo-500/40 transition-all shadow-sm">
                                             <option value="">Todos los Estados</option>
                                             <option value="active">Activas</option>
                                             <option value="inactive">Inactivas</option>

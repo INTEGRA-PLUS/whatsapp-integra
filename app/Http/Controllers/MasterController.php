@@ -46,8 +46,18 @@ class MasterController extends Controller
             $dateFormat = '%Y-%m'; // Monthly
         }
 
-        // Basic Stats
-        $stats = [
+        // Los cuatro bloques del dashboard van como closures a propósito.
+        //
+        // Buscar una empresa es una visita Inertia a esta misma acción, así que
+        // antes cada tecla recalculaba el dashboard entero —dos barridos
+        // completos de whatsapp_messages y una subconsulta correlacionada por
+        // empresa— para devolver diez filas de `companies`. Como closures,
+        // Inertia sólo los evalúa cuando la petición los pide: el buscador hace
+        // una recarga parcial de `companies` y esto ni se toca.
+        //
+        // Si algún día se convierten en valores ya calculados, la lentitud
+        // vuelve sin que nada falle: cuidado ahí.
+        $stats = fn () => [
             'total_companies' => Company::count(),
             'active_companies' => Company::where('active', true)->count(),
             'total_instances' => Instance::count(),
@@ -57,7 +67,7 @@ class MasterController extends Controller
         ];
 
         // Growth Chart: New Companies
-        $companies_growth = Company::select(
+        $companies_growth = fn () => Company::select(
                 DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"), 
                 DB::raw('count(*) as count')
             )
@@ -67,7 +77,7 @@ class MasterController extends Controller
             ->get();
 
         // Message Volume: Inbound vs Outbound
-        $messages_volume = WhatsAppMessage::select(
+        $messages_volume = fn () => WhatsAppMessage::select(
                 DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"),
                 DB::raw('SUM(CASE WHEN direction = "inbound" THEN 1 ELSE 0 END) as inbound'),
                 DB::raw('SUM(CASE WHEN direction = "outbound" THEN 1 ELSE 0 END) as outbound')
@@ -77,18 +87,29 @@ class MasterController extends Controller
             ->orderBy('date')
             ->get();
 
-        // Top Companies by activity
-        $top_companies = Company::withCount(['instances', 'users'])
-            ->addSelect(['messages_count' => WhatsAppMessage::selectRaw('count(*)')
-                ->whereIn('conversation_id', function($query) {
-                    $query->select('id')->from('whatsapp_conversations')->whereIn('instance_id', function($q) {
-                        $q->select('id')->from('instances')->whereColumn('company_id', 'companies.id');
-                    });
-                })
-            ])
-            ->orderBy('messages_count', 'desc')
-            ->take(6)
-            ->get();
+        // Top Companies by activity.
+        //
+        // El conteo de mensajes se agrega UNA vez para todas las empresas y se
+        // pega con un join. Antes era una subconsulta correlacionada en el
+        // SELECT —mensajes → conversaciones → instancias, con dos whereIn
+        // anidados— y, como el orden depende de ella, MySQL la resolvía para
+        // cada empresa de la tabla, no para las seis que se devuelven.
+        $top_companies = function () {
+            $messagesPerCompany = DB::table('whatsapp_messages as wm')
+                ->join('whatsapp_conversations as c', 'c.id', '=', 'wm.conversation_id')
+                ->join('instances as i', 'i.id', '=', 'c.instance_id')
+                ->selectRaw('i.company_id, count(*) as total')
+                ->groupBy('i.company_id');
+
+            return Company::query()
+                ->select('companies.*')
+                ->addSelect(DB::raw('COALESCE(m.total, 0) as messages_count'))
+                ->leftJoinSub($messagesPerCompany, 'm', 'm.company_id', '=', 'companies.id')
+                ->withCount(['instances', 'users'])
+                ->orderByDesc('messages_count')
+                ->take(6)
+                ->get();
+        };
 
         $query = Company::with(['users' => function($query) {
             $query->where('role', 'admin');
