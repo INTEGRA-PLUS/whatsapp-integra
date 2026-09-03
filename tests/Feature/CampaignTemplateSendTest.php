@@ -240,6 +240,67 @@ class CampaignTemplateSendTest extends TestCase
         $this->assertNotNull($campaign->completed_at);
     }
 
+    /**
+     * El media_id de Meta caduca a los 30 días. Sin volver a subir el archivo,
+     * una campaña recurrente moriría al mes con un "Format mismatch" por cada
+     * destinatario, y nadie lo relacionaría con la fecha de creación.
+     */
+    public function test_el_encabezado_se_vuelve_a_subir_en_cada_corrida(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('s3_media');
+        \Illuminate\Support\Facades\Storage::disk('s3_media')->put('whatsapp/campaigns/x.png', 'bytes-de-la-imagen');
+
+        $subidas = 0;
+        Http::fake(function ($request) use (&$subidas) {
+            if (str_contains($request->url(), '/message_templates')) {
+                return Http::response(['data' => [[
+                    'id' => 'tpl-1', 'name' => 'aviso_factura', 'language' => 'es',
+                    'status' => 'APPROVED', 'category' => 'UTILITY',
+                    'components' => [
+                        ['type' => 'HEADER', 'format' => 'IMAGE'],
+                        ['type' => 'BODY', 'text' => self::CUERPO],
+                    ],
+                ]]], 200);
+            }
+
+            if (str_ends_with($request->url(), '/media')) {
+                $subidas++;
+                return Http::response(['id' => '556677889900'], 200);
+            }
+
+            // La ficha del media que consulta el guardarraíl antes de enviar.
+            if (preg_match('#/\d{6,}$#', $request->url())) {
+                return Http::response(['mime_type' => 'image/png', 'file_size' => 2048, 'url' => 'https://lookaside.fb/x'], 200);
+            }
+
+            return Http::response(['messages' => [['id' => 'wamid.' . Str::random(6)]]], 200);
+        });
+
+        $instance = $this->instancia();
+        $campaign = $this->campana($instance, [
+            'template_components' => [
+                ['type' => 'HEADER', 'format' => 'IMAGE'],
+                ['type' => 'BODY', 'text' => self::CUERPO],
+            ],
+            // El id viejo, el que habría caducado.
+            'header_media_id' => '111111111',
+            'header_media_path' => 'whatsapp/campaigns/x.png',
+            'header_media_mime' => 'image/png',
+        ]);
+        $this->destinatario($campaign, '573007852081', 'Daniela');
+
+        ProcessWhatsAppCampaign::dispatch($campaign->id);
+
+        $this->assertSame(1, $subidas, 'El archivo debía subirse una vez por corrida.');
+        $this->assertSame('556677889900', $campaign->fresh()->header_media_id);
+
+        $enviada = collect(Http::recorded())
+            ->map(fn ($par) => $par[0]->data())
+            ->first(fn ($d) => ($d['type'] ?? null) === 'template');
+
+        $this->assertSame('556677889900', $enviada['template']['components'][0]['parameters'][0]['image']['id']);
+    }
+
     public function test_un_envio_rechazado_por_meta_queda_con_su_motivo(): void
     {
         Http::fake(function ($request) {

@@ -74,6 +74,13 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             return;
         }
 
+        // El archivo del encabezado se vuelve a subir a Meta al empezar cada
+        // corrida: el media_id caduca a los 30 días, así que una campaña
+        // recurrente moriría al mes con un "Format mismatch" por destinatario.
+        if (!$this->refreshHeaderMedia($campaign)) {
+            return;
+        }
+
         $campaign->update([
             'status' => 'sending',
             'started_at' => $campaign->started_at ?? now(),
@@ -111,5 +118,83 @@ class ProcessWhatsAppCampaign implements ShouldQueue
                 'completed_at' => now(),
             ]);
         }
+    }
+
+    /**
+     * Renueva el media_id del encabezado desde nuestra copia del archivo.
+     *
+     * Devuelve false —y deja la campaña fallida— sólo si la plantilla exige un
+     * archivo y no hay forma de conseguirlo: mejor pararlo entero que gastar la
+     * lista entera en rechazos uno a uno.
+     */
+    private function refreshHeaderMedia(WhatsAppCampaign $campaign): bool
+    {
+        $formato = app(\App\Services\CampaignTemplateBuilder::class)->headerFormat($campaign);
+
+        if (!in_array($formato, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+            return true;
+        }
+
+        // Sin copia propia sólo queda el media_id original: sirve el primer mes.
+        if (empty($campaign->header_media_path)) {
+            if ($campaign->header_media_id) {
+                return true;
+            }
+
+            $this->abortarSinEncabezado($campaign, 'La plantilla lleva un archivo en el encabezado y la campaña no tiene ninguno.');
+            return false;
+        }
+
+        try {
+            $disco = \Illuminate\Support\Facades\Storage::disk('s3_media');
+
+            if (!$disco->exists($campaign->header_media_path)) {
+                throw new \RuntimeException('la copia del archivo ya no está en el almacenamiento');
+            }
+
+            $tmp = tempnam(sys_get_temp_dir(), 'camp_hdr_');
+            file_put_contents($tmp, $disco->get($campaign->header_media_path));
+
+            try {
+                $subida = app(\App\Services\MetaWhatsAppService::class)->uploadMedia(
+                    $campaign->instance->phone_number_id,
+                    $tmp,
+                    $campaign->header_media_mime ?: 'application/octet-stream'
+                );
+            } finally {
+                @unlink($tmp);
+            }
+
+            if (!($subida['success'] ?? false)) {
+                throw new \RuntimeException('WhatsApp no aceptó el archivo');
+            }
+
+            $campaign->forceFill(['header_media_id' => (string) $subida['id']])->save();
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::channel('whatsapp')->error('No se pudo renovar el encabezado de la campaña', [
+                'campaign_id' => $campaign->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Con un media_id previo se intenta igual: puede seguir vivo.
+            if ($campaign->header_media_id) {
+                return true;
+            }
+
+            $this->abortarSinEncabezado($campaign, 'No se pudo preparar el archivo del encabezado de la plantilla.');
+            return false;
+        }
+    }
+
+    private function abortarSinEncabezado(WhatsAppCampaign $campaign, string $motivo): void
+    {
+        $campaign->update(['status' => 'failed', 'completed_at' => now()]);
+        $campaign->recipients()->where('status', 'pending')->update([
+            'status' => 'failed',
+            'error_message' => $motivo,
+        ]);
+        $campaign->refreshCounters();
     }
 }

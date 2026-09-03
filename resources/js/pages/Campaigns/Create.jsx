@@ -133,6 +133,8 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
             },
             header_media_id: form.headerMedia?.mediaId ?? null,
             header_media_url: form.headerMedia?.url ?? null,
+            header_media_path: form.headerMedia?.path ?? null,
+            header_media_mime: form.headerMedia?.mime ?? null,
             header_filename: form.headerMedia?.filename ?? null,
             rate_per_minute: form.rate_per_minute,
             conversation_ids: form.recipients.filter(r => r.conversation_id).map(r => r.conversation_id),
@@ -500,8 +502,12 @@ function SubidaEncabezado({ form, update, error }) {
                     ...form.headerMedia,
                     mediaId: res.data.media_id,
                     filename: res.data.filename,
-                    // La URL local es solo para la vista previa; a Meta va el media_id.
-                    url: URL.createObjectURL(file),
+                    mime: res.data.mime_type,
+                    // La copia del servidor, no un blob: del navegador. Una URL
+                    // blob: solo existe en la pestaña que la creó, así que el
+                    // detalle de la campaña la enseñaría rota a cualquier otro.
+                    path: res.data.path,
+                    url: res.data.url || URL.createObjectURL(file),
                 },
             });
         } catch (e) {

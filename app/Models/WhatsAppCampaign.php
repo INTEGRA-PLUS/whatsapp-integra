@@ -26,6 +26,8 @@ class WhatsAppCampaign extends Model
         'variable_map',
         'header_media_id',
         'header_media_url',
+        'header_media_path',
+        'header_media_mime',
         'header_filename',
         'status',
         'schedule_type',

@@ -16,6 +16,9 @@ use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFailureTranslator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 /**
@@ -132,6 +135,8 @@ class WhatsAppCampaignController extends Controller
             'variable_map' => 'nullable|array',
             'header_media_id' => 'nullable|string|max:255',
             'header_media_url' => 'nullable|string|max:1024',
+            'header_media_path' => 'nullable|string|max:1024',
+            'header_media_mime' => 'nullable|string|max:128',
             'header_filename' => 'nullable|string|max:255',
             'rate_per_minute' => 'nullable|integer|min:1|max:600',
             'contact_ids' => 'nullable|array',
@@ -207,6 +212,8 @@ class WhatsAppCampaignController extends Controller
                 'variable_map' => $data['variable_map'] ?? [],
                 'header_media_id' => $data['header_media_id'] ?? null,
                 'header_media_url' => $data['header_media_url'] ?? null,
+                'header_media_path' => $data['header_media_path'] ?? null,
+                'header_media_mime' => $data['header_media_mime'] ?? null,
                 'header_filename' => $data['header_filename'] ?? null,
                 'rate_per_minute' => $data['rate_per_minute'] ?? 60,
                 'status' => $launch ? 'queued' : 'draft',
@@ -455,11 +462,33 @@ class WhatsAppCampaignController extends Controller
             ], 500);
         }
 
+        // Copia propia del archivo. El media_id de Meta caduca a los 30 días, así
+        // que una campaña recurrente dejaría de salir al mes; con el archivo en
+        // nuestro bucket se vuelve a subir en cada corrida. Y la vista previa del
+        // detalle necesita una URL de verdad: la del navegador (blob:) solo vale
+        // dentro de la pestaña que la creó.
+        $path = 'whatsapp/campaigns/' . Str::uuid() . '.' . ($file->getClientOriginalExtension() ?: 'bin');
+        $url = null;
+
+        try {
+            Storage::disk('s3_media')->put($path, file_get_contents($file->getRealPath()), 'public');
+            $url = Storage::disk('s3_media')->url($path);
+        } catch (\Throwable $e) {
+            // Sin copia el envío de hoy funciona igual; lo que se pierde es poder
+            // repetirlo dentro de un mes.
+            Log::channel('whatsapp')->warning('No se pudo guardar la copia del encabezado de campaña', [
+                'error' => $e->getMessage(),
+            ]);
+            $path = null;
+        }
+
         return response()->json([
             'success' => true,
             'media_id' => $result['id'],
             'filename' => $file->getClientOriginalName(),
             'mime_type' => $file->getMimeType(),
+            'path' => $path,
+            'url' => $url,
         ]);
     }
 
