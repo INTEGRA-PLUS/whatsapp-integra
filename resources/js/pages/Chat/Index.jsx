@@ -50,6 +50,7 @@ import {
     Pencil as PencilIcon,
     PenSquare,
     FileText,
+    FileDown,
     RotateCcw,
     AtSign,
     Wallet,
@@ -1867,6 +1868,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
             variant: 'default',
         });
         if (ok) setConversationStatus(convId, 'close');
+    }
+
+    /**
+     * Abre la vista imprimible del hilo, que se guarda como PDF desde el
+     * navegador.
+     *
+     * Va en pestaña nueva y no en un iframe oculto porque el diálogo de
+     * impresión de un iframe hereda el título del chat: el archivo salía
+     * llamándose como la página en vez de como el contacto.
+     */
+    function exportConversationToPdf(convId) {
+        window.open(`/api/chat/conversations/${convId}/export`, '_blank', 'noopener');
     }
 
     async function confirmDeleteConversation(convId) {
@@ -4482,6 +4495,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             <span className="text-xs font-bold">Cerrar conversación</span>
                                                         </DropdownMenuItem>
                                                     )}
+                                                    <DropdownMenuSeparator className="bg-border/5" />
+                                                    <DropdownMenuItem
+                                                        onClick={() => exportConversationToPdf(selectedConversation.id)}
+                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                    >
+                                                        <FileDown className="size-4 text-muted-foreground" />
+                                                        <span className="text-xs font-bold">Exportar a PDF</span>
+                                                    </DropdownMenuItem>
                                                     <DropdownMenuSeparator className="bg-border/5" />
                                                     <DropdownMenuItem
                                                         onClick={() => confirmDeleteConversation(selectedConversation.id)}

@@ -672,6 +672,45 @@ class ChatController extends Controller
     }
 
     /**
+     * Vista imprimible de la conversación completa, para guardarla como PDF.
+     *
+     * Se devuelve HTML y no un PDF generado en el servidor a propósito: los
+     * hilos de WhatsApp están llenos de emojis, y ninguna librería PHP de PDF
+     * los dibuja (salen como cuadros vacíos). Dejando que imprima el navegador
+     * el documento sale igual que en pantalla, sin dependencias nuevas.
+     */
+    public function exportPrintable($conversationId)
+    {
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with(['instance.company', 'contact', 'assignedAgent', 'tags'])
+            ->findOrFail($conversationId);
+
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $messages = $conversation->messages()
+            ->with('sender:id,name')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        // Los mensajes se agrupan por día para repetir el separador de fecha
+        // igual que en el chat: en un PDF de varias páginas, sin él no se sabe
+        // de qué día es lo que se está leyendo.
+        $days = $messages->groupBy(fn ($m) => $m->created_at?->format('Y-m-d') ?? '');
+
+        return response()
+            ->view('chat.export', [
+                'conversation' => $conversation,
+                'days'         => $days,
+                'total'        => $messages->count(),
+                'exportedBy'   => $user->name,
+            ])
+            ->header('Content-Type', 'text/html; charset=UTF-8');
+    }
+
+    /**
      * Entrega el adjunto de un mensaje (documento, imagen, video o audio).
      *
      * Sirve el archivo a través de la app en vez de enlazar `media_url` directo

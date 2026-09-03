@@ -415,6 +415,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
         Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
 
+        // Vista imprimible del hilo: se abre en pestaña nueva y el navegador
+        // la guarda como PDF.
+        Route::get('/conversations/{conversationId}/export', [ChatController::class, 'exportPrintable'])
+            ->name('chat.conversations.export');
+
         // Acciones sobre un mensaje concreto (menú de la burbuja)
         Route::post('/messages/{messageId}/react', [ChatController::class, 'reactToMessage']);
         Route::post('/messages/{messageId}/forward', [ChatController::class, 'forwardMessage']);

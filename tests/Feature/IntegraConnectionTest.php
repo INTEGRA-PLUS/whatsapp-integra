@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\CompanyIntegration;
+use App\Support\IntegrationProvider;
 use App\Services\Integra;
 use App\Services\IntegraClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -213,10 +214,10 @@ class IntegraConnectionTest extends TestCase
             ])
             ->assertOk();
 
-        // Solo las del proveedor: desde que cada empresa nace con la integración
-        // de menús con IA, contar todas las filas contaría también esa.
+        // Sólo las filas del proveedor: la empresa tiene además la de la IA de
+        // los menús, que se siembra sola y no comparte esta conexión.
         $rows = CompanyIntegration::where('company_id', $company->id)
-            ->whereIn('key', [CompanyIntegration::KEY_INVOICE_PAYMENTS, CompanyIntegration::KEY_CONTACTS_SYNC])
+            ->whereIn('key', IntegrationProvider::siblingKeys(CompanyIntegration::KEY_INVOICE_PAYMENTS))
             ->get();
 
         $this->assertCount(2, $rows, 'Las dos funciones del proveedor quedan conectadas.');
