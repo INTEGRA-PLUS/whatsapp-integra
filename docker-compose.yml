@@ -77,6 +77,7 @@ x-app-env: &app-env
   # WhatsApp con Facebook" no se pinta — sin error y sin nada que investigar.
   META_APP_ID: ${META_APP_ID:-}
   META_ES_CONFIG_ID: ${META_ES_CONFIG_ID:-}
+  META_ES_GRAPH_VERSION: ${META_ES_GRAPH_VERSION:-}
   META_API_VERSION: ${META_API_VERSION:-v21.0}
   META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 

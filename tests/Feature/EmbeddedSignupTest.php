@@ -170,6 +170,30 @@ class EmbeddedSignupTest extends TestCase
     }
 
     /**
+     * La ventana se abre con su propia versión de Graph.
+     *
+     * Si usara `api_version` —la de los envíos, hoy v21— el diálogo serviría
+     * el flujo antiguo del registro insertado y la coexistencia no aparecería,
+     * con el único síntoma de que rechaza el número del cliente. Y subir esa
+     * otra afectaría a los envíos de las 11 empresas en producción.
+     */
+    public function test_la_ventana_usa_su_propia_version_de_graph(): void
+    {
+        config([
+            'services.meta.app_id' => '865904982715022',
+            'services.meta.app_secret' => 'x',
+            'services.meta.embedded_signup_config_id' => '1739855773915048',
+            'services.meta.api_version' => 'v21.0',
+            'services.meta.embedded_signup_graph_version' => 'v25.0',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->getJson('/api/embedded-signup/config')
+            ->assertOk()
+            ->assertJsonPath('api_version', 'v25.0');
+    }
+
+    /**
      * El secreto puede venir de META_APP_SECRETS, con la forma "app_id:secreto".
      *
      * Es como está configurado producción: el singular META_APP_SECRET está

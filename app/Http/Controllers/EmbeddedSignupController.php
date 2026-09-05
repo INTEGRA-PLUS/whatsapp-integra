@@ -69,7 +69,8 @@ class EmbeddedSignupController extends Controller
             'enabled'     => (bool) ($appId && $configId && $hasSecret),
             'app_id'      => $appId,
             'config_id'   => $configId,
-            'api_version' => config('services.meta.api_version', 'v21.0'),
+            // La de la ventana, no la de los envíos: ver services.meta.
+            'api_version' => config('services.meta.embedded_signup_graph_version', 'v25.0'),
         ]);
     }
 

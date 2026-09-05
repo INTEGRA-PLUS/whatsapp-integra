@@ -50,6 +50,17 @@ return [
         // Sin él (o sin app_id, o sin app_secret) el botón simplemente no se
         // muestra y se sigue conectando a mano, que es como funcionó siempre.
         'embedded_signup_config_id' => env('META_ES_CONFIG_ID'),
+        // Versión de Graph con la que se abre la VENTANA del registro insertado.
+        //
+        // Va aparte de `api_version` a propósito: esa la usan los envíos de
+        // los 11 clientes en producción y subirla es un riesgo que no hace
+        // falta correr. Esta sólo afecta al diálogo de Meta.
+        //
+        // El registro insertado v4 —el que trae la coexistencia— salió en
+        // octubre de 2025, alineado con Graph v25. Abrir el diálogo en v21,
+        // de un año antes, sirve el flujo antiguo: pide un número nuevo y
+        // rechaza cualquiera que ya tenga WhatsApp, sin decir por qué.
+        'embedded_signup_graph_version' => env('META_ES_GRAPH_VERSION', 'v25.0'),
         // Secretos aceptados al validar la firma de los webhooks entrantes.
         //
         // Varias apps de Meta (Integra e Ispintegra) entregan al MISMO callback y
