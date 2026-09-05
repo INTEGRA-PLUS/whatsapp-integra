@@ -692,6 +692,57 @@ class MetaWhatsAppService
         }
     }
 
+    /**
+     * Canjea el código del registro insertado por el token del cliente.
+     *
+     * Es el único paso del onboarding que usa el secreto de la app, y por eso
+     * tiene que ocurrir en el servidor: el navegador sólo recibe un código de
+     * un solo uso, nunca el secreto ni el token.
+     *
+     * Devuelve un "business integration system user access token" del cliente,
+     * que es con lo que se suscribe la app a su WABA y con lo que la instancia
+     * va a mandar mensajes.
+     *
+     * @return array{success: bool, token?: string, error?: mixed}
+     */
+    public function exchangeSignupCode(string $code): array
+    {
+        $appId = config('services.meta.app_id');
+        $appSecret = $this->appSecretFor($appId);
+
+        if (! $appId || ! $appSecret) {
+            return ['success' => false, 'error' => 'Falta la configuración de la app de Meta en el servidor.'];
+        }
+
+        try {
+            $response = Http::timeout(30)->get("{$this->baseUri}/oauth/access_token", [
+                'client_id'     => $appId,
+                'client_secret' => $appSecret,
+                'code'          => $code,
+            ]);
+
+            $token = $response->json('access_token');
+
+            if ($response->successful() && $token) {
+                return ['success' => true, 'token' => $token];
+            }
+
+            // El código es de un solo uso y caduca rápido, así que el error más
+            // común aquí es un reintento sobre un código ya canjeado. No se
+            // registra el código: es una credencial de corta vida.
+            Log::error('Embedded Signup: fallo al canjear el código', [
+                'status'   => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'error' => $response->json('error.message') ?? 'Meta rechazó el código.'];
+        } catch (\Exception $e) {
+            Log::error('Embedded Signup: excepción al canjear el código', ['message' => $e->getMessage()]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     public function getWaba(string $wabaId, string $accessToken)
     {
         return $this->graphGet("/{$wabaId}", $accessToken, [
@@ -1075,6 +1126,30 @@ class MetaWhatsAppService
      *
      * @return array{secrets: list<string>, by_app_id: array<string, string>}
      */
+    /**
+     * El secreto de una app concreta.
+     *
+     * En producción `META_APP_SECRET` (singular) está vacío: los secretos viven
+     * en `META_APP_SECRETS` con la forma "app_id:secreto", porque dos apps de
+     * Meta entregan al mismo callback y cada una firma con el suyo. Buscar sólo
+     * en el singular dejaría el registro insertado apagado en silencio — sin
+     * error, sin botón, sin nada que investigar.
+     *
+     * Se cae al singular por si algún entorno lo configuró así.
+     */
+    public function appSecretFor(?string $appId): ?string
+    {
+        if ($appId) {
+            $porApp = $this->parseConfiguredAppSecrets()['by_app_id'];
+
+            if (isset($porApp[$appId])) {
+                return $porApp[$appId];
+            }
+        }
+
+        return config('services.meta.app_secret') ?: null;
+    }
+
     private function parseConfiguredAppSecrets(): array
     {
         $configured = config('services.meta.webhook_app_secrets');

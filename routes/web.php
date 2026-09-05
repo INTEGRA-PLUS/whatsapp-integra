@@ -171,6 +171,13 @@ Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Registro insertado de Meta: conectar el WhatsApp del cliente sin pegar
+    // tokens a mano. El GET sólo devuelve identificadores públicos; el POST es
+    // el que crea la instancia, y por eso pide el mismo permiso que crearla.
+    Route::get('/api/embedded-signup/config', [App\Http\Controllers\EmbeddedSignupController::class, 'config']);
+    Route::post('/api/embedded-signup', [App\Http\Controllers\EmbeddedSignupController::class, 'store'])
+        ->middleware('permission:instances.create');
     Route::get('/reports', [App\Http\Controllers\ReportsController::class, 'index'])
         ->middleware('permission:reports.view')->name('reports.index');
 

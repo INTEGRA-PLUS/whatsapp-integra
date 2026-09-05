@@ -38,6 +38,18 @@ return [
     'meta' => [
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'app_secret' => env('META_APP_SECRET'),
+        // ID de la app que sirve a los clientes (Ispintegra). Es público: viaja
+        // al navegador para inicializar el SDK del registro insertado.
+        'app_id' => env('META_APP_ID'),
+        // Registro insertado (Embedded Signup): la ventana oficial de Meta donde
+        // el cliente conecta su propio WhatsApp sin que nadie pegue tokens a
+        // mano. El identificador sale del panel de la app, en
+        // "Inicio de sesión con Facebook para empresas > Configuraciones", y
+        // tampoco es secreto: va en el JavaScript de la página.
+        //
+        // Sin él (o sin app_id, o sin app_secret) el botón simplemente no se
+        // muestra y se sigue conectando a mano, que es como funcionó siempre.
+        'embedded_signup_config_id' => env('META_ES_CONFIG_ID'),
         // Secretos aceptados al validar la firma de los webhooks entrantes.
         //
         // Varias apps de Meta (Integra e Ispintegra) entregan al MISMO callback y

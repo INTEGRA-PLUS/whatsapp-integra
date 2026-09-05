@@ -3,6 +3,7 @@ import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Wifi, WifiOff } from 'lucide-react';
+import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 
 export default function InstancesIndex({ instances }) {
     const [showCreate, setShowCreate] = useState(false);
@@ -44,9 +45,16 @@ export default function InstancesIndex({ instances }) {
                         <h1 className="text-2xl font-semibold text-foreground">Instancias de WhatsApp</h1>
                         <p className="text-sm text-muted-foreground mt-1">Gestiona tus conexiones con la API de Meta</p>
                     </div>
-                    <Button onClick={() => setShowCreate(true)} className="gap-2">
-                        <Plus className="size-4" /> Nueva Instancia
-                    </Button>
+                    {/* Conectar con Facebook es el camino normal; "Nueva
+                        Instancia" queda como respaldo para pegar los datos a
+                        mano si la ventana de Meta falla o el entorno no la
+                        tiene configurada. */}
+                    <div className="flex items-center gap-2">
+                        <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances'] })} />
+                        <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
+                            <Plus className="size-4" /> Nueva Instancia
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Grid de instancias */}
