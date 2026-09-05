@@ -79,6 +79,28 @@ que hace que el cliente abandone el flujo.
 
 El `config_id` no cambia al editar, así que no hay que tocar el `.env`.
 
+### Estado: falta que Meta habilite la coexistencia (2026-09-05)
+
+Todo lo configurable está hecho y **el flujo sigue sin ofrecer la coexistencia**:
+la ventana muestra "Agrega tu número de teléfono" y rechaza el número por tener
+WhatsApp. Antes de volver a tocar nada, esto ya está verificado y NO es la causa:
+
+- App del cliente: WhatsApp **Business** 2.26.34.74 (mínimo 2.24.17).
+- País: Colombia (sólo Nigeria y Sudáfrica están excluidos).
+- Tech Provider con **acceso avanzado** en los dos permisos, verificación de
+  negocio en regla.
+- Configuración v4, con WhatsApp Cloud API marcado en *Products*.
+- `featureType` + `sessionInfoVersion: "3"` viajando (comprobado en el bundle
+  desplegado, no sólo en el fuente).
+- Diálogo abriéndose en **v25.0** (visible en la URL de la ventana).
+- Session logging activo y los tres webhooks suscritos.
+
+Queda pendiente pedirle a Meta que active la función, por Soporte directo:
+Question Topic **"WABiz: Onboarding"** + **"TechProvider: Onboarding"**, Request
+Type **"Embedded Signup - Coexistence Onboarding"**. Que exista una ruta de
+soporte con ese nombre exacto es la señal de que la habilitación no es
+automática.
+
 ### Las dos trampas de la coexistencia
 
 **`sessionInfoVersion: "3"` no es opcional.** El `featureType` por sí solo no
