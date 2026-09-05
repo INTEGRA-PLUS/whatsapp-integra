@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
-import { Loader2, MessageCircle } from 'lucide-react';
+import { Loader2, MessageCircle, Smartphone } from 'lucide-react';
 
 /**
  * Botón del registro insertado de Meta (Embedded Signup).
@@ -91,7 +91,7 @@ export default function EmbeddedSignupButton({ onConnected }) {
         return () => window.removeEventListener('message', onMessage);
     }, []);
 
-    const launch = useCallback(() => {
+    const launch = useCallback((coexistencia = false) => {
         setError(null);
 
         if (!window.FB) {
@@ -125,7 +125,13 @@ export default function EmbeddedSignupButton({ onConnected }) {
             config_id: config.config_id,
             response_type: 'code',
             override_default_response_type: true,
-            extras: { setup: {} },
+            // `featureType` es lo único que separa los dos caminos. Sin él,
+            // Meta rechaza cualquier número que ya tenga WhatsApp; con él,
+            // ofrece conectar el que el negocio ya viene usando y conservar
+            // ambos lados sincronizados.
+            extras: coexistencia
+                ? { setup: {}, featureType: 'whatsapp_business_app_onboarding' }
+                : { setup: {} },
         });
     }, [config, onConnected]);
 
@@ -133,10 +139,30 @@ export default function EmbeddedSignupButton({ onConnected }) {
 
     return (
         <div className="space-y-2">
-            <Button onClick={launch} disabled={loading} className="gap-2 bg-[#1877f2] hover:bg-[#166fe0] text-white">
-                {loading ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
-                {loading ? 'Conectando…' : 'Conectar WhatsApp con Facebook'}
-            </Button>
+            <div className="flex items-center gap-2">
+                <Button onClick={() => launch(false)} disabled={loading} className="gap-2 bg-[#1877f2] hover:bg-[#166fe0] text-white">
+                    {loading ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
+                    {loading ? 'Conectando…' : 'Conectar un número nuevo'}
+                </Button>
+                {/* El número que el negocio ya usa a diario no pasa por el
+                    camino de arriba: Meta lo rechaza por tener WhatsApp. Este
+                    es el único que lo admite, y deja la app del celular
+                    funcionando. */}
+                <Button onClick={() => launch(true)} disabled={loading} variant="outline" className="gap-2">
+                    <Smartphone className="size-4" />
+                    Conectar mi WhatsApp Business actual
+                </Button>
+            </div>
+            {/* Se avisa aquí y no sólo en la pantalla de Meta: el consentimiento
+                de Meta cubre compartir el historial, pero no los cambios que la
+                coexistencia hace en la app del celular. */}
+            <p className="text-[11px] text-muted-foreground max-w-xl">
+                Conectar el número que ya usas mantiene tu WhatsApp Business funcionando, pero
+                desactiva en él los mensajes temporales, los de ver una vez y la ubicación en
+                tiempo real; las listas de difusión quedan de solo lectura y los dispositivos
+                vinculados se desconectan (se pueden volver a vincular). Los grupos no se
+                sincronizan.
+            </p>
             {error && <p className="text-xs text-destructive max-w-md">{error}</p>}
         </div>
     );
