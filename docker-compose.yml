@@ -70,6 +70,13 @@ x-app-env: &app-env
   # línea la variable no llega al contenedor y el webhook rechaza TODO con 403,
   # por muy bien puesta que esté en el .env del host.
   META_APP_SECRETS: ${META_APP_SECRETS:-}
+  # App que sirve a los clientes y configuración del registro insertado. Ni el
+  # id de la app ni el de la configuración son secretos (viajan al navegador),
+  # pero valen lo mismo que META_APP_SECRETS en cuanto a esto: si faltan aquí,
+  # están en el .env y no llegan al contenedor, y entonces el botón "Conectar
+  # WhatsApp con Facebook" no se pinta — sin error y sin nada que investigar.
+  META_APP_ID: ${META_APP_ID:-}
+  META_ES_CONFIG_ID: ${META_ES_CONFIG_ID:-}
   META_API_VERSION: ${META_API_VERSION:-v21.0}
   META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 
