@@ -59,6 +59,26 @@ Además:
 | `MetaWhatsAppService::exchangeSignupCode` | El único paso que usa el secreto de la app. Servidor a servidor, siempre. |
 | `InstanceController@store` | El formulario manual de respaldo. No lo toca nada de lo anterior. |
 
+### La coexistencia se activa en la configuración, no en el código
+
+Antes que nada: la configuración de Facebook Login for Business tiene un paso
+**Products**, y **crearla desde una plantilla lo deja vacío**. Meta lo dice sin
+mucho énfasis: *"seleccionar los productos te pone automáticamente en v4"*. Sin
+ningún producto marcado la configuración no es v4, y la coexistencia es una
+función de v4 — así que el `featureType` del código no hace absolutamente nada.
+
+El síntoma es el mismo error de siempre ("este número ya está registrado en una
+cuenta de WhatsApp"), así que parece que el problema es el número del cliente.
+No lo es.
+
+Se arregla en `Inicio de sesión con Facebook para empresas > Configuraciones >
+Editar > Products`, marcando **WhatsApp Cloud API**. Ojo: *"This can't be changed
+later"*. Marcar WhatsApp Cloud API auto-selecciona también la API de mensajes de
+marketing; si no vas a usarla, desmárcala — pedir permisos que no se usan es lo
+que hace que el cliente abandone el flujo.
+
+El `config_id` no cambia al editar, así que no hay que tocar el `.env`.
+
 ### Las dos trampas de la coexistencia
 
 **`sessionInfoVersion: "3"` no es opcional.** El `featureType` por sí solo no
@@ -168,8 +188,10 @@ Es trabajo de modelo de datos.
 - **"This number is registered to an existing WhatsApp account".** O se pulsó el
   botón equivocado, o la coexistencia no se activó. Comprueba lo segundo antes de
   culpar al número: si la ventana muestra la pantalla de "agrega tu número" en vez
-  de ofrecerte conectar tu cuenta existente, el `featureType` no llegó — revisa que
-  vaya acompañado de `sessionInfoVersion: "3"`.
+  de ofrecerte conectar tu cuenta existente, la función no está activa. Revisa,
+  **por este orden**: que el paso *Products* de la configuración tenga WhatsApp
+  Cloud API marcado (es la causa más probable y la menos evidente), y que el
+  `featureType` vaya acompañado de `sessionInfoVersion: "3"`.
 - **"Has alcanzado el máximo de números".** Un portafolio nuevo está limitado a
   **2 números registrados** hasta que el negocio se verifique o llegue a 2.000 de
   límite de mensajería.
