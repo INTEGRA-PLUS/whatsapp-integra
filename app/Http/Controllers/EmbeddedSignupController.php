@@ -22,6 +22,11 @@ use Illuminate\Support\Str;
  *
  * El navegador nunca ve el secreto de la app ni el token del cliente: recibe un
  * código de un solo uso y lo manda aquí, y el canje ocurre servidor a servidor.
+ *
+ * Hay dos caminos y no son intercambiables: el normal rechaza cualquier número
+ * que ya tenga WhatsApp, y el de coexistencia es el único que admite el número
+ * que el negocio ya usa a diario. Cuál aplica, qué le cambia al cliente en su
+ * celular y qué hacer cuando falla está en docs/conexion-whatsapp.md.
  */
 class EmbeddedSignupController extends Controller
 {

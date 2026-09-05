@@ -21,6 +21,10 @@ import { Loader2, MessageCircle, Smartphone } from 'lucide-react';
  *
  * Si falta configuración en el servidor el botón no se pinta: se sigue
  * conectando a mano, como siempre.
+ *
+ * Los dos botones son este mismo código con distinto `featureType`. Lo que
+ * separa un camino del otro, y lo que la coexistencia le cambia al cliente en
+ * su celular, está en docs/conexion-whatsapp.md.
  */
 export default function EmbeddedSignupButton({ onConnected }) {
     const [config, setConfig] = useState(null);
@@ -154,15 +158,28 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 </Button>
             </div>
             {/* Se avisa aquí y no sólo en la pantalla de Meta: el consentimiento
-                de Meta cubre compartir el historial, pero no los cambios que la
-                coexistencia hace en la app del celular. */}
-            <p className="text-[11px] text-muted-foreground max-w-xl">
-                Conectar el número que ya usas mantiene tu WhatsApp Business funcionando, pero
-                desactiva en él los mensajes temporales, los de ver una vez y la ubicación en
-                tiempo real; las listas de difusión quedan de solo lectura y los dispositivos
-                vinculados se desconectan (se pueden volver a vincular). Los grupos no se
-                sincronizan.
-            </p>
+                de Meta cubre compartir el historial, pero NO menciona ninguno de
+                estos cambios en la app del celular. Quien pulsa tiene que
+                saberlos antes, no descubrirlos después. */}
+            <details className="max-w-xl rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                <summary className="cursor-pointer text-xs font-medium text-foreground">
+                    Qué le pasa a tu WhatsApp Business si conectas el número que ya usas
+                </summary>
+                <div className="mt-2 space-y-2 text-[11px] text-muted-foreground">
+                    <p>Sigues respondiendo desde el celular y no pierdes ningún chat. Pero en esa app:</p>
+                    <ul className="list-disc pl-4 space-y-1">
+                        <li>Se desactivan los <strong>mensajes temporales</strong>, los de <strong>ver una vez</strong> y la <strong>ubicación en tiempo real</strong> en los chats 1 a 1.</li>
+                        <li>Las <strong>listas de difusión</strong> quedan de solo lectura: las existentes se leen, no se crean nuevas.</li>
+                        <li>Los <strong>dispositivos vinculados se desconectan</strong>, WhatsApp Web incluido. Se vuelven a vincular después, pero se caen en el momento.</li>
+                        <li>Los <strong>grupos no se sincronizan</strong>. Siguen en tu app, no aparecen aquí.</li>
+                    </ul>
+                    <p>
+                        Además, el número queda con un tope de <strong>20 mensajes por segundo</strong>, y Meta
+                        te ofrecerá compartir hasta <strong>6 meses</strong> de historial: si aceptas, esas
+                        conversaciones se copian a este sistema.
+                    </p>
+                </div>
+            </details>
             {error && <p className="text-xs text-destructive max-w-md">{error}</p>}
         </div>
     );
