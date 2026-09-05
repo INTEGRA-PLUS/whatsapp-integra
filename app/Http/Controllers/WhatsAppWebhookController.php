@@ -96,7 +96,7 @@ class WhatsAppWebhookController extends Controller
         $this->failedEvents = 0;
 
         Log::channel('whatsapp')->info('📩 Webhook recibido de Meta', [
-            'payload' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+            'payload' => $this->payloadForLog($data),
         ]);
 
         foreach ($data['entry'] ?? [] as $entry) {
@@ -130,6 +130,53 @@ class WhatsAppWebhookController extends Controller
         }
 
         return response()->json(['status' => 'ok'], 200);
+    }
+
+    /**
+     * Campos cuyo payload NO se escribe en el log.
+     *
+     * Son los de coexistencia: `history` trae hasta seis meses de
+     * conversaciones del cliente y `smb_message_echoes` cada mensaje que el
+     * negocio manda desde su celular. Volcarlos aquí escribiría en disco, en
+     * claro, la mensajería completa de una empresa ajena — y este log ya pesa
+     * decenas de MB al día sin ellos.
+     *
+     * De estos se registra que llegaron y su tamaño, que es lo único que sirve
+     * para diagnosticar; el contenido no se guarda.
+     */
+    private const CAMPOS_SIN_VOLCADO = ['history', 'smb_message_echoes', 'smb_app_state_sync'];
+
+    /**
+     * Qué se escribe en el log por cada webhook.
+     *
+     * Los de siempre se vuelcan enteros, porque es lo que ha permitido
+     * diagnosticar entregas durante meses. Los de coexistencia se resumen.
+     */
+    private function payloadForLog(array $data): string
+    {
+        $sensibles = [];
+
+        foreach ($data['entry'] ?? [] as $entry) {
+            foreach ($entry['changes'] ?? [] as $change) {
+                $field = $change['field'] ?? null;
+
+                if (in_array($field, self::CAMPOS_SIN_VOLCADO, true)) {
+                    $sensibles[$field] = ($sensibles[$field] ?? 0)
+                        + strlen(json_encode($change['value'] ?? [], JSON_UNESCAPED_UNICODE));
+                }
+            }
+        }
+
+        if ($sensibles === []) {
+            return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        }
+
+        $resumen = [];
+        foreach ($sensibles as $field => $bytes) {
+            $resumen[] = "{$field} ({$bytes} bytes, contenido omitido)";
+        }
+
+        return '[coexistencia] ' . implode(', ', $resumen);
     }
 
     private function processChange($value)
