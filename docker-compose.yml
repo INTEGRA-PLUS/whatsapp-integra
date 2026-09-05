@@ -77,7 +77,10 @@ x-app-env: &app-env
   # WhatsApp con Facebook" no se pinta — sin error y sin nada que investigar.
   META_APP_ID: ${META_APP_ID:-}
   META_ES_CONFIG_ID: ${META_ES_CONFIG_ID:-}
-  META_ES_GRAPH_VERSION: ${META_ES_GRAPH_VERSION:-}
+  # Con default vacío la variable llega PUESTA pero vacía, y una cadena vacía
+  # pisa el valor por defecto de config/services.php. El default va aquí, como
+  # en META_API_VERSION dos líneas más abajo.
+  META_ES_GRAPH_VERSION: ${META_ES_GRAPH_VERSION:-v25.0}
   META_API_VERSION: ${META_API_VERSION:-v21.0}
   META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 
