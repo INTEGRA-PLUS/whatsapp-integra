@@ -59,6 +59,21 @@ Además:
 | `MetaWhatsAppService::exchangeSignupCode` | El único paso que usa el secreto de la app. Servidor a servidor, siempre. |
 | `InstanceController@store` | El formulario manual de respaldo. No lo toca nada de lo anterior. |
 
+### Las dos trampas de la coexistencia
+
+**`sessionInfoVersion: "3"` no es opcional.** El `featureType` por sí solo no
+hace nada: sin esa segunda propiedad en `extras`, Meta ignora la petición y
+sirve el flujo normal. Y el flujo normal rechaza cualquier número que ya tenga
+WhatsApp, así que el síntoma es *exactamente* el error que la coexistencia venía
+a evitar — parece un problema del número del cliente y es de la petición.
+
+**El evento de cierre trae sólo el `waba_id`.** La coexistencia no termina con
+`FINISH` sino con `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`, y su payload no
+incluye `phone_number_id`: el número ya existía, así que Meta no lo devuelve.
+Por eso el backend acepta que falte y lo resuelve preguntando por los números del
+WABA, ya con el token en la mano. Exigirlo hacía fallar la conexión en el último
+paso, después de que el cliente ya había aceptado todo.
+
 ### Por qué el listener se registra antes de abrir la ventana
 
 Meta devuelve las dos mitades del resultado **por caminos distintos**:
@@ -117,6 +132,17 @@ público listado en *Dominios permitidos para el SDK para JavaScript*.
 - Estos webhooks suscritos en la app, además de los de siempre: `history`,
   `smb_app_state_sync`, `smb_message_echoes`.
 
+## Cómo se desconecta después
+
+**No sirve la Deregister API.** Un número que está a la vez en Cloud API y en la
+app no se puede desregistrar por ahí. Lo desconecta el propio cliente desde su
+celular: **Ajustes > Cuenta > Plataforma de Business > Desconectar cuenta**.
+
+Al hacerlo llega un webhook `account_update` con evento `PARTNER_REMOVED`.
+
+Ojo con el reloj: hay **24 horas** desde el onboarding para sincronizar el
+historial. Pasadas, el cliente tiene que desconectarse y repetir toda la ventana.
+
 ## Lo que todavía NO hace
 
 Conectar por coexistencia **no llena el chat del CRM**. Los tres webhooks llegan
@@ -139,8 +165,11 @@ Es trabajo de modelo de datos.
 - **El botón no aparece.** Falta configuración. Mira `GET /api/embedded-signup/config`:
   si dice `enabled:false`, revisa las tres variables *dentro del contenedor*, no
   en el `.env` del host.
-- **"This number is registered to an existing WhatsApp account".** El número ya
-  tiene WhatsApp: es el botón de coexistencia el que hay que usar, no el otro.
+- **"This number is registered to an existing WhatsApp account".** O se pulsó el
+  botón equivocado, o la coexistencia no se activó. Comprueba lo segundo antes de
+  culpar al número: si la ventana muestra la pantalla de "agrega tu número" en vez
+  de ofrecerte conectar tu cuenta existente, el `featureType` no llegó — revisa que
+  vaya acompañado de `sessionInfoVersion: "3"`.
 - **"Has alcanzado el máximo de números".** Un portafolio nuevo está limitado a
   **2 números registrados** hasta que el negocio se verifique o llegue a 2.000 de
   límite de mensajería.

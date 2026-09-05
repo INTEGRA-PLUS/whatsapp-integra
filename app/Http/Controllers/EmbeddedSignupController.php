@@ -34,6 +34,18 @@ class EmbeddedSignupController extends Controller
     {
     }
 
+    private function instanciaCon(string $phoneNumberId): ?Instance
+    {
+        return Instance::where('phone_number_id', $phoneNumberId)->where('active', true)->first();
+    }
+
+    private function mensajeOcupado(Instance $ocupado, $user): string
+    {
+        return $ocupado->company_id === $user->company_id
+            ? 'Ese número ya está conectado en esta cuenta.'
+            : 'Ese número ya está conectado en otra cuenta. Escríbenos para moverlo.';
+    }
+
     /**
      * GET /api/embedded-signup/config — lo que el navegador necesita para abrir
      * la ventana.
@@ -78,27 +90,25 @@ class EmbeddedSignupController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'code'            => 'required|string',
-            'waba_id'         => 'required|string|max:64',
-            'phone_number_id' => 'required|string|max:64',
+            'code'    => 'required|string',
+            'waba_id' => 'required|string|max:64',
+            // Opcional a propósito: el evento que cierra la coexistencia
+            // (FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING) trae SÓLO el waba_id,
+            // porque el número ya existía. Se resuelve más abajo preguntándole
+            // a Meta por los números de ese WABA.
+            'phone_number_id' => 'nullable|string|max:64',
         ]);
 
         $user = auth()->user();
 
         // Un phone_number_id activo en dos instancias hace que los mensajes
-        // entrantes lleguen sólo a una. Se corta antes de gastar el código,
-        // que es de un solo uso: si se canjea y luego falla la validación, el
-        // cliente tendría que repetir toda la ventana.
-        $ocupado = Instance::where('phone_number_id', $data['phone_number_id'])
-            ->where('active', true)
-            ->first();
-
-        if ($ocupado) {
-            return response()->json([
-                'message' => $ocupado->company_id === $user->company_id
-                    ? 'Ese número ya está conectado en esta cuenta.'
-                    : 'Ese número ya está conectado en otra cuenta. Escríbenos para moverlo.',
-            ], 422);
+        // entrantes lleguen sólo a una. Cuando lo sabemos de antemano se corta
+        // aquí, antes de gastar el código: es de un solo uso, y canjearlo para
+        // luego fallar obliga al cliente a repetir toda la ventana.
+        if ($data['phone_number_id'] ?? null) {
+            if ($ocupado = $this->instanciaCon($data['phone_number_id'])) {
+                return response()->json(['message' => $this->mensajeOcupado($ocupado, $user)], 422);
+            }
         }
 
         $exchange = $this->meta->exchangeSignupCode($data['code']);
@@ -127,17 +137,42 @@ class EmbeddedSignupController extends Controller
             ], 422);
         }
 
-        // El nombre y el número son para que la instancia se reconozca en la
-        // lista. Si Meta no los da, la conexión sigue siendo válida y se usa un
-        // nombre provisional que el admin puede cambiar.
-        $detalle = $this->meta->getPhoneNumber($data['phone_number_id'], $token);
-        $numero = $detalle['data'] ?? [];
+        // En coexistencia el número no vino en el payload: se pregunta al
+        // WABA. Se hace después del canje porque hasta aquí no hay token con
+        // el que preguntar.
+        $numero = [];
+        $phoneNumberId = $data['phone_number_id'] ?? null;
+
+        if (! $phoneNumberId) {
+            $listado = $this->meta->listWabaPhoneNumbers($data['waba_id'], $token);
+            $numero = $listado['data']['data'][0] ?? [];
+            $phoneNumberId = $numero['id'] ?? null;
+
+            if (! $phoneNumberId) {
+                return response()->json([
+                    'message' => 'La cuenta se autorizó pero no tiene ningún número asociado todavía. Espera un momento y vuelve a intentarlo.',
+                ], 422);
+            }
+
+            // La comprobación de duplicado no se pudo hacer antes porque no
+            // había número que comprobar. Aquí ya no ahorra el código, pero
+            // sigue evitando dos instancias sobre el mismo número.
+            if ($ocupado = $this->instanciaCon($phoneNumberId)) {
+                return response()->json(['message' => $this->mensajeOcupado($ocupado, $user)], 422);
+            }
+        } else {
+            // El nombre y el número son para que la instancia se reconozca en
+            // la lista. Si Meta no los da, la conexión sigue siendo válida y se
+            // usa un nombre provisional que el admin puede cambiar.
+            $detalle = $this->meta->getPhoneNumber($phoneNumberId, $token);
+            $numero = $detalle['data'] ?? [];
+        }
 
         $instance = Instance::create([
             'company_id'           => $user->company_id,
             'uuid'                 => Str::uuid(),
             'name'                 => $numero['verified_name'] ?? 'WhatsApp',
-            'phone_number_id'      => $data['phone_number_id'],
+            'phone_number_id'      => $phoneNumberId,
             'waba_id'              => $data['waba_id'],
             'display_phone_number' => $numero['display_phone_number'] ?? null,
             'access_token'         => $token,

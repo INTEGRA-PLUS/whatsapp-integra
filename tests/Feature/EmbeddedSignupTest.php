@@ -208,6 +208,72 @@ class EmbeddedSignupTest extends TestCase
             && str_contains($r->url(), 'client_secret=el-bueno'));
     }
 
+    /**
+     * Coexistencia: el payload trae sólo el waba_id.
+     *
+     * El evento que cierra ese camino
+     * (FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING) no devuelve phone_number_id,
+     * porque el número ya existía. Exigirlo hacía fallar la conexión justo al
+     * final, después de que el cliente ya había aceptado todo en la ventana de
+     * Meta y conectado su WhatsApp Business.
+     */
+    public function test_sin_phone_number_id_lo_resuelve_desde_el_waba(): void
+    {
+        config([
+            'services.meta.app_id' => '865904982715022',
+            'services.meta.app_secret' => 'secreto',
+            'services.meta.embedded_signup_config_id' => '1739855773915048',
+        ]);
+
+        Http::fake([
+            '*/oauth/access_token*' => Http::response(['access_token' => 'EAA-token'], 200),
+            '*/subscribed_apps' => Http::response(['success' => true], 200),
+            '*/phone_numbers*' => Http::response(['data' => [[
+                'id' => '106540352242922',
+                'display_phone_number' => '+57 318 1454747',
+                'verified_name' => 'Mi Negocio',
+            ]]], 200),
+        ]);
+
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->postJson('/api/embedded-signup', [
+                'code' => 'AQB-codigo',
+                'waba_id' => '102290129340398',
+            ])
+            ->assertOk()
+            ->assertJsonPath('instance.display_phone_number', '+57 318 1454747');
+
+        $instance = Instance::where('company_id', $admin->company_id)->first();
+        $this->assertSame('106540352242922', $instance->phone_number_id);
+        $this->assertSame('Mi Negocio', $instance->name);
+    }
+
+    /** Y si el WABA todavía no tiene número, se explica en vez de reventar. */
+    public function test_un_waba_sin_numeros_no_crea_instancia(): void
+    {
+        config([
+            'services.meta.app_id' => '865904982715022',
+            'services.meta.app_secret' => 'secreto',
+        ]);
+
+        Http::fake([
+            '*/oauth/access_token*' => Http::response(['access_token' => 'EAA-token'], 200),
+            '*/subscribed_apps' => Http::response(['success' => true], 200),
+            '*/phone_numbers*' => Http::response(['data' => []], 200),
+        ]);
+
+        $this->actingAs($this->admin())
+            ->postJson('/api/embedded-signup', [
+                'code' => 'AQB-codigo',
+                'waba_id' => '102290129340398',
+            ])
+            ->assertStatus(422);
+
+        $this->assertSame(0, Instance::count());
+    }
+
     /* ───────────────────────────── helpers ───────────────────────────── */
 
     private function fakeMeta(bool $subscribeOk = true): void

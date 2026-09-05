@@ -77,10 +77,15 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 const data = JSON.parse(event.data);
                 if (data.type !== 'WA_EMBEDDED_SIGNUP') return;
 
-                if (data.event === 'FINISH' || data.event === 'FINISH_ONLY_WABA') {
+                // La coexistencia termina con su propio evento, y su payload
+                // trae SÓLO el waba_id: el número ya existe, así que Meta no
+                // lo devuelve. Exigir aquí el phone_number_id haría fallar el
+                // camino justo al final, después de que el cliente ya aceptó
+                // todo. Lo resuelve el servidor a partir del WABA.
+                if (['FINISH', 'FINISH_ONLY_WABA', 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'].includes(data.event)) {
                     sessionInfo.current = {
                         waba_id: data.data?.waba_id,
-                        phone_number_id: data.data?.phone_number_id,
+                        phone_number_id: data.data?.phone_number_id ?? null,
                     };
                 } else if (data.event === 'CANCEL') {
                     sessionInfo.current = null;
@@ -114,8 +119,8 @@ export default function EmbeddedSignupButton({ onConnected }) {
 
             const info = sessionInfo.current;
 
-            if (!info?.waba_id || !info?.phone_number_id) {
-                setError('Meta autorizó la conexión pero no devolvió la cuenta ni el número. Vuelve a intentarlo, y si se repite conéctalo a mano.');
+            if (!info?.waba_id) {
+                setError('Meta autorizó la conexión pero no devolvió la cuenta. Vuelve a intentarlo, y si se repite conéctalo a mano.');
                 return;
             }
 
@@ -133,8 +138,13 @@ export default function EmbeddedSignupButton({ onConnected }) {
             // Meta rechaza cualquier número que ya tenga WhatsApp; con él,
             // ofrece conectar el que el negocio ya viene usando y conservar
             // ambos lados sincronizados.
+            // `sessionInfoVersion: 3` no es opcional: sin él Meta ignora el
+            // featureType y sirve el flujo normal, que rechaza cualquier
+            // número que ya tenga WhatsApp. El síntoma es exactamente el
+            // error que se quería evitar, así que parece un problema del
+            // número y no de la petición.
             extras: coexistencia
-                ? { setup: {}, featureType: 'whatsapp_business_app_onboarding' }
+                ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
                 : { setup: {} },
         });
     }, [config, onConnected]);
