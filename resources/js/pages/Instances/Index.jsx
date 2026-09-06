@@ -70,10 +70,14 @@ export default function InstancesIndex({ instances }) {
                             <div key={instance.id} className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="flex size-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
-                                            {instance.active
+                                        <div className={`flex size-10 items-center justify-center rounded-lg ${
+                                            !instance.active ? 'bg-muted'
+                                                : instance.health_status === 'unreachable' ? 'bg-red-100 dark:bg-red-900/30'
+                                                : 'bg-green-100 dark:bg-green-900/30'
+                                        }`}>
+                                            {instance.active && instance.health_status !== 'unreachable'
                                                 ? <Wifi className="size-5 text-green-600 dark:text-green-400" />
-                                                : <WifiOff className="size-5 text-muted-foreground" />
+                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`} />
                                             }
                                         </div>
                                         <div>
@@ -81,10 +85,32 @@ export default function InstancesIndex({ instances }) {
                                             <p className="text-xs text-muted-foreground">{instance.display_phone_number ?? '—'}</p>
                                         </div>
                                     </div>
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${instance.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
-                                        {instance.active ? 'Activa' : 'Inactiva'}
+                                    {/* "Activa" es una casilla nuestra; la salud es lo que
+                                        dice Meta. Mostrar solo la primera fue lo que dejó
+                                        cinco empresas en verde durante meses sin recibir
+                                        un mensaje. */}
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                        !instance.active ? 'bg-muted text-muted-foreground'
+                                            : instance.health_status === 'unreachable' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    }`}>
+                                        {!instance.active ? 'Inactiva'
+                                            : instance.health_status === 'unreachable' ? 'Sin conexión'
+                                            : 'Activa'}
                                     </span>
                                 </div>
+                                {instance.active && instance.health_status === 'unreachable' && (
+                                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                                        <p className="font-medium">Meta no responde por esta cuenta.</p>
+                                        <p className="opacity-90 mt-0.5">
+                                            {instance.health_error ?? 'El token o el número ya no existen.'}
+                                        </p>
+                                        <p className="opacity-90 mt-1">
+                                            No entran ni salen mensajes. Reconéctala con el botón de arriba.
+                                        </p>
+                                    </div>
+                                )}
+
                                 <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs font-mono space-y-1">
                                     <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
                                     <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>

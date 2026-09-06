@@ -19,12 +19,16 @@ class Instance extends Model
         'type',
         'status',
         'active',
+        'health_status',
+        'health_checked_at',
+        'health_error',
         'meta',
         'access_token'
     ];
 
     protected $casts = [
         'active' => 'boolean',
+        'health_checked_at' => 'datetime',
         'meta' => 'array',
     ];
 
