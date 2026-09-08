@@ -4,8 +4,9 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Wifi, WifiOff } from 'lucide-react';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
+import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
 
@@ -50,7 +51,7 @@ export default function InstancesIndex({ instances }) {
                         mano si la ventana de Meta falla o el entorno no la
                         tiene configurada. */}
                     <div className="flex items-center gap-2">
-                        <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances'] })} />
+                        <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
                         <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nueva Instancia
                         </Button>
@@ -99,6 +100,14 @@ export default function InstancesIndex({ instances }) {
                                             : 'Activa'}
                                     </span>
                                 </div>
+                                {/* Importación de contactos e historial. Sólo
+                                    aparece en números que vinieron de la app del
+                                    celular; en un registro normal no hay nada que
+                                    importar y el componente no pinta nada. */}
+                                <CoexistenceSyncCard
+                                    instanceId={instance.id}
+                                    initial={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
+                                />
                                 {instance.active && instance.health_status === 'unreachable' && (
                                     <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
                                         <p className="font-medium">Meta no responde por esta cuenta.</p>

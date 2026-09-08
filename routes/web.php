@@ -172,6 +172,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
 
+    // La guía de conexión por coexistencia, dentro del producto. Va antes que
+    // /instances/{instance} para que "guia-coexistencia" no se tome por un id.
+    Route::get('/instances/guia-coexistencia', fn () => Inertia::render('Instances/GuiaCoexistencia'))
+        ->name('instances.guia-coexistencia');
+
+    // Respaldo por consulta del progreso de la importación de coexistencia,
+    // para cuando el websocket no conecta. Va antes de nada que capture
+    // /instances/{algo} con otro significado.
+    Route::get('/instances/{instance}/coexistence-sync', [InstanceController::class, 'coexistenceSync'])
+        ->name('instances.coexistence-sync');
+
     // Registro insertado de Meta: conectar el WhatsApp del cliente sin pegar
     // tokens a mano. El GET sólo devuelve identificadores públicos; el POST es
     // el que crea la instancia, y por eso pide el mismo permiso que crearla.

@@ -24,12 +24,44 @@ class InstanceController extends Controller
         }
 
         $instances = Instance::where('company_id', $user->company_id)
+            ->with('coexistenceSync')
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // El estado de la importación viaja con la página para que la tarjeta
+        // esté pintada en el primer render: si sólo llegara por websocket, un
+        // cliente que recarga a mitad vería una pantalla vacía y pensaría que
+        // el proceso se perdió.
+        $sincronizaciones = $instances
+            ->pluck('coexistenceSync')
+            ->filter()
+            ->map(fn ($sync) => $sync->paraPantalla())
+            ->values();
+
         return Inertia::render('Instances/Index', [
-            'instances' => $instances,
+            'instances' => $instances->makeHidden('coexistenceSync'),
+            'coexistenceSyncs' => $sincronizaciones,
         ]);
+    }
+
+    /**
+     * Estado de la importación de una instancia.
+     *
+     * Es el respaldo de la vía por websocket: si Reverb no conecta —proxies,
+     * redes de oficina que cierran los websockets— la barra tiene que seguir
+     * avanzando igual. Devuelve exactamente la misma forma que el evento.
+     */
+    public function coexistenceSync(Instance $instance)
+    {
+        abort_unless($instance->company_id === auth()->user()->company_id, 403);
+
+        $sync = $instance->coexistenceSync;
+
+        // Un `null` a secas se serializa como `{}`, que en JavaScript es
+        // verdadero: la pantalla pintaría una tarjeta de progreso vacía para
+        // una instancia que nunca tuvo importación. Se responde siempre con la
+        // misma llave para que el cliente pueda decidir sin ambigüedad.
+        return response()->json(['sync' => $sync?->paraPantalla()]);
     }
 
     /**

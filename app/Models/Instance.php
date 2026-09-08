@@ -42,6 +42,15 @@ class Instance extends Model
         return $this->hasMany(WhatsAppConversation::class);
     }
 
+    /**
+     * La importación de contactos e historial, si este número vino de la app
+     * del celular. En un registro normal no existe.
+     */
+    public function coexistenceSync()
+    {
+        return $this->hasOne(CoexistenceSync::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('active', true);
