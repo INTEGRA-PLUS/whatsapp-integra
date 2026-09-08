@@ -2,7 +2,9 @@
 
 use App\Support\MensajeNoEntregado;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Reescribe los mensajes que el chat mostraba como "Mensaje no compatible (X)".
@@ -26,6 +28,9 @@ use Illuminate\Support\Facades\DB;
  */
 return new class extends Migration
 {
+    /** Dónde queda la copia de las filas que se quitan. Se puede tirar cuando sobre. */
+    private const RESPALDO = 'whatsapp_messages_retirados_2026_09';
+
     /** Lo que era cada tipo, para las filas viejas donde sólo queda el nombre. */
     private const LEGADO = [
         'sticker'     => 'un sticker',
@@ -64,9 +69,16 @@ return new class extends Migration
      * Sólo las que no guardaron payload: si lo guardaron hay emoji y mensaje de
      * destino, y eso se aprovecha en vez de tirarlo. Va en tandas para no
      * bloquear la tabla entera mientras el CRM está atendiendo.
+     *
+     * Antes de quitar nada se deja una copia en `whatsapp_messages_retirados_2026_09`.
+     * Las filas no valen nada —ése es justo el motivo de quitarlas— pero borrar
+     * mil mensajes de producción sin red es otra cosa. La tabla se puede tirar
+     * cuando se haya visto que el chat quedó bien.
      */
     private function quitarReaccionesHuerfanas(): void
     {
+        $this->respaldar();
+
         do {
             // Los ids se resuelven aparte a propósito: `DELETE ... LIMIT` no
             // existe en SQLite y la suite corre sobre SQLite.
@@ -80,6 +92,43 @@ return new class extends Migration
                 DB::table('whatsapp_messages')->whereIn('id', $ids)->delete();
             }
         } while ($ids->isNotEmpty());
+    }
+
+    /** La copia de seguridad de lo que se va a quitar. */
+    private function respaldar(): void
+    {
+        if (Schema::hasTable(self::RESPALDO)) {
+            return;
+        }
+
+        $filas = DB::table('whatsapp_messages')
+            ->where('content', 'Mensaje no compatible (reaction)')
+            ->whereNull('metadata')
+            ->get();
+
+        if ($filas->isEmpty()) {
+            return;
+        }
+
+        Schema::create(self::RESPALDO, function (Blueprint $tabla) {
+            $tabla->unsignedBigInteger('id')->primary();
+            $tabla->unsignedBigInteger('conversation_id')->nullable();
+            $tabla->string('wamid', 500)->nullable();
+            $tabla->string('direction', 20)->nullable();
+            $tabla->timestamp('sent_at')->nullable();
+            $tabla->timestamp('created_at')->nullable();
+        });
+
+        foreach ($filas->chunk(500) as $tanda) {
+            DB::table(self::RESPALDO)->insert($tanda->map(fn ($f) => [
+                'id'              => $f->id,
+                'conversation_id' => $f->conversation_id,
+                'wamid'           => $f->wamid,
+                'direction'       => $f->direction,
+                'sent_at'         => $f->sent_at,
+                'created_at'      => $f->created_at,
+            ])->all());
+        }
     }
 
     private function reparar(object $fila): array
