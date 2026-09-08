@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Support\MensajeNoEntregado;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -157,7 +158,7 @@ class CoexistenceIngestService
             || $ultimo->sent_at?->gt($conversacion->last_message_at)
         )) {
             $conversacion->update([
-                'last_message'    => $ultimo->content ?: 'Archivo adjunto',
+                'last_message'    => $ultimo->metadata['resumen'] ?? $ultimo->content ?: 'Archivo adjunto',
                 'last_message_at' => $ultimo->sent_at,
             ]);
         }
@@ -279,7 +280,7 @@ class CoexistenceIngestService
             }
 
             $conversacion->update([
-                'last_message'    => $guardado->content ?: 'Archivo adjunto',
+                'last_message'    => $guardado->metadata['resumen'] ?? $guardado->content ?: 'Archivo adjunto',
                 'last_message_at' => $guardado->sent_at ?? now(),
             ]);
 
@@ -306,9 +307,21 @@ class CoexistenceIngestService
             return null;
         }
 
-        $de        = WhatsAppConversation::normalizePhone($mensaje['from'] ?? '');
-        $saliente  = $de !== '' && $de === $telefonoNegocio;
-        $contenido = $this->interpretar($mensaje);
+        $de       = WhatsAppConversation::normalizePhone($mensaje['from'] ?? '');
+        // `from_me` es lo que manda el volcado; `from` sólo aparece en algunos
+        // lotes y en los ecos. Se miran los dos, en ese orden.
+        $saliente = $mensaje['history_context']['from_me']
+            ?? ($de !== '' && $de === $telefonoNegocio);
+
+        // Una reacción no es una burbuja: se cuelga del mensaje al que apunta.
+        // Si el original no está (quedó fuera del rango importado) se descarta,
+        // que es mejor que dejar un "Mensaje no compatible" suelto en el hilo.
+        if (($mensaje['type'] ?? null) === 'reaction') {
+            $this->aplicarReaccion($conversacion, $mensaje);
+            return null;
+        }
+
+        $contenido = $this->interpretar($mensaje, (bool) $saliente);
 
         $datos = array_merge($contenido, [
             'conversation_id' => $conversacion->id,
@@ -338,7 +351,7 @@ class CoexistenceIngestService
      * reconozca se guarda entero en `metadata` para poder darle soporte después
      * sin haber perdido el contenido.
      */
-    private function interpretar(array $mensaje): array
+    private function interpretar(array $mensaje, bool $saliente = false): array
     {
         $tipo = $mensaje['type'] ?? 'text';
 
@@ -378,12 +391,72 @@ class CoexistenceIngestService
                 'metadata' => ['contacts' => $mensaje['contacts'] ?? []],
             ],
 
-            default => [
-                'type'     => 'system',
-                'content'  => "Mensaje no compatible ({$tipo})",
-                'metadata' => ['unhandled' => $mensaje],
+            // Respuesta a un botón de plantilla. El texto viene en el propio
+            // payload: guardarlo como "no compatible" era tirar a la basura lo
+            // que el cliente contestó ("Aceptar", "Cancelar"…).
+            'button' => [
+                'type'     => 'text',
+                'content'  => $mensaje['button']['text'] ?? $mensaje['button']['payload'] ?? 'Botón',
+                'metadata' => ['button' => $mensaje['button'] ?? []],
             ],
+
+            'interactive' => [
+                'type'     => 'text',
+                'content'  => $mensaje['interactive']['button_reply']['title']
+                    ?? $mensaje['interactive']['list_reply']['title']
+                    ?? 'Respuesta interactiva',
+                'metadata' => ['interactive' => $mensaje['interactive'] ?? []],
+            ],
+
+            'order' => [
+                'type'     => 'text',
+                'content'  => trim('🛒 Pedido con ' . count($mensaje['order']['product_items'] ?? []) . ' producto(s)'
+                    . (!empty($mensaje['order']['text']) ? ": {$mensaje['order']['text']}" : '')),
+                'metadata' => ['order' => $mensaje['order'] ?? []],
+            ],
+
+            // Meta no supo representar el mensaje (llamadas, invitaciones a
+            // canal, vista única, encuestas…). El contenido no viene y no hay
+            // forma de pedirlo: lo único honesto es decir que sigue en el
+            // celular. Ver App\Support\MensajeNoEntregado.
+            'unsupported', 'errors' => MensajeNoEntregado::columnas($mensaje, $saliente, true),
+
+            default => MensajeNoEntregado::columnas(
+                array_merge($mensaje, ['unsupported' => ['type' => $tipo]]),
+                $saliente,
+                true
+            ),
         };
+    }
+
+    /** Cuelga el emoji de una reacción del mensaje al que apunta. */
+    private function aplicarReaccion(WhatsAppConversation $conversacion, array $mensaje): void
+    {
+        $destino = $mensaje['reaction']['message_id'] ?? null;
+        $emoji   = $mensaje['reaction']['emoji'] ?? null;
+
+        if (!$destino) {
+            return;
+        }
+
+        $original = WhatsAppMessage::where('wamid', $destino)
+            ->where('conversation_id', $conversacion->id)
+            ->first();
+
+        if (!$original) {
+            return;
+        }
+
+        $meta = $original->metadata ?? [];
+
+        if ($emoji === null || $emoji === '') {
+            unset($meta['reaction']);
+        } else {
+            $meta['reaction'] = $emoji;
+        }
+
+        $original->metadata = $meta;
+        $original->save();
     }
 
     /**

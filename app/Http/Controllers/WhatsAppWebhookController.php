@@ -10,6 +10,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Models\WhatsAppCall;
 use App\Models\WhatsAppCallPermission;
+use App\Support\MensajeNoEntregado;
 use App\Jobs\ProcesarWebhookCoexistencia;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
@@ -759,31 +760,29 @@ class WhatsAppWebhookController extends Controller
                 $messageData['metadata'] = ['system' => $system];
                 break;
 
+            // Meta recibió del cliente un tipo que la Cloud API no entrega
+            // (encuestas, ediciones, invitaciones a canal, llamadas…). El
+            // contenido original NO viaja en el webhook, pero el tipo real sí
+            // llega en `unsupported`: con eso el agente sabe qué mandó el
+            // cliente en vez de leer un "Message type unknown" que no dice nada.
+            //
+            // `errors` es la misma cosa con otro nombre: según la versión de la
+            // API el mismo error 131051 llega como `type: unsupported` o como
+            // `type: errors`. Sin esta segunda etiqueta caía en el `default` y
+            // el chat mostraba "Mensaje no compatible (errors)".
             case 'unsupported':
-                // Meta recibió del cliente un tipo que la Cloud API no entrega
-                // (encuestas, ediciones, invitaciones a grupo…). El contenido
-                // original NO viaja en el webhook, pero el tipo real sí llega en
-                // `unsupported`: con eso el agente sabe qué mandó el cliente en
-                // vez de leer un "Message type unknown" que no dice nada.
+            case 'errors':
                 $error = $message['errors'][0] ?? [];
-                $unsupported = $message['unsupported'] ?? null;
-                $rawType = is_array($unsupported) ? ($unsupported['type'] ?? null) : $unsupported;
 
                 $skipAutoResponse = true;
-                $messageData['type'] = 'system';
-                $messageData['content'] = $this->describeUnsupportedMessage($rawType, $error);
                 // Se guarda el payload íntegro: es la única forma de saber después
                 // qué tipos están llegando y a cuáles vale la pena darles soporte.
-                $messageData['metadata'] = [
-                    'errors' => $message['errors'] ?? [],
-                    'unsupported' => $unsupported,
-                    'unhandled' => $message,
-                ];
+                $messageData = array_merge($messageData, MensajeNoEntregado::columnas($message));
 
                 Log::channel('whatsapp')->warning('⚠️ WhatsApp no entregó el contenido de un mensaje entrante', [
                     'instance_id' => $instance->id,
                     'wamid' => $wamid,
-                    'unsupported_type' => $rawType,
+                    'unsupported_type' => $messageData['metadata']['tipo_original'] ?? null,
                     'error_code' => $error['code'] ?? null,
                     'payload' => $message,
                 ]);
@@ -810,11 +809,13 @@ class WhatsAppWebhookController extends Controller
 
             default:
                 // Tipo desconocido: se guarda el payload íntegro para poder darle
-                // soporte después sin perder el contenido original.
+                // soporte después sin perder el contenido original. El texto que
+                // ve el agente nunca es la etiqueta interna de Meta ("errors",
+                // "unsupported"): eso no le dice nada a quien atiende el chat.
                 $skipAutoResponse = true;
-                $messageData['type'] = 'system';
-                $messageData['content'] = "Mensaje no compatible ({$message['type']})";
-                $messageData['metadata'] = ['unhandled' => $message];
+                $messageData = array_merge($messageData, MensajeNoEntregado::columnas(
+                    array_merge($message, ['unsupported' => ['type' => $message['type']]])
+                ));
 
                 Log::channel('whatsapp')->warning('⚠️ Tipo de mensaje sin soporte', [
                     'instance_id' => $instance->id,
@@ -845,7 +846,11 @@ class WhatsAppWebhookController extends Controller
         $savedMessage = WhatsAppMessage::create($messageData);
 
         $conversationUpdate = [
-            'last_message' => ($messageData['type'] === 'system' ? 'ℹ️ ' : '') . ($messageData['content'] ?? 'Media'),
+            // Los mensajes que WhatsApp no entrega llevan una frase larga en
+            // `content` (la explicación va en el hilo); en la lista de chats
+            // sólo cabe el resumen.
+            'last_message' => ($messageData['type'] === 'system' ? 'ℹ️ ' : '')
+                . ($messageData['metadata']['resumen'] ?? $messageData['content'] ?? 'Media'),
             'last_message_at' => now(),
         ];
 
@@ -993,57 +998,6 @@ class WhatsAppWebhookController extends Controller
             'customer_identity_changed' => 'El cliente cambió su identidad de WhatsApp (cambió de teléfono o reinstaló la app). Verifica con quién hablas antes de compartir información sensible.',
             default => $this->cleanSystemBody($system['body'] ?? '') ?: 'Aviso del sistema de WhatsApp',
         };
-    }
-
-    /**
-     * Texto en español para un mensaje que WhatsApp no entrega a la Cloud API.
-     *
-     * El contenido original nunca llega en el webhook (errores 131051 / 131060):
-     * Meta sólo manda el tipo real dentro de `unsupported`. Se traduce a algo
-     * accionable para el agente en lugar del "Message type unknown" de la API.
-     */
-    private function describeUnsupportedMessage(?string $rawType, array $error): string
-    {
-        $labels = [
-            'poll_creation' => 'una encuesta',
-            'poll_update' => 'un voto en una encuesta',
-            'edit' => 'la edición de un mensaje anterior',
-            'pin' => 'un mensaje fijado',
-            'keep_in_chat' => 'un mensaje guardado en el chat',
-            'group_invite' => 'una invitación a un grupo',
-            'gif' => 'un GIF',
-            'link_preview' => 'un enlace con vista previa',
-            'media_placeholder' => 'un archivo que todavía se estaba subiendo',
-            'product' => 'un producto del catálogo',
-            'order' => 'un pedido del catálogo',
-            'list' => 'una lista interactiva',
-            'interactive' => 'un mensaje interactivo',
-            'button' => 'un botón',
-            'hsm' => 'una plantilla',
-            'reaction' => 'una reacción',
-            'image' => 'una imagen',
-            'location' => 'una ubicación',
-        ];
-
-        $pedir = 'Pídele que lo reenvíe como texto, foto o archivo.';
-
-        if ($rawType !== null && ($what = $labels[$rawType] ?? null)) {
-            return "El cliente envió {$what}. WhatsApp no entrega ese tipo de mensaje a la API, "
-                . 'así que su contenido no se puede mostrar. ' . $pedir;
-        }
-
-        // Sin tipo reconocible, el detalle de Meta es lo único que queda. Sus
-        // títulos genéricos ("Message type unknown") no aportan nada al agente,
-        // así que se descartan y queda sólo la frase en español.
-        $detail = $rawType
-            ?: ($error['error_data']['details'] ?? ($error['title'] ?? ($error['message'] ?? null)));
-
-        if ($detail !== null && preg_match('/message type (unknown|is not currently supported)/i', $detail)) {
-            $detail = null;
-        }
-
-        return 'El cliente envió un mensaje cuyo contenido WhatsApp no entrega a la API'
-            . ($detail ? " ({$detail})" : '') . '. ' . $pedir;
     }
 
     /**
