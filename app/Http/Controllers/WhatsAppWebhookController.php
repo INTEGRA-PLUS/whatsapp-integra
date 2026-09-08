@@ -10,6 +10,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Models\WhatsAppCall;
 use App\Models\WhatsAppCallPermission;
+use App\Jobs\ProcesarWebhookCoexistencia;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
@@ -104,10 +105,14 @@ class WhatsAppWebhookController extends Controller
                 // Cada change se aísla: un payload que reviente no debe tumbar
                 // los demás mensajes del mismo lote.
                 try {
-                    if (($change['field'] ?? null) === 'messages') {
+                    $field = $change['field'] ?? null;
+
+                    if ($field === 'messages') {
                         $this->processChange($change['value'] ?? []);
-                    } elseif (($change['field'] ?? null) === 'calls') {
+                    } elseif ($field === 'calls') {
                         $this->processCallChange($change['value'] ?? []);
+                    } elseif (in_array($field, self::CAMPOS_COEXISTENCIA, true)) {
+                        $this->encolarCoexistencia($field, $change['value'] ?? []);
                     }
                 } catch (\Throwable $e) {
                     $this->failedEvents++;
@@ -145,6 +150,46 @@ class WhatsAppWebhookController extends Controller
      * para diagnosticar; el contenido no se guarda.
      */
     private const CAMPOS_SIN_VOLCADO = ['history', 'smb_message_echoes', 'smb_app_state_sync'];
+
+    /**
+     * Los campos que sólo existen en coexistencia y que van a la cola.
+     *
+     * Coinciden con los de arriba —lo que no se vuelca al log es justo lo que
+     * trae mensajería masiva— pero son dos listas por motivos distintos: una es
+     * de privacidad y la otra de enrutado. Separarlas evita que tocar una
+     * cambie la otra sin querer.
+     */
+    private const CAMPOS_COEXISTENCIA = ['history', 'smb_app_state_sync', 'smb_message_echoes'];
+
+    /**
+     * Encola un webhook de coexistencia para la instancia a la que pertenece.
+     *
+     * Aquí sólo se resuelve la instancia y se encola: el volcado vive en
+     * `CoexistenceIngestService` y corre en la cola, porque un `history` puede
+     * traer miles de mensajes y Meta reintenta si tardamos en responder.
+     */
+    private function encolarCoexistencia(string $field, array $value): void
+    {
+        $phoneNumberId = $value['metadata']['phone_number_id'] ?? null;
+
+        $instance = Instance::where('phone_number_id', $phoneNumberId)
+            ->where('active', true)
+            ->orderBy('id')
+            ->first();
+
+        if (!$instance) {
+            // Sin instancia el contenido se pierde, y en el caso de `history` se
+            // pierde para siempre: la importación es de un solo uso. Queda el
+            // rastro para poder reclamarlo antes de que expire la ventana.
+            Log::channel('whatsapp')->error('🚨 Webhook de coexistencia sin instancia activa', [
+                'field'           => $field,
+                'phone_number_id' => $phoneNumberId,
+            ]);
+            return;
+        }
+
+        ProcesarWebhookCoexistencia::dispatch($instance->id, $field, $value);
+    }
 
     /**
      * Qué se escribe en el log por cada webhook.
