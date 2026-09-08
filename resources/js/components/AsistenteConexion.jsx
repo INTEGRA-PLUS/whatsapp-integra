@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from '@inertiajs/react';
 import {
-    ArrowLeft, ArrowRight, Check, ExternalLink, Keyboard,
+    ArrowLeft, ArrowRight, Building2, Check, ExternalLink, Keyboard,
     Smartphone, TriangleAlert, X as XIcon,
 } from 'lucide-react';
 
@@ -14,23 +14,27 @@ import {
  * buscar el número en la lista desplegable en vez de escribirlo— y ninguno de
  * los dos se puede adivinar mirando la pantalla de Meta.
  *
- * Ahora son cuatro pasos que el cliente atraviesa antes de que se abra nada:
+ * Ahora son cinco pasos que el cliente atraviesa antes de que se abra nada:
  *
  *   1. Qué le va a cambiar en el celular. La pantalla de consentimiento de Meta
  *      NO lo cuenta, y descubrirlo después es lo que genera la queja.
  *   2. Los tres requisitos, con casillas: sin marcarlas no se avanza.
- *   3. El paso previo en Meta Business Suite, con enlace directo.
- *   4. Qué va a ver y qué tiene que hacer, incluido lo de escribir el número.
+ *   3. El portafolio comercial. Un ISP pequeño con una cuenta de Facebook
+ *      normal no tiene ninguno, y toda la documentación —la nuestra incluida—
+ *      daba por hecho que sí.
+ *   4. Vincular la cuenta de WhatsApp Business al portafolio.
+ *   5. Qué va a ver y qué tiene que hacer, incluido lo de escribir el número.
  *
- * El paso 4 es el que abre la ventana. Para entonces el cliente ya sabe qué
+ * El paso 5 es el que abre la ventana. Para entonces el cliente ya sabe qué
  * esperar, y el celular está en la mano.
  */
 export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     const [paso, setPaso] = useState(1);
     const [confirmado, setConfirmado] = useState({ appBusiness: false, antiguedad: false, celular: false });
+    const [portafolio, setPortafolio] = useState(false);
     const [vinculada, setVinculada] = useState(false);
 
-    const TOTAL = 4;
+    const TOTAL = 5;
 
     // Cada apertura empieza limpia: si el asesor abandonó a mitad y vuelve con
     // otro cliente, lo que confirmó antes no debe darse por bueno.
@@ -38,6 +42,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
         if (!open) return;
         setPaso(1);
         setConfirmado({ appBusiness: false, antiguedad: false, celular: false });
+        setPortafolio(false);
         setVinculada(false);
     }, [open]);
 
@@ -82,7 +87,8 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     const puedeAvanzar =
         paso === 1 ? true
         : paso === 2 ? Object.values(confirmado).every(Boolean)
-        : paso === 3 ? vinculada
+        : paso === 3 ? portafolio
+        : paso === 4 ? vinculada
         : true;
 
     function siguiente() {
@@ -204,6 +210,79 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
 
                     {paso === 3 && (
                         <>
+                            <div className="flex items-start gap-3 rounded-xl border border-border/60 px-3.5 py-3">
+                                <Building2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                                <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+                                    El <strong className="font-semibold text-foreground">portafolio comercial</strong> es
+                                    tu empresa dentro de Meta: agrupa tu WhatsApp, tu página y quién puede
+                                    administrarlos. Es gratis y se crea con tu cuenta de Facebook de siempre.
+                                </p>
+                            </div>
+
+                            <p className="mt-3 text-[13px] font-medium text-foreground">Si todavía no tienes uno</p>
+                            <ol className="mt-2 flex flex-col gap-2">
+                                {[
+                                    ['Entra a Meta Business Suite', 'Con tu cuenta de Facebook normal. No necesitas nada más.'],
+                                    ['Abre el selector de arriba a la izquierda', 'Y elige «Crear un portafolio comercial».'],
+                                    ['Llena los tres datos', 'Nombre de tu negocio, tu nombre y apellido, y un correo del negocio.'],
+                                    ['Confirma el correo', 'Meta te manda un enlace. Sin abrirlo, el portafolio queda a medias.'],
+                                ].map(([titulo, detalle], i) => (
+                                    <li key={titulo} className="flex gap-3">
+                                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold tabular-nums text-muted-foreground">
+                                            {i + 1}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block text-[13px] font-medium text-foreground">{titulo}</span>
+                                            <span className="block text-[12px] leading-snug text-muted-foreground">{detalle}</span>
+                                        </span>
+                                    </li>
+                                ))}
+                            </ol>
+
+                            <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
+                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-amber-700 dark:text-amber-400">
+                                    <TriangleAlert className="size-4 shrink-0" />
+                                    Completa la información del negocio
+                                </p>
+                                <p className="mt-1 text-[12px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+                                    Nombre legal, dirección, sitio web y teléfono. Meta puede restringir cuentas
+                                    con esos datos incompletos, y suele hacerlo semanas después, cuando ya
+                                    estás usando el número a diario.
+                                </p>
+                            </div>
+
+                            <a
+                                href="https://business.facebook.com/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-teal-600 underline underline-offset-2 dark:text-teal-400"
+                            >
+                                Abrir Meta Business Suite en otra pestaña
+                                <ExternalLink className="size-3" />
+                            </a>
+
+                            <button
+                                type="button"
+                                onClick={() => setPortafolio(v => !v)}
+                                aria-pressed={portafolio}
+                                className={`mt-3 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${
+                                    portafolio ? 'border-teal-500/50 bg-teal-500/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
+                                }`}
+                            >
+                                <span className={`flex size-4 shrink-0 items-center justify-center rounded border ${
+                                    portafolio ? 'border-teal-600 bg-teal-600 text-white' : 'border-muted-foreground/50'
+                                }`}>
+                                    {portafolio && <Check className="size-3" strokeWidth={3} />}
+                                </span>
+                                <span className="text-[13px] font-medium text-foreground">
+                                    Ya tengo mi portafolio comercial
+                                </span>
+                            </button>
+                        </>
+                    )}
+
+                    {paso === 4 && (
+                        <>
                             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
                                 <p className="flex items-center gap-2 text-[12.5px] font-bold text-amber-700 dark:text-amber-400">
                                     <TriangleAlert className="size-4 shrink-0" />
@@ -264,7 +343,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                         </>
                     )}
 
-                    {paso === 4 && (
+                    {paso === 5 && (
                         <>
                             <p className="text-[13px] leading-relaxed text-muted-foreground">
                                 Al continuar se abrirá una ventana de Facebook. Esto es lo que vas a ver:

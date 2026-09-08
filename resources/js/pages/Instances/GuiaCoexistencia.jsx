@@ -13,7 +13,7 @@ import {
  * está mirando el botón, no en un archivo que alguien le mandó por correo la
  * semana pasada.
  *
- * Es un recorrido, no un documento. Siete pasos con diecinueve capturas en una
+ * Es un recorrido, no un documento. Ocho pasos con diecinueve capturas en una
  * sola página abrumaban: el cliente no sabía por dónde iba y abandonaba a la
  * mitad. Ahora se abre un paso a la vez, se marca al terminarlo y el avance se
  * guarda en el navegador — quien cierra la pestaña con el celular en la mano
@@ -144,7 +144,7 @@ function Paso({ n, total, donde, titulo, ruta, abierto, hecho, onAbrir, onHecho,
 }
 
 export default function GuiaCoexistencia() {
-    const TOTAL = 7;
+    const TOTAL = 8;
     const [hechos, setHechos] = useState([]);
     const [abierto, setAbierto] = useState(1);
     const [verDesconectar, setVerDesconectar] = useState(false);
@@ -219,7 +219,7 @@ export default function GuiaCoexistencia() {
                 <div className="sticky top-2 z-10 rounded-xl border bg-card/95 px-4 py-3 shadow-xs backdrop-blur">
                     <div className="flex items-center justify-between gap-4">
                         <p className="text-[13px] font-semibold text-foreground">
-                            {terminado ? '¡Listo! Completaste los 7 pasos' : `Paso ${Math.min(completados + 1, TOTAL)} de ${TOTAL}`}
+                            {terminado ? '¡Listo! Completaste los 8 pasos' : `Paso ${Math.min(completados + 1, TOTAL)} de ${TOTAL}`}
                         </p>
                         <div className="flex items-center gap-3">
                             <span className="font-mono text-[13px] tabular-nums text-muted-foreground">{porcentaje}%</span>
@@ -260,6 +260,59 @@ export default function GuiaCoexistencia() {
                     <Paso
                         {...props(1)}
                         donde="escritorio"
+                        titulo="Crea tu portafolio comercial de Meta"
+                        ruta="business.facebook.com → selector de arriba a la izquierda → Crear un portafolio comercial"
+                    >
+                        <p>
+                            El portafolio comercial es tu empresa dentro de Meta: agrupa tu WhatsApp, tu
+                            página y quién puede administrarlos. Es gratis y se crea con tu cuenta de
+                            Facebook de siempre, sin nada más.
+                        </p>
+                        <p>
+                            <strong>Si ya tienes uno, salta al paso 2.</strong> Lo reconoces porque al entrar a
+                            Meta Business Suite ya aparece el nombre de tu negocio arriba a la izquierda.
+                        </p>
+
+                        <ol className="ml-1 flex flex-col gap-2.5">
+                            {[
+                                ['Entra a Meta Business Suite', 'Con tu cuenta de Facebook normal.'],
+                                ['Abre el selector de arriba a la izquierda', 'Y elige «Crear un portafolio comercial».'],
+                                ['Llena los tres datos', 'Nombre de tu negocio, tu nombre y apellido, y un correo del negocio.'],
+                                ['Confirma el correo que te llega', 'Sin abrir ese enlace, el portafolio queda a medias.'],
+                            ].map(([titulo, detalle], i) => (
+                                <li key={titulo} className="flex gap-3">
+                                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold tabular-nums text-muted-foreground">
+                                        {i + 1}
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block text-[13.5px] font-medium text-foreground">{titulo}</span>
+                                        <span className="block text-[12.5px] leading-snug text-muted-foreground">{detalle}</span>
+                                    </span>
+                                </li>
+                            ))}
+                        </ol>
+
+                        <Aviso tono="ojo" titulo="Completa la información del negocio">
+                            <p>
+                                Nombre legal, dirección, sitio web y teléfono. Meta puede <strong>restringir
+                                cuentas</strong> con esos datos incompletos, y suele hacerlo semanas después,
+                                cuando ya estás usando el número a diario.
+                            </p>
+                        </Aviso>
+
+                        <a
+                            href="https://business.facebook.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-primary underline underline-offset-2"
+                        >
+                            Abrir Meta Business Suite en otra pestaña
+                        </a>
+                    </Paso>
+
+                    <Paso
+                        {...props(2)}
+                        donde="escritorio"
                         titulo="Vincula tu cuenta en Meta Business Suite"
                         ruta="Meta Business Suite → tu portafolio → Cuentas de WhatsApp → Agregar → Vincular una cuenta de WhatsApp Business"
                     >
@@ -291,7 +344,7 @@ export default function GuiaCoexistencia() {
                     </Paso>
 
                     <Paso
-                        {...props(2)}
+                        {...props(3)}
                         donde="escritorio"
                         titulo="Abre la ventana de conexión"
                         ruta="Integra CRM → Instancias → Conectar mi WhatsApp Business actual"
@@ -304,7 +357,7 @@ export default function GuiaCoexistencia() {
                     </Paso>
 
                     <Paso
-                        {...props(3)}
+                        {...props(4)}
                         donde="escritorio"
                         titulo="Escribe tu número a mano"
                         ruta="Deja «Enter a new phone number» → elige el país → escribe el número"
@@ -326,7 +379,7 @@ export default function GuiaCoexistencia() {
                     </Paso>
 
                     <Paso
-                        {...props(4)}
+                        {...props(5)}
                         donde="celular"
                         titulo="Autoriza desde tu teléfono"
                         ruta="Cinco pantallas seguidas. Ten la ventana del computador a la vista: hay que escanear el código."
@@ -362,7 +415,7 @@ export default function GuiaCoexistencia() {
                     </Paso>
 
                     <Paso
-                        {...props(5)}
+                        {...props(6)}
                         donde="escritorio"
                         titulo="Confirma tu cuenta"
                         ruta="Vuelve a la ventana del computador, que habrá avanzado sola"
@@ -379,7 +432,7 @@ export default function GuiaCoexistencia() {
                     </Paso>
 
                     <Paso
-                        {...props(6)}
+                        {...props(7)}
                         donde="escritorio"
                         titulo="Agrega el método de pago"
                         ruta="Botón «Agregar método de pago», o después desde Facturación y pagos"
@@ -401,7 +454,7 @@ export default function GuiaCoexistencia() {
                             pie={<>País <strong>Colombia</strong>, divisa <strong>Dírham de EAU</strong>. Cámbiala antes de pulsar Siguiente.</>} />
                     </Paso>
 
-                    <Paso {...props(7)} donde="escritorio" titulo="Ya está conectado" ruta="Integra CRM → Instancias">
+                    <Paso {...props(8)} donde="escritorio" titulo="Ya está conectado" ruta="Integra CRM → Instancias">
                         <p>
                             Tu número aparece en la lista como conectado y desde ese momento cada mensaje que
                             te escriban entra al CRM. Puedes seguir respondiendo desde el celular: lo que
@@ -441,6 +494,11 @@ export default function GuiaCoexistencia() {
                             WhatsApp Web y los demás quedaron desconectados durante el proceso.</li>
                         <li><strong className="text-foreground">Un solo sistema a la vez.</strong>{' '}
                             Conectar el número a otra plataforma lo desconecta de aquí.</li>
+                        <li><strong className="text-foreground">Sobre el nombre verificado.</strong>{' '}
+                            En números conectados así, Meta no revisa el nombre para mostrar de forma
+                            automática, y la insignia azul de cuenta oficial no está disponible. Si te
+                            interesa que tu nombre aparezca verificado, la vía es solicitar Meta Verified
+                            para empresas.</li>
                     </ul>
                 </div>
 
