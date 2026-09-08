@@ -283,6 +283,11 @@ Route::middleware('auth')->group(function () {
         // El interruptor de la IA de los menús.
         Route::post('/ai', [App\Http\Controllers\WhatsAppMenuController::class, 'toggleAi'])
             ->middleware('permission:whatsapp_menus.update')->name('ai');
+        // Hasta dónde llega la IA de esta empresa. Aparte del interruptor
+        // porque son decisiones distintas: encenderla no puede significar
+        // autorizarle radicados y cobros de una vez.
+        Route::post('/ai/permisos', [App\Http\Controllers\WhatsAppMenuController::class, 'updateAiPermissions'])
+            ->middleware('permission:whatsapp_menus.update')->name('ai.permissions');
         // Catálogos de Integra (tipos de falla, prioridades, técnicos) para el
         // formulario. Va aparte de index porque es una llamada HTTP a otro
         // servidor: si Integra tarda, no debe retrasar la carga de la página.
@@ -357,6 +362,20 @@ Route::middleware('auth')->group(function () {
         Route::put('/profile', [App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('profile');
         Route::put('/password', [App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('password');
         Route::delete('/sessions', [App\Http\Controllers\SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
+    });
+
+    // Flujo IA: el apartado va detrás de un secreto, así que el desbloqueo se
+    // limita —el secreto es corto y se puede probar a ciegas—. El resto sólo
+    // exige el permiso de siempre.
+    Route::prefix('api/settings/ai-flow')->group(function () {
+        Route::get('/', [App\Http\Controllers\AiFlowSettingsController::class, 'show'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::post('/unlock', [App\Http\Controllers\AiFlowSettingsController::class, 'unlock'])
+            ->middleware(['permission:whatsapp_menus.update', 'throttle:5,1']);
+        Route::delete('/unlock', [App\Http\Controllers\AiFlowSettingsController::class, 'lock'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::put('/', [App\Http\Controllers\AiFlowSettingsController::class, 'update'])
+            ->middleware('permission:whatsapp_menus.update');
     });
 
     Route::prefix('api/business-hours')->group(function () {

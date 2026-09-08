@@ -385,6 +385,52 @@ class WhatsAppConversation extends Model
             ->exists();
     }
 
+    /**
+     * Guarda a qué cliente de Integra corresponde este hilo.
+     *
+     * Vive en el modelo y no en el servicio de acciones del menú porque hay dos
+     * caminos que identifican al cliente —el menú, preguntando la cédula, y el
+     * flujo de IA, que la deduce— y sólo el primero lo estaba guardando. El
+     * resultado era que la IA identificaba a alguien y en el mensaje siguiente
+     * volvía a preguntarle quién era.
+     *
+     * Sólo la identidad, no las facturas: el saldo cambia cada mes y guardarlo
+     * garantizaría contestar cifras viejas.
+     *
+     * @return bool true si hubo algo nuevo que guardar.
+     */
+    public function rememberIntegraClient(
+        int|string|null $clientId,
+        ?string $identification,
+        ?string $name = null
+    ): bool {
+        $identification = trim((string) $identification) ?: null;
+
+        // Sin ninguno de los dos no hay identidad que recordar, y escribir un
+        // bloque vacío borraría la que el menú ya había averiguado.
+        if ($clientId === null && $identification === null) {
+            return false;
+        }
+
+        $metadata = $this->metadata ?? [];
+
+        if (data_get($metadata, 'integra.identificacion') === $identification
+            && data_get($metadata, 'integra.cliente_id') === $clientId) {
+            return false;
+        }
+
+        $metadata['integra'] = [
+            'cliente_id' => $clientId,
+            'identificacion' => $identification,
+            'nombre' => trim((string) $name) ?: data_get($metadata, 'integra.nombre'),
+            'linked_at' => now()->toIso8601String(),
+        ];
+
+        $this->update(['metadata' => $metadata]);
+
+        return true;
+    }
+
     public function scopeForInstance($query, $instanceId)
     {
         return $query->where('instance_id', $instanceId);

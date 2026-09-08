@@ -1303,27 +1303,17 @@ class WhatsAppMenuActionService
     /**
      * Guarda en la conversación a qué cliente de Integra corresponde.
      *
-     * Sólo la identidad, no las facturas: el saldo cambia cada mes y guardarlo
-     * garantizaría contestar cifras viejas.
+     * La escritura vive en el modelo porque el camino de IA identifica al
+     * cliente por su cuenta y también tiene que poder guardarlo; aquí sólo
+     * queda leer la identidad del contacto tal y como la devuelve Integra.
      */
     private function rememberContact(WhatsAppConversation $conversation, array $contact): void
     {
-        $identificacion = $contact['identificacion'] ?? data_get($contact, 'contacto.identificacion');
-        $metadata = $conversation->metadata ?? [];
-
-        if (data_get($metadata, 'integra.identificacion') === $identificacion
-            && data_get($metadata, 'integra.cliente_id') === ($contact['id'] ?? null)) {
-            return;
-        }
-
-        $metadata['integra'] = [
-            'cliente_id' => $contact['id'] ?? null,
-            'identificacion' => $identificacion,
-            'nombre' => $this->contactName($contact),
-            'linked_at' => now()->toIso8601String(),
-        ];
-
-        $conversation->update(['metadata' => $metadata]);
+        $conversation->rememberIntegraClient(
+            $contact['id'] ?? null,
+            $contact['identificacion'] ?? data_get($contact, 'contacto.identificacion'),
+            $this->contactName($contact)
+        );
     }
 
     // ------------------------------------------------------------------

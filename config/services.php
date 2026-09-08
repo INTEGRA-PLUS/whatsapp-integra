@@ -100,7 +100,60 @@ return [
         'webhook_url' => env('AI_MENUS_WEBHOOK_URL'),
         // Margen sobre el timeout que la empresa le da a Ollama: si n8n espera
         // 120 s por el modelo, cortar a los 30 s aquí tiraría respuestas buenas.
+        //
+        // OJO: ProcessWhatsAppAi se da este tiempo + 30 s, y ese total tiene
+        // que caber dentro del `retry_after` de la cola (config/queue.php). Si
+        // se sube esto, hay que subir aquello.
         'timeout' => (int) env('AI_MENUS_TIMEOUT', 180),
+        // Segundos que se espera antes de preguntarle al modelo, para que el
+        // cliente que escribe en ráfagas ("hola" / "no tengo internet" /
+        // "desde ayer") se lleve una sola inferencia y una sola respuesta.
+        // Es lo que el cliente nota de más: subirlo junta mejor, pero se hace
+        // notar. En 0 se desactiva y sólo protege el candado del job.
+        'debounce' => (int) env('AI_MENUS_DEBOUNCE', 6),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | IA de los chats (flujo n8n)
+    |--------------------------------------------------------------------------
+    |
+    | Proceso DISTINTO al de los menús, con su propio flujo y su propio
+    | contrato: aquél resuelve peticiones contra Integra, éste conversa. Los dos
+    | responden en la misma llamada, pero el payload no se parece en nada —el
+    | gateway habla `message`/`user_id`, no `mensaje`/`conversacion`—, así que
+    | no comparten ni variable ni cliente. Mezclarlos fue lo que dejó la IA muda
+    | sin que nadie lo notara.
+    |
+    */
+    'ai_chat' => [
+        'webhook_url' => env('AI_CHAT_WEBHOOK_URL'),
+        // El gateway va detrás de Header Auth: sin esto responde 403 y el
+        // mensaje se pierde en un log.
+        'api_key' => env('AI_CHAT_API_KEY'),
+        // Es casi todo la espera del modelo: el gateway ya no responde 202,
+        // espera al worker y devuelve la respuesta. Igual que en ai_menus,
+        // ProcessWhatsAppChatAi se da esto + 30 s y ese total tiene que caber
+        // en el `retry_after` de la cola.
+        'timeout' => (int) env('AI_CHAT_TIMEOUT', 180),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Secreto que desbloquea el apartado de IA
+    |--------------------------------------------------------------------------
+    |
+    | La IA no se enciende sola desde el panel: el admin tiene que escribir este
+    | secreto una vez por empresa. Es un freno deliberado —encenderla pone a un
+    | modelo a hablar con clientes reales—, no una credencial: no da acceso a
+    | nada, sólo abre el apartado.
+    |
+    | Sin configurar, el apartado queda cerrado para todos. Es lo correcto: es
+    | preferible que nadie pueda encenderla a que cualquiera pueda.
+    |
+    */
+    'ai_activation' => [
+        'secret' => env('SECRET_ACTIVATION'),
     ],
 
 ];

@@ -35,12 +35,31 @@ return [
             'driver' => 'sync',
         ],
 
+        /*
+         * `retry_after` es cuánto espera la cola antes de dar por muerto un job
+         * reservado y ofrecérselo a otro worker. **Tiene que ser mayor que el
+         * `$timeout` del job más lento que corra aquí**, o la cola se lo entrega
+         * a un segundo worker mientras el primero sigue trabajando: dos
+         * ejecuciones a la vez del mismo trabajo.
+         *
+         * Estaba en 90, empatado con el `--timeout` del worker (docker-compose)
+         * y por debajo de varios jobs: ProcessWhatsAppCampaign se da 300 s y la
+         * IA espera hasta 210 s por el modelo. El cliente acababa recibiendo la
+         * respuesta dos veces.
+         *
+         * Los 360 salen del job más lento de esta conexión (300, la campaña)
+         * más margen. Es también lo que tarda como mucho en recuperarse un job
+         * cuyo worker murió de verdad, que es el precio de subirlo.
+         *
+         * Quien añada un job más lento que esto: o sube este número, o le pone
+         * al job un `$timeout` que quepa.
+         */
         'database' => [
             'driver' => 'database',
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 360),
             'after_commit' => false,
         ],
 

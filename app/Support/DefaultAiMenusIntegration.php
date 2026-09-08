@@ -16,8 +16,9 @@ use App\Models\CompanyIntegration;
  * clientes de la empresa empiezan a hablar con un modelo que nadie de esa
  * empresa revisó, y un mensaje enviado a un cliente ya no se puede recoger.
  *
- * No guarda ajustes: el servidor de Ollama, el modelo y los permisos son los
- * mismos para toda la plataforma y viven en el flujo de n8n.
+ * Guarda los permisos —hasta dónde puede llegar la IA de esta empresa— y nada
+ * más: el servidor de Ollama y el modelo son los mismos para toda la
+ * plataforma y viven en el flujo de n8n.
  */
 class DefaultAiMenusIntegration
 {
@@ -42,6 +43,10 @@ class DefaultAiMenusIntegration
             'company_id' => $company->id,
             'key' => CompanyIntegration::KEY_AI_MENUS,
             'enabled' => false,
+            // Nace sólo con lectura. Encender el interruptor no puede ser lo
+            // mismo que autorizar a un modelo a crear radicados a nombre del
+            // cliente y a disparar cobros: eso se concede aparte y a mano.
+            'abilities' => CompanyIntegration::AI_PERMISSIONS_DEFAULT,
             // Las demás columnas de la tabla son de las integraciones que sí
             // guardan credenciales (Integra). Aquí no aplican: se dejan en su
             // valor por defecto y nadie las lee.

@@ -69,7 +69,8 @@ import {
     MapPin,
     Wand2,
     Download,
-    Eye
+    Eye,
+    Bot
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -3597,6 +3598,32 @@ export default function ChatIndex({ instances, integrations = [] }) {
         };
     }
 
+    /**
+     * Por qué la IA contestó esto, para el tooltip de la burbuja.
+     *
+     * La traza la guarda ProcessWhatsAppMenu en el `metadata` del mensaje. Es
+     * lo que deja abrir un chat semanas después y entender la respuesta —qué
+     * entendió, con cuánta confianza, con qué modelo y cuánto tardó— sin tener
+     * que ir a buscar la línea del log de ese día.
+     */
+    function aiTraceTitle(msg) {
+        const ia = msg?.metadata?.ia;
+
+        if (!ia) return 'Respondió la IA';
+
+        const partes = [
+            ia.intencion && `Entendió: ${ia.intencion}`,
+            typeof ia.confianza === 'number' && `Confianza: ${Math.round(ia.confianza * 100)}%`,
+            ia.degradacion && `Se degradó: ${ia.degradacion}`,
+            ia.modelo && `Modelo: ${ia.modelo}`,
+            ia.ms && `Tardó: ${(ia.ms / 1000).toFixed(1)} s`,
+            ia.turno && `Turno ${ia.turno} de la IA en este chat`,
+            ia.evento && `Avisó a tus sistemas: ${ia.evento}`,
+        ].filter(Boolean);
+
+        return ['Respondió la IA', ...partes].join('\n');
+    }
+
     function formatDuration(seconds) {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -4805,6 +4832,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 {isOut && msg.sender?.name && (
                                                                     <span className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
                                                                         {msg.sender.name}
+                                                                    </span>
+                                                                )}
+                                                                {/* Quién contestó. Sin esto, la burbuja de la IA se lee
+                                                                    igual que la del bot de menús, y el asesor que abre el
+                                                                    chat no sabe si lo que ve lo escribió una plantilla que
+                                                                    alguien configuró o un modelo. El título lleva la traza
+                                                                    que el job guardó en el mensaje: con qué intención, con
+                                                                    cuánta confianza y con qué modelo. */}
+                                                                {isOut && !msg.sender?.name && msg.metadata?.action_type === 'ia' && (
+                                                                    <span
+                                                                        className="mb-0.5 inline-flex w-fit items-center gap-1 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide text-violet-700 dark:text-violet-300"
+                                                                        title={aiTraceTitle(msg)}
+                                                                    >
+                                                                        <Bot className="size-2.5 shrink-0" />
+                                                                        IA
                                                                     </span>
                                                                 )}
                                                                 {msg.type === 'text' && (

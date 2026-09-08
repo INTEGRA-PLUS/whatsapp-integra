@@ -1639,11 +1639,13 @@ function Select({ value, onChange, children, className = '' }) {
 WhatsAppMenusIndex.layout = page => <AppLayout breadcrumb={['Menús de WhatsApp']}>{page}</AppLayout>;
 
 /**
- * El interruptor de la IA.
+ * El interruptor de la IA y hasta dónde llega.
  *
- * Es lo único que la empresa decide sobre la IA: el servidor, el modelo y los
- * permisos son los mismos para toda la plataforma y se configuran en el flujo.
- * Por eso aquí no hay formulario, sólo un botón.
+ * El servidor y el modelo son los mismos para toda la plataforma y se
+ * configuran en el flujo. Los permisos no: consultar una factura y radicar una
+ * falla a nombre del cliente no son la misma decisión, y la toma cada empresa.
+ * Antes vivían en el flujo e iguales para todos, así que encender el
+ * interruptor concedía las tres cosas de golpe.
  *
  * Vive en esta pantalla y no en Integraciones porque es la IA *de los menús*:
  * se enciende donde se configuran, y así se lee junto a lo que complementa.
@@ -1651,10 +1653,24 @@ WhatsAppMenusIndex.layout = page => <AppLayout breadcrumb={['Menús de WhatsApp'
 function AiSwitch({ ai }) {
     const [busy, setBusy] = useState(false);
     const encendida = ai.enabled === true;
+    const permisos = ai.permissions ?? [];
+    const catalogo = ai.permissionCatalog ?? [];
 
     function toggle() {
         setBusy(true);
         router.post(route('whatsapp-menus.ai'), { enabled: !encendida }, {
+            preserveScroll: true,
+            onFinish: () => setBusy(false),
+        });
+    }
+
+    function togglePermiso(value) {
+        const next = permisos.includes(value)
+            ? permisos.filter(p => p !== value)
+            : [...permisos, value];
+
+        setBusy(true);
+        router.post(route('whatsapp-menus.ai.permissions'), { permissions: next }, {
             preserveScroll: true,
             onFinish: () => setBusy(false),
         });
@@ -1700,6 +1716,44 @@ function AiSwitch({ ai }) {
                     {encendida ? 'Apagar la IA' : 'Encender la IA'}
                 </Button>
             </div>
+
+            {/* Los permisos sólo se muestran con la IA encendida: apagada, no
+                hay nada que acotar y sólo serían tres casillas sin efecto. */}
+            {encendida && catalogo.length > 0 && (
+                <div className="mt-4 border-t pt-4">
+                    <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Lo que no le concedas, la IA lo pasa a un asesor en vez de hacerlo por su cuenta.
+                    </p>
+                    <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
+                        {catalogo.map(permiso => {
+                            const activo = permisos.includes(permiso.value);
+                            return (
+                                <label
+                                    key={permiso.value}
+                                    className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 transition-colors ${
+                                        activo ? 'border-violet-500/40 bg-violet-500/10' : 'bg-card hover:bg-muted/50'
+                                    } ${busy ? 'pointer-events-none opacity-60' : ''}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={activo}
+                                        disabled={busy}
+                                        onChange={() => togglePermiso(permiso.value)}
+                                        className="mt-0.5 size-3.5 shrink-0 accent-violet-600"
+                                    />
+                                    <span className="min-w-0">
+                                        <span className="block text-[12px] font-semibold text-foreground">{permiso.label}</span>
+                                        <span className="block text-[11px] leading-tight text-muted-foreground mt-0.5">
+                                            {permiso.description}
+                                        </span>
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

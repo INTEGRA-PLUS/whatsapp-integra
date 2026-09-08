@@ -15,6 +15,7 @@ use App\Services\AgentAssignmentService;
 use App\Services\MetaWhatsAppService;
 use App\Services\WhatsAppMenuActionService;
 use App\Services\WhatsAppMenuService;
+use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use App\Support\Realtime;
 use App\Services\WebhookDispatcher;
@@ -39,15 +40,29 @@ class ProcessWhatsAppMenu implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * Este job sí envía, así que su presupuesto es el de las llamadas que
+     * encadena y no el de una inferencia. La peor de ellas es `reportar_falla`:
+     * buscar el cliente (20 s), el estado previo (20 s), crear el radicado
+     * (20 s) y el envío a Meta (30 s). Los 120 dejan margen sin acercarse al
+     * `retry_after` de la cola (360, ver config/queue.php).
+     *
+     * Un solo intento porque las acciones no son idempotentes —`reportar_falla`
+     * crea un radicado— y un reintento a ciegas duplicaría lo que el primero
+     * alcanzara a hacer antes de morir. Los reintentos de red viven donde toca:
+     * DeliverWhatsAppMessage, que sí puede reintentar sin efectos.
+     */
+    public int $timeout = 120;
+    public int $tries = 1;
+
+    /**
      * @param ?string $flowInput Texto con el que el cliente contesta a una
      *                           pregunta del bot ("dime tu cédula"). Cuando
      *                           llega, el job retoma el flujo en curso en vez
      *                           de mandar un menú o ejecutar una opción.
-     * @param ?MenuActionResult $aiResult Decisión que ya tomó la IA (ver
+     * @param ?AiDecision $ai    Decisión que ya tomó la IA (ver
      *                           ProcessWhatsAppAi). Llega resuelta: aquí sólo
      *                           se ejecuta, con las mismas comprobaciones y el
      *                           mismo camino de envío que una opción del menú.
-     * @param ?string $aiNote    Resumen de la IA para el asesor cuando deriva.
      */
     public function __construct(
         public int $instanceId,
@@ -56,8 +71,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         public ?int $optionId,
         public string $inboundWamid,
         public ?string $flowInput = null,
-        public ?MenuActionResult $aiResult = null,
-        public ?string $aiNote = null
+        public ?AiDecision $ai = null
     ) {}
 
     public function handle(
@@ -101,16 +115,22 @@ class ProcessWhatsAppMenu implements ShouldQueue
         // rodeo: la llamada al modelo tarda segundos, y así las comprobaciones
         // de arriba —agente asignado, hilo cerrado, ventana de 24 h— se
         // reevalúan con el estado de AHORA y no con el de antes de preguntar.
-        if ($this->aiResult !== null) {
+        if ($this->ai !== null) {
+            // El aviso a los sistemas de la empresa va aquí y no en el job que
+            // preguntó: es donde ya se sabe que el chat sigue libre y que la
+            // respuesta de verdad va a salir. Emitirlo antes avisaría de un
+            // cobro que nadie llegó a pedirle al cliente.
+            $this->emitAiEvent($instance, $conversation);
+
             $this->applyResult(
                 $instance,
                 $conversation,
                 null,
-                $this->aiResult,
+                $this->ai->result,
                 $meta,
                 $assignment,
                 WhatsAppBotFlow::ACTION_AI,
-                $this->aiNote
+                $this->ai->note
             );
             return;
         }
@@ -252,6 +272,11 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 'menu_option_id' => $option?->id,
                 'action_type' => $option?->action_type ?? $fallbackAction,
                 'awaiting' => $result->step,
+                // La traza de la IA viaja con la burbuja. En el log se pierde:
+                // sin esto no hay forma de abrir un chat seis semanas después y
+                // saber con qué intención, con cuánta confianza y con qué
+                // modelo se contestó eso, ni de medir si vale la pena.
+                'ia' => $this->aiTrace(),
             ]));
         }
 
@@ -643,6 +668,71 @@ class ProcessWhatsAppMenu implements ShouldQueue
     }
 
     /** Texto suelto enviado por el menú (respuesta de una opción). */
+    /**
+     * Avisa a los sistemas de la empresa de lo que la IA acaba de resolver.
+     *
+     * Son los mismos eventos que emite el menú (`invoice.queried`,
+     * `service.checked`, `ticket.created`, `payment.requested`) porque para el
+     * ERP de la empresa es el mismo hecho: da igual si el cliente tocó una
+     * opción o lo escribió con sus palabras.
+     *
+     * `payment.requested` es el que hacía daño callado: aquí no se cobra nada,
+     * el webhook es quien sabe generar el cobro. Mientras la IA no lo emitía,
+     * el mismo cliente generaba cobro por el menú y no por la IA.
+     */
+    private function emitAiEvent(Instance $instance, WhatsAppConversation $conversation): void
+    {
+        if ($this->ai?->event === null) {
+            return;
+        }
+
+        WebhookDispatcher::emit(
+            $instance->company_id,
+            $this->ai->event,
+            WebhookDispatcher::conversationPayload(
+                $conversation,
+                // El cliente va aparte y con la misma forma que en el menú: el
+                // flujo lo manda en su meta, no repetido dentro de cada evento.
+                array_filter(['cliente' => $this->ai->client ?: null]) + $this->ai->eventData
+            )
+        );
+
+        Log::channel('whatsapp')->info('📤 Evento de negocio emitido por la IA', [
+            'conversation_id' => $conversation->id,
+            'evento' => $this->ai->event,
+        ]);
+    }
+
+    /**
+     * La traza que se guarda en la burbuja, acotada a valores planos.
+     *
+     * Acotada a propósito: la meta del flujo puede crecer con lo que a alguien
+     * le sirva para depurar n8n, y el `metadata` del mensaje no es el sitio
+     * donde acumular eso. Aquí van sólo los campos con los que después se
+     * audita o se mide.
+     */
+    private function aiTrace(): ?array
+    {
+        if ($this->ai === null) {
+            return null;
+        }
+
+        $meta = $this->ai->meta;
+
+        return array_filter([
+            'intencion' => data_get($meta, 'intencion'),
+            'confianza' => data_get($meta, 'confianza'),
+            'segmento' => data_get($meta, 'segmento'),
+            'modelo' => data_get($meta, 'modelo'),
+            'redactor' => data_get($meta, 'redactor'),
+            'degradacion' => data_get($meta, 'degradacion'),
+            'turno' => data_get($meta, 'turno'),
+            'ms' => data_get($meta, 'uso.planificador.ms'),
+            'ms_redactor' => data_get($meta, 'uso.redactor.ms'),
+            'evento' => $this->ai->event,
+        ], fn ($v) => $v !== null && $v !== '');
+    }
+
     private function deliverText(
         Instance $instance,
         WhatsAppConversation $conversation,

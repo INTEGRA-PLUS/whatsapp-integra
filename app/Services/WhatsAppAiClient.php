@@ -8,6 +8,7 @@ use App\Models\WhatsAppBotFlow;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMessage;
+use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +32,23 @@ class WhatsAppAiClient
     /** Cuántos mensajes del hilo se le pasan como contexto. */
     private const HISTORY = 10;
 
+    /**
+     * Eventos de negocio que la IA puede pedir emitir.
+     *
+     * Es una lista blanca y no un paso a través porque al otro lado hay un
+     * flujo que alguien puede editar sin tocar este código: un `evento` libre
+     * dejaría que quien edita n8n dispare cualquier webhook de la empresa.
+     * Son exactamente los mismos que emite el menú desde
+     * WhatsAppMenuActionService, para que el sistema de la empresa no tenga
+     * que distinguir de qué camino vino el cliente.
+     */
+    private const EVENTS = [
+        'invoice.queried',
+        'service.checked',
+        'ticket.created',
+        'payment.requested',
+    ];
+
     /** La configuración de IA de una empresa, o null si no está lista. */
     public static function for(int $companyId): ?CompanyIntegration
     {
@@ -47,16 +65,15 @@ class WhatsAppAiClient
     }
 
     /**
-     * @return array{result: MenuActionResult, note: ?string, meta: array}|null
-     *         null cuando la IA no puede hacerse cargo: quien llama debe
-     *         entonces dejar el mensaje seguir su curso normal.
+     * @return ?AiDecision null cuando la IA no puede hacerse cargo: quien llama
+     *                    debe entonces dejar el mensaje seguir su curso normal.
      */
     public function ask(
         Instance $instance,
         WhatsAppConversation $conversation,
         string $message,
         ?WhatsAppBotFlow $flow = null
-    ): ?array {
+    ): ?AiDecision {
         $url = config('services.ai_menus.webhook_url');
         $integration = self::for($instance->company_id);
 
@@ -67,7 +84,7 @@ class WhatsAppAiClient
         // El payload se arma FUERA del try a propósito. Dentro, cualquier error
         // nuestro al construirlo se registraría como "el flujo no respondió" y
         // mandaría a alguien a depurar n8n por un fallo que está en PHP.
-        $payload = $this->payload($instance, $conversation, $message, $flow);
+        $payload = $this->payload($instance, $conversation, $message, $flow, $integration);
 
         try {
             $response = Http::acceptJson()
@@ -100,11 +117,10 @@ class WhatsAppAiClient
      *
      * Se valida en vez de confiar porque al otro lado hay un flujo que alguien
      * puede editar sin tocar este código: un `step` que no exista dejaría a la
-     * conversación esperando una respuesta que nadie sabe retomar.
-     *
-     * @return array{result: MenuActionResult, note: ?string, meta: array}|null
+     * conversación esperando una respuesta que nadie sabe retomar, y un
+     * `evento` libre dispararía webhooks que la empresa no configuró.
      */
-    private function translate(array $data, WhatsAppConversation $conversation): ?array
+    private function translate(array $data, WhatsAppConversation $conversation): ?AiDecision
     {
         // El flujo dice "no me hago cargo" (la IA está apagada para esa
         // empresa, se agotaron los turnos, faltan datos en la petición).
@@ -138,17 +154,20 @@ class WhatsAppAiClient
             $step = null;
         }
 
+        [$event, $eventData] = $this->event($data, $conversation);
+        $client = $this->client($meta);
+
         // Sin texto no hay nada que mandar. Si además pedía derivar, se deriva
         // igual —el chat tiene que llegar a una persona—, y si no, la IA no
         // aporta nada y el mensaje sigue su curso normal.
         if ($text === '') {
             return $handoff
-                ? ['result' => MenuActionResult::escalate(''), 'note' => $note, 'meta' => $meta]
+                ? new AiDecision(MenuActionResult::escalate(''), $note, $meta, $event, $eventData, $client)
                 : null;
         }
 
         if ($handoff) {
-            return ['result' => MenuActionResult::escalate($text), 'note' => $note, 'meta' => $meta];
+            return new AiDecision(MenuActionResult::escalate($text), $note, $meta, $event, $eventData, $client);
         }
 
         if ($step !== null) {
@@ -157,10 +176,66 @@ class WhatsAppAiClient
             // servicio de acciones del menú, que no sabría retomarla.
             $context['action'] = WhatsAppBotFlow::ACTION_AI;
 
-            return ['result' => MenuActionResult::ask($text, $step, $context), 'note' => $note, 'meta' => $meta];
+            return new AiDecision(
+                MenuActionResult::ask($text, $step, $context), $note, $meta, $event, $eventData, $client
+            );
         }
 
-        return ['result' => MenuActionResult::reply($text), 'note' => $note, 'meta' => $meta];
+        return new AiDecision(MenuActionResult::reply($text), $note, $meta, $event, $eventData, $client);
+    }
+
+    /**
+     * El evento de negocio que el flujo pide emitir.
+     *
+     * Es la mitad que faltaba de la promesa "la IA hace lo mismo que el menú":
+     * el menú avisa a los sistemas de la empresa cada vez que resuelve algo, y
+     * `payment.requested` en particular es quien genera el cobro. Sin esto, un
+     * cliente que pagaba por el menú generaba cobro y el mismo cliente
+     * atendido por la IA no.
+     *
+     * @return array{0: ?string, 1: array}
+     */
+    private function event(array $data, WhatsAppConversation $conversation): array
+    {
+        $event = $data['evento'] ?? null;
+
+        if (blank($event)) {
+            return [null, []];
+        }
+
+        if (! in_array($event, self::EVENTS, true)) {
+            Log::channel('whatsapp')->warning('⚠️ La IA pidió emitir un evento desconocido; se descarta', [
+                'conversation_id' => $conversation->id,
+                'evento' => is_string($event) ? mb_substr($event, 0, 60) : gettype($event),
+            ]);
+
+            return [null, []];
+        }
+
+        return [$event, is_array($data['datos_evento'] ?? null) ? $data['datos_evento'] : []];
+    }
+
+    /**
+     * A quién identificó el flujo en Integra, si a alguien.
+     *
+     * El flujo consulta Integra por su cuenta, así que muchas veces sabe quién
+     * es el cliente antes que nosotros. Guardarlo evita que en el mensaje
+     * siguiente —lo atienda la IA o el menú— se le vuelva a pedir la cédula a
+     * quien ya la dio.
+     */
+    private function client(array $meta): array
+    {
+        $client = data_get($meta, 'cliente');
+
+        if (! is_array($client)) {
+            return [];
+        }
+
+        return array_filter([
+            'id' => $client['id'] ?? null,
+            'identificacion' => trim((string) ($client['identificacion'] ?? '')) ?: null,
+            'nombre' => trim((string) ($client['nombre'] ?? '')) ?: null,
+        ], fn ($v) => $v !== null);
     }
 
     /**
@@ -171,7 +246,8 @@ class WhatsAppAiClient
         Instance $instance,
         WhatsAppConversation $conversation,
         string $message,
-        ?WhatsAppBotFlow $flow
+        ?WhatsAppBotFlow $flow,
+        CompanyIntegration $integration
     ): array {
         $integra = Integra::connection($instance->company_id);
 
@@ -180,11 +256,18 @@ class WhatsAppAiClient
                 'id' => $instance->company_id,
                 'nombre' => $instance->company->name ?? '',
             ],
-            // Lo único que decide la empresa. El modelo, el servidor de Ollama
-            // y los permisos son de la plataforma y viven en el flujo de n8n:
-            // mandarlos desde aquí sería mantener los mismos valores en dos
-            // sitios, con la garantía de que un día dejarían de coincidir.
-            'ia' => ['habilitada' => true],
+            // Lo que decide la empresa: el interruptor y hasta dónde llega la
+            // IA. El modelo y el servidor de Ollama siguen siendo de la
+            // plataforma y viven en el flujo de n8n —mandarlos desde aquí
+            // sería mantener los mismos valores en dos sitios—, pero los
+            // permisos no: "consultar mi factura" y "crear un radicado a mi
+            // nombre" no son la misma decisión, y la toma cada empresa. El
+            // flujo los cruza con los suyos, así que esto puede restringir
+            // pero nunca conceder más de lo que la plataforma permite.
+            'ia' => [
+                'habilitada' => true,
+                'permisos' => $integration->aiPermissionMap(),
+            ],
             // El flujo consulta Integra por su cuenta con estas credenciales.
             // Si la empresa no lo tiene conectado se manda vacío y el flujo
             // deriva a un asesor, que es lo mismo que hace el menú.

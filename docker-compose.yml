@@ -153,6 +153,11 @@ services:
       RUN_MIGRATIONS: "false"
       WARM_CACHES: "true"
       SKIP_FPM_PING: "true"
+    # --timeout y --tries son sólo el valor por defecto: el job que declara los
+    # suyos manda (ProcessWhatsAppAi se da 210 s porque espera al modelo). El
+    # límite duro es el `retry_after` de config/queue.php, que tiene que superar
+    # al job más lento: por debajo, la cola le entrega a otro worker un job que
+    # éste sigue ejecutando y el cliente recibe la respuesta dos veces.
     command:
       - php
       - artisan

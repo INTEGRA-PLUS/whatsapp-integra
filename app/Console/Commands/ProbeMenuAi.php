@@ -88,8 +88,8 @@ class ProbeMenuAi extends Command
             return self::FAILURE;
         }
 
-        $result = $decision['result'];
-        $meta = $decision['meta'];
+        $result = $decision->result;
+        $meta = $decision->meta;
 
         $tipo = match (true) {
             $result->handoff => '<fg=yellow>DERIVA A UN ASESOR</>',
@@ -111,8 +111,21 @@ class ProbeMenuAi extends Command
             $this->line('  <fg=yellow>Degradación</>  ' . $meta['degradacion']);
         }
 
-        if (filled($decision['note'] ?? null)) {
-            $this->line('  <fg=gray>Nota asesor</>  ' . $decision['note']);
+        if (filled($decision->note)) {
+            $this->line('  <fg=gray>Nota asesor</>  ' . $decision->note);
+        }
+
+        // Lo que la IA averiguó y lo que va a avisar. Se enseña porque es lo
+        // que distingue una consulta de una acción con efectos fuera de aquí:
+        // `payment.requested` es quien genera el cobro.
+        if ($decision->identifiedClient()) {
+            $this->line('  <fg=gray>Identificó</>   ' . ($decision->client['nombre'] ?? '?')
+                . ' · ' . ($decision->client['identificacion'] ?? '?'));
+        }
+
+        if ($decision->event !== null) {
+            $this->line('  <fg=magenta>Evento</>       ' . $decision->event
+                . ' <fg=gray>(se emite a los webhooks de la empresa al enviar)</>');
         }
 
         $this->newLine();
@@ -147,8 +160,7 @@ class ProbeMenuAi extends Command
             null,
             '',
             null,
-            $result,
-            $decision['note']
+            $decision
         );
 
         $this->info('  Enviado. Revisa la conversación en el panel.');

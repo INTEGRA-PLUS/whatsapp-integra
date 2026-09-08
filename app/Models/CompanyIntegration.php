@@ -16,10 +16,11 @@ class CompanyIntegration extends Model
     /**
      * IA de los menús de WhatsApp.
      *
-     * De esta fila **sólo se usa `enabled`**: es el interruptor de la empresa y
-     * nada más. El servidor de Ollama, el modelo y los ajustes son los mismos
-     * para toda la plataforma y viven en el flujo de n8n, así que aquí no hay
-     * `base_url`, ni token, ni estado de conexión que mantener.
+     * De esta fila se usan `enabled` —el interruptor de la empresa— y
+     * `abilities`, que son los permisos de la IA (ver más abajo). El servidor
+     * de Ollama y el modelo sí son los mismos para toda la plataforma y viven
+     * en el flujo de n8n, así que aquí no hay `base_url`, ni token, ni estado
+     * de conexión que mantener.
      *
      * Se guarda en esta tabla y no en una columna de `companies` porque ya
      * existe con la clave única (empresa, integración), que es exactamente la
@@ -30,6 +31,45 @@ class CompanyIntegration extends Model
      * está en Integra::SOURCES y no puede confundirse con una credencial.
      */
     public const KEY_AI_MENUS = 'ai_menus';
+
+    /**
+     * IA de los chats de WhatsApp.
+     *
+     * Otro proceso, otra fila: la de menús resuelve peticiones concretas contra
+     * Integra y necesita permisos; ésta conversa y no toca nada, así que de su
+     * fila sólo se usa `enabled`. Tenerlas separadas es lo que deja encender una
+     * sin la otra —que es como una empresa puede querer empezar.
+     */
+    public const KEY_AI_CHAT = 'ai_chat';
+
+    /**
+     * Qué puede hacer la IA contra Integra, por empresa.
+     *
+     * Se guardan en `abilities` —la misma columna donde las filas de Integra
+     * guardan sus scopes— porque es exactamente la misma idea: la lista de lo
+     * que esta fila autoriza. Vive por empresa y no en el flujo de n8n porque
+     * "consultar mi factura" y "crear un radicado a mi nombre" no son la misma
+     * decisión, y quien la toma es cada empresa: hasta ahora `radicados` y
+     * `pagos` estaban en `true` para toda la plataforma, así que encender el
+     * interruptor daba las tres cosas de golpe.
+     *
+     * El flujo sigue teniendo la última palabra: lo que llega de aquí se cruza
+     * con los permisos de la plataforma, y la empresa nunca puede conceder más
+     * de lo que la plataforma permite.
+     */
+    public const AI_READ = 'leer';
+    public const AI_TICKETS = 'radicados';
+    public const AI_PAYMENTS = 'pagos';
+
+    public const AI_PERMISSIONS = [self::AI_READ, self::AI_TICKETS, self::AI_PAYMENTS];
+
+    /**
+     * Con qué nace una empresa: sólo lectura.
+     *
+     * Consultar una factura no compromete nada; crear un radicado y disparar un
+     * cobro sí. Que el admin tenga que concederlos a mano es el punto.
+     */
+    public const AI_PERMISSIONS_DEFAULT = [self::AI_READ];
 
     protected $fillable = [
         'company_id',
@@ -140,5 +180,53 @@ class CompanyIntegration extends Model
     public function aiReady(): bool
     {
         return $this->key === self::KEY_AI_MENUS && (bool) $this->enabled;
+    }
+
+    /** ¿Esta empresa tiene encendida la IA de los chats? */
+    public static function chatAiEnabled(int $companyId): bool
+    {
+        return self::where('company_id', $companyId)
+            ->where('key', self::KEY_AI_CHAT)
+            ->where('enabled', true)
+            ->exists();
+    }
+
+    /**
+     * Los permisos de IA de esta empresa, ya saneados.
+     *
+     * `null` en la columna significa "fila anterior a los permisos", no "sin
+     * permisos": se devuelve el valor por defecto para que una empresa no se
+     * quede sin la lectura por una migración a medias.
+     *
+     * @return list<string>
+     */
+    public function aiPermissions(): array
+    {
+        $stored = is_array($this->abilities) ? $this->abilities : null;
+
+        if ($stored === null) {
+            return self::AI_PERMISSIONS_DEFAULT;
+        }
+
+        return array_values(array_intersect(self::AI_PERMISSIONS, $stored));
+    }
+
+    /**
+     * Forma en la que viaja al flujo: un booleano por permiso.
+     *
+     * Un mapa y no una lista porque al otro lado se lee como
+     * `permisos.radicados`, y una lista obligaría al flujo a saber buscar
+     * dentro de un array —justo el tipo de detalle que se rompe cuando alguien
+     * edita n8n sin mirar este archivo.
+     *
+     * @return array<string, bool>
+     */
+    public function aiPermissionMap(): array
+    {
+        $granted = $this->aiPermissions();
+
+        return collect(self::AI_PERMISSIONS)
+            ->mapWithKeys(fn (string $p) => [$p => in_array($p, $granted, true)])
+            ->all();
     }
 }

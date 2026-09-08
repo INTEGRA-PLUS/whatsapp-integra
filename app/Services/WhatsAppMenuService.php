@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ProcessWhatsAppAi;
+use App\Jobs\ProcessWhatsAppChatAi;
 use App\Jobs\ProcessWhatsAppMenu;
 use App\Models\Instance;
 use App\Models\WhatsAppBotFlow;
@@ -70,7 +71,7 @@ class WhatsAppMenuService
             // al servicio de acciones del menú sería silencio: para él "ia" es
             // una acción desconocida y el cliente se quedaría hablando solo.
             if ($flow->action_type === WhatsAppBotFlow::ACTION_AI) {
-                ProcessWhatsAppAi::dispatch($instance->id, $conversation->id, $text, true);
+                $this->askAi($instance, $conversation, $text, true);
             } else {
                 ProcessWhatsAppMenu::dispatch($instance->id, $conversation->id, null, null, $wamid, $text);
             }
@@ -91,7 +92,7 @@ class WhatsAppMenuService
             // acción que corresponde. Va en último lugar a propósito —los
             // disparadores que el admin configuró mandan sobre ella— y sólo si
             // la empresa la encendió.
-            return $this->handOverToAi($instance, $conversation, $messageData);
+            return $this->handOverToAi($instance, $conversation, $messageData, $wamid);
         }
 
         if ($this->isInCooldown($menu, $conversation)) {
@@ -320,22 +321,81 @@ class WhatsAppMenuService
     private function handOverToAi(
         Instance $instance,
         WhatsAppConversation $conversation,
-        array $messageData
+        array $messageData,
+        string $wamid = ''
     ): bool {
         $text = trim((string) ($messageData['content'] ?? ''));
 
-        if ($text === '' || !WhatsAppAiClient::enabled($instance->company_id)) {
+        if ($text === '') {
             return false;
         }
 
-        ProcessWhatsAppAi::dispatch($instance->id, $conversation->id, $text);
+        // La IA de los menús va primero: es la que sabe ejecutar acciones
+        // contra Integra —consultar una factura, radicar una falla— y devuelve
+        // una decisión que este sistema ya sabe ejecutar.
+        if (WhatsAppAiClient::enabled($instance->company_id)) {
+            $this->askAi($instance, $conversation, $text);
 
-        Log::channel('whatsapp')->info('🤖 Mensaje sin menú que lo reconozca: va a la IA', [
+            Log::channel('whatsapp')->info('🤖 Mensaje sin menú que lo reconozca: va a la IA', [
+                'conversation_id' => $conversation->id,
+                'company_id' => $instance->company_id,
+            ]);
+
+            return true;
+        }
+
+        // Son dos funcionalidades distintas y una puede estar encendida sin la
+        // otra: si la empresa no tiene la IA de menús, el chat IA atiende igual.
+        return $this->askChatAi($instance, $conversation, $text, $wamid);
+    }
+
+    /**
+     * Le pasa el mensaje al flujo de IA de los chats.
+     *
+     * Es un proceso aparte del de menús: aquél resuelve peticiones concretas
+     * contra Integra y contesta en la misma llamada; éste conversa, y su
+     * respuesta vuelve minutos después por el callback. Por eso no compiten
+     * —se intenta primero el que puede resolver— y por eso no comparten job.
+     */
+    private function askChatAi(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        string $text,
+        string $wamid
+    ): bool {
+        // Sin wamid no hay forma de casar la respuesta con la conversación
+        // cuando el flujo la devuelva: preguntar sería tirar la respuesta.
+        if ($wamid === '' || !WhatsAppChatAiClient::enabledFor($instance->company_id)) {
+            return false;
+        }
+
+        ProcessWhatsAppChatAi::dispatch($instance->id, $conversation->id, $text, $wamid);
+
+        Log::channel('whatsapp')->info('💬 Mensaje sin menú que lo reconozca: va al chat IA', [
             'conversation_id' => $conversation->id,
             'company_id' => $instance->company_id,
         ]);
 
         return true;
+    }
+
+    /**
+     * Encola la pregunta al modelo con un margen para que el cliente termine.
+     *
+     * El retardo es el arreglo barato de un patrón muy común: "hola", "no
+     * tengo internet", "desde ayer" en cinco segundos son tres mensajes. Sin
+     * margen cada uno se lleva su inferencia; con él llegan los tres juntos y
+     * el job los junta en una sola pregunta. El candado del propio job es el
+     * que garantiza que no se solapen aunque el margen no alcance.
+     */
+    private function askAi(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        string $text,
+        bool $isFlowAnswer = false
+    ): void {
+        ProcessWhatsAppAi::dispatch($instance->id, $conversation->id, $text, $isFlowAnswer)
+            ->delay(now()->addSeconds(ProcessWhatsAppAi::debounceSeconds()));
     }
 
     private function isFirstInbound(WhatsAppConversation $conversation, string $wamid): bool

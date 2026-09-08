@@ -15,6 +15,7 @@ use App\Support\MenuReview;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
@@ -79,9 +80,40 @@ class WhatsAppMenuController extends Controller
                 // preguntar. No lo puede arreglar el admin de la empresa, así
                 // que la pantalla lo dice en vez de dejar un botón que falla.
                 'available' => filled(config('services.ai_menus.webhook_url')),
+                // Hasta dónde llega la IA de esta empresa. El catálogo viaja
+                // desde el modelo por lo mismo que el de tipos de acción: para
+                // no repetir la lista en el front y que se desincronice.
+                'permissions' => $this->aiIntegration($user->company_id)?->aiPermissions()
+                    ?? CompanyIntegration::AI_PERMISSIONS_DEFAULT,
+                'permissionCatalog' => self::AI_PERMISSION_LABELS,
             ],
         ]);
     }
+
+    /**
+     * Cómo se le explican los permisos de la IA al admin.
+     *
+     * En términos de lo que el cliente va a poder hacer, no en términos de
+     * endpoints: quien decide esto es alguien que sabe si quiere que un modelo
+     * abra averías a su nombre, no qué es `POST /api/v1/radicados`.
+     */
+    private const AI_PERMISSION_LABELS = [
+        [
+            'value' => CompanyIntegration::AI_READ,
+            'label' => 'Consultar',
+            'description' => 'Facturas pendientes, estado del servicio, plan y fecha de corte. Sólo lee.',
+        ],
+        [
+            'value' => CompanyIntegration::AI_TICKETS,
+            'label' => 'Radicar fallas',
+            'description' => 'Crea el radicado en Integra cuando el cliente reporta una avería. Sin esto, la IA pasa el chat a un asesor.',
+        ],
+        [
+            'value' => CompanyIntegration::AI_PAYMENTS,
+            'label' => 'Gestionar pagos',
+            'description' => 'Entrega el enlace de pago y avisa a tus sistemas para que generen el cobro. Sin esto, lo atiende un asesor.',
+        ],
+    ];
 
     private function aiIntegration(int $companyId): ?CompanyIntegration
     {
@@ -93,8 +125,9 @@ class WhatsAppMenuController extends Controller
     /**
      * POST /whatsapp-menus/ai — enciende o apaga la IA de esta empresa.
      *
-     * Es lo único que la empresa decide sobre la IA: el servidor, el modelo y
-     * los permisos son los mismos para toda la plataforma y viven en el flujo.
+     * Sólo enciende y apaga. Hasta dónde llega la IA se concede aparte
+     * (updateAiPermissions): encenderla no puede significar autorizarle de una
+     * vez a radicar fallas y a disparar cobros.
      */
     public function toggleAi(Request $request)
     {
@@ -121,6 +154,37 @@ class WhatsAppMenuController extends Controller
         return back()->with('success', $data['enabled']
             ? 'IA activada. Ya atiende los mensajes que ningún menú reconozca.'
             : 'IA desactivada. Los menús siguen funcionando igual.');
+    }
+
+    /**
+     * POST /whatsapp-menus/ai/permisos — hasta dónde llega la IA de esta empresa.
+     *
+     * Los permisos vivían en el flujo de n8n e iguales para toda la plataforma,
+     * así que `radicados` y `pagos` aplicaban a cualquier empresa que encendiera
+     * el interruptor. El flujo los sigue cruzando con los suyos: esto puede
+     * restringir, nunca conceder más de lo que la plataforma permite.
+     */
+    public function updateAiPermissions(Request $request)
+    {
+        $data = $request->validate([
+            'permissions' => 'present|array',
+            'permissions.*' => ['string', Rule::in(CompanyIntegration::AI_PERMISSIONS)],
+        ]);
+
+        $user = auth()->user();
+        $integration = $this->aiIntegration($user->company_id)
+            ?? DefaultAiMenusIntegration::createFor($user->company);
+
+        // El orden y los duplicados vienen del formulario; se guarda la lista
+        // canónica para que dos empresas con los mismos permisos se lean igual.
+        $integration->update([
+            'abilities' => array_values(array_intersect(
+                CompanyIntegration::AI_PERMISSIONS,
+                $data['permissions']
+            )),
+        ]);
+
+        return back()->with('success', 'Permisos de la IA actualizados.');
     }
 
     public function store(Request $request)

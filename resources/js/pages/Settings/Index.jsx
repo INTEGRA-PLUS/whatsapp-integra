@@ -23,6 +23,7 @@ const TABS = [
     { id: 'apariencia',  label: 'Apariencia',               Icon: Palette },
     { id: 'whatsapp',    label: 'WhatsApp',                 Icon: MessageSquare },
     { id: 'horarios',    label: 'Horarios',                 Icon: CalendarClock },
+    { id: 'flujo-ia',    label: 'Flujo IA',                 Icon: Sparkles },
 ];
 
 /* ─── Utilidades visuales ───────────────────────────────── */
@@ -2436,6 +2437,301 @@ function TabHorarios() {
     );
 }
 
+/* ───────────────────────── Tab Flujo IA ───────────────────────── */
+
+const AI_PERMISSION_LABELS = {
+    leer:      { title: 'Consultar',  desc: 'Leer facturas, contratos y estado del servicio del cliente.' },
+    radicados: { title: 'Radicar',    desc: 'Crear radicados de falla a nombre del cliente.' },
+    pagos:     { title: 'Cobrar',     desc: 'Enviar enlaces de pago. Genera cobros reales.' },
+};
+
+function AiSwitch({ checked, disabled, onChange }) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={!!checked}
+            disabled={disabled}
+            onClick={() => onChange(!checked)}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-teal-500' : 'bg-muted'}`}
+        >
+            <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+    );
+}
+
+function TabFlujoIA() {
+    const [state, setState] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [secret, setSecret] = useState('');
+    const [showSecret, setShowSecret] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const [ok, setOk] = useState('');
+
+    useEffect(() => { load(); }, []);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const { data } = await axios.get('/api/settings/ai-flow');
+            setState(data);
+        } catch {
+            setError('No se pudo cargar el estado del flujo de IA.');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    function flash(message) {
+        setOk(message);
+        setError('');
+        setTimeout(() => setOk(''), 4000);
+    }
+
+    async function unlock(e) {
+        e.preventDefault();
+        if (!secret.trim() || busy) return;
+        setBusy(true); setError('');
+        try {
+            const { data } = await axios.post('/api/settings/ai-flow/unlock', { secret });
+            setState(data);
+            setSecret('');
+            flash('Flujo de IA desbloqueado. Ya puedes configurarlo.');
+        } catch (err) {
+            setError(err.response?.data?.message ?? 'No se pudo desbloquear.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function save(patch, message) {
+        setBusy(true); setError('');
+        try {
+            const { data } = await axios.put('/api/settings/ai-flow', patch);
+            setState(data);
+            flash(message);
+        } catch (err) {
+            setError(err.response?.data?.message ?? 'No se pudo guardar el cambio.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function lock() {
+        if (busy) return;
+        setBusy(true); setError('');
+        try {
+            const { data } = await axios.delete('/api/settings/ai-flow/unlock');
+            setState(data);
+            flash('Flujo de IA bloqueado. Las dos IA quedaron apagadas.');
+        } catch {
+            setError('No se pudo bloquear.');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    function togglePermission(key) {
+        const current = state.menus.permissions;
+        const next = current.includes(key) ? current.filter(p => p !== key) : [...current, key];
+        save({ permissions: next }, 'Permisos actualizados.');
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center gap-3 text-sm text-muted-foreground py-12">
+                <Loader2 className="size-4 animate-spin" /> Cargando…
+            </div>
+        );
+    }
+
+    if (!state) {
+        return <p className="text-sm text-destructive py-12">{error || 'No se pudo cargar.'}</p>;
+    }
+
+    const { platform } = state;
+
+    return (
+        <div className="space-y-6">
+            <SectionHeader
+                icon={Sparkles}
+                title="Flujo IA"
+                description="La IA que atiende a tus clientes cuando ningún menú reconoce lo que escriben."
+            />
+
+            {error && (
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    <XCircle className="size-4 mt-0.5 shrink-0" /><span>{error}</span>
+                </div>
+            )}
+            {ok && (
+                <div className="flex items-start gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-700 dark:text-teal-300">
+                    <CheckCircle2 className="size-4 mt-0.5 shrink-0" /><span>{ok}</span>
+                </div>
+            )}
+
+            {!state.unlocked ? (
+                <Card>
+                    <div className="p-6">
+                        <div className="flex items-start gap-4">
+                            <div className="rounded-xl bg-amber-500/10 p-3">
+                                <Lock className="size-5 text-amber-600 dark:text-amber-400" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-foreground">Este apartado está bloqueado</p>
+                                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                    Activar la IA pone un modelo a conversar con tus clientes reales y, según los
+                                    permisos que le des, a radicar fallas y enviar cobros. Para abrirlo necesitas el
+                                    secreto de activación que tiene el equipo técnico.
+                                </p>
+
+                                {!platform.secret_configured ? (
+                                    <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2.5 text-xs text-amber-800 dark:text-amber-200">
+                                        <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                        <span>El servidor todavía no tiene configurado el secreto de activación. Avisa al equipo técnico.</span>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={unlock} className="mt-5 space-y-3">
+                                        <label className="block text-xs font-medium text-muted-foreground">Secreto de activación</label>
+                                        <div className="relative">
+                                            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                                            <input
+                                                type={showSecret ? 'text' : 'password'}
+                                                value={secret}
+                                                onChange={e => setSecret(e.target.value)}
+                                                autoComplete="off"
+                                                placeholder="Pégalo aquí"
+                                                className="w-full rounded-xl border border-border bg-background pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowSecret(v => !v)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                                            </button>
+                                        </div>
+                                        <Button type="submit" disabled={busy || !secret.trim()} className="gap-2 bg-teal-600 hover:bg-teal-500 text-white">
+                                            {busy && <Loader2 className="size-4 animate-spin" />}
+                                            <ShieldCheck className="size-4" />
+                                            Desbloquear
+                                        </Button>
+                                    </form>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            ) : (
+                <>
+                    {/* IA de los chats */}
+                    <Card>
+                        <div className="p-6">
+                            <div className="flex items-start justify-between gap-6">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <MessageCircle className="size-4 text-teal-600 dark:text-teal-400" />
+                                        <p className="text-sm font-semibold text-foreground">IA en los chats</p>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                        Conversa con el cliente cuando escribe algo que ningún menú reconoce. No toca
+                                        datos ni ejecuta acciones: solo responde y, si no puede, deja el chat a un agente.
+                                    </p>
+                                    {!platform.chat_configured && (
+                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                            <span>Falta configurar el flujo de chats en el servidor.</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <AiSwitch
+                                    checked={state.chat.enabled}
+                                    disabled={busy || !platform.chat_configured}
+                                    onChange={v => save({ chat_enabled: v }, v ? 'IA de chats activada.' : 'IA de chats desactivada.')}
+                                />
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* IA de los menús */}
+                    <Card>
+                        <div className="p-6">
+                            <div className="flex items-start justify-between gap-6">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <ListChecks className="size-4 text-teal-600 dark:text-teal-400" />
+                                        <p className="text-sm font-semibold text-foreground">IA en los menús</p>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                        Entiende lo que pide el cliente y lo resuelve contra Integra: consulta su
+                                        factura, radica una falla o le envía el enlace de pago.
+                                    </p>
+                                    {!platform.menus_configured && (
+                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                            <span>Falta configurar el flujo de menús en el servidor.</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <AiSwitch
+                                    checked={state.menus.enabled}
+                                    disabled={busy || !platform.menus_configured}
+                                    onChange={v => save({ menus_enabled: v }, v ? 'IA de menús activada.' : 'IA de menús desactivada.')}
+                                />
+                            </div>
+
+                            {state.menus.enabled && (
+                                <div className="mt-6 border-t border-border/60 pt-5">
+                                    <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
+                                    <p className="text-[11px] text-muted-foreground mt-1">
+                                        Consultar no compromete nada. Radicar y cobrar sí: concédelos solo si los necesitas.
+                                    </p>
+                                    <div className="mt-4 space-y-3">
+                                        {state.menus.available.map(key => {
+                                            const label = AI_PERMISSION_LABELS[key] ?? { title: key, desc: '' };
+                                            const on = state.menus.permissions.includes(key);
+                                            return (
+                                                <div key={key} className="flex items-start justify-between gap-6">
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm text-foreground">{label.title}</p>
+                                                        <p className="text-[11px] text-muted-foreground mt-0.5">{label.desc}</p>
+                                                    </div>
+                                                    <AiSwitch checked={on} disabled={busy} onChange={() => togglePermission(key)} />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+
+                    {/* Bloquear de nuevo */}
+                    <Card>
+                        <div className="p-6 flex items-start justify-between gap-6">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <ShieldAlert className="size-4 text-muted-foreground" />
+                                    <p className="text-sm font-semibold text-foreground">Bloquear el apartado</p>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                    Apaga las dos IA y vuelve a pedir el secreto para configurarlas.
+                                </p>
+                            </div>
+                            <Button onClick={lock} disabled={busy} variant="outline" className="gap-2 shrink-0">
+                                {busy && <Loader2 className="size-4 animate-spin" />}
+                                <Lock className="size-4" />
+                                Bloquear
+                            </Button>
+                        </div>
+                    </Card>
+                </>
+            )}
+        </div>
+    );
+}
+
 /* ───────────────────────── Página principal ───────────────────────── */
 export default function SettingsIndex({ sessions = [] }) {
     const [activeTab, setActiveTab] = useState('perfil');
@@ -2488,6 +2784,7 @@ export default function SettingsIndex({ sessions = [] }) {
                         {activeTab === 'apariencia' && <TabApariencia />}
                         {activeTab === 'whatsapp'   && <TabWhatsApp />}
                         {activeTab === 'horarios'   && <TabHorarios />}
+                        {activeTab === 'flujo-ia'   && <TabFlujoIA />}
                     </div>
                 </div>
             </div>
