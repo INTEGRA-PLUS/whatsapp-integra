@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Loader2, MessageCircle, Smartphone } from 'lucide-react';
+import CoexistenciaPrevioDialog from '@/components/CoexistenciaPrevioDialog';
 
 /**
  * Botón del registro insertado de Meta (Embedded Signup).
@@ -30,6 +31,9 @@ export default function EmbeddedSignupButton({ onConnected }) {
     const [config, setConfig] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    // El aviso previo sólo aplica al camino de coexistencia: conectar un número
+    // nuevo no le cambia nada al celular de nadie.
+    const [mostrarAviso, setMostrarAviso] = useState(false);
     const sessionInfo = useRef(null);
 
     useEffect(() => {
@@ -161,35 +165,21 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 {/* El número que el negocio ya usa a diario no pasa por el
                     camino de arriba: Meta lo rechaza por tener WhatsApp. Este
                     es el único que lo admite, y deja la app del celular
-                    funcionando. */}
-                <Button onClick={() => launch(true)} disabled={loading} variant="outline" className="gap-2">
+                    funcionando. Antes de abrir la ventana se explica qué le
+                    cambia al cliente y se comprueban los requisitos: es donde
+                    se caían casi todos los intentos. */}
+                <Button onClick={() => setMostrarAviso(true)} disabled={loading} variant="outline" className="gap-2">
                     <Smartphone className="size-4" />
                     Conectar mi WhatsApp Business actual
                 </Button>
             </div>
-            {/* Se avisa aquí y no sólo en la pantalla de Meta: el consentimiento
-                de Meta cubre compartir el historial, pero NO menciona ninguno de
-                estos cambios en la app del celular. Quien pulsa tiene que
-                saberlos antes, no descubrirlos después. */}
-            <details className="max-w-xl rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-                <summary className="cursor-pointer text-xs font-medium text-foreground">
-                    Qué le pasa a tu WhatsApp Business si conectas el número que ya usas
-                </summary>
-                <div className="mt-2 space-y-2 text-[11px] text-muted-foreground">
-                    <p>Sigues respondiendo desde el celular y no pierdes ningún chat. Pero en esa app:</p>
-                    <ul className="list-disc pl-4 space-y-1">
-                        <li>Se desactivan los <strong>mensajes temporales</strong>, los de <strong>ver una vez</strong> y la <strong>ubicación en tiempo real</strong> en los chats 1 a 1.</li>
-                        <li>Las <strong>listas de difusión</strong> quedan de solo lectura: las existentes se leen, no se crean nuevas.</li>
-                        <li>Los <strong>dispositivos vinculados se desconectan</strong>, WhatsApp Web incluido. Se vuelven a vincular después, pero se caen en el momento.</li>
-                        <li>Los <strong>grupos no se sincronizan</strong>. Siguen en tu app, no aparecen aquí.</li>
-                    </ul>
-                    <p>
-                        Además, el número queda con un tope de <strong>20 mensajes por segundo</strong>, y Meta
-                        te ofrecerá compartir hasta <strong>6 meses</strong> de historial: si aceptas, esas
-                        conversaciones se copian a este sistema.
-                    </p>
-                </div>
-            </details>
+
+            <CoexistenciaPrevioDialog
+                open={mostrarAviso}
+                onCancel={() => setMostrarAviso(false)}
+                onConfirm={() => { setMostrarAviso(false); launch(true); }}
+            />
+
             {error && <p className="text-xs text-destructive max-w-md">{error}</p>}
         </div>
     );
