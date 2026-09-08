@@ -11,6 +11,10 @@
     <meta property="og:description" content="Portal privado de gestión para clientes de Integra Colombia.">
     <meta property="og:site_name" content="Integra CRM — Integra Colombia">
     <title>@yield('title', 'Integra CRM | Integra Colombia')</title>
+    {{-- El .ico se queda de último: es el que piden los navegadores viejos, pero
+         el logo tiene degradados y bordes suaves que en 16 colores se ensucian. --}}
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('favicon.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('apple-touch-icon.png') }}">
     <link rel="icon" href="{{ asset('favicon.ico') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     @stack('styles')

@@ -33,13 +33,19 @@ export default function Login() {
                 <div className="w-full max-w-md space-y-8">
                     {/* Header/Logo section */}
                     <div className="flex flex-col items-center text-center">
-                        <div className="mb-8 flex items-center justify-center transition-transform duration-500 hover:scale-105">
-                            <img src="/logo.png" alt="Integra CRM Logo" className="h-32 w-auto drop-shadow-[0_0_25px_rgba(34,197,94,0.2)]" />
+                        {/* El logo ya trae el nombre y el lema, así que no se repiten
+                            debajo. Va en una placa redondeada porque el archivo lleva
+                            su propio fondo azul noche: sin ella se vería el borde del
+                            cuadrado recortado contra el degradado de la página. */}
+                        <div className="mb-8 overflow-hidden rounded-[28px] ring-1 ring-white/10 shadow-[0_0_60px_-15px_rgba(34,197,94,0.35)] transition-transform duration-500 hover:scale-105">
+                            <img
+                                src="/logo.png"
+                                alt="Integra CRM — Todo tu WhatsApp, en un solo lugar"
+                                className="h-52 w-auto"
+                            />
                         </div>
-                        <h1 className="text-4xl font-black tracking-tight text-white drop-shadow-md">
-                            Integra CRM
-                        </h1>
-                        <p className="mt-2 text-[10px] font-bold text-green-500 uppercase tracking-[0.4em] opacity-80">
+                        <h1 className="sr-only">Integra CRM</h1>
+                        <p className="text-[10px] font-bold text-green-500 uppercase tracking-[0.4em] opacity-80">
                             Portal de Gestión — Integra Colombia
                         </p>
                     </div>

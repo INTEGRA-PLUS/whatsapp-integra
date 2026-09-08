@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {{-- El .ico se queda de último: es el que piden los navegadores viejos, pero
+         el logo tiene degradados y bordes suaves que en 16 colores se ensucian. --}}
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ asset('favicon.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('apple-touch-icon.png') }}">
     <link rel="icon" href="{{ asset('favicon.ico') }}">
     <script>
         // Esta app NO usa PWA / service worker. Si quedó uno registrado en este
