@@ -70,6 +70,9 @@ import {
     Wand2,
     Download,
     Eye,
+    EyeOff,
+    PanelLeftClose,
+    PanelLeftOpen,
     Bot
 } from 'lucide-react';
 import {
@@ -1278,6 +1281,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [assignmentTab, setAssignmentTab] = useState('all'); // 'mine' | 'unassigned' | 'all'
     const [folder, setFolder] = useState('all'); // 'all' | 'mentions' | 'unattended'
     const [folderCounts, setFolderCounts] = useState({ all: 0, mentions: 0, unattended: 0, tags: {} });
+    // El panel de carpetas se pliega a una barra de iconos. Con los tres paneles
+    // abiertos, un portátil de 1366px dejaba al chat menos de 500px: cabían tres
+    // palabras por línea. Se recuerda la elección; la primera vez arranca plegado
+    // salvo en pantallas anchas, donde no estorba.
+    const [navOpen, setNavOpen] = useState(() => {
+        if (typeof window === 'undefined') return true;
+        const guardado = window.localStorage.getItem('chat:panel-navegacion');
+        return guardado === null ? window.innerWidth >= 1536 : guardado === '1';
+    });
+    useEffect(() => {
+        window.localStorage.setItem('chat:panel-navegacion', navOpen ? '1' : '0');
+    }, [navOpen]);
     // Filtro de estado (estilo Chatwoot): 'open' | 'closed' | 'all'
     const [statusFilter, setStatusFilter] = useState('open');
     // Orden de la lista: 'last_activity' | 'newest' | 'oldest'
@@ -3756,11 +3771,93 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     </div>
                 ) : (
                     <div className="flex-1 flex overflow-hidden">
+                        {/* Navegación contextual plegada: sólo los iconos de las carpetas
+                            y el acceso a etiquetas. Devuelve ~200px al hilo del chat. */}
+                        {!navOpen && (
+                            <div className="hidden lg:flex w-14 shrink-0 flex-col items-center gap-1 py-3 bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10">
+                                <button
+                                    type="button"
+                                    onClick={() => setNavOpen(true)}
+                                    title="Desplegar carpetas y etiquetas"
+                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    <PanelLeftOpen className="size-4" />
+                                </button>
+
+                                <div className="w-6 h-px my-1 bg-border/40" />
+
+                                {[
+                                    { key: 'all', label: 'Todas las conversaciones', icon: MessageSquare, count: folderCounts.all },
+                                    { key: 'mentions', label: 'Menciones', icon: AtSign, count: folderCounts.mentions },
+                                    { key: 'unattended', label: 'Desatendido', icon: Clock, count: folderCounts.unattended },
+                                ].map(item => {
+                                    const active = folder === item.key;
+                                    const Icon = item.icon;
+                                    return (
+                                        <button
+                                            key={item.key}
+                                            type="button"
+                                            onClick={() => setFolder(item.key)}
+                                            title={item.label}
+                                            className={clsx(
+                                                "relative p-2 rounded-lg transition-colors",
+                                                active
+                                                    ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
+                                                    : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                            )}
+                                        >
+                                            <Icon className="size-4" />
+                                            {item.count > 0 && (
+                                                <span className={clsx(
+                                                    "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
+                                                    active ? "bg-teal-600 text-white" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                )}>
+                                                    {item.count > 99 ? '99+' : item.count}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+
+                                <div className="w-6 h-px my-1 bg-border/40" />
+
+                                <button
+                                    type="button"
+                                    onClick={() => setNavOpen(true)}
+                                    title={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}
+                                    className={clsx(
+                                        "relative p-2 rounded-lg transition-colors",
+                                        selectedTagIds.length > 0
+                                            ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
+                                            : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                    )}
+                                >
+                                    <TagIcon className="size-4" />
+                                    {selectedTagIds.length > 0 && (
+                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-teal-600 text-white">
+                                            {selectedTagIds.length}
+                                        </span>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
                         {/* Navegación contextual (Conversaciones / Canales / Etiquetas) */}
-                        <div className="hidden lg:flex w-48 xl:w-60 shrink-0 flex-col bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10 overflow-y-auto custom-scrollbar">
+                        {navOpen && (
+                        <div className="hidden lg:flex w-52 2xl:w-60 shrink-0 flex-col bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10 overflow-y-auto custom-scrollbar">
                             {/* Carpetas de conversaciones */}
                             <div className="px-3 pt-4 pb-2">
-                                <p className="px-2 mb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Conversaciones</p>
+                                <div className="flex items-center justify-between px-2 mb-1">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Conversaciones</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNavOpen(false)}
+                                        title="Plegar para dar más ancho al chat"
+                                        className="p-0.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                    >
+                                        <PanelLeftClose className="size-3.5" />
+                                    </button>
+                                </div>
                                 {[
                                     { key: 'all', label: 'Todas las conversaciones', icon: MessageSquare, count: folderCounts.all },
                                     { key: 'mentions', label: 'Menciones', icon: AtSign, count: folderCounts.mentions },
@@ -3903,10 +4000,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 })}
                             </div>
                         </div>
+                        )}
 
                         {/* Sidebar - WhatsApp Web Style */}
                         <div className={clsx(
-                            "w-full sm:w-80 xl:w-96 shrink-0 bg-white dark:bg-[#111b21] flex-col border-r border-border/10",
+                            "w-full sm:w-[19rem] 2xl:w-96 shrink-0 bg-white dark:bg-[#111b21] flex-col border-r border-border/10",
                             // En móvil: mostrar la lista sólo cuando no hay chat abierto; en sm+ siempre visible.
                             selectedConversation ? "hidden sm:flex" : "flex"
                         )}>
@@ -4565,7 +4663,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <div
                                         ref={messagesContainerRef}
                                         onScroll={handleMessagesScroll}
-                                        className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-8 space-y-2 custom-scrollbar relative z-10 flex flex-col"
+                                        className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 sm:py-5 2xl:px-10 space-y-2 custom-scrollbar relative z-10 flex flex-col"
                                     >
                                         {messages.map((msg, i) => {
                                             const isOut = msg.direction === 'outbound';
@@ -4763,9 +4861,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 )}
                                                             </div>
                                                         </div>
+                                                    ) : msg.metadata?.no_entregado ? (
+                                                        /* Hueco en la conversación: hubo un mensaje aquí, con su hora y su
+                                                           remitente, pero WhatsApp no entrega su contenido a la API
+                                                           (llamadas, invitaciones a canal, vista única, encuestas…). Va en
+                                                           el lado de quien lo mandó, con borde punteado: el agente tiene
+                                                           que ver que falta algo, no leer un aviso de la plataforma. */
+                                                        <div className={`flex mb-2 sm:mb-3 ${isOut ? 'justify-end pr-2' : 'justify-start pl-2'}`}>
+                                                            <div className="max-w-[85%] lg:max-w-[70%] flex items-start gap-2 rounded-lg border border-dashed border-black/20 dark:border-white/15 bg-white/60 dark:bg-white/[0.03] px-3 py-2">
+                                                                <EyeOff className="size-3.5 mt-[2px] shrink-0 text-muted-foreground/50" />
+                                                                <p className="text-[11.5px] leading-[16px] text-[#54656f] dark:text-white/55 break-words">
+                                                                    {msg.content}
+                                                                    <span className="ml-2 text-[9.5px] uppercase tracking-wide opacity-70">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                </p>
+                                                            </div>
+                                                        </div>
                                                     ) : msg.type === 'system' ? (
-                                                        /* Aviso de la plataforma (cambio de número, cambio de identidad,
-                                                           mensaje no entregable): pastilla centrada, no es una burbuja. */
+                                                        /* Aviso de la plataforma (cambio de número, cambio de identidad):
+                                                           pastilla centrada, no es una burbuja. */
                                                         <div className="flex justify-center my-2 px-2">
                                                             <div className="max-w-[90%] lg:max-w-[70%] flex items-start gap-2 bg-[#fdf4d8] dark:bg-[#182229] border border-amber-200/70 dark:border-white/10 rounded-lg px-3 py-1.5 shadow-sm">
                                                                 <Info className="size-3.5 mt-[2px] shrink-0 text-amber-600 dark:text-white/50" />
@@ -4777,12 +4890,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         </div>
                                                     ) : (
                                                     <div
-                                                        className={`flex mb-2 sm:mb-3 items-center gap-1 group/msg ${isOut ? 'justify-end pr-4' : 'justify-start pl-4'}`}
+                                                        className={`flex mb-2 sm:mb-3 items-center gap-1 group/msg ${isOut ? 'justify-end pr-2' : 'justify-start pl-2'}`}
                                                     >
                                                         {isOut && messageActions}
                                                         <div
                                                             id={`msg-${msg.id}`}
-                                                            className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[80%] lg:max-w-[65%] group rounded-lg transition-shadow ${
+                                                            className={`relative px-2.5 py-1.5 shadow-sm min-w-[96px] max-w-[85%] lg:max-w-[75%] 2xl:max-w-[65%] group rounded-lg transition-shadow ${
                                                                 isOut
                                                                     ? 'bg-[#dcf8c6] dark:bg-[#005c4b] text-[#111b21] dark:text-[#e9edef] rounded-tr-none'
                                                                     : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-none'
