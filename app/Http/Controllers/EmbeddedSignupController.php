@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\IniciarSincronizacionCoexistencia;
 use App\Models\Instance;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
@@ -187,6 +188,12 @@ class EmbeddedSignupController extends Controller
             'instance_id' => $instance->id,
             'waba_id'     => $data['waba_id'],
         ]);
+
+        // Si el número venía de la app del celular, la importación de contactos
+        // e historial tiene 24 horas y un solo intento. Se encola aquí para que
+        // no dependa de que alguien se acuerde de lanzarla: el job comprueba
+        // primero `is_on_biz_app`, así que en un registro normal no hace nada.
+        IniciarSincronizacionCoexistencia::dispatch($instance->id);
 
         return response()->json([
             'message'  => 'Cuenta de WhatsApp conectada.',

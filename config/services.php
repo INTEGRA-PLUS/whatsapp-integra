@@ -72,6 +72,11 @@ return [
         // Formato: uno o varios secretos separados por coma.
         'webhook_app_secrets' => env('META_APP_SECRETS', env('META_APP_SECRET')),
         'api_version' => env('META_API_VERSION', 'v21.0'),
+        // La coexistencia (`smb_app_data`, `is_on_biz_app`) no existe en la v21
+        // con la que envían los 11 clientes en producción. Va aparte por lo
+        // mismo que la del diálogo: subir `api_version` movería el suelo a
+        // todos los envíos para arreglar una función que sólo usa un número.
+        'coexistence_api_version' => env('META_COEXISTENCE_API_VERSION', 'v25.0'),
         // La Calling API requiere una versión más reciente del Graph API que la
         // mensajería. Se mantiene separada para no afectar el resto de llamadas.
         'calling_api_version' => env('META_CALLING_API_VERSION', 'v23.0'),

@@ -24,3 +24,9 @@ Schedule::command('whatsapp:fallback-template')->hourly()->withoutOverlapping();
 // una instancia no se cae y se recupera sola en el mismo día— y el comando sólo
 // avisa cuando el estado CAMBIA, para que la alerta no se vuelva ruido.
 Schedule::command('whatsapp:health-check')->dailyAt('07:00')->withoutOverlapping();
+
+// Ventana de importación de coexistencia. Se pide una vez, Meta la entrega por
+// webhooks y NO hay segundo intento: si se queda a medias, recuperarla obliga a
+// desconectar el número y rehacer el registro con el cliente delante. Cada hora
+// basta para avisar con margen dentro de un plazo de 24.
+Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();

@@ -753,8 +753,67 @@ class MetaWhatsAppService
     public function getPhoneNumber(string $phoneNumberId, string $accessToken)
     {
         return $this->graphGet("/{$phoneNumberId}", $accessToken, [
-            'fields' => 'id,display_phone_number,verified_name,name_status,code_verification_status,status,quality_rating,platform_type,throughput,messaging_limit_tier',
+            // `is_on_biz_app` es el único marcador fiable de coexistencia: dice
+            // que el número sigue vivo en la app del celular además de en la
+            // API. Sin él no hay forma de distinguir un registro normal de uno
+            // en coexistencia, y sólo el segundo tiene historial que importar.
+            'fields' => 'id,display_phone_number,verified_name,name_status,code_verification_status,status,quality_rating,platform_type,throughput,messaging_limit_tier,is_on_biz_app',
         ]);
+    }
+
+    /**
+     * Pide a Meta que empiece a mandar los contactos o el historial del celular.
+     *
+     * Sólo aplica a números en coexistencia, hay **24 horas** desde que termina
+     * el registro insertado para pedirlo y **un solo intento por tipo**: si se
+     * gasta sin haberlo guardado, recuperarlo obliga a desconectar el número y
+     * rehacer el registro con el cliente delante. El candado vive en
+     * `CoexistenceSync`, no aquí.
+     *
+     * Va con su propia versión de Graph: `smb_app_data` no existe en la v21 con
+     * la que envían los clientes en producción, y subir esa no hace falta.
+     *
+     * @param string $syncType `smb_app_state_sync` (contactos) o `history` (chats)
+     */
+    public function startSmbDataSync(string $phoneNumberId, string $accessToken, string $syncType): array
+    {
+        $version = config('services.meta.coexistence_api_version', 'v25.0');
+
+        try {
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/smb_app_data", [
+                    'messaging_product' => 'whatsapp',
+                    'sync_type'         => $syncType,
+                ]);
+
+            if ($response->successful()) {
+                return [
+                    'success'    => true,
+                    // Guardarlo es lo único que permite reclamar a Meta si el
+                    // contenido nunca llega.
+                    'request_id' => $response->json('request_id'),
+                    'data'       => $response->json(),
+                ];
+            }
+
+            Log::error('WhatsApp SMB Data Sync Error', [
+                'phone_number_id' => $phoneNumberId,
+                'sync_type'       => $syncType,
+                'status'          => $response->status(),
+                'response'        => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp SMB Data Sync Exception', [
+                'phone_number_id' => $phoneNumberId,
+                'sync_type'       => $syncType,
+                'message'         => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     public function listSubscribedApps(string $wabaId, string $accessToken)
