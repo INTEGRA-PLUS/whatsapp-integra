@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Loader2, MessageCircle, Smartphone } from 'lucide-react';
-import CoexistenciaPrevioDialog from '@/components/CoexistenciaPrevioDialog';
+import AsistenteConexion from '@/components/AsistenteConexion';
 
 /**
  * Botón del registro insertado de Meta (Embedded Signup).
@@ -166,18 +166,20 @@ export default function EmbeddedSignupButton({ onConnected }) {
                     camino de arriba: Meta lo rechaza por tener WhatsApp. Este
                     es el único que lo admite, y deja la app del celular
                     funcionando. Antes de abrir la ventana se explica qué le
-                    cambia al cliente y se comprueban los requisitos: es donde
-                    se caían casi todos los intentos. */}
+                    acompaña al cliente en un asistente de cuatro pasos: qué le
+                    cambia, los requisitos, el paso previo en Meta Business
+                    Suite y qué va a ver. Ahí se caían casi todos los
+                    intentos. */}
                 <Button onClick={() => setMostrarAviso(true)} disabled={loading} variant="outline" className="gap-2">
                     <Smartphone className="size-4" />
                     Conectar mi WhatsApp Business actual
                 </Button>
             </div>
 
-            <CoexistenciaPrevioDialog
+            <AsistenteConexion
                 open={mostrarAviso}
                 onCancel={() => setMostrarAviso(false)}
-                onConfirm={() => { setMostrarAviso(false); launch(true); }}
+                onLaunch={() => { setMostrarAviso(false); launch(true); }}
             />
 
             {error && <p className="text-xs text-destructive max-w-md">{error}</p>}
