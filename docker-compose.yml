@@ -84,6 +84,27 @@ x-app-env: &app-env
   META_API_VERSION: ${META_API_VERSION:-v21.0}
   META_CALLING_API_VERSION: ${META_CALLING_API_VERSION:-v23.0}
 
+  # IA de WhatsApp: los dos flujos de n8n y el secreto que abre el apartado.
+  #
+  # Van aquí porque el contenedor NO lee el .env del host: .dockerignore lo
+  # excluye de la imagen a propósito, así que la única vía es este bloque. Sin
+  # estas líneas se puede editar el .env del servidor y reconstruir mil veces:
+  # las variables no llegan, el panel dice "el servidor no lo tiene
+  # configurado" y no hay nada que investigar. Es lo mismo que ya pasó con
+  # META_APP_SECRETS unas líneas más arriba.
+  AI_MENUS_WEBHOOK_URL: ${AI_MENUS_WEBHOOK_URL:-}
+  AI_CHAT_WEBHOOK_URL: ${AI_CHAT_WEBHOOK_URL:-}
+  AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-}
+  # Sin secreto el apartado queda cerrado para todos, que es lo correcto: es
+  # preferible que nadie pueda encender la IA a que cualquiera pueda.
+  SECRET_ACTIVATION: ${SECRET_ACTIVATION:-}
+  # Los defaults van AQUÍ y no sólo en config/services.php: con `:-` vacío la
+  # variable llega puesta pero vacía, y `(int) ''` es 0 —un timeout de cero
+  # segundos que mataría toda inferencia antes de empezar.
+  AI_MENUS_TIMEOUT: ${AI_MENUS_TIMEOUT:-180}
+  AI_MENUS_DEBOUNCE: ${AI_MENUS_DEBOUNCE:-6}
+  AI_CHAT_TIMEOUT: ${AI_CHAT_TIMEOUT:-180}
+
   MAIL_MAILER: ${MAIL_MAILER:-log}
   MAIL_HOST: ${MAIL_HOST:-127.0.0.1}
   MAIL_PORT: ${MAIL_PORT:-2525}
