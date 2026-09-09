@@ -7,6 +7,7 @@ use App\Http\Controllers\BusinessHourController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
@@ -180,7 +181,10 @@ Route::post('/login', function (Request $request) {
             return redirect()->route('master.index');
         }
 
-        return redirect()->intended('/chat');
+        // A la portada, no al chat: es donde se ve qué falta por configurar y
+        // qué está sin responder. Quien venía siguiendo un enlace concreto
+        // sigue yendo a donde iba, que es lo que respeta `intended`.
+        return redirect()->intended('/');
     }
 
     return back()->withErrors([
@@ -217,7 +221,9 @@ Route::post('/logout', function (Request $request) {
 
 // Rutas protegidas
 Route::middleware('auth')->group(function () {
-    Route::redirect('/', '/chat');
+    // La portada. Antes redirigía al chat, que dejaba al cliente recién
+    // conectado ante una lista vacía sin decirle qué le faltaba por configurar.
+    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // El sistema de diseño, dentro del producto: pinta con los mismos tokens
     // que la aplicación, así que no puede documentar unos colores que ya no son.

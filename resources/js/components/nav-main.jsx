@@ -31,7 +31,10 @@ export function NavMain({ groups = [] }) {
                                 <SidebarMenuItem key={item.title}>
                                     <SidebarMenuButton
                                         asChild
-                                        isActive={url.startsWith(item.href)}
+                                        // `exact` existe por la portada: su enlace es "/",
+                                        // y con `startsWith` toda ruta empieza por "/", así
+                                        // que aparecía resaltada estuvieras donde estuvieras.
+                                        isActive={item.exact ? url === item.href : url.startsWith(item.href)}
                                         tooltip={{ children: item.title }}
                                     >
                                         <Link href={item.href}>

@@ -67,6 +67,15 @@ export function AppSidebar() {
         // De lo que se usa cada día a lo que se configura una vez.
         navGroups = [
             {
+                label: 'Inicio',
+                items: [
+                    // Sin permiso: es la portada, y de ella cada quien ve lo que
+                    // le toca. Un usuario sin acceso a nada tampoco tendría a
+                    // dónde ir después de entrar.
+                    { title: 'Resumen', href: route('dashboard'), icon: Home, exact: true },
+                ],
+            },
+            {
                 label: 'Conversaciones',
                 items: [
                     { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
