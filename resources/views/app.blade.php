@@ -30,7 +30,10 @@
     @vite(['resources/css/app.css', 'resources/js/app.jsx'])
     @inertiaHead
 </head>
-<body class="bg-gray-50">
+{{-- Sin clase de color: el fondo lo pone el token del tema (`bg-background`
+     en @layer base de app.css). Con `bg-gray-50` fija aquí, el body se quedaba
+     gris claro en tema oscuro y ninguna variable de marca llegaba a verse. --}}
+<body>
     @inertia
 </body>
 </html>

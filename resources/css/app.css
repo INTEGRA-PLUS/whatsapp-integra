@@ -44,67 +44,130 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+
+    /* Estados. Existen como token para que "esto va bien / ojo / esto falló"
+       se diga igual en todas las pantallas, en vez de que cada una elija su
+       emerald-500 o su amber-400. */
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-info: var(--info);
+    --color-info-foreground: var(--info-foreground);
+
+    /* Series de gráficas, en orden. El panel maestro las elegía a mano. */
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    /* Blanco con un punto de frío: el blanco puro junto al navy se ve sucio. */
+    --background: oklch(0.99 0.004 260);
+    --foreground: oklch(0.19 0.063 260);        /* INTEGRA NAVY #03122F */
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: oklch(0.19 0.063 260);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.19 0.063 260);
+
+    /* INTEGRA GREEN #59E01F. El texto encima va SIEMPRE en navy: blanco sobre
+       este verde da 1.73:1 y es ilegible; navy da 10.7:1. */
+    --primary: oklch(0.8 0.2436 139);
+    --primary-foreground: oklch(0.19 0.063 260);
+
+    --secondary: oklch(0.96 0.008 260);
+    --secondary-foreground: oklch(0.19 0.063 260);
+    --muted: oklch(0.96 0.008 260);
+    --muted-foreground: oklch(0.5 0.02 260);    /* 5.97:1 sobre blanco */
+    --accent: oklch(0.94 0.07 139);
+    /* El verde de marca no vale como texto sobre claro (1.73:1). Este es el
+       mismo tono bajado hasta que pasa: 4.56:1. */
+    --accent-foreground: oklch(0.55 0.1675 139);
+
     --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.87 0 0);
+    --destructive-foreground: oklch(0.99 0 0);
+    --success: oklch(0.55 0.1675 139);
+    --success-foreground: oklch(0.99 0 0);
+    --warning: oklch(0.75 0.16 70);
+    --warning-foreground: oklch(0.25 0.05 70);
+    --info: oklch(0.55 0.13 245);
+    --info-foreground: oklch(0.99 0 0);
+
+    --border: oklch(0.9 0.012 260);
+    --input: oklch(0.9 0.012 260);
+    --ring: oklch(0.8 0.2436 139);              /* el foco es verde, siempre */
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.87 0 0);
+
+    --sidebar: oklch(0.97 0.008 260);
+    --sidebar-foreground: oklch(0.19 0.063 260);
+    --sidebar-primary: oklch(0.8 0.2436 139);
+    --sidebar-primary-foreground: oklch(0.19 0.063 260);
+    --sidebar-accent: oklch(0.94 0.07 139);
+    --sidebar-accent-foreground: oklch(0.19 0.063 260);
+    --sidebar-border: oklch(0.9 0.012 260);
+    --sidebar-ring: oklch(0.8 0.2436 139);
+
+    --chart-1: oklch(0.55 0.1675 139);
+    --chart-2: oklch(0.45 0.1 260);
+    --chart-3: oklch(0.6 0.12 210);
+    --chart-4: oklch(0.7 0.15 70);
+    --chart-5: oklch(0.55 0.15 300);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.637 0.237 25.331);
-    --border: oklch(0.269 0 0);
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    /* El fondo del tema oscuro es el navy de la marca, no un gris cualquiera. */
+    --background: oklch(0.19 0.063 260);        /* INTEGRA NAVY #03122F */
+    --foreground: oklch(0.98 0.002 260);
+
+    /* INTEGRA GRAY #1A1F2B, subido un punto: al valor exacto del manual las
+       tarjetas quedaban a 1.13:1 del fondo y no se distinguían. Con este y el
+       borde de abajo, se leen como superficies aparte. */
+    --card: oklch(0.26 0.03 265);
+    --card-foreground: oklch(0.98 0.002 260);
+    --popover: oklch(0.26 0.03 265);
+    --popover-foreground: oklch(0.98 0.002 260);
+
+    --primary: oklch(0.8 0.2436 139);
+    --primary-foreground: oklch(0.19 0.063 260);
+
+    --secondary: oklch(0.3 0.03 265);
+    --secondary-foreground: oklch(0.98 0.002 260);
+    --muted: oklch(0.3 0.03 265);
+    --muted-foreground: oklch(0.72 0.02 265);   /* 7.49:1 sobre el navy */
+    --accent: oklch(0.34 0.09 139);
+    --accent-foreground: oklch(0.9 0.18 139);
+
+    --destructive: oklch(0.62 0.22 27);
+    --destructive-foreground: oklch(0.98 0 0);
+    --success: oklch(0.8 0.2436 139);           /* aquí el verde sí es legible */
+    --success-foreground: oklch(0.19 0.063 260);
+    --warning: oklch(0.8 0.15 75);
+    --warning-foreground: oklch(0.2 0.05 75);
+    --info: oklch(0.7 0.12 240);
+    --info-foreground: oklch(0.15 0.04 240);
+
+    --border: oklch(0.34 0.03 265);
+    --input: oklch(0.34 0.03 265);
+    --ring: oklch(0.8 0.2436 139);
+
+    /* Más oscura que el fondo: la barra ancla la pantalla, como en el mockup
+       del manual de marca. */
+    --sidebar: oklch(0.16 0.055 260);
+    --sidebar-foreground: oklch(0.98 0.002 260);
+    --sidebar-primary: oklch(0.8 0.2436 139);
+    --sidebar-primary-foreground: oklch(0.19 0.063 260);
+    --sidebar-accent: oklch(0.3 0.06 139);
+    --sidebar-accent-foreground: oklch(0.9 0.18 139);
+    --sidebar-border: oklch(0.3 0.03 265);
+    --sidebar-ring: oklch(0.8 0.2436 139);
+
+    --chart-1: oklch(0.8 0.2436 139);
+    --chart-2: oklch(0.7 0.12 250);
+    --chart-3: oklch(0.75 0.13 200);
+    --chart-4: oklch(0.8 0.15 75);
+    --chart-5: oklch(0.7 0.16 310);
 }
 
 @layer base {

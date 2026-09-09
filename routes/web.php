@@ -218,6 +218,11 @@ Route::post('/logout', function (Request $request) {
 // Rutas protegidas
 Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
+
+    // El sistema de diseño, dentro del producto: pinta con los mismos tokens
+    // que la aplicación, así que no puede documentar unos colores que ya no son.
+    Route::get('/sistema-diseno', fn () => Inertia::render('SistemaDiseno'))
+        ->name('sistema-diseno');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
 
