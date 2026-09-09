@@ -113,12 +113,30 @@ import {
     Sheet,
     SheetContent,
 } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import QuickReplyPicker from '@/components/quick-reply-picker';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { refreshNotifications, useConversationsRefresh } from '@/lib/notifications';
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+/**
+ * El nombre de un icono de la columna plegada, al pasar por encima.
+ *
+ * El atributo `title` lo pinta el sistema operativo: una caja gris que ignora
+ * la marca, tarda un segundo largo en salir y aparece bajo el cursor, tapando
+ * el icono de al lado. La barra lateral del menú principal ya resuelve esto con
+ * el tooltip de Radix, así que esta columna usa el mismo y las dos se ven igual.
+ */
+function ConTooltip({ texto, children }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side="right" align="center">{texto}</TooltipContent>
+        </Tooltip>
+    );
+}
 
 // El chat ya no tiene barra propia: sus controles viven en la barra superior
 // del layout para no gastar alto de pantalla.
@@ -3897,14 +3915,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             y el acceso a etiquetas. Devuelve ~200px al hilo del chat. */}
                         {!navOpen && (
                             <div className="hidden lg:flex w-14 shrink-0 flex-col items-center gap-1 py-3 bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10">
-                                <button
-                                    type="button"
-                                    onClick={() => setNavOpen(true)}
-                                    title="Desplegar carpetas y etiquetas"
-                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
-                                >
-                                    <PanelLeftOpen className="size-4" />
-                                </button>
+                                <ConTooltip texto="Desplegar carpetas y etiquetas">
+                                    <button
+                                        type="button"
+                                        onClick={() => setNavOpen(true)}
+                                        className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
+                                    >
+                                        <PanelLeftOpen className="size-4" />
+                                    </button>
+                                </ConTooltip>
 
                                 <div className="w-6 h-px my-1 bg-border/40" />
 
@@ -3916,51 +3935,52 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     const active = folder === item.key;
                                     const Icon = item.icon;
                                     return (
-                                        <button
-                                            key={item.key}
-                                            type="button"
-                                            onClick={() => setFolder(item.key)}
-                                            title={item.label}
-                                            className={clsx(
-                                                "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
-                                                active
-                                                    ? "bg-info/15 text-info ring-1 ring-info/25"
-                                                    : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
-                                            )}
-                                        >
-                                            <Icon className="size-4" />
-                                            {item.count > 0 && (
-                                                <span className={clsx(
-                                                    "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
-                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
-                                                )}>
-                                                    {item.count > 99 ? '99+' : item.count}
-                                                </span>
-                                            )}
-                                        </button>
+                                        <ConTooltip key={item.key} texto={item.label}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFolder(item.key)}
+                                                className={clsx(
+                                                    "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
+                                                    active
+                                                        ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                        : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
+                                                )}
+                                            >
+                                                <Icon className="size-4" />
+                                                {item.count > 0 && (
+                                                    <span className={clsx(
+                                                        "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
+                                                        active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    )}>
+                                                        {item.count > 99 ? '99+' : item.count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        </ConTooltip>
                                     );
                                 })}
 
                                 <div className="w-6 h-px my-1 bg-border/40" />
 
-                                <button
-                                    type="button"
-                                    onClick={() => setNavOpen(true)}
-                                    title={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}
-                                    className={clsx(
-                                        "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
-                                        selectedTagIds.length > 0
-                                            ? "bg-info/15 text-info ring-1 ring-info/25"
-                                            : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
-                                    )}
-                                >
-                                    <TagIcon className="size-4" />
-                                    {selectedTagIds.length > 0 && (
-                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
-                                            {selectedTagIds.length}
-                                        </span>
-                                    )}
-                                </button>
+                                <ConTooltip texto={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNavOpen(true)}
+                                        className={clsx(
+                                            "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
+                                            selectedTagIds.length > 0
+                                                ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
+                                        )}
+                                    >
+                                        <TagIcon className="size-4" />
+                                        {selectedTagIds.length > 0 && (
+                                            <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
+                                                {selectedTagIds.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </ConTooltip>
                             </div>
                         )}
 
