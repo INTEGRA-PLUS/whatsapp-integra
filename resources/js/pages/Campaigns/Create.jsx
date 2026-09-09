@@ -1044,8 +1044,33 @@ function PasoRevision({ form, update, errors, instance }) {
     const esRecurrente = form.schedule_type === 'recurring';
     const minutos = Math.ceil(form.recipients.length / Math.max(1, form.rate_per_minute));
 
+    // Cuánta gente nueva admite hoy el número. WhatsApp lo limita por tramos y
+    // no hay forma de acelerarlo: enterarse aquí es la diferencia entre repartir
+    // la campaña en varios días o ver cómo Meta rechaza la mitad, de una en una.
+    const [capacidad, setCapacidad] = useState(null);
+
+    useEffect(() => {
+        if (!form.instance_id || form.recipients.length === 0) return;
+
+        let vivo = true;
+        axios.get(route('campaigns.capacity'), {
+            params: { instance_id: form.instance_id, recipients: form.recipients.length },
+        })
+            .then(res => vivo && setCapacidad(res.data))
+            // Que no se pueda saber el tramo no es un problema de la campaña.
+            .catch(() => vivo && setCapacidad(null));
+
+        return () => { vivo = false; };
+    }, [form.instance_id, form.recipients.length]);
+
     return (
         <div className="space-y-6">
+            {capacidad?.aviso && (
+                <Aviso tono={capacidad.cabe ? 'amber' : 'rose'}>
+                    {capacidad.aviso}
+                </Aviso>
+            )}
+
             <Card title="Resumen">
                 <dl className="grid sm:grid-cols-2 gap-3 text-sm">
                     <Dato termino="Campaña" valor={form.name} />

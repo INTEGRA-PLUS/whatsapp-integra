@@ -199,6 +199,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:campaigns.view')->name('contacts.search');
         Route::get('/contacts/resolve', [App\Http\Controllers\WhatsAppCampaignController::class, 'resolveSelection'])
             ->middleware('permission:campaigns.view')->name('contacts.resolve');
+        Route::get('/capacity', [App\Http\Controllers\WhatsAppCampaignController::class, 'capacity'])
+            ->middleware('permission:campaigns.view')->name('capacity');
         Route::get('/templates', [App\Http\Controllers\WhatsAppCampaignController::class, 'templates'])
             ->middleware('permission:campaigns.view')->name('templates');
         Route::post('/template-media', [App\Http\Controllers\WhatsAppCampaignController::class, 'uploadTemplateMedia'])

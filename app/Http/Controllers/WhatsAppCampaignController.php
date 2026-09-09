@@ -12,6 +12,7 @@ use App\Models\WhatsAppCampaignSegment;
 use App\Models\WhatsAppConversation;
 use App\Services\CampaignPacer;
 use App\Services\CampaignTemplateBuilder;
+use App\Services\MessagingLimitService;
 use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFailureTranslator;
@@ -332,7 +333,43 @@ class WhatsAppCampaignController extends Controller
         $campaign->update(['status' => 'queued', 'paused_at' => null, 'cancelled_at' => null]);
         ProcessWhatsAppCampaign::dispatch($campaign->id);
 
+        // El aviso del tramo se da en pantalla antes de pulsar, que es donde
+        // sirve de algo. Aquí queda sólo el rastro: si mañana alguien pregunta
+        // por qué Meta rechazó tres mil, esta línea lo explica sin reconstruir
+        // nada a mano.
+        $pendientes = $campaign->recipients()->where('status', 'pending')->count();
+        $revision = app(MessagingLimitService::class)->revisarCampana($campaign->instance, $pendientes);
+
+        if (! $revision['cabe']) {
+            Log::channel('whatsapp')->warning('Campaña por encima del tramo de mensajería del número', [
+                'campaign_id' => $campaign->id,
+                'destinatarios' => $pendientes,
+                'tramo' => $revision['tier'],
+                'limite' => $revision['limite'],
+            ]);
+        }
+
         return back()->with('success', 'Campaña encolada para envío');
+    }
+
+    /**
+     * Cuánta gente admite hoy el número: lo consulta el asistente al elegir la
+     * línea, para avisar antes de armar una lista que no va a caber.
+     */
+    public function capacity(Request $request)
+    {
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $request->integer('instance_id'))
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        return response()->json(
+            app(MessagingLimitService::class)->revisarCampana(
+                $instance,
+                max(0, $request->integer('recipients'))
+            )
+        );
     }
 
     /**

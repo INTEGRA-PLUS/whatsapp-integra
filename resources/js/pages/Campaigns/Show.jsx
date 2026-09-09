@@ -4,7 +4,7 @@ import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
-    ChevronLeft, Download, Loader2, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
+    AlertTriangle, ChevronLeft, Download, Loader2, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
 } from 'lucide-react';
 import { WhatsAppPreview } from '@/pages/Templates/preview';
 import {
@@ -26,6 +26,9 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
     const [recipients, setRecipients] = useState(recipientsIniciales);
     const [meta, setMeta] = useState(metaInicial ?? { total: 0, limit: 200, truncated: false });
     const [filtro, setFiltro] = useState('all');
+    // Cuánta gente nueva admite hoy el número: se pregunta al abrir para que el
+    // aviso esté antes de pulsar «Enviar ahora», no después.
+    const [capacidad, setCapacidad] = useState(null);
 
     const enCurso = ['queued', 'sending'].includes(campaign.status);
 
@@ -59,6 +62,19 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
 
         return () => { vivo = false; };
     }, [filtro, campaign.id]);
+
+    useEffect(() => {
+        if (!campaign.can_launch || !campaign.instance?.id) return;
+
+        let vivo = true;
+        axios.get(route('campaigns.capacity'), {
+            params: { instance_id: campaign.instance.id, recipients: campaign.total_recipients },
+        })
+            .then(res => vivo && setCapacidad(res.data))
+            .catch(() => vivo && setCapacidad(null));
+
+        return () => { vivo = false; };
+    }, [campaign.can_launch, campaign.instance?.id, campaign.total_recipients]);
 
     const c = campaign.counts;
     const entregados = c.delivered + c.read;
@@ -152,6 +168,17 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                 </div>
 
                 <div className="space-y-1">
+                    {capacidad?.aviso && (
+                        <div className={`rounded-xl border px-4 py-3 text-sm flex gap-3 ${
+                            capacidad.cabe
+                                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200'
+                                : 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200'
+                        }`}>
+                            <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                            <div>{capacidad.aviso}</div>
+                        </div>
+                    )}
+
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                         <div className="h-full bg-green-500 transition-all" style={{ width: `${progreso}%` }} />
                     </div>
