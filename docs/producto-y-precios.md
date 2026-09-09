@@ -152,36 +152,77 @@ Honestidad por delante, porque sale en la primera demo:
 
 ## La competencia
 
-### TecnoChat
-Cuatro planes, mensual y anual (~2 meses gratis al año):
+Hay dos ligas distintas, y conviene no confundirlas al cotizar.
 
-| Plan | Mes | Año | Agentes | Contactos | Campañas | Conversaciones IA |
-|---|---|---|---|---|---|---|
-| Básico | 19 USD | 190 USD | 1 | 5.000 | 18 (máx 5.000) | 1.000/mes |
-| Esencial | 27 USD | 270 USD | 1 | 10.000 | 30 (máx 10.000) | 2.000/mes |
-| Profesional | 57 USD | 570 USD | 1 + 2 | 20.000 | 60 (máx 10.000) | 5.000/mes |
-| Premium | 112 USD | 1.120 USD | 1 + 5 | 40.000 | 120 (máx 40.000) | 11.000/mes |
+### Liga A — los del nicho ISP, que son la competencia de verdad
 
-Cobran aparte el consumo de Meta ("Cobro de Meta por mensaje en campañas") y
-tienen cotización a medida por encima de Premium.
+Venden lo mismo que nosotros: CRM de WhatsApp **integrado al software de
+facturación del ISP**. Cobran más, facturan por trimestre adelantado y todos
+excluyen el consumo de Meta.
 
-**Lo que se aprende de su tabla:** la variable de precio no son los agentes, son
-los **contactos** y las **conversaciones de IA**. Y ponen techo al tamaño de
-campaña, igual que teníamos nosotros con el 5.000 que ya quitamos.
+**W-Chat** (`wchatisp.com`) — integrado a Mikrowisp y SmartOLT. Es el que mejor
+modelo de precios tiene, porque **cobra por número de suscriptores**, que es
+justo como piensa un ISP o una cooperativa:
 
-### Whaticket
-- Basic 49 USD/mes, 3 agentes. Pro 109 USD/mes, 8 agentes. Conexión extra 20 USD.
-- **Venden créditos para campañas**: dos campañas de 2.000 contactos ≈ 76 USD
-  extra al mes. Con las tarifas reales de Colombia, esos 4.000 mensajes utility
-  le cuestan a Meta unos 3,6 USD. Es el modelo de reventa con margen alto.
-- Su IA obliga al cliente a comprar tokens de OpenAI por su cuenta.
+| Suscriptores | CRM Multiagente | CRM + Bot | CRM + Bot + IA |
+|---|---|---|---|
+| hasta 500 | 40 USD/mes | 49 | 70 |
+| 501–2.000 | 80 USD/mes | 99 | 129 |
+| 2.001–5.000 | 140 USD/mes | 170 | **210** |
+| más de 5.000 | a cotizar | a cotizar | a cotizar |
 
-### Cliengo
-Desde 45 USD/mes, enfocado a captación con chatbot.
+Se cobra por trimestre adelantado (tarifa mensual × 3) y **excluye Meta e IA**.
+Su integración hace sincronización bidireccional con Mikrowisp: saldo, facturas
+en PDF, registro de pago y **reconexión automática** validando el comprobante
+con IA.
 
-### Kommo
-15–45 USD por usuario/mes, con permanencia de 6 meses. Escala por usuario, que
-para un equipo grande sale caro.
+**CRM Inbox** (`crminbox.io`) — integrado a Mikrowisp y WispHub. Cobra por
+**contactos activos**, también por trimestre:
+
+| Plan | Trimestre | Al mes | Contactos activos | Usuarios |
+|---|---|---|---|---|
+| Standard | 285 USD | 95 | 2.000 | 5 |
+| Premium | 465 USD | 155 | 5.000 | 11 |
+| Enterprise | 720 USD | 240 | 7.000 | ilimitados |
+
+Contactos extra: 10 USD por cada 1.000. Usuarios extra: 3–4 USD.
+Dicen explícitamente lo mismo que nosotros: *"los mensajes son gratuitos e
+ilimitados siempre y cuando el cliente sea quien inicie la conversación"*.
+
+**Para 12.000 socios**, el Enterprise de CRM Inbox sale a 720 + 50 (los 5.000
+contactos que faltan) = **770 USD al trimestre, unos 257 USD al mes**. W-Chat a
+ese volumen entra en "a cotizar", pero extrapolando su curva estaría entre 350 y
+450 USD al mes.
+
+### Liga B — los generalistas, más baratos y sin ERP
+
+**TecnoChat** — 19 / 27 / 57 / 112 USD al mes, con ~2 meses gratis al año.
+Escala por **contactos** y **conversaciones de IA**, no por agentes. Su tope son
+40.000 contactos y 5 agentes por 112 USD.
+
+**Whaticket** — Basic 49 USD (3 agentes), Pro 109 USD (8 agentes), conexión
+extra 20 USD. **Vende créditos de campaña**: dos campañas de 2.000 contactos
+≈ 76 USD extra al mes. Con las tarifas reales de Colombia esos 4.000 mensajes
+utility le cuestan a Meta unos 3,6 USD. Su IA además obliga al cliente a comprar
+tokens de OpenAI por su cuenta.
+
+**Cliengo** desde 45 USD/mes, enfocado a captación.
+**Kommo** 15–45 USD por usuario/mes con permanencia de 6 meses: a partir de
+cinco agentes se dispara.
+
+### Lo que se aprende de todos ellos
+
+1. **Nadie cobra por mensaje.** Todos pasan el consumo de Meta al cliente. Es el
+   estándar del mercado, así que no es una concesión nuestra sino lo normal.
+2. **Los del nicho ISP cobran entre 2 y 4 veces más** que los generalistas, y
+   nadie se queja: la integración con el ERP es lo que se paga.
+3. **El eje de precio correcto no son los agentes**, son los suscriptores o
+   contactos. W-Chat lo hace explícito y es el modelo que mejor le encaja a una
+   cooperativa: "tienes 12.000 socios, este es tu plan".
+4. **Todos facturan por trimestre o año adelantado.** Nadie vende mensual puro,
+   y con razón: el costo de captación y montaje no se recupera en un mes.
+5. **La IA es un escalón de precio aparte**, no algo incluido. W-Chat cobra un
+   50–60 % más por el nivel con IA. Es la forma natural de armar los paquetes.
 
 ## Dónde estamos nosotros
 
@@ -206,10 +247,27 @@ para un equipo grande sale caro.
 2. No tenemos marca ni catálogo de integraciones como los grandes.
 3. El cliente tiene que poner tarjeta en Meta. Un BSP le evita ese trámite.
 
-**La conclusión para cotizar:** no compitamos por precio de mensaje —ahí somos
-imbatibles porque no cobramos nada— sino por **plataforma y acompañamiento**. El
-mensaje comercial es: *pagas la plataforma a nosotros y los mensajes a Meta al
-costo, sin intermediarios*.
+**La conclusión para cotizar:**
+
+No competimos por precio de mensaje: ahí no cobramos nada y nadie puede bajar de
+cero. Competimos en la **liga ISP**, no en la generalista, y ahí el suelo lo
+marcan CRM Inbox (~257 USD/mes para 12.000 contactos) y W-Chat (a cotizar por
+encima de 5.000 suscriptores). Ponerse al nivel de TecnoChat sería regalar el
+trabajo y además restar credibilidad: nadie cree que una integración con el ERP
+cueste 112 USD.
+
+Tres decisiones que se derivan de la competencia:
+
+1. **Cobrar por número de socios**, como W-Chat, y no por agentes. Es como
+   piensa el cliente y evita la discusión de cuánta gente conectamos.
+2. **Tres niveles**: CRM, CRM + Bot, y CRM + Bot + IA. Es la escalera que usa
+   W-Chat y funciona porque deja entrar barato y subir después.
+3. **Facturar por trimestre o año adelantado**, como hacen todos. El montaje
+   —conectar el número, armar plantillas, entrenar al equipo— no se recupera en
+   un mes.
+
+El mensaje comercial de una frase: *pagas la plataforma a nosotros y los
+mensajes a Meta al costo, sin intermediarios que cobren margen encima*.
 
 ## Referencias
 
@@ -217,3 +275,6 @@ costo, sin intermediarios*.
 - Tarifas Colombia: <https://www.plivo.com/whatsapp/pricing/co/>
 - TecnoChat: <https://tecnochat.com/#precios>
 - Whaticket: <https://blog.beexcc.com/whaticket-precios>
+- CRM Inbox: <https://crminbox.io/precios/> y <https://crminbox.io/crminbox-mikrowisp/>
+- W-Chat: <https://wchatisp.com/>
+- Tech Provider vs BSP: <https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/overview>
