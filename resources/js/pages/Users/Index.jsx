@@ -65,9 +65,11 @@ export default function UsersIndex({ users, stats }) {
         <>
             <Head title="Equipo" />
             <div className="flex flex-col h-full">
-                {/* Header Superior con Degradado */}
-                <div className="bg-white dark:bg-black border-b relative overflow-hidden">
-                    <div className="max-w-7xl mx-auto px-6 py-10 relative">
+                {/* La misma banda que en Roles, con el mismo problema: era
+                    `dark:bg-black`, negro puro contra el navy de la marca. */}
+                <div className="relative overflow-hidden border-b border-border bg-card">
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/[0.09] via-primary/[0.02] to-transparent" />
+                    <div className="max-w-7xl mx-auto px-6 py-8 relative">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                             <div>
                                 <h1 className="text-4xl font-black tracking-tight text-foreground flex items-center gap-4">

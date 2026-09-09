@@ -29,6 +29,7 @@ import {
     Draggable,
 } from '@hello-pangea/dnd';
 import { clsx } from 'clsx';
+import { colorPorIndice } from '@/lib/paleta';
 
 const PER_PAGE = 30;
 
@@ -184,29 +185,6 @@ const SortableKanbanCard = memo(({ conv, index }) => {
     );
 });
 
-/**
- * El color de cada etapa sale de su posición, no de la configuración.
- *
- * `kanban_columns.color` existe desde el principio, pero de las 123 columnas de
- * la flota **106 tenían el gris por defecto**, cuatro guardaban un hex suelto
- * que como clase de Tailwind no pinta nada, y las 123 el mismo icono. El
- * resultado era una fila de columnas idénticas y blancas donde no se veía dónde
- * acababa una y empezaba la otra.
- *
- * Las clases van escritas enteras porque Tailwind lee el código fuente: una
- * clase construida al vuelo (`bg-etapa-${n}`) no llega al CSS compilado.
- */
-const PALETA_ETAPAS = [
-    { punto: 'bg-etapa-1', texto: 'text-etapa-1', borde: 'border-etapa-1/25', barra: 'bg-etapa-1', tenue: 'bg-etapa-1/[0.07]', encima: 'bg-etapa-1/[0.06] ring-etapa-1/30' },
-    { punto: 'bg-etapa-2', texto: 'text-etapa-2', borde: 'border-etapa-2/25', barra: 'bg-etapa-2', tenue: 'bg-etapa-2/[0.07]', encima: 'bg-etapa-2/[0.06] ring-etapa-2/30' },
-    { punto: 'bg-etapa-3', texto: 'text-etapa-3', borde: 'border-etapa-3/25', barra: 'bg-etapa-3', tenue: 'bg-etapa-3/[0.07]', encima: 'bg-etapa-3/[0.06] ring-etapa-3/30' },
-    { punto: 'bg-etapa-4', texto: 'text-etapa-4', borde: 'border-etapa-4/25', barra: 'bg-etapa-4', tenue: 'bg-etapa-4/[0.07]', encima: 'bg-etapa-4/[0.06] ring-etapa-4/30' },
-    { punto: 'bg-etapa-5', texto: 'text-etapa-5', borde: 'border-etapa-5/25', barra: 'bg-etapa-5', tenue: 'bg-etapa-5/[0.07]', encima: 'bg-etapa-5/[0.06] ring-etapa-5/30' },
-    { punto: 'bg-etapa-6', texto: 'text-etapa-6', borde: 'border-etapa-6/25', barra: 'bg-etapa-6', tenue: 'bg-etapa-6/[0.07]', encima: 'bg-etapa-6/[0.06] ring-etapa-6/30' },
-];
-
-const colorDeEtapa = (indice) => PALETA_ETAPAS[indice % PALETA_ETAPAS.length];
-
 // ─── ColumnaBorrador ─────────────────────────────────────────────────────────
 //
 // La etapa que todavía no existe: ocupa el sitio de la columna, con el cursor
@@ -260,7 +238,7 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
     const [editandoGrupo, setEditandoGrupo] = useState(false);
     const [grupo, setGrupo]         = useState(col.grupo ?? '');
     const Icon = getIcon(col.icon);
-    const tono = colorDeEtapa(indice);
+    const tono = colorPorIndice(indice);
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
