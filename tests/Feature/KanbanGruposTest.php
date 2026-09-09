@@ -167,6 +167,149 @@ class KanbanGruposTest extends TestCase
         $this->assertSame('Área', $col->fresh()->grupo);
     }
 
+    // ── Dónde cae cada tarjeta ─────────────────────────────────────────────
+    //
+    // La columna sale de la **etiqueta**, no de `kanban_column_id`: ese campo
+    // guarda una sola columna, y con grupos una conversación está a la vez en
+    // una de «Estado», otra de «Zona» y otra de «Área». Por `kanban_column_id`,
+    // el tablero de Zona no encontraría ni una tarjeta.
+
+    public function test_la_misma_tarjeta_sale_en_el_tablero_de_cada_grupo(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $proceso = $this->columna($user->company_id, 'En proceso', 'Estado');
+        $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+
+        $conv = $this->conversacion($instance, $proceso);
+        $conv->tags()->attach([$proceso->tag_id, $monteria->tag_id]);
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$proceso->id}/cards")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $conv->id);
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$monteria->id}/cards")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $conv->id);
+    }
+
+    /**
+     * La primera columna de cada grupo hace de bandeja: recoge lo que no lleva
+     * ninguna etiqueta de ese grupo. Sin eso, las conversaciones nuevas no
+     * aparecerían en ninguna parte del CRM.
+     */
+    public function test_la_primera_columna_del_grupo_recoge_lo_que_no_esta_clasificado(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $nuevo   = $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $this->columna($user->company_id, 'Resuelto', 'Estado');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+
+        // Etiquetada de Zona, pero sin ninguna etiqueta de Estado.
+        $conv = $this->conversacion($instance, $monteria);
+        $conv->tags()->attach([$monteria->tag_id]);
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$nuevo->id}/cards")
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $conv->id);
+    }
+
+    /**
+     * Herencia de cuando todas las columnas estaban revueltas: 119 de las 396
+     * tarjetas de Star NET llevaban varias etiquetas-columna. Con grupos, si
+     * dos son del mismo grupo la tarjeta se queda en la primera, no sale dos
+     * veces.
+     */
+    public function test_con_dos_etiquetas_del_mismo_grupo_la_tarjeta_no_se_duplica(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $resuelto = $this->columna($user->company_id, 'Resuelto', 'Estado');
+
+        $conv = $this->conversacion($instance, $resuelto);
+        $conv->tags()->attach([$nuevo->tag_id, $resuelto->tag_id]);
+
+        $this->actingAs($user)->getJson("/api/kanban/columns/{$nuevo->id}/cards")
+            ->assertJsonCount(1, 'data');
+
+        $this->actingAs($user)->getJson("/api/kanban/columns/{$resuelto->id}/cards")
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_los_contadores_son_los_del_grupo_que_se_esta_viendo(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $resuelto = $this->columna($user->company_id, 'Resuelto', 'Estado');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+        $cerete   = $this->columna($user->company_id, 'CERETE', 'Zona');
+
+        $uno = $this->conversacion($instance, $resuelto, '573001112233');
+        $uno->tags()->attach([$resuelto->tag_id, $cerete->tag_id]);
+
+        $dos = $this->conversacion($instance, $resuelto, '573004445566');
+        $dos->tags()->attach([$resuelto->tag_id, $monteria->tag_id]);
+
+        // Una tercera sin clasificar, que cae en la bandeja de cada grupo.
+        $this->conversacion($instance, null, '573007778899');
+
+        $this->actingAs($user)->getJson('/api/kanban/counts?grupo=Estado')
+            ->assertOk()
+            ->assertJson([$nuevo->id => 1, $resuelto->id => 2]);
+
+        $this->actingAs($user)->getJson('/api/kanban/counts?grupo=Zona')
+            ->assertOk()
+            ->assertJson([$monteria->id => 2, $cerete->id => 1]);
+    }
+
+    /** Los filtros son las columnas de los otros grupos, y se acumulan. */
+    public function test_un_filtro_de_otro_grupo_recorta_el_tablero(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $resuelto = $this->columna($user->company_id, 'Resuelto', 'Estado');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+        $cerete   = $this->columna($user->company_id, 'CERETE', 'Zona');
+
+        $deMonteria = $this->conversacion($instance, $resuelto, '573001112233');
+        $deMonteria->tags()->attach([$resuelto->tag_id, $monteria->tag_id]);
+
+        $deCerete = $this->conversacion($instance, $resuelto, '573004445566');
+        $deCerete->tags()->attach([$resuelto->tag_id, $cerete->tag_id]);
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$resuelto->id}/cards?filtros[]={$monteria->id}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $deMonteria->id);
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/counts?grupo=Estado&filtros[]={$monteria->id}")
+            ->assertJson([$resuelto->id => 1]);
+    }
+
+    /** Y el tablero de una empresa no ve las conversaciones de otra. */
+    public function test_el_tablero_no_muestra_conversaciones_de_otra_empresa(): void
+    {
+        [$user, $instance] = $this->empresa();
+        $columna = $this->columna($user->company_id, 'Nuevo', 'Estado');
+
+        [, $instanceAjena] = $this->empresa('Vecina', 'vecina');
+        $this->conversacion($instanceAjena, null, '573009998877');
+
+        $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$columna->id}/cards")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
     private function columna(int $companyId, string $nombre, ?string $grupo): KanbanColumn
     {
         $tag = Tag::create(['company_id' => $companyId, 'name' => $nombre, 'color' => '#64748b']);
@@ -178,32 +321,32 @@ class KanbanGruposTest extends TestCase
         return $col->fresh();
     }
 
-    private function conversacion(Instance $instance, KanbanColumn $columna): WhatsAppConversation
+    private function conversacion(Instance $instance, ?KanbanColumn $columna, string $numero = '573001112233'): WhatsAppConversation
     {
         return WhatsAppConversation::create([
             'instance_id'      => $instance->id,
-            'wa_id'            => '573001112233',
-            'phone_number'     => '573001112233',
+            'wa_id'            => $numero,
+            'phone_number'     => $numero,
             'status'           => 'open',
-            'kanban_column_id' => $columna->id,
+            'kanban_column_id' => $columna?->id,
         ]);
     }
 
     /**
      * @return array{0: User, 1: Instance}
      */
-    private function empresa(): array
+    private function empresa(string $nombre = 'Star NET', string $slug = 'star-net'): array
     {
-        $company = Company::create(['name' => 'Star NET', 'slug' => 'star-net', 'active' => true]);
+        $company = Company::create(['name' => $nombre, 'slug' => $slug, 'active' => true]);
 
         $user = User::create([
-            'company_id' => $company->id, 'name' => 'Admin', 'email' => 'admin@starnet.test',
+            'company_id' => $company->id, 'name' => 'Admin', 'email' => 'admin@'.$slug.'.test',
             'password' => bcrypt('secreto123'), 'role' => 'admin', 'active' => true,
         ]);
 
         $instance = Instance::create([
             'company_id' => $company->id, 'uuid' => (string) Str::uuid(), 'name' => 'Línea',
-            'phone_number_id' => 'pnid', 'waba_id' => 'waba', 'type' => 'meta',
+            'phone_number_id' => 'pnid-'.$slug, 'waba_id' => 'waba-'.$slug, 'type' => 'meta',
             'status' => 'active', 'active' => true,
         ]);
 

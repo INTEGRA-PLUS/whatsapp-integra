@@ -209,15 +209,24 @@ const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error 
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard }) => {
+const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
+    const [editandoGrupo, setEditandoGrupo] = useState(false);
+    const [grupo, setGrupo]         = useState(col.grupo ?? '');
     const Icon = getIcon(col.icon);
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
         if (title.trim() && title.trim() !== col.name) onRename(col.id, title.trim());
         setIsEditing(false);
+    };
+
+    const guardarGrupo = (e) => {
+        e?.preventDefault();
+        const limpio = grupo.trim();
+        if (limpio !== (col.grupo ?? '')) onCambiarGrupo(col.id, limpio || null);
+        setEditandoGrupo(false);
     };
 
     return (
@@ -247,6 +256,19 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                                 {col.name}
                             </h2>
                         )}
+                        {editandoGrupo ? (
+                            <form onSubmit={guardarGrupo}>
+                                <input
+                                    autoFocus
+                                    value={grupo}
+                                    onChange={e => setGrupo(e.target.value)}
+                                    onBlur={guardarGrupo}
+                                    onKeyDown={e => { if (e.key === 'Escape') { setGrupo(col.grupo ?? ''); setEditandoGrupo(false); } }}
+                                    placeholder="Grupo (Estado, Zona…)"
+                                    className="bg-transparent border-b border-border p-0 text-[10px] text-muted-foreground focus:ring-0 focus:border-primary/40 w-36"
+                                />
+                            </form>
+                        ) : null}
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-muted-foreground/70">{col.subtitle || 'Procesos'}</span>
                             <span className="size-1 rounded-full bg-muted" />
@@ -256,6 +278,9 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover/column:opacity-100 transition-all">
+                    <button onClick={() => setEditandoGrupo(true)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors" title="Grupo de la etapa">
+                        <Layers className="size-3.5" />
+                    </button>
                     <button onClick={() => onDelete(col.id)} className="p-1.5 hover:bg-destructive/15 dark:hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-lg transition-colors" title="Eliminar etapa">
                         <AlertCircle className="size-3.5" />
                     </button>
@@ -437,6 +462,19 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
+    // ── Grupos ─────────────────────────────────────────────────────────────
+    //
+    // Cada columna pertenece a un grupo: Estado, Zona, Área… El tablero pinta
+    // las columnas de UN grupo y las de los demás se vuelven filtros arriba.
+    //
+    // Es lo que permite que una conversación esté a la vez en «Pendiente
+    // cliente», en «MONTERIA» y en «FACTURACION». Antes había que elegir una
+    // sola, y arrastrar la tarjeta borraba las otras dos.
+    //
+    // `grupo` nulo es el grupo «sin agrupar», donde están todas las columnas
+    // que ya existían.
+    const [grupoActivo, setGrupoActivo]     = useState(() => (initialColumns ?? [])[0]?.grupo ?? null);
+    const [filtros, setFiltros]             = useState([]);   // ids de columnas de otros grupos
     const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
     const [creandoEtapa, setCreandoEtapa]   = useState(false);
     const [errorEtapa, setErrorEtapa]       = useState(null);
@@ -455,6 +493,36 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     // Real card counts per column from the server (not just loaded cards).
     const [colCounts, setColCounts]         = useState({});
 
+    const grupos = useMemo(() => {
+        const vistos = [];
+        for (const c of columns) {
+            const g = c.grupo ?? null;
+            if (!vistos.includes(g)) vistos.push(g);
+        }
+        return vistos;
+    }, [columns]);
+
+    const columnasVisibles = useMemo(
+        () => columns.filter(c => (c.grupo ?? null) === grupoActivo),
+        [columns, grupoActivo]
+    );
+
+    const otrosGrupos = useMemo(
+        () => grupos
+            .filter(g => g !== grupoActivo)
+            .map(g => ({ grupo: g, columnas: columns.filter(c => (c.grupo ?? null) === g) })),
+        [grupos, grupoActivo, columns]
+    );
+
+    // Para las dependencias de los efectos: un array nuevo en cada render los
+    // dispararía en bucle.
+    const filtrosKey = filtros.join(',');
+
+    // loadCounts se llama también desde el canal de tiempo real, sin
+    // argumentos, así que lee la vista actual de aquí en vez de recrearse.
+    const vistaRef = useRef({ grupo: grupoActivo, filtros });
+    useEffect(() => { vistaRef.current = { grupo: grupoActivo, filtros }; }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // We keep a ref to the latest boardData so handleDragEnd can read the
     // current state synchronously without relying on stale closures.
     const boardDataRef = useRef(boardData);
@@ -465,7 +533,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
     // ── Data fetching ──────────────────────────────────────────────────────
 
-    const loadColumnCards = useCallback(async (colId, page, search, reset = false) => {
+    const loadColumnCards = useCallback(async (colId, page, search, reset = false, filtrosActivos = []) => {
         // Cancel any in-flight request for this column
         if (abortControllersRef.current[colId]) {
             abortControllersRef.current[colId].abort();
@@ -477,6 +545,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         try {
             const params = new URLSearchParams({ page, per_page: PER_PAGE });
             if (search) params.set('search', search);
+            filtrosActivos.forEach(id => params.append('filtros[]', id));
 
             const res = await fetch(`/api/kanban/columns/${colId}/cards?${params}`, {
                 headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
@@ -512,19 +581,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
     // Fetch real card counts per column
     const loadCounts = useCallback(async () => {
+        const { grupo, filtros: activos } = vistaRef.current;
         try {
-            const data = await apiRequest('GET', '/api/kanban/counts');
+            const params = new URLSearchParams();
+            if (grupo) params.set('grupo', grupo);
+            activos.forEach(id => params.append('filtros[]', id));
+
+            const data = await apiRequest('GET', `/api/kanban/counts?${params}`);
             setColCounts(data);
         } catch (err) {
             console.error('Error cargando conteos:', err);
         }
     }, []);
 
-    // Initial load
+    // Carga inicial, y recarga al cambiar de grupo o de filtros.
     useEffect(() => {
         loadCounts();
-        columns.forEach(col => loadColumnCards(col.id, 1, '', true));
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
+    }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Tiempo real ────────────────────────────────────────────────────────
     //
@@ -538,7 +612,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
         // Las conversaciones sin columna asignada viven en la primera columna
         // (mismo criterio que usa el backend en columnCards).
-        const firstColumnId = columns[0]?.id;
+        const firstColumnId = columnasVisibles[0]?.id;
 
         // Recontar es una petición aparte: se agrupan las ráfagas (una tanda de
         // mensajes entrantes) en una sola llamada.
@@ -624,7 +698,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     // Re-fetch all columns when search changes
     useEffect(() => {
         if (debouncedSearch !== undefined) {
-            columns.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true));
+            columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
         }
     }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -632,7 +706,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         const meta = colMeta[colId];
         if (!meta || meta.loading) return;
         if (!meta.error && !meta.hasMore) return;
-        loadColumnCards(colId, meta.page + 1, debouncedSearch, false);
+        loadColumnCards(colId, meta.page + 1, debouncedSearch, false, filtros);
     };
 
     // ── Column CRUD ────────────────────────────────────────────────────────
@@ -661,7 +735,10 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
         setCreandoEtapa(true);
         try {
-            const col = await apiRequest('POST', '/api/kanban/columns', { name: limpio, color: 'bg-muted', icon: 'Zap', subtitle: 'Personalizado' });
+            const col = await apiRequest('POST', '/api/kanban/columns', {
+                name: limpio, color: 'bg-muted', icon: 'Zap', subtitle: 'Personalizado',
+                grupo: grupoActivo,   // nace donde se está mirando, no suelta al final
+            });
             setColumns(prev => [...prev, col]);
             setBoardData(prev => ({ ...prev, [col.id]: [] }));
             setColMeta(prev => ({ ...prev, [col.id]: { page: 1, hasMore: false, loading: false } }));
@@ -673,6 +750,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             setErrorEtapa(err.message);
         } finally {
             setCreandoEtapa(false);
+        }
+    };
+
+    /**
+     * Mover una etapa a otro grupo.
+     *
+     * Es lo que separa las dimensiones que hoy están revueltas: en Star NET,
+     * mandar los quince municipios a un grupo «Zona» y los estados del ticket a
+     * otro «Estado» convierte 43 columnas ilegibles en seis columnas con un
+     * filtro de zona encima.
+     */
+    const cambiarGrupo = async (id, nuevoGrupo) => {
+        try {
+            const updated = await apiRequest('PUT', `/api/kanban/columns/${id}`, { grupo: nuevoGrupo });
+            setColumns(prev => prev.map(c => c.id === id ? { ...c, grupo: updated.grupo } : c));
+            setFiltros([]);
+        } catch (err) {
+            console.error('Error al cambiar el grupo:', err);
         }
     };
 
@@ -855,10 +950,70 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                     </div>
                 </div>
 
+                {(grupos.length > 1 || otrosGrupos.length > 0) && (
+                    <div className="px-6 lg:px-10 pt-6 flex flex-wrap items-center gap-x-6 gap-y-3 relative z-10">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Ver por</span>
+                            <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-2xl">
+                                {grupos.map(g => (
+                                    <button
+                                        key={g ?? '__sin__'}
+                                        onClick={() => { setGrupoActivo(g); setFiltros([]); }}
+                                        className={clsx(
+                                            'px-3 py-1.5 rounded-xl text-[11px] font-black transition-all',
+                                            g === grupoActivo
+                                                ? 'bg-white dark:bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        )}
+                                    >
+                                        {g ?? 'Sin agrupar'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {otrosGrupos.map(({ grupo, columnas }) => (
+                            <div key={grupo ?? '__sin__'} className="flex items-center gap-2">
+                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                                    {grupo ?? 'Sin agrupar'}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {columnas.map(c => {
+                                        const activo = filtros.includes(c.id);
+                                        return (
+                                            <button
+                                                key={c.id}
+                                                onClick={() => setFiltros(prev => activo ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                                                className={clsx(
+                                                    'px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all',
+                                                    activo
+                                                        ? 'bg-primary/15 border-primary/40 text-accent-foreground'
+                                                        : 'bg-transparent border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                                                )}
+                                            >
+                                                {c.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+
+                        {filtros.length > 0 && (
+                            <button
+                                onClick={() => setFiltros([])}
+                                className="text-[10px] font-black text-muted-foreground hover:text-foreground underline underline-offset-4"
+                            >
+                                Quitar filtros
+                            </button>
+                        )}
+                    </div>
+                )}
+
                 {/* Board */}
                 <div className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
                     <DragDropContext onDragEnd={handleDragEnd}>
-                        {columns.map(col => (
+                        {columnasVisibles.map(col => (
                             <BoardColumn
                                 key={col.id}
                                 col={col}
@@ -869,6 +1024,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 error={colMeta[col.id]?.error ?? null}
                                 onLoadMore={handleLoadMore}
                                 onRename={renameColumn}
+                                onCambiarGrupo={cambiarGrupo}
                                 onDelete={deleteColumn}
                                 onAddCard={setNewCardColumn}
                             />
