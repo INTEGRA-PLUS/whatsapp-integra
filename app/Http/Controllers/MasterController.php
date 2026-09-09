@@ -10,6 +10,8 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -150,6 +152,12 @@ class MasterController extends Controller
             'messages_volume' => $messages_volume,
             'top_companies' => $top_companies,
             'companies' => $companies,
+            // Los usuarios de una empresa concreta, para el modal que permite
+            // restablecerles la contraseña. Va en un closure y se pide con una
+            // recarga parcial (`?users_of=<id>`) porque cargar los usuarios de
+            // las diez empresas de la página en cada visita es pagar una
+            // consulta que casi nunca se mira.
+            'company_users' => fn () => $this->usuariosDeEmpresa($request),
             'filters' => [
                 'search' => $request->search,
                 'status' => $request->status,
@@ -157,6 +165,66 @@ class MasterController extends Controller
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d'),
             ],
+        ]);
+    }
+
+    /**
+     * Los usuarios de la empresa que pida el panel, o nada.
+     *
+     * Devolver `[]` cuando no se pide es lo que permite dejar la prop en el
+     * render de siempre sin encarecer la carga completa.
+     */
+    private function usuariosDeEmpresa(Request $request): array
+    {
+        $companyId = $request->integer('users_of');
+
+        if (! $companyId) {
+            return [];
+        }
+
+        return User::where('company_id', $companyId)
+            // 'admin' < 'agent' < 'user' también alfabéticamente, así que el
+            // orden que queremos sale sin un FIELD() de MySQL que dejaría esto
+            // sin poder probarse en sqlite.
+            ->orderBy('role')
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'role', 'active'])
+            ->toArray();
+    }
+
+    /**
+     * Le pone una contraseña temporal a cualquier usuario de cualquier empresa.
+     *
+     * El master ya podía cambiar la del admin de una empresa desde el modal de
+     * edición, pero no la de un agente: para esos, soporte tenía que pedirle al
+     * admin del cliente que lo hiciera, y si el que se había quedado fuera era
+     * justo el admin, no había a quién pedírselo.
+     *
+     * La contraseña se genera aquí y se devuelve una sola vez por flash, en vez
+     * de dejar que la escriba quien atiende: una tecleada a mano por teléfono
+     * acaba siendo "12345678", y encima queda escrita en el chat de soporte.
+     */
+    public function resetUserPassword(User $user)
+    {
+        $this->authorizeMaster();
+
+        $temporal = Str::password(12, symbols: false);
+
+        $user->update(['password' => $temporal]);
+
+        // Queda registrado: es un cambio de credenciales de otra persona, y el
+        // día que alguien pregunte "¿quién me cambió la contraseña?" la
+        // respuesta tiene que estar en algún sitio.
+        Log::warning('El master restableció la contraseña de un usuario', [
+            'master_id' => Auth::id(),
+            'user_id' => $user->id,
+            'user_email' => $user->email,
+            'company_id' => $user->company_id,
+        ]);
+
+        return back()->with([
+            'temp_password' => $temporal,
+            'temp_password_for' => $user->email,
         ]);
     }
 

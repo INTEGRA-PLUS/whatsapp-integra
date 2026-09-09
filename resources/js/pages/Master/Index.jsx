@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { 
@@ -28,10 +28,16 @@ import {
     Rocket,
     Crown,
     ShieldCheck,
-    BarChart as BarChartIcon
+    BarChart as BarChartIcon,
+    KeyRound,
+    Copy,
+    ShieldAlert
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, filters }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters }) {
+    // La contraseña temporal viaja por flash: existe una sola vez y no
+    // sobrevive a una recarga.
+    const { flash } = usePage().props;
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showCreate, setShowCreate] = useState(false);
     const [editingCompany, setEditingCompany] = useState(null);
@@ -111,6 +117,19 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
         const admin = company.users?.[0];
         setEditForm({ name: company.name, email: company.email, admin_name: admin?.name ?? '', admin_email: admin?.email ?? '', password: '', active: !!company.active });
         setEditingCompany(company);
+
+        // Los usuarios de la empresa no vienen en la carga de la página (serían
+        // diez consultas para una lista que casi nunca se abre): se piden al
+        // abrir el modal, y sólo esa prop.
+        router.reload({ only: ['company_users'], data: { users_of: company.id }, replace: true });
+    }
+
+    function restablecerContrasena(user) {
+        router.post(route('master.users.password', user.id), {}, {
+            preserveScroll: true,
+            preserveState: true,
+            only: ['flash', 'company_users'],
+        });
     }
 
     // --- CHART COMPONENTS ---
@@ -440,7 +459,13 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
 
             {/* Modals for Create/Edit Company */}
             {showCreate && <Modal title="Deploy New Organization" onClose={() => setShowCreate(false)}><form onSubmit={handleCreate} className="space-y-8"><Field label="Nombre Empresa" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} required /><Field label="Email Empresa" type="email" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-500/10 space-y-6"><Field label="Nombre Admin" value={createForm.admin_name} onChange={v => setCreateForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" value={createForm.admin_email} onChange={v => setCreateForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} required /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20">Ejecutar Deployment</Button></form></Modal>}
-            {editingCompany && <Modal title="Edit Organization" onClose={() => setEditingCompany(null)}><form onSubmit={handleEdit} className="space-y-8"><Field label="Nombre" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} required /><Field label="Email" type="email" value={editForm.email} onChange={v => setEditForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-500/10 space-y-6"><Field label="Admin" value={editForm.admin_name} onChange={v => setEditForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" type="email" value={editForm.admin_email} onChange={v => setEditForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={editForm.password} onChange={v => setEditForm(f => ({ ...f, password: v }))} /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20">Guardar Cambios</Button></form></Modal>}
+            {editingCompany && <Modal title="Edit Organization" onClose={() => setEditingCompany(null)}><form onSubmit={handleEdit} className="space-y-8"><Field label="Nombre" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} required /><Field label="Email" type="email" value={editForm.email} onChange={v => setEditForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-500/10 space-y-6"><Field label="Admin" value={editForm.admin_name} onChange={v => setEditForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" type="email" value={editForm.admin_email} onChange={v => setEditForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={editForm.password} onChange={v => setEditForm(f => ({ ...f, password: v }))} /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20">Guardar Cambios</Button></form>
+                <UsuariosDeLaEmpresa
+                    usuarios={company_users}
+                    flash={flash}
+                    onRestablecer={restablecerContrasena}
+                />
+            </Modal>}
         </>
     );
 }
@@ -496,11 +521,109 @@ function KPICard({ label, value, sub, icon, trend, color }) {
 function Modal({ title, onClose, children }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-2xl p-4 animate-in fade-in duration-300" onClick={onClose}>
-            <div className="w-full max-w-xl rounded-[3rem] bg-card border border-border/40 shadow-2xl p-14 animate-in zoom-in-95 duration-500 relative overflow-hidden" onClick={e => e.stopPropagation()}>
+            {/* `max-h` + scroll propio: el modal de edición creció al listar los
+                usuarios de la empresa y en un portátil no cabía entero. Sin esto
+                se corta por abajo y la rueda mueve la página de detrás, así que
+                el botón de guardar queda inalcanzable. */}
+            <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[3rem] bg-card border border-border/40 shadow-2xl p-14 animate-in zoom-in-95 duration-500 relative" onClick={e => e.stopPropagation()}>
                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-blue-500" />
                 <h2 className="text-3xl font-black text-center mb-12 tracking-tight uppercase text-foreground">{title}</h2>
                 {children}
             </div>
+        </div>
+    );
+}
+
+/**
+ * Los usuarios de la empresa, con un botón para restablecerles la contraseña.
+ *
+ * Vive dentro del modal de edición porque es donde ya se cambia la del admin;
+ * lo que añade es el resto de la plantilla del cliente, que antes sólo podía
+ * ayudar su propio admin — y si el que se había quedado fuera era el admin, no
+ * había a quién pedírselo.
+ *
+ * La contraseña generada se muestra una sola vez, aquí mismo: no se guarda en
+ * ningún sitio en claro y al recargar el modal ya no está.
+ */
+function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
+    const [copiada, setCopiada] = useState(false);
+
+    const copiar = () => {
+        navigator.clipboard?.writeText(flash.temp_password);
+        setCopiada(true);
+        setTimeout(() => setCopiada(false), 2000);
+    };
+
+    return (
+        <div className="mt-10 pt-8 border-t border-border/40 space-y-5">
+            <div className="flex items-center gap-2">
+                <KeyRound className="size-4 text-muted-foreground" />
+                <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-widest">
+                    Usuarios de la empresa
+                </h3>
+            </div>
+
+            {flash?.temp_password && (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-5 space-y-3">
+                    <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="size-4 mt-0.5 shrink-0 text-amber-600" />
+                        <p className="text-xs font-bold leading-relaxed text-foreground">
+                            Contraseña temporal de <span className="font-mono">{flash.temp_password_for}</span>.
+                            Se muestra una sola vez: cópiala y pide que la cambien al entrar.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <code className="flex-1 rounded-xl bg-background border border-border/40 px-4 py-3 text-sm font-black font-mono tracking-wider select-all">
+                            {flash.temp_password}
+                        </code>
+                        <Button
+                            type="button"
+                            onClick={copiar}
+                            className="h-11 px-4 rounded-xl bg-foreground text-background font-black text-[10px] uppercase tracking-widest"
+                        >
+                            <Copy className="size-3.5 mr-1.5" />
+                            {copiada ? 'Copiada' : 'Copiar'}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {!usuarios || usuarios.length === 0 ? (
+                <p className="text-xs font-bold text-muted-foreground italic opacity-60">
+                    Esta empresa no tiene usuarios.
+                </p>
+            ) : (
+                <ul className="space-y-2">
+                    {usuarios.map(u => (
+                        <li
+                            key={u.id}
+                            className="flex items-center justify-between gap-4 rounded-2xl border border-border/40 bg-background px-5 py-3.5"
+                        >
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-black truncate">{u.name}</span>
+                                    <span className="shrink-0 rounded-lg bg-muted/50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                                        {u.role}
+                                    </span>
+                                    {!u.active && (
+                                        <span className="shrink-0 rounded-lg bg-red-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-red-600">
+                                            Inactivo
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-[11px] font-bold text-muted-foreground truncate font-mono">{u.email}</p>
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={() => onRestablecer(u)}
+                                className="h-10 shrink-0 px-4 rounded-xl bg-muted/40 text-foreground font-black text-[10px] uppercase tracking-widest hover:bg-muted"
+                            >
+                                Restablecer
+                            </Button>
+                        </li>
+                    ))}
+                </ul>
+            )}
         </div>
     );
 }
