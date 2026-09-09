@@ -11,10 +11,20 @@ import { Head } from '@inertiajs/react';
  * El login sigue con el suyo propio a propósito: es la pantalla por la que
  * entra todo el mundo y no compensa moverla para un refactor de estilo. Si
  * alguien la toca en el futuro, este es el sitio donde encaja.
+ *
+ * **Estas pantallas no usan los tokens del tema, y es deliberado.** Son una
+ * composición de marca sobre fondo azul noche fijo: con tokens, en tema claro
+ * los textos tomarían sus valores claros sobre ese fondo oscuro y quedarían
+ * ilegibles. Se intentó acotarlo envolviéndolas en un `dark` local, pero no
+ * funciona: las utilidades resuelven `var(--color-*)` contra `:root`, así que
+ * un subárbol con la clase `dark` sigue leyendo los valores claros (9-sep-2026).
+ *
+ * Lo que sí se corrigió es el contraste: el botón llevaba texto blanco sobre el
+ * verde de la marca —1.73:1, ilegible— y ahora lleva el navy del manual.
  */
 export default function AuthShell({ title, heading, description, children, footer }) {
     return (
-        <div className="relative min-h-screen font-sans antialiased text-muted-foreground overflow-hidden bg-[#020817]">
+        <div className="relative min-h-screen font-sans antialiased text-slate-200 overflow-hidden bg-[#020817]">
             <Head title={title} />
 
             <div className="fixed inset-0 -z-10 h-full w-full">
@@ -36,25 +46,25 @@ export default function AuthShell({ title, heading, description, children, foote
                         <h1 className="sr-only">Integra CRM</h1>
                     </div>
 
-                    <div className="overflow-hidden rounded-3xl border border-border bg-[#0f172a]/80 p-[1px] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                    <div className="overflow-hidden rounded-3xl border border-slate-800 bg-[#0f172a]/80 p-[1px] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl">
                         <div className="rounded-[23px] bg-[#0f172a] p-8 sm:p-10 shadow-inner">
                             <div className="mb-8">
                                 <h2 className="text-xl font-black text-white uppercase tracking-tight">{heading}</h2>
                                 {description && (
-                                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{description}</p>
+                                    <p className="mt-3 text-sm leading-relaxed text-slate-400">{description}</p>
                                 )}
                             </div>
 
                             {children}
 
                             {footer && (
-                                <div className="mt-8 pt-6 border-t border-border text-center">{footer}</div>
+                                <div className="mt-8 pt-6 border-t border-slate-800 text-center">{footer}</div>
                             )}
                         </div>
                     </div>
 
                     <div className="text-center">
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.3em]">
+                        <p className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.3em]">
                             &copy; {new Date().getFullYear()} Integra Plus &middot; Seguridad Nivel Corporativo
                         </p>
                     </div>
@@ -66,11 +76,11 @@ export default function AuthShell({ title, heading, description, children, foote
 
 /** Los estilos de campo del login, para que los formularios no se separen. */
 export const inputClass =
-    'block w-full rounded-xl border border-border bg-foreground py-4 pl-12 pr-4 text-base text-background placeholder-muted-foreground transition-all duration-300 focus:border-success/50 focus:outline-none focus:ring-4 focus:ring-success/5 focus:bg-foreground';
+    'block w-full rounded-xl border border-slate-800 bg-slate-900/50 py-4 pl-12 pr-4 text-base text-white placeholder-slate-600 transition-all duration-300 focus:border-green-500/50 focus:outline-none focus:ring-4 focus:ring-green-500/5 focus:bg-slate-900';
 
-export const labelClass = 'text-xs font-bold text-muted-foreground uppercase tracking-wider ml-1';
+export const labelClass = 'text-xs font-bold text-slate-400 uppercase tracking-wider ml-1';
 
-export const errorClass = 'text-xs font-semibold text-destructive mt-1 ml-1';
+export const errorClass = 'text-xs font-semibold text-red-400 mt-1 ml-1';
 
 export const submitClass =
-    'w-full h-14 rounded-xl bg-success text-base font-black text-primary-foreground uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-success active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed';
+    'w-full h-14 rounded-xl bg-green-600 text-base font-black text-[#03122F] uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-green-500 active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed';

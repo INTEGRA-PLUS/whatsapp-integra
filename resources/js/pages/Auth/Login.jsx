@@ -158,7 +158,7 @@ export default function Login() {
                                 <Button
                                     type="submit"
                                     disabled={processing}
-                                    className="w-full h-14 rounded-xl bg-green-600 text-base font-black text-white uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-green-500 hover:shadow-[0_15px_25px_-10px_rgba(34,197,94,0.6)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                    className="w-full h-14 rounded-xl bg-green-600 text-base font-black text-[#03122F] uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-green-500 hover:shadow-[0_15px_25px_-10px_rgba(34,197,94,0.6)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
                                 >
                                     {processing ? (
                                         <div className="flex items-center space-x-2">
