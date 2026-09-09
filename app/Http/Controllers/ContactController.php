@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Support\ConversationNotice;
 use Illuminate\Http\Request;
@@ -44,6 +45,7 @@ class ContactController extends Controller
             }
             unset($value);
         }
+
         return $input;
     }
 
@@ -53,7 +55,7 @@ class ContactController extends Controller
      */
     private function unregisteredConversations($companyId)
     {
-        $instanceIds = \App\Models\Instance::where('company_id', $companyId)->pluck('id');
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
 
         if ($instanceIds->isEmpty()) {
             return collect();
@@ -178,7 +180,7 @@ class ContactController extends Controller
      */
     private function optOutRequests(int $companyId)
     {
-        $instanceIds = \App\Models\Instance::where('company_id', $companyId)->pluck('id');
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
 
         if ($instanceIds->isEmpty()) {
             return collect();
@@ -297,7 +299,7 @@ class ContactController extends Controller
             'email' => 'nullable|email|max:255',
         ]);
 
-        if (!empty($validated['contact_id'])) {
+        if (! empty($validated['contact_id'])) {
             $contact = Contact::where('id', $validated['contact_id'])
                 ->where('company_id', $user->company_id)
                 ->firstOrFail();
@@ -314,7 +316,7 @@ class ContactController extends Controller
             // La agenda se indexa por número —unique(company_id, phone_number)—
             // así que una ficha sin él chocaría con la del siguiente cliente que
             // oculte el suyo, y no casaría con ningún abonado de Integra.
-            if (!$phone) {
+            if (! $phone) {
                 return response()->json([
                     'message' => 'Este cliente oculta su número de WhatsApp. Vincúlalo a un contacto existente en vez de crear uno nuevo.',
                 ], 422);
@@ -329,7 +331,7 @@ class ContactController extends Controller
             );
 
             // If it already existed but came in without a name, fill it in.
-            if (!$contact->wasRecentlyCreated && empty($contact->name)) {
+            if (! $contact->wasRecentlyCreated && empty($contact->name)) {
                 $contact->update(['name' => $validated['name']]);
             }
         }

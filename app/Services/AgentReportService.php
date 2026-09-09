@@ -41,15 +41,18 @@ class AgentReportService
                 if ($m->direction === 'inbound') {
                     $totals['inbound']++;
                     $pendingInboundAt = $pendingInboundAt ?: $when;
+
                     continue;
                 }
 
                 $totals['outbound']++;
                 $agentId = $m->sent_by;
-                if (!$agentId) continue;
+                if (! $agentId) {
+                    continue;
+                }
 
                 $bucket = &$perAgent[$agentId];
-                if (!is_array($bucket)) {
+                if (! is_array($bucket)) {
                     $bucket = ['sent' => 0, 'conversations' => [], 'response_times' => []];
                 }
                 $bucket['sent']++;
@@ -76,7 +79,9 @@ class AgentReportService
         $unansweredUnassigned = 0;
         foreach ($openConversations as $conv) {
             $direction = $lastDirections[$conv->id] ?? null;
-            if ($direction !== 'inbound') continue;
+            if ($direction !== 'inbound') {
+                continue;
+            }
 
             if ($conv->assigned_to) {
                 $unansweredByAgent[$conv->assigned_to] = ($unansweredByAgent[$conv->assigned_to] ?? 0) + 1;
@@ -94,7 +99,9 @@ class AgentReportService
         $rows = [];
         foreach ($agentIds as $uid) {
             $user = $users[$uid] ?? null;
-            if (!$user) continue;
+            if (! $user) {
+                continue;
+            }
 
             $rt = $perAgent[$uid]['response_times'] ?? [];
             $rows[] = [
@@ -131,7 +138,7 @@ class AgentReportService
     public function buildForAgent(int $companyId, int $userId, CarbonInterface $from, CarbonInterface $to): array
     {
         $user = User::where('id', $userId)->where('company_id', $companyId)->first(['id', 'name', 'email']);
-        if (!$user) {
+        if (! $user) {
             return $this->emptyAgentReport();
         }
 
@@ -164,11 +171,13 @@ class AgentReportService
 
                 if ($m->direction === 'inbound') {
                     $pendingInboundAt = $pendingInboundAt ?: $when;
+
                     continue;
                 }
 
                 if ((int) $m->sent_by !== $userId) {
                     $pendingInboundAt = null;
+
                     continue;
                 }
 
@@ -201,7 +210,9 @@ class AgentReportService
 
         $unanswered = [];
         foreach ($assignedOpen as $conv) {
-            if (($lastDirections[$conv->id] ?? null) !== 'inbound') continue;
+            if (($lastDirections[$conv->id] ?? null) !== 'inbound') {
+                continue;
+            }
             $unanswered[] = [
                 'id' => $conv->id,
                 'name' => $conv->name,
@@ -229,7 +240,9 @@ class AgentReportService
         $byConversation = [];
         foreach ($perConversation as $convId => $c) {
             $conv = $convs[$convId] ?? null;
-            if (!$conv) continue;
+            if (! $conv) {
+                continue;
+            }
             $rt = $c['response_times'];
             $byConversation[] = [
                 'conversation_id' => $convId,
@@ -277,7 +290,9 @@ class AgentReportService
 
     private function lastMessageDirections(Collection $conversationIds): array
     {
-        if ($conversationIds->isEmpty()) return [];
+        if ($conversationIds->isEmpty()) {
+            return [];
+        }
 
         $rows = WhatsAppMessage::selectRaw('conversation_id, direction, id')
             ->whereIn('conversation_id', $conversationIds)
@@ -288,10 +303,11 @@ class AgentReportService
 
         $out = [];
         foreach ($rows as $r) {
-            if (!isset($out[$r->conversation_id])) {
+            if (! isset($out[$r->conversation_id])) {
                 $out[$r->conversation_id] = $r->direction;
             }
         }
+
         return $out;
     }
 

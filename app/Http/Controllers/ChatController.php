@@ -2,24 +2,32 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use App\Events\ConversationEvent;
-use App\Support\ConversationNotice;
-use App\Support\Realtime;
+use App\Events\WhatsAppMessageEvent;
+use App\Jobs\DeliverWhatsAppMessage;
+use App\Models\CompanyIntegration;
+use App\Models\ConversationDeletionRequest;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
+use App\Models\User;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
-use App\Models\ConversationDeletionRequest;
-use App\Models\User;
+use App\Notifications\ConversationClosedNotification;
+use App\Notifications\ConversationDeletionRequestedNotification;
+use App\Notifications\ConversationDeletionResolvedNotification;
+use App\Notifications\MentionNotification;
 use App\Services\MetaWhatsAppService;
+use App\Services\TemplateParameterGuard;
 use App\Services\WebhookDispatcher;
-use App\Jobs\DeliverWhatsAppMessage;
-use App\Http\Controllers\KanbanController;
+use App\Support\ConversationNotice;
+use App\Support\Realtime;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 
 class ChatController extends Controller
@@ -28,7 +36,7 @@ class ChatController extends Controller
 
     public function __construct(
         MetaWhatsAppService $metaService,
-        private \App\Services\TemplateParameterGuard $templateGuard
+        private TemplateParameterGuard $templateGuard
     ) {
         // $this->middleware('auth'); // Middleware is usually applied in routes in Laravel 11
         $this->metaService = $metaService;
@@ -38,17 +46,17 @@ class ChatController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->isMaster() && !session('impersonated_by')) {
+        if ($user->isMaster() && ! session('impersonated_by')) {
             return redirect()->route('master.index');
         }
-        
+
         $instances = Instance::where('company_id', $user->company_id)
             ->where('type', 'meta')
             ->where('active', true)
             ->get();
 
         return Inertia::render('Chat/Index', [
-            'instances'    => $instances,
+            'instances' => $instances,
             'integrations' => $this->activeChatIntegrations($user->company_id),
         ]);
     }
@@ -58,16 +66,16 @@ class ChatController extends Controller
      */
     private function activeChatIntegrations(int $companyId): array
     {
-        return \App\Models\CompanyIntegration::where('company_id', $companyId)
+        return CompanyIntegration::where('company_id', $companyId)
             ->where('enabled', true)
             ->where('status', 'connected')
             ->whereNotNull('trigger_command')
             ->get()
             ->map(fn ($i) => [
-                'key'          => $i->key,
-                'name'         => $i->key === \App\Models\CompanyIntegration::KEY_INVOICE_PAYMENTS ? 'Pagos a facturas' : $i->key,
+                'key' => $i->key,
+                'name' => $i->key === CompanyIntegration::KEY_INVOICE_PAYMENTS ? 'Pagos a facturas' : $i->key,
                 'trigger_type' => $i->trigger_type,
-                'trigger'      => $i->triggerToken(),
+                'trigger' => $i->triggerToken(),
             ])
             ->values()
             ->all();
@@ -77,7 +85,7 @@ class ChatController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->isMaster() && !session('impersonated_by')) {
+        if ($user->isMaster() && ! session('impersonated_by')) {
             return redirect()->route('master.index');
         }
 
@@ -97,9 +105,9 @@ class ChatController extends Controller
             ->get(['id', 'name']);
 
         return Inertia::render('Chat/Kanban', [
-            'columns'             => $columns,
+            'columns' => $columns,
             'total_conversations' => $total,
-            'instances'           => $instances,
+            'instances' => $instances,
         ]);
     }
 
@@ -108,7 +116,7 @@ class ChatController extends Controller
         $user = auth()->user();
         $instanceId = $request->instance_id;
 
-        if (!$instanceId) {
+        if (! $instanceId) {
             return response()->json(['error' => 'instance_id es requerido'], 400);
         }
 
@@ -135,7 +143,7 @@ class ChatController extends Controller
             ->when($request->tag_ids ?? $request->tag_id, function ($query, $tags) {
                 $ids = collect(is_array($tags) ? $tags : explode(',', (string) $tags))
                     ->map(fn ($v) => (int) $v)->filter()->values()->all();
-                if (!empty($ids)) {
+                if (! empty($ids)) {
                     // OR: conversaciones que tengan al menos una de las etiquetas seleccionadas.
                     $query->whereHas('tags', fn ($q) => $q->whereIn('tags.id', $ids));
                 }
@@ -167,7 +175,7 @@ class ChatController extends Controller
         if ($filter === 'mentions') {
             $query->whereHas('messages', function ($q) use ($user) {
                 $q->where('is_internal', true)
-                  ->whereJsonContains('mentions', (int) $user->id);
+                    ->whereJsonContains('mentions', (int) $user->id);
             });
         } elseif ($filter === 'unattended') {
             $query->where('status', 'open')
@@ -194,7 +202,7 @@ class ChatController extends Controller
         $user = auth()->user();
         $instanceId = $request->instance_id;
 
-        if (!$instanceId) {
+        if (! $instanceId) {
             return response()->json(['error' => 'instance_id es requerido'], 400);
         }
 
@@ -213,7 +221,7 @@ class ChatController extends Controller
         $this->applyFolderFilter($unattended, 'unattended', $user);
 
         // Conteo de conversaciones por etiqueta dentro de la instancia.
-        $tagCounts = \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag as ct')
+        $tagCounts = DB::table('whatsapp_conversation_tag as ct')
             ->join('whatsapp_conversations as c', 'c.id', '=', 'ct.whatsapp_conversation_id')
             ->where('c.instance_id', $instanceId)
             ->groupBy('ct.tag_id')
@@ -221,10 +229,10 @@ class ChatController extends Controller
             ->pluck('total', 'tag_id');
 
         return response()->json([
-            'all'        => $all,
-            'mentions'   => $mentions->count(),
+            'all' => $all,
+            'mentions' => $mentions->count(),
             'unattended' => $unattended->count(),
-            'tags'       => $tagCounts,
+            'tags' => $tagCounts,
         ]);
     }
 
@@ -237,9 +245,9 @@ class ChatController extends Controller
     public function startConversation(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'instance_id'  => 'required',
+            'instance_id' => 'required',
             'phone_number' => 'required|string|max:30',
-            'name'         => 'nullable|string|max:120',
+            'name' => 'nullable|string|max:120',
         ]);
 
         if ($validator->fails()) {
@@ -252,7 +260,7 @@ class ChatController extends Controller
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
-        if (!$instance->isMetaConfigured()) {
+        if (! $instance->isMetaConfigured()) {
             return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
         }
 
@@ -278,9 +286,9 @@ class ChatController extends Controller
             $instance->id,
             $phone,
             [
-                'phone_number'    => $phone,
-                'name'            => $request->name ?: $phone,
-                'status'          => 'open',
+                'phone_number' => $phone,
+                'name' => $request->name ?: $phone,
+                'status' => 'open',
                 'last_message_at' => now(),
             ]
         );
@@ -312,11 +320,11 @@ class ChatController extends Controller
         }
 
         return response()->json($this->sanitizeUtf8([
-            'success'      => true,
+            'success' => true,
             'conversation' => $conversation->load(['assignedAgent:id,name', 'closedByUser:id,name', 'tags']),
-            'messages'     => $messages,
+            'messages' => $messages,
             'session_open' => $sessionOpen,
-            'timestamp'    => now()->toIso8601String(),
+            'timestamp' => now()->toIso8601String(),
         ]));
     }
 
@@ -335,7 +343,7 @@ class ChatController extends Controller
             ->whereNotNull('access_token')
             ->first();
 
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['data' => [], 'resume_template' => null]);
         }
 
@@ -348,10 +356,10 @@ class ChatController extends Controller
         // pero también necesita ver PENDING/REJECTED para saber si la plantilla de
         // reanudación del sistema ya fue creada y en qué estado está.
         $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, [
-            'limit'  => 200,
+            'limit' => 200,
         ]);
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             return response()->json(['data' => [], 'resume_template' => $resumeTemplate]);
         }
 
@@ -379,12 +387,12 @@ class ChatController extends Controller
             ->whereNotNull('access_token')
             ->first();
 
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['success' => false, 'message' => 'No hay una instancia activa con WABA configurado.'], 422);
         }
 
         $entry = config("whatsapp_default_templates.{$key}");
-        if (!$entry) {
+        if (! $entry) {
             return response()->json(['success' => false, 'message' => 'Plantilla por defecto no configurada.'], 500);
         }
 
@@ -394,14 +402,14 @@ class ChatController extends Controller
             'category' => $entry['category'],
             'components' => $entry['components'],
         ];
-        if (!empty($entry['parameter_format'])) {
+        if (! empty($entry['parameter_format'])) {
             $payload['parameter_format'] = $entry['parameter_format'];
         }
 
         $result = $this->metaService->createTemplate($instance->waba_id, $instance->access_token, $payload);
 
         $alreadyExists = false;
-        if (!$result['success']) {
+        if (! $result['success']) {
             $inner = $result['error']['error'] ?? null;
             $code = is_array($inner) ? ($inner['code'] ?? null) : null;
             $subcode = is_array($inner) ? ($inner['error_subcode'] ?? null) : null;
@@ -417,7 +425,7 @@ class ChatController extends Controller
             }
         }
 
-        if (!$instance->resumeTemplateName()) {
+        if (! $instance->resumeTemplateName()) {
             $instance->setResumeTemplate($key, $entry['language']);
             $instance->save();
         }
@@ -437,9 +445,9 @@ class ChatController extends Controller
         $validator = Validator::make($request->all(), [
             'template_name' => 'required|string',
             'language_code' => 'nullable|string',
-            'components'    => 'nullable|array',
-            'preview'       => 'nullable|string',
-            'template_id'   => 'nullable|integer',
+            'components' => 'nullable|array',
+            'preview' => 'nullable|string',
+            'template_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -457,13 +465,13 @@ class ChatController extends Controller
 
         $instance = $conversation->instance;
 
-        if (!$instance->isMetaConfigured()) {
+        if (! $instance->isMetaConfigured()) {
             return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
         }
 
         $templateName = $request->template_name;
         $languageCode = $request->language_code ?: 'es';
-        $components   = $request->components ?? [];
+        $components = $request->components ?? [];
 
         $preview = $request->preview ?: "[Plantilla: {$templateName}]";
 
@@ -472,11 +480,11 @@ class ChatController extends Controller
         // minutos por un acuse de fallo.
         $guard = $this->templateGuard->check($instance, $templateName, $languageCode, $components);
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             return response()->json([
                 'success' => false,
-                'code'    => \App\Services\TemplateParameterGuard::CODE,
-                'error'   => $guard['error'],
+                'code' => TemplateParameterGuard::CODE,
+                'error' => $guard['error'],
             ], 422);
         }
 
@@ -486,22 +494,22 @@ class ChatController extends Controller
         // hacen en DeliverWhatsAppMessage (cola). Aquí solo persistimos "pending".
         $message = WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
-            'type'            => 'template',
-            'content'         => $preview,
-            'direction'       => 'outbound',
-            'status'          => 'pending',
-            'sent_by'         => $user->id,
-            'sent_at'         => now(),
-            'metadata'        => [
-                'template'   => $templateName,
-                'language'   => $languageCode,
+            'type' => 'template',
+            'content' => $preview,
+            'direction' => 'outbound',
+            'status' => 'pending',
+            'sent_by' => $user->id,
+            'sent_at' => now(),
+            'metadata' => [
+                'template' => $templateName,
+                'language' => $languageCode,
                 'components' => $components,
             ],
-            'template_id'     => $request->template_id,
+            'template_id' => $request->template_id,
         ]);
 
         $conversation->update([
-            'last_message'    => $preview,
+            'last_message' => $preview,
             'last_message_at' => now(),
         ]);
 
@@ -509,7 +517,7 @@ class ChatController extends Controller
 
         return response()->json($this->sanitizeUtf8([
             'success' => true,
-            'data'    => $message->load('sender:id,name'),
+            'data' => $message->load('sender:id,name'),
         ]));
     }
 
@@ -537,7 +545,7 @@ class ChatController extends Controller
         }
 
         $instance = $conversation->instance;
-        if (!$instance->isMetaConfigured()) {
+        if (! $instance->isMetaConfigured()) {
             return response()->json(['success' => false, 'error' => 'Instancia no configurada'], 400);
         }
 
@@ -548,11 +556,11 @@ class ChatController extends Controller
             $file->getMimeType()
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             return response()->json([
                 'success' => false,
                 'error' => $this->metaError($result, 'No se pudo subir el archivo a Meta.'),
-                'meta'  => $result['error']['error'] ?? null,
+                'meta' => $result['error']['error'] ?? null,
             ], 500);
         }
 
@@ -569,7 +577,7 @@ class ChatController extends Controller
         $user = auth()->user();
         $instanceId = $request->instance_id;
 
-        if (!$instanceId) {
+        if (! $instanceId) {
             return response()->json(['error' => 'instance_id es requerido'], 400);
         }
 
@@ -582,7 +590,7 @@ class ChatController extends Controller
         $sinceTs = null;
         if ($request->since) {
             try {
-                $sinceTs = \Carbon\Carbon::parse($request->since)->setTimezone(config('app.timezone'));
+                $sinceTs = Carbon::parse($request->since)->setTimezone(config('app.timezone'));
             } catch (\Throwable $e) {
                 $sinceTs = $request->since;
             }
@@ -630,7 +638,7 @@ class ChatController extends Controller
             'conversations' => $updatedConversations,
             'new_messages' => $newMessages,
             'updated_statuses' => $updatedStatuses,
-            'timestamp' => now()->toIso8601String()
+            'timestamp' => now()->toIso8601String(),
         ]));
     }
 
@@ -667,7 +675,7 @@ class ChatController extends Controller
         return response()->json($this->sanitizeUtf8([
             'conversation' => $conversation,
             'messages' => $messages,
-            'timestamp' => now()->toIso8601String()
+            'timestamp' => now()->toIso8601String(),
         ]));
     }
 
@@ -703,9 +711,9 @@ class ChatController extends Controller
         return response()
             ->view('chat.export', [
                 'conversation' => $conversation,
-                'days'         => $days,
-                'total'        => $messages->count(),
-                'exportedBy'   => $user->name,
+                'days' => $days,
+                'total' => $messages->count(),
+                'exportedBy' => $user->name,
             ])
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
@@ -751,10 +759,10 @@ class ChatController extends Controller
             }
 
             $message->forceFill([
-                'media_url'       => $mediaInfo['url'],
-                'media_id'        => $message->media_id ?: $mediaId,
+                'media_url' => $mediaInfo['url'],
+                'media_id' => $message->media_id ?: $mediaId,
                 'media_mime_type' => $message->media_mime_type ?: $mediaInfo['mime_type'],
-                'filename'        => $message->resolvableFilename() ?: $mediaInfo['filename'],
+                'filename' => $message->resolvableFilename() ?: $mediaInfo['filename'],
             ])->save();
 
             $mediaUrl = $mediaInfo['url'];
@@ -775,7 +783,7 @@ class ChatController extends Controller
         return response($response->body(), 200, [
             'Content-Type' => $message->media_mime_type
                 ?: ($response->header('Content-Type') ?: 'application/octet-stream'),
-            'Content-Disposition' => $disposition . '; filename="' . $filename . '"',
+            'Content-Disposition' => $disposition.'; filename="'.$filename.'"',
             'Content-Length' => strlen($response->body()),
             'Cache-Control' => 'private, max-age=3600',
         ]);
@@ -793,8 +801,8 @@ class ChatController extends Controller
 
         return response(
             '<!doctype html><meta charset="utf-8"><title>Archivo no disponible</title>'
-            . '<body style="font-family:system-ui,sans-serif;padding:2rem;color:#111b21">'
-            . '<p>' . e($message) . '</p></body>',
+            .'<body style="font-family:system-ui,sans-serif;padding:2rem;color:#111b21">'
+            .'<p>'.e($message).'</p></body>',
             404,
             ['Content-Type' => 'text/html; charset=utf-8']
         );
@@ -818,7 +826,7 @@ class ChatController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'message' => 'required|string|max:4096',
-            'reply_to_wamid' => 'nullable|string|max:500'
+            'reply_to_wamid' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -836,14 +844,14 @@ class ChatController extends Controller
 
         $instance = $conversation->instance;
 
-        if (!$instance->isMetaConfigured()) {
+        if (! $instance->isMetaConfigured()) {
             return response()->json([
                 'success' => false,
-                'error' => 'Instancia no configurada'
+                'error' => 'Instancia no configurada',
             ], 400);
         }
 
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
@@ -866,12 +874,12 @@ class ChatController extends Controller
             'direction' => 'outbound',
             'status' => 'pending',
             'sent_by' => $user->id,
-            'sent_at' => now()
+            'sent_at' => now(),
         ]);
 
         $conversation->update([
             'last_message' => $request->message,
-            'last_message_at' => now()
+            'last_message_at' => now(),
         ]);
 
         DeliverWhatsAppMessage::dispatch($message->id);
@@ -879,7 +887,7 @@ class ChatController extends Controller
         return response()->json($this->sanitizeUtf8([
             'success' => true,
             'message' => 'Mensaje encolado',
-            'data' => $message->load('sender')
+            'data' => $message->load('sender'),
         ]));
     }
 
@@ -888,7 +896,7 @@ class ChatController extends Controller
         $validator = Validator::make($request->all(), [
             'image' => 'required|image|max:5120',
             'caption' => 'nullable|string|max:1024',
-            'reply_to_wamid' => 'nullable|string|max:500'
+            'reply_to_wamid' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -904,7 +912,7 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
@@ -917,7 +925,7 @@ class ChatController extends Controller
         // se guardaba un mensaje con media_url roto y el envío moría después.
         $path = $request->file('image')->storePublicly('whatsapp/media', 's3_media');
 
-        if (!$path) {
+        if (! $path) {
             Log::channel('whatsapp')->error('❌ No se pudo subir la imagen al almacenamiento', [
                 'conversation_id' => $conversation->id,
                 'original_name' => $request->file('image')->getClientOriginalName(),
@@ -942,12 +950,12 @@ class ChatController extends Controller
             'direction' => 'outbound',
             'status' => 'pending',
             'sent_by' => $user->id,
-            'sent_at' => now()
+            'sent_at' => now(),
         ]);
 
         $conversation->update([
             'last_message' => $request->caption ?? 'Imagen',
-            'last_message_at' => now()
+            'last_message_at' => now(),
         ]);
 
         DeliverWhatsAppMessage::dispatch($message->id);
@@ -955,7 +963,7 @@ class ChatController extends Controller
         return response()->json($this->sanitizeUtf8([
             'success' => true,
             'message' => 'Imagen encolada',
-            'data' => $message->load('sender')
+            'data' => $message->load('sender'),
         ]));
     }
 
@@ -998,7 +1006,7 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
@@ -1011,7 +1019,7 @@ class ChatController extends Controller
 
         $path = $file->storePublicly('whatsapp/media', 's3_media');
 
-        if (!$path) {
+        if (! $path) {
             Log::channel('whatsapp')->error('❌ No se pudo subir el documento al almacenamiento', [
                 'conversation_id' => $conversation->id,
                 'original_name' => $filename,
@@ -1038,7 +1046,7 @@ class ChatController extends Controller
         ]);
 
         $conversation->update([
-            'last_message' => '📄 ' . $filename,
+            'last_message' => '📄 '.$filename,
             'last_message_at' => now(),
         ]);
 
@@ -1072,7 +1080,7 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
@@ -1089,12 +1097,12 @@ class ChatController extends Controller
             'direction' => 'outbound',
             'status' => 'pending',
             'sent_by' => $user->id,
-            'sent_at' => now()
+            'sent_at' => now(),
         ]);
 
         $conversation->update([
             'last_message' => 'Audio',
-            'last_message_at' => now()
+            'last_message_at' => now(),
         ]);
 
         DeliverWhatsAppMessage::dispatch($message->id);
@@ -1102,7 +1110,7 @@ class ChatController extends Controller
         return response()->json($this->sanitizeUtf8([
             'success' => true,
             'message' => 'Audio encolado',
-            'data' => $message->load('sender')
+            'data' => $message->load('sender'),
         ]));
     }
 
@@ -1124,15 +1132,15 @@ class ChatController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'La conversación ya estaba cerrada',
-                'status'  => 'closed',
+                'status' => 'closed',
                 'closed_by_user' => $conversation->load('closedByUser:id,name')->closedByUser,
                 'closed_at' => $conversation->closed_at?->toIso8601String(),
-                'notice'    => null,
+                'notice' => null,
             ]);
         }
 
         $conversation->update([
-            'status'    => 'closed',
+            'status' => 'closed',
             'closed_by' => $user->id,
             'closed_at' => now(),
         ]);
@@ -1151,11 +1159,11 @@ class ChatController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversación cerrada',
-            'status'  => 'closed',
+            'status' => 'closed',
             'closed_by_user' => $conversation->load('closedByUser:id,name')->closedByUser,
             'closed_at' => $conversation->closed_at?->toIso8601String(),
             // El hilo abierto lo pinta al instante, sin esperar al poll.
-            'notice'    => $notice,
+            'notice' => $notice,
         ]);
     }
 
@@ -1203,7 +1211,7 @@ class ChatController extends Controller
                 ->filter(fn ($u) => $u->hasRole('admin'));
 
             foreach ($admins as $admin) {
-                $admin->notify(new \App\Notifications\ConversationClosedNotification(
+                $admin->notify(new ConversationClosedNotification(
                     $conversation,
                     $user->name,
                     $total,
@@ -1227,9 +1235,9 @@ class ChatController extends Controller
         $user = auth()->user();
 
         $validated = $request->validate([
-            'ids'         => 'nullable|array',
-            'ids.*'       => 'integer',
-            'scope'       => 'nullable|in:all',
+            'ids' => 'nullable|array',
+            'ids.*' => 'integer',
+            'scope' => 'nullable|in:all',
             'instance_id' => 'nullable|integer',
         ]);
 
@@ -1238,10 +1246,10 @@ class ChatController extends Controller
         $query = WhatsAppConversation::whereIn('instance_id', $instanceIds)
             ->where('status', '!=', 'closed');
 
-        if (!empty($validated['ids'])) {
+        if (! empty($validated['ids'])) {
             $query->whereIn('id', $validated['ids']);
         } elseif (($validated['scope'] ?? null) === 'all') {
-            if (!empty($validated['instance_id'])) {
+            if (! empty($validated['instance_id'])) {
                 $query->where('instance_id', $validated['instance_id']);
             }
         } else {
@@ -1252,7 +1260,7 @@ class ChatController extends Controller
 
         if ($ids->isNotEmpty()) {
             WhatsAppConversation::whereIn('id', $ids)->update([
-                'status'    => 'closed',
+                'status' => 'closed',
                 'closed_by' => $user->id,
                 'closed_at' => now(),
             ]);
@@ -1263,14 +1271,14 @@ class ChatController extends Controller
             $now = now();
             WhatsAppMessage::insert($ids->map(fn ($id) => [
                 'conversation_id' => $id,
-                'type'            => 'system',
-                'content'         => "Conversación cerrada por {$user->name} (cierre masivo)",
-                'direction'       => 'internal',
-                'is_internal'     => false,
-                'status'          => 'sent',
-                'sent_at'         => $now,
-                'created_at'      => $now,
-                'updated_at'      => $now,
+                'type' => 'system',
+                'content' => "Conversación cerrada por {$user->name} (cierre masivo)",
+                'direction' => 'internal',
+                'is_internal' => false,
+                'status' => 'sent',
+                'sent_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ])->all());
 
             // Una sola notificación por el lote, no una por conversación: se
@@ -1302,9 +1310,9 @@ class ChatController extends Controller
         }
 
         return response()->json([
-            'success'      => true,
+            'success' => true,
             'closed_count' => $ids->count(),
-            'ids'          => $ids->values(),
+            'ids' => $ids->values(),
         ]);
     }
 
@@ -1349,7 +1357,7 @@ class ChatController extends Controller
         if ($existing) {
             return response()->json([
                 'success' => true,
-                'status'  => 'pending',
+                'status' => 'pending',
                 'message' => $existing->requested_by === $user->id
                     ? 'Ya pediste la eliminación de este chat. Está pendiente de aprobación.'
                     : "{$existing->requester?->name} ya pidió eliminar este chat. Está pendiente de aprobación.",
@@ -1359,10 +1367,10 @@ class ChatController extends Controller
 
         $deletionRequest = ConversationDeletionRequest::create([
             'conversation_id' => $conversation->id,
-            'company_id'      => $user->company_id,
-            'requested_by'    => $user->id,
-            'status'          => ConversationDeletionRequest::STATUS_PENDING,
-            'reason'          => $reason ? mb_substr($reason, 0, 500) : null,
+            'company_id' => $user->company_id,
+            'requested_by' => $user->id,
+            'status' => ConversationDeletionRequest::STATUS_PENDING,
+            'reason' => $reason ? mb_substr($reason, 0, 500) : null,
         ]);
 
         $notice = $this->recordConversationNotice(
@@ -1373,16 +1381,16 @@ class ChatController extends Controller
         $approvers = $this->notifyDeletionApprovers($user, $deletionRequest);
 
         return response()->json($this->sanitizeUtf8([
-            'success'   => true,
-            'status'    => 'pending',
+            'success' => true,
+            'status' => 'pending',
             'approvers' => $approvers,
             // Sin nadie que pueda aprobarla la petición no avanzaría nunca, y
             // callarlo dejaría al agente esperando una respuesta que no llega.
-            'message'   => $approvers > 0
+            'message' => $approvers > 0
                 ? 'No tienes permiso para eliminar chats, así que se envió la petición a un administrador. La verás en tus notificaciones.'
                 : 'Se registró la petición, pero nadie en tu empresa tiene el permiso para aprobarla. Pide que activen "Delete" en el módulo Chat de algún rol de administrador.',
-            'request'   => $deletionRequest->load('requester:id,name'),
-            'notice'    => $notice,
+            'request' => $deletionRequest->load('requester:id,name'),
+            'notice' => $notice,
         ]));
     }
 
@@ -1414,7 +1422,7 @@ class ChatController extends Controller
             $approvers = $this->deletionApprovers($user->company_id);
 
             foreach ($approvers as $approver) {
-                $approver->notify(new \App\Notifications\ConversationDeletionRequestedNotification(
+                $approver->notify(new ConversationDeletionRequestedNotification(
                     $deletionRequest,
                     true
                 ));
@@ -1422,7 +1430,7 @@ class ChatController extends Controller
 
             // El solicitante nunca está entre los aprobadores (si pudiera
             // resolverla habría borrado directamente), así que no se duplica.
-            $user->notify(new \App\Notifications\ConversationDeletionRequestedNotification(
+            $user->notify(new ConversationDeletionRequestedNotification(
                 $deletionRequest,
                 false
             ));
@@ -1504,7 +1512,7 @@ class ChatController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'action' => 'required|in:approve,reject',
-            'note'   => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -1527,8 +1535,8 @@ class ChatController extends Controller
         if (! $deletionRequest->isPending()) {
             return response()->json([
                 'success' => false,
-                'status'  => $deletionRequest->status,
-                'error'   => 'Esta petición ya fue resuelta.',
+                'status' => $deletionRequest->status,
+                'error' => 'Esta petición ya fue resuelta.',
             ], 422);
         }
 
@@ -1540,7 +1548,7 @@ class ChatController extends Controller
         $contactName = $conversation?->name ?: ($conversation?->phone_number ?? 'la conversación');
 
         $deletionRequest->update([
-            'status'      => $approved
+            'status' => $approved
                 ? ConversationDeletionRequest::STATUS_APPROVED
                 : ConversationDeletionRequest::STATUS_REJECTED,
             'reviewed_by' => $user->id,
@@ -1561,7 +1569,7 @@ class ChatController extends Controller
 
         return response()->json([
             'success' => true,
-            'status'  => $deletionRequest->status,
+            'status' => $deletionRequest->status,
             'deleted' => $approved,
             'message' => $approved
                 ? 'Petición aprobada: la conversación fue eliminada.'
@@ -1581,7 +1589,7 @@ class ChatController extends Controller
                 return;
             }
 
-            $requester->notify(new \App\Notifications\ConversationDeletionResolvedNotification(
+            $requester->notify(new ConversationDeletionResolvedNotification(
                 $deletionRequest->load('reviewer:id,name'),
                 $contactName
             ));
@@ -1610,15 +1618,15 @@ class ChatController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'La conversación ya estaba abierta',
-                'status'  => 'open',
-                'notice'  => null,
+                'status' => 'open',
+                'notice' => null,
             ]);
         }
 
         // Al reabrir se limpia el rastro del cierre: si no, el panel seguiría
         // mostrando "cerrada por X" en un chat que está abierto.
         $conversation->update([
-            'status'    => 'open',
+            'status' => 'open',
             'closed_by' => null,
             'closed_at' => null,
         ]);
@@ -1638,8 +1646,8 @@ class ChatController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversación reabierta',
-            'status'  => 'open',
-            'notice'  => $notice,
+            'status' => 'open',
+            'notice' => $notice,
         ]);
     }
 
@@ -1677,7 +1685,7 @@ class ChatController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Conversación asignada',
-            'assigned_agent' => $conversation->assignedAgent()->select('id', 'name')->first()
+            'assigned_agent' => $conversation->assignedAgent()->select('id', 'name')->first(),
         ]);
     }
 
@@ -1738,14 +1746,14 @@ class ChatController extends Controller
         $validator = Validator::make($request->all(), [
             // Una nota vale con solo la imagen: exigir texto obligaría a
             // escribir un relleno para poder adjuntar una captura.
-            'content'    => 'required_without:image|nullable|string|max:4096',
-            'image'      => 'nullable|image|mimes:jpeg,jpg,png,gif,webp|max:5120',
-            'mentions'   => 'nullable|array',
+            'content' => 'required_without:image|nullable|string|max:4096',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,gif,webp|max:5120',
+            'mentions' => 'nullable|array',
             'mentions.*' => 'integer',
         ], [
             'content.required_without' => 'Escribe la nota o adjunta una imagen.',
             'image.image' => 'El archivo adjunto debe ser una imagen.',
-            'image.max'   => 'La imagen supera el límite de 5 MB.',
+            'image.max' => 'La imagen supera el límite de 5 MB.',
         ]);
 
         if ($validator->fails()) {
@@ -1763,7 +1771,7 @@ class ChatController extends Controller
 
         // Keep only mentioned users that belong to the same company.
         $mentionIds = [];
-        if (!empty($request->mentions)) {
+        if (! empty($request->mentions)) {
             $mentionIds = User::whereIn('id', $request->mentions)
                 ->where('company_id', $user->company_id)
                 ->pluck('id')
@@ -1779,7 +1787,7 @@ class ChatController extends Controller
             // se guardaría con una media_url rota y la imagen no cargaría nunca.
             $path = $file->storePublicly('whatsapp/notes', 's3_media');
 
-            if (!$path) {
+            if (! $path) {
                 Log::channel('whatsapp')->error('❌ No se pudo subir la imagen de la nota interna', [
                     'conversation_id' => $conversation->id,
                     'original_name' => $file->getClientOriginalName(),
@@ -1792,22 +1800,22 @@ class ChatController extends Controller
             }
 
             $media = [
-                'media_url'       => Storage::disk('s3_media')->url($path),
+                'media_url' => Storage::disk('s3_media')->url($path),
                 'media_mime_type' => $file->getClientMimeType(),
-                'filename'        => $file->getClientOriginalName() ?: 'imagen',
+                'filename' => $file->getClientOriginalName() ?: 'imagen',
             ];
         }
 
         $note = WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
-            'type'            => 'note',
-            'content'         => $request->input('content') ?? '',
-            'direction'       => 'internal',
-            'is_internal'     => true,
-            'mentions'        => $mentionIds ?: null,
-            'status'          => 'sent',
-            'sent_by'         => $user->id,
-            'sent_at'         => now(),
+            'type' => 'note',
+            'content' => $request->input('content') ?? '',
+            'direction' => 'internal',
+            'is_internal' => true,
+            'mentions' => $mentionIds ?: null,
+            'status' => 'sent',
+            'sent_by' => $user->id,
+            'sent_at' => now(),
             ...$media,
         ]);
 
@@ -1825,7 +1833,7 @@ class ChatController extends Controller
                 // websocket) ni un destinatario raro deben tumbar la respuesta
                 // ni impedir que se avise a los demás mencionados.
                 try {
-                    $recipient->notify(new \App\Notifications\MentionNotification(
+                    $recipient->notify(new MentionNotification(
                         $note,
                         $conversation,
                         $user->name
@@ -1842,7 +1850,7 @@ class ChatController extends Controller
 
         return response()->json($this->sanitizeUtf8([
             'success' => true,
-            'data'    => $note->load('sender:id,name'),
+            'data' => $note->load('sender:id,name'),
         ]));
     }
 
@@ -2020,7 +2028,7 @@ class ChatController extends Controller
         ]);
 
         $target->update([
-            'last_message' => $message->content ?: '[' . $message->type . ']',
+            'last_message' => $message->content ?: '['.$message->type.']',
             'last_message_at' => now(),
         ]);
 
@@ -2140,7 +2148,7 @@ class ChatController extends Controller
 
         $metadata = $message->metadata ?? [];
         $metadata['edit_history'][] = [
-            'content'   => $message->content,
+            'content' => $message->content,
             'edited_at' => now()->toIso8601String(),
             'edited_by' => ['id' => $user->id, 'name' => $user->name],
         ];
@@ -2151,13 +2159,13 @@ class ChatController extends Controller
         $metadata['delivered_content'] ??= $message->content;
 
         $message->update([
-            'content'  => $request->content,
+            'content' => $request->content,
             'metadata' => $metadata,
         ]);
 
         // El resto de agentes con el hilo abierto tiene que ver la corrección sin
         // esperar al poll: si no, dos personas leen textos distintos.
-        Realtime::push(new \App\Events\WhatsAppMessageEvent(
+        Realtime::push(new WhatsAppMessageEvent(
             $message->load('sender:id,name'),
             (int) $message->conversation->instance_id,
             'edited',
@@ -2177,7 +2185,7 @@ class ChatController extends Controller
     private function metaError($result, string $fallback = 'Error al enviar'): string
     {
         $err = $result['error']['error'] ?? null;
-        if (!is_array($err)) {
+        if (! is_array($err)) {
             return is_string($result['error'] ?? null) ? $result['error'] : $fallback;
         }
 
@@ -2187,13 +2195,14 @@ class ChatController extends Controller
         if ($details && $details !== $message) {
             return "{$message} — {$details}";
         }
+
         return $message;
     }
 
     /**
      * Recursively sanitize array data to ensure valid UTF-8.
      *
-     * @param mixed $input
+     * @param  mixed  $input
      * @return mixed
      */
     /**
@@ -2208,17 +2217,18 @@ class ChatController extends Controller
 
         if ($ext !== 'ogg' && ($ffmpeg = $this->ffmpegPath())) {
             $src = $file->getRealPath();
-            $out = tempnam(sys_get_temp_dir(), 'wa_aud_') . '.ogg';
+            $out = tempnam(sys_get_temp_dir(), 'wa_aud_').'.ogg';
             // OGG/Opus mono 48kHz: el formato de nota de voz que espera WhatsApp.
-            $cmd = escapeshellarg($ffmpeg) . ' -y -i ' . escapeshellarg($src)
-                . ' -vn -ac 1 -ar 48000 -c:a libopus -b:a 24k -application voip '
-                . escapeshellarg($out) . ' 2>/dev/null';
+            $cmd = escapeshellarg($ffmpeg).' -y -i '.escapeshellarg($src)
+                .' -vn -ac 1 -ar 48000 -c:a libopus -b:a 24k -application voip '
+                .escapeshellarg($out).' 2>/dev/null';
             @exec($cmd, $output, $code);
 
             if ($code === 0 && is_file($out) && filesize($out) > 0) {
-                $path = 'whatsapp/media/' . uniqid('aud_') . '.ogg';
+                $path = 'whatsapp/media/'.uniqid('aud_').'.ogg';
                 Storage::disk('s3_media')->put($path, file_get_contents($out), 'public');
                 @unlink($out);
+
                 return Storage::disk('s3_media')->url($path);
             }
 
@@ -2228,13 +2238,14 @@ class ChatController extends Controller
         }
 
         $path = $file->storePublicly('whatsapp/media', 's3_media');
+
         return Storage::disk('s3_media')->url($path);
     }
 
     /** Ruta a ffmpeg si está instalado y exec disponible; null en caso contrario. */
     private function ffmpegPath(): ?string
     {
-        if (!function_exists('exec')) {
+        if (! function_exists('exec')) {
             return null;
         }
 
@@ -2282,6 +2293,7 @@ class ChatController extends Controller
             }
             unset($value);
         }
+
         return $input;
     }
 }
