@@ -1,3 +1,18 @@
+/**
+ * El chat.
+ *
+ * **Los colores de WhatsApp de esta pantalla son deliberados.** Los
+ * hexadecimales escritos a mano —#f0f2f5 y #202c33 de fondo, #dcf8c6 y #005c4b
+ * en las burbujas, #25d366 en los acentos— imitan WhatsApp Web para que el
+ * agente reconozca dónde está. Se decidió mantenerlos el 9-sep-2026, al llevar
+ * el resto del producto a la marca de Integra: la familiaridad pesa más aquí
+ * que la coherencia visual.
+ *
+ * Lo demás —estados, avisos, botones, neutros— sí usa los tokens del tema
+ * (`bg-primary`, `text-success`, `text-muted-foreground`…). Si vas a unificar
+ * colores en esta pantalla, ese es el límite: los tokens sí, el esqueleto de
+ * WhatsApp no.
+ */
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
