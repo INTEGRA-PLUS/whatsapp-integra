@@ -516,7 +516,13 @@ class CoexistenceIngestService
         $fase     = (int) ($meta['phase'] ?? $sync->phase);
         $progreso = (int) ($meta['progress'] ?? 0);
 
-        $cambios = ['status' => CoexistenceSync::IMPORTANDO];
+        // `last_chunk_at` se escribe en cada lote, aunque no cambie ni la fase
+        // ni el progreso: es lo que permite distinguir después una importación
+        // que sigue viva de una que se quedó muda a mitad.
+        $cambios = [
+            'status' => CoexistenceSync::IMPORTANDO,
+            'last_chunk_at' => now(),
+        ];
 
         if ($sync->first_chunk_at === null) {
             $cambios['first_chunk_at'] = now();
