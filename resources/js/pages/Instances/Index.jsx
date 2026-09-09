@@ -112,12 +112,12 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     <div className="flex items-center gap-3">
                                         <div className={`flex size-10 items-center justify-center rounded-lg ${
                                             !instance.active ? 'bg-muted'
-                                                : instance.health_status === 'unreachable' ? 'bg-red-100 dark:bg-red-900/30'
-                                                : 'bg-green-100 dark:bg-green-900/30'
+                                                : instance.health_status === 'unreachable' ? 'bg-destructive/10'
+                                                : 'bg-success/15'
                                         }`}>
                                             {instance.active && instance.health_status !== 'unreachable'
-                                                ? <Wifi className="size-5 text-green-600 dark:text-green-400" />
-                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`} />
+                                                ? <Wifi className="size-5 text-success" />
+                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-destructive' : 'text-muted-foreground'}`} />
                                             }
                                         </div>
                                         <div>
@@ -131,8 +131,8 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                         un mensaje. */}
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                                         !instance.active ? 'bg-muted text-muted-foreground'
-                                            : instance.health_status === 'unreachable' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                            : instance.health_status === 'unreachable' ? 'bg-destructive/10 text-destructive'
+                                            : 'bg-success/15 text-success'
                                     }`}>
                                         {!instance.active ? 'Inactiva'
                                             : instance.health_status === 'unreachable' ? 'Sin conexión'
@@ -148,7 +148,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     initial={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
                                 />
                                 {instance.active && instance.health_status === 'unreachable' && (
-                                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                                         <p className="font-medium">Meta no responde por esta cuenta.</p>
                                         <p className="opacity-90 mt-0.5">
                                             {instance.health_error ?? 'El token o el número ya no existen.'}
@@ -211,7 +211,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         <Field label="Número de Teléfono" value={editForm.display_phone_number} onChange={v => setEditForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
                         <Field label="Access Token" value={editForm.access_token} onChange={v => setEditForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-green-600" />
+                            <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-primary" />
                             <span className="text-sm text-foreground">Instancia Activa</span>
                         </label>
                         <div className="flex gap-2 pt-2">
@@ -258,7 +258,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         </div>
 
                         {deleteSummary?.historial_importado && (
-                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                            <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
                                 <p className="font-medium text-foreground">Este número importó su historial por coexistencia.</p>
                                 <p className="text-muted-foreground mt-1">
                                     Meta solo permite una importación por número: el historial no se podrá volver a traer.
