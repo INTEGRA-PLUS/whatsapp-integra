@@ -62,7 +62,12 @@ class EmpresaDemoTest extends TestCase
         $company = Company::where('slug', 'cootramed-demo')->firstOrFail();
         $instancia = Instance::where('company_id', $company->id)->firstOrFail();
 
-        $this->assertFalse((bool) $instancia->active, 'La línea de la demo quedó activa.');
+        // Seleccionable: si no aparece en el selector de instancias, el chat no
+        // se puede abrir y la demo no enseña nada.
+        $this->assertTrue((bool) $instancia->active, 'La línea no aparecería en el selector.');
+
+        // Pero incapaz de enviar, que es lo que de verdad importa.
+        $this->assertSame('', (string) $instancia->access_token);
         $this->assertFalse($instancia->isMetaConfigured(), 'La línea de la demo tiene credenciales que Meta aceptaría.');
     }
 

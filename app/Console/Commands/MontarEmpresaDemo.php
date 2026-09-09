@@ -75,7 +75,7 @@ class MontarEmpresaDemo extends Command
             ['Agentes', 'ana@, carlos@, lucia@ '."{$slug}.demo"],
         ]);
         $this->newLine();
-        $this->warn('La línea de WhatsApp está inactiva y con credenciales falsas: la demo no puede enviar mensajes.');
+        $this->warn('La línea no tiene token: se puede navegar y abrir el chat, pero la demo no puede enviarle nada a nadie.');
 
         return self::SUCCESS;
     }
@@ -88,8 +88,11 @@ class MontarEmpresaDemo extends Command
             'active' => true,
         ]);
 
-        // Inactiva y sin token real. Si algún día alguien la activa por error,
-        // `isMetaConfigured()` sigue siendo falso y no sale nada.
+        // Activa para que aparezca en el selector —una demo con la línea
+        // apagada no deja abrir el chat, que es justo lo que se quiere
+        // enseñar— y **sin token**, que es lo que de verdad impide enviar:
+        // `isMetaConfigured()` exige el access_token, así que sin él ningún
+        // camino de salida llega a Meta.
         $instance = Instance::create([
             'company_id' => $company->id,
             'uuid' => (string) Str::uuid(),
@@ -99,7 +102,7 @@ class MontarEmpresaDemo extends Command
             'display_phone_number' => '+57 312 602 1105',
             'type' => 'meta',
             'status' => 'active',
-            'active' => false,
+            'active' => true,
             'access_token' => '',
         ]);
 
