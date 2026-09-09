@@ -133,7 +133,18 @@ function ConTooltip({ texto, children }) {
     return (
         <Tooltip>
             <TooltipTrigger asChild>{children}</TooltipTrigger>
-            <TooltipContent side="right" align="center">{texto}</TooltipContent>
+            <TooltipContent
+                side="right"
+                align="center"
+                // En azul y no en el verde de la marca: esta columna es la
+                // navegación del chat, que se distingue del menú principal
+                // precisamente por el color. Un tooltip verde sobre un icono
+                // azul parecía de otra pantalla.
+                className="bg-info text-info-foreground"
+                arrowClassName="bg-info fill-info"
+            >
+                {texto}
+            </TooltipContent>
         </Tooltip>
     );
 }
