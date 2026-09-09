@@ -1,0 +1,72 @@
+1
+00:00:00,000 --> 00:00:05,000
+Integra CRM — App ID 865904982715022
+Permission requested: business_management (Advanced Access)
+
+2
+00:00:05,000 --> 00:00:09,000
+Our platform. Business customers sign in here
+to manage their WhatsApp conversations.
+
+3
+00:00:09,000 --> 00:00:13,000
+Signing in with the test account
+provided in this submission.
+
+4
+00:00:13,000 --> 00:00:17,000
+No WhatsApp number connected to this account yet.
+
+5
+00:00:17,000 --> 00:00:21,000
+Starting Embedded Signup to connect the customer's
+own WhatsApp Business account.
+
+6
+00:00:21,000 --> 00:00:26,000
+Facebook Login for Business dialog.
+The customer signs in with their own account.
+
+7
+00:00:26,000 --> 00:00:31,000
+The customer reviews and grants
+the permissions our app requests.
+
+8
+00:00:31,000 --> 00:00:36,000
+Business portfolio selection.
+This step requires business_management.
+
+9
+00:00:36,000 --> 00:00:42,000
+The WhatsApp Business Account is created under the customer's
+own portfolio (WABA Sharing model). We never take ownership of it.
+
+10
+00:00:42,000 --> 00:00:47,000
+The customer enters and verifies
+their WhatsApp Business phone number.
+
+11
+00:00:47,000 --> 00:00:52,000
+Onboarding complete. The dialog returns the WhatsApp
+Business Account ID and the phone number ID.
+
+12
+00:00:52,000 --> 00:00:58,000
+Back in our app: we subscribed our app to the account
+and listed its phone numbers, using the customer's token.
+
+13
+00:00:58,000 --> 00:01:02,000
+The connected number, with its Phone ID and WABA ID.
+
+14
+00:01:02,000 --> 00:01:07,000
+The customer can now message
+their own customers from our platform.
+
+15
+00:01:07,000 --> 00:01:14,000
+With Standard Access this flow only works for people who hold a role
+in our app. Advanced Access is what lets real business customers connect.
