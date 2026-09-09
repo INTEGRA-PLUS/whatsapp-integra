@@ -86,12 +86,12 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
         <div
             {...props}
             className={clsx(
-                'group relative bg-white dark:bg-muted px-3.5 py-3 rounded-2xl border select-none',
+                'group relative bg-card px-3.5 py-3 rounded-2xl border select-none',
                 isOverlay
-                    ? 'border-primary/30 shadow-2xl z-50 cursor-grabbing ring-2 ring-primary/10 scale-[1.02] rotate-1 transition-transform duration-200'
+                    ? 'border-primary/40 shadow-2xl z-50 cursor-grabbing ring-2 ring-primary/20 scale-[1.02] rotate-1 transition-transform duration-200'
                     : isDragging
                         ? 'opacity-0'
-                        : 'border-border/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
+                        : 'border-border/60 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-lg hover:-translate-y-0.5 hover:border-primary/30 transition-all duration-200'
             )}
         >
             <div className="flex items-center gap-3 mb-2">
@@ -184,6 +184,29 @@ const SortableKanbanCard = memo(({ conv, index }) => {
     );
 });
 
+/**
+ * El color de cada etapa sale de su posición, no de la configuración.
+ *
+ * `kanban_columns.color` existe desde el principio, pero de las 123 columnas de
+ * la flota **106 tenían el gris por defecto**, cuatro guardaban un hex suelto
+ * que como clase de Tailwind no pinta nada, y las 123 el mismo icono. El
+ * resultado era una fila de columnas idénticas y blancas donde no se veía dónde
+ * acababa una y empezaba la otra.
+ *
+ * Las clases van escritas enteras porque Tailwind lee el código fuente: una
+ * clase construida al vuelo (`bg-etapa-${n}`) no llega al CSS compilado.
+ */
+const PALETA_ETAPAS = [
+    { punto: 'bg-etapa-1', texto: 'text-etapa-1', borde: 'border-etapa-1/25', barra: 'bg-etapa-1', tenue: 'bg-etapa-1/[0.07]', encima: 'bg-etapa-1/[0.06] ring-etapa-1/30' },
+    { punto: 'bg-etapa-2', texto: 'text-etapa-2', borde: 'border-etapa-2/25', barra: 'bg-etapa-2', tenue: 'bg-etapa-2/[0.07]', encima: 'bg-etapa-2/[0.06] ring-etapa-2/30' },
+    { punto: 'bg-etapa-3', texto: 'text-etapa-3', borde: 'border-etapa-3/25', barra: 'bg-etapa-3', tenue: 'bg-etapa-3/[0.07]', encima: 'bg-etapa-3/[0.06] ring-etapa-3/30' },
+    { punto: 'bg-etapa-4', texto: 'text-etapa-4', borde: 'border-etapa-4/25', barra: 'bg-etapa-4', tenue: 'bg-etapa-4/[0.07]', encima: 'bg-etapa-4/[0.06] ring-etapa-4/30' },
+    { punto: 'bg-etapa-5', texto: 'text-etapa-5', borde: 'border-etapa-5/25', barra: 'bg-etapa-5', tenue: 'bg-etapa-5/[0.07]', encima: 'bg-etapa-5/[0.06] ring-etapa-5/30' },
+    { punto: 'bg-etapa-6', texto: 'text-etapa-6', borde: 'border-etapa-6/25', barra: 'bg-etapa-6', tenue: 'bg-etapa-6/[0.07]', encima: 'bg-etapa-6/[0.06] ring-etapa-6/30' },
+];
+
+const colorDeEtapa = (indice) => PALETA_ETAPAS[indice % PALETA_ETAPAS.length];
+
 // ─── ColumnaBorrador ─────────────────────────────────────────────────────────
 //
 // La etapa que todavía no existe: ocupa el sitio de la columna, con el cursor
@@ -231,12 +254,13 @@ const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error 
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
+const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const [editandoGrupo, setEditandoGrupo] = useState(false);
     const [grupo, setGrupo]         = useState(col.grupo ?? '');
     const Icon = getIcon(col.icon);
+    const tono = colorDeEtapa(indice);
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
@@ -252,14 +276,26 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
     };
 
     return (
-        <div className="flex-1 min-w-[300px] max-w-[400px] flex flex-col h-full group/column">
+        <div className={clsx(
+            'flex-1 min-w-[290px] max-w-[360px] flex flex-col h-full group/column rounded-3xl border overflow-hidden transition-colors',
+            tono.borde,
+            tono.tenue
+        )}>
+            {/* La barra de color es lo que separa una etapa de la siguiente de
+                un vistazo, sin tener que leer los títulos. */}
+            <div className={clsx('h-1 shrink-0', tono.barra)} />
+
             {/* Header */}
-            <div className="flex items-center justify-between mb-6 px-3">
-                <div className="flex items-center gap-4">
-                    <div className={clsx('p-2.5 rounded-2xl shadow-lg text-white', col.color)}>
-                        <Icon className="size-4" />
+            <div className="relative flex items-start justify-between gap-2 px-4 pt-3.5 pb-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {/* En oscuro los tonos de etapa se aclaran para despegarse del
+                        navy, y ahí el icono blanco se pierde: sobre el verde de
+                        marca claro son 1,73:1. El navy del fondo sobre ese
+                        mismo verde son 10,7:1. */}
+                    <div className={clsx('shrink-0 p-2 rounded-xl text-white dark:text-background shadow-sm', tono.punto)}>
+                        <Icon className="size-3.5" />
                     </div>
-                    <div className="flex flex-col">
+                    <div className="flex flex-col min-w-0">
                         {isEditing ? (
                             <form onSubmit={handleRenameSubmit}>
                                 <input
@@ -273,7 +309,8 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         ) : (
                             <h2
                                 onClick={() => setIsEditing(true)}
-                                className="font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.1em] mb-0.5 cursor-text"
+                                title={col.name}
+                                className="font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.08em] cursor-text truncate"
                             >
                                 {col.name}
                             </h2>
@@ -291,20 +328,23 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                                 />
                             </form>
                         ) : null}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={clsx('px-1.5 py-px rounded-md text-[10px] font-black tabular-nums bg-white/70 dark:bg-black/20', tono.texto)}>
+                                {(totalCount ?? items.length).toLocaleString('es-CO')}
+                            </span>
                             {col.es_bandeja && (
-                                <span className="text-[9px] font-black text-accent-foreground uppercase tracking-widest" title="Recoge lo que no está clasificado en este grupo">
-                                    Bandeja
+                                <span
+                                    className="inline-flex items-center gap-1 text-[9px] font-black text-muted-foreground uppercase tracking-wider"
+                                    title="Recoge lo que no está clasificado en este grupo"
+                                >
+                                    <Inbox className="size-2.5" /> Bandeja
                                 </span>
                             )}
-                            <span className="text-[10px] font-bold text-muted-foreground/70">{col.subtitle || 'Procesos'}</span>
-                            <span className="size-1 rounded-full bg-muted" />
-                            <span className="text-[10px] font-black text-accent-foreground">{totalCount ?? items.length}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-1 opacity-0 group-hover/column:opacity-100 transition-all">
+                <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5 p-0.5 rounded-xl bg-card/90 backdrop-blur shadow-sm border border-border/60 opacity-0 group-hover/column:opacity-100 transition-opacity">
                     <button
                         onClick={() => onCambiarBandeja(col.id, !col.es_bandeja)}
                         className={clsx(
@@ -338,8 +378,8 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         ref={provided.innerRef}
                         {...provided.droppableProps}
                         className={clsx(
-                            "flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-24 min-h-[250px] transition-all duration-300 rounded-3xl",
-                            snapshot.isDraggingOver ? 'bg-primary/[0.03] ring-2 ring-primary/10' : ''
+                            'flex-1 overflow-y-auto space-y-3 custom-scrollbar px-3 pb-6 pt-1 min-h-[200px] transition-colors duration-200',
+                            snapshot.isDraggingOver ? clsx('ring-2 ring-inset', tono.encima) : ''
                         )}
                     >
                         {items.map((conv, index) => (
@@ -351,7 +391,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         {loading && items.length === 0 && (
                             <div className="space-y-3">
                                 {[1, 2, 3].map(n => (
-                                    <div key={n} className="bg-white dark:bg-muted/60 rounded-[1.5rem] border border-border/50 p-4 animate-pulse">
+                                    <div key={n} className="bg-card/70 rounded-2xl border border-border/50 p-4 animate-pulse">
                                         <div className="flex items-center gap-3 mb-4">
                                             <div className="size-11 rounded-2xl bg-muted" />
                                             <div className="flex-1 space-y-2">
@@ -988,7 +1028,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
     return (
         <>
-            <Head title="CRM Pipeline | Business WhatsApp" />
+            <Head title="Tablero" />
 
             {newCardColumn !== null && (
                 <NewCardModal
@@ -1011,20 +1051,20 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 vista, y no se podía comparar dos columnas porque cada una tenía
                 sus tarjetas a distinta altura.
             */}
-            <div className="relative h-[calc(100vh-49px)] flex flex-col min-h-0 bg-[#fdfdfe] dark:bg-[#080c14] overflow-hidden">
+            <div className="relative h-[calc(100vh-49px)] flex flex-col min-h-0 bg-tablero overflow-hidden">
                 {/* Header */}
                 <div className="px-6 lg:px-10 pt-8 pb-4 relative z-10">
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                         <div>
-                            <div className="flex items-center gap-4 mb-1">
-                                <h1 className="text-3xl font-black text-foreground dark:text-white tracking-tighter">CRM Comercial</h1>
-                                <div className="flex items-center gap-1.5 bg-success/10 text-success px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] border border-success/10">
-                                    <span className="size-1 rounded-full bg-success" />
-                                    Board Dinámico
-                                </div>
-                            </div>
-                            <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 opacity-80">
-                                Personalización Total <ArrowRight className="size-2.5" /> WhatsApp API
+                            <h1 className="text-3xl font-black text-foreground dark:text-white tracking-tighter mb-1">Tablero</h1>
+                            <p className="text-muted-foreground text-[11px] font-bold flex items-center gap-1.5">
+                                {columnasVisibles.length === 0
+                                    ? 'Sin etapas todavía'
+                                    : <>
+                                        {columnasVisibles.length} {columnasVisibles.length === 1 ? 'etapa' : 'etapas'}
+                                        {grupoActivo && <><ArrowRight className="size-2.5" /> {grupoActivo}</>}
+                                        {filtros.length > 0 && <span className="text-accent-foreground">· {filtros.length} {filtros.length === 1 ? 'filtro' : 'filtros'}</span>}
+                                      </>}
                             </p>
                         </div>
 
@@ -1147,10 +1187,11 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
                 <div ref={tableroRef} className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
                     <DragDropContext onDragEnd={handleDragEnd}>
-                        {columnasVisibles.map(col => (
+                        {columnasVisibles.map((col, indice) => (
                             <BoardColumn
                                 key={col.id}
                                 col={col}
+                                indice={indice}
                                 items={boardData[col.id] ?? []}
                                 totalCount={colCounts[col.id]}
                                 loading={colMeta[col.id]?.loading ?? false}
@@ -1203,4 +1244,4 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     );
 }
 
-Kanban.layout = page => <AppLayout breadcrumb={['CRM Commercial Board']}>{page}</AppLayout>;
+Kanban.layout = page => <AppLayout breadcrumb={['Tablero']}>{page}</AppLayout>;

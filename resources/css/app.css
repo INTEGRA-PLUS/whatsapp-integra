@@ -56,6 +56,19 @@
     --color-info-foreground: var(--info-foreground);
 
     /* Series de gráficas, en orden. El panel maestro las elegía a mano. */
+    /* Los colores de las etapas del tablero. Se reparten por posición, no por
+       configuración: de las 123 columnas de la flota, 106 tenían el gris por
+       defecto y las 123 el mismo icono, así que el tablero era una fila de
+       columnas idénticas donde no se distinguía dónde acababa una y empezaba
+       la siguiente (9-sep-2026). */
+    --color-etapa-1: var(--etapa-1);
+    --color-etapa-2: var(--etapa-2);
+    --color-etapa-3: var(--etapa-3);
+    --color-etapa-4: var(--etapa-4);
+    --color-etapa-5: var(--etapa-5);
+    --color-etapa-6: var(--etapa-6);
+    --color-tablero: var(--tablero);
+
     --color-chart-1: var(--chart-1);
     --color-chart-2: var(--chart-2);
     --color-chart-3: var(--chart-3);
@@ -114,6 +127,20 @@
     --chart-3: oklch(0.6 0.12 210);
     --chart-4: oklch(0.7 0.15 70);
     --chart-5: oklch(0.55 0.15 300);
+
+    /* Seis tonos para las etapas. Empiezan por el verde de la marca y se
+       separan lo suficiente en tono para distinguirse de un vistazo; todos
+       bajados de luminosidad para que el blanco encima se lea. */
+    --etapa-1: oklch(0.55 0.1675 139);   /* verde Integra */
+    --etapa-2: oklch(0.55 0.13 245);     /* azul */
+    --etapa-3: oklch(0.58 0.14 70);      /* ámbar */
+    --etapa-4: oklch(0.55 0.15 300);     /* violeta */
+    --etapa-5: oklch(0.58 0.12 200);     /* cian */
+    --etapa-6: oklch(0.58 0.16 25);      /* terracota */
+
+    /* El fondo del tablero: un lavado azulado en vez del blanco de antes, para
+       que los paneles de las columnas se distingan del lienzo. */
+    --tablero: oklch(0.975 0.008 255);
 }
 
 .dark {
@@ -168,6 +195,17 @@
     --chart-3: oklch(0.75 0.13 200);
     --chart-4: oklch(0.8 0.15 75);
     --chart-5: oklch(0.7 0.16 310);
+
+    /* Sobre el navy hay que subir la luminosidad: los mismos tonos del tema
+       claro se hunden en el fondo. */
+    --etapa-1: oklch(0.8 0.2436 139);
+    --etapa-2: oklch(0.72 0.13 250);
+    --etapa-3: oklch(0.8 0.15 75);
+    --etapa-4: oklch(0.72 0.16 305);
+    --etapa-5: oklch(0.76 0.12 200);
+    --etapa-6: oklch(0.72 0.16 30);
+
+    --tablero: oklch(0.155 0.05 260);
 }
 
 @layer base {
