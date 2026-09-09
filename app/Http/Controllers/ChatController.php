@@ -642,7 +642,20 @@ class ChatController extends Controller
         ]));
     }
 
-    public function messages($conversationId)
+    /**
+     * Los mensajes de una conversación, del más reciente hacia atrás.
+     *
+     * Se devuelve una ventana y no el hilo entero. Con la coexistencia trayendo
+     * hasta seis meses de historial, abrir un chat viejo significaba miles de
+     * filas en cada clic: el agente esperaba por unos mensajes que ni siquiera
+     * iba a leer, porque el chat se abre abajo, en el último.
+     *
+     * `before_id` pide el tramo anterior. El corte va por `created_at` y no por
+     * `id` a propósito: el historial importado entra hoy —ids altos— con la
+     * fecha en que se escribió —meses atrás—, así que un cursor por id se
+     * saltaría justo los mensajes viejos que se están pidiendo.
+     */
+    public function messages(Request $request, $conversationId)
     {
         $user = auth()->user();
 
@@ -653,28 +666,67 @@ class ChatController extends Controller
             abort(403, 'No autorizado');
         }
 
-        $messages = $conversation->messages()
-            ->with('sender:id,name')
-            ->orderBy('created_at', 'asc')
+        $ventana = max(20, (int) config('whatsapp.chat.message_window', 100));
+        $anteriorA = $request->integer('before_id') ?: null;
+
+        $query = $conversation->messages()->with('sender:id,name');
+
+        if ($anteriorA) {
+            $corte = $conversation->messages()
+                ->whereKey($anteriorA)
+                ->first(['id', 'created_at']);
+
+            // Un cursor que no es de esta conversación no acota nada: se ignora
+            // y se devuelve la ventana más reciente, que es lo que el chat sabe
+            // pintar sin huecos.
+            if ($corte) {
+                $query->where(function ($q) use ($corte) {
+                    $q->where('created_at', '<', $corte->created_at)
+                        ->orWhere(function ($mismo) use ($corte) {
+                            $mismo->where('created_at', $corte->created_at)
+                                ->where('id', '<', $corte->id);
+                        });
+                });
+            }
+        }
+
+        // Se pide uno de más para saber si queda historial por detrás sin
+        // gastar una segunda consulta de conteo.
+        $encontrados = $query
+            ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->limit($ventana + 1)
             ->get();
 
-        $conversation->markAsRead();
+        $hayMas = $encontrados->count() > $ventana;
 
-        if ($conversation->instance->isMetaConfigured()) {
-            $lastInboundWamid = $conversation->messages()
-                ->where('direction', 'inbound')
-                ->whereNotNull('wamid')
-                ->orderBy('created_at', 'desc')
-                ->value('wamid');
+        // De vuelta a orden ascendente: la ventana se busca desde el final,
+        // pero el chat se lee desde el principio.
+        $messages = $encontrados->take($ventana)->reverse()->values();
 
-            if ($lastInboundWamid) {
-                $this->metaService->markAsRead($conversation->instance->phone_number_id, $lastInboundWamid);
+        // Pedir el tramo anterior no es leer el chat: marcarlo aquí borraría el
+        // "no leído" de mensajes que el agente aún no ha visto.
+        if (! $anteriorA) {
+            $conversation->markAsRead();
+
+            if ($conversation->instance->isMetaConfigured()) {
+                $lastInboundWamid = $conversation->messages()
+                    ->where('direction', 'inbound')
+                    ->whereNotNull('wamid')
+                    ->orderBy('created_at', 'desc')
+                    ->value('wamid');
+
+                if ($lastInboundWamid) {
+                    $this->metaService->markAsRead($conversation->instance->phone_number_id, $lastInboundWamid);
+                }
             }
         }
 
         return response()->json($this->sanitizeUtf8([
             'conversation' => $conversation,
             'messages' => $messages,
+            'has_more' => $hayMas,
+            'oldest_id' => optional($messages->first())->id,
             'timestamp' => now()->toIso8601String(),
         ]));
     }

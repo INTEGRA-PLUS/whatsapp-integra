@@ -34,4 +34,22 @@ return [
         ),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Chat
+    |--------------------------------------------------------------------------
+    |
+    | Cuántos mensajes trae de una vez al abrir una conversación. El resto se
+    | pide hacia atrás con "cargar mensajes anteriores".
+    |
+    | Antes se traía el hilo entero. Con la coexistencia importando hasta seis
+    | meses, abrir un chat viejo eran miles de filas por clic —y el agente lee
+    | los últimos, porque el chat se abre abajo.
+    |
+    */
+
+    'chat' => [
+        'message_window' => (int) env('CHAT_MESSAGE_WINDOW', 100),
+    ],
+
 ];

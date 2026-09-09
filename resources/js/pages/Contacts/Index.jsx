@@ -1,41 +1,59 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
-export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered, optOutRequests: initialOptOutRequests = [] }) {
+export default function ContactsIndex({ contacts: pagina, unregistered: initialUnregistered, optOutRequests: initialOptOutRequests = [], filters = {} }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
     const [tab, setTab] = useState('registered');
-    const [contacts, setContacts] = useState(initialContacts ?? []);
+    // `contacts` es ahora una página, no la tabla entera: el maestro de una
+    // cooperativa son doce mil fichas y no caben en el HTML inicial.
+    const [contacts, setContacts] = useState(pagina?.data ?? []);
     const [unregistered, setUnregistered] = useState(initialUnregistered ?? []);
-    const [search, setSearch] = useState('');
+    const [search, setSearch] = useState(filters.search ?? '');
     const [showCreate, setShowCreate] = useState(false);
     const [editing, setEditing] = useState(null);
     const [registering, setRegistering] = useState(null);
     const [optOutRequests, setOptOutRequests] = useState(initialOptOutRequests ?? []);
 
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return contacts;
-        return contacts.filter(c =>
-            (c.name ?? '').toLowerCase().includes(q) ||
-            (c.phone_number ?? '').toLowerCase().includes(q) ||
-            (c.email ?? '').toLowerCase().includes(q)
-        );
-    }, [contacts, search]);
+    // Cada visita trae su página: sin esto, pasar a la 2 no cambiaría la lista,
+    // porque el estado se inicializó una sola vez.
+    useEffect(() => {
+        setContacts(pagina?.data ?? []);
+    }, [pagina]);
 
-    const filteredUnreg = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return unregistered;
-        return unregistered.filter(c =>
-            (c.name ?? '').toLowerCase().includes(q) ||
-            (c.phone_number ?? '').toLowerCase().includes(q)
-        );
-    }, [unregistered, search]);
+    useEffect(() => {
+        setUnregistered(initialUnregistered ?? []);
+    }, [initialUnregistered]);
+
+    /**
+     * El buscador consulta al servidor, con una pausa para no lanzar una
+     * petición por tecla. Antes filtraba en memoria, lo que obligaba a haberse
+     * traído antes todo lo que se iba a filtrar.
+     */
+    useEffect(() => {
+        const actual = filters.search ?? '';
+        if (search === actual) return;
+
+        const t = setTimeout(() => {
+            router.get(route('contacts.index'), search ? { search } : {}, {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            });
+        }, 300);
+
+        return () => clearTimeout(t);
+    }, [search, filters.search]);
+
+    // El servidor ya devuelve filtrado: aquí solo se renombra para no tocar el
+    // resto del componente.
+    const filtered = contacts;
+    const filteredUnreg = unregistered;
 
     function upsertLocal(contact) {
         setContacts(prev => {
@@ -192,7 +210,10 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                         className={tabClass(tab === 'registered')}
                     >
                         Registrados
-                        <span className="ml-2 inline-flex items-center justify-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">{contacts.length}</span>
+                        {/* El total es el de la empresa, no el de la página: si
+                            dijera 50 con doce mil fichas detrás, el número
+                            estaría mintiendo. */}
+                        <span className="ml-2 inline-flex items-center justify-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold text-muted-foreground">{(pagina?.total ?? contacts.length).toLocaleString('es')}</span>
                     </button>
                     <button
                         onClick={() => setTab('unregistered')}
@@ -203,7 +224,7 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                     </button>
                 </div>
 
-                {((tab === 'registered' && contacts.length > 0) || (tab === 'unregistered' && unregistered.length > 0)) && (
+                {((tab === 'registered' && (contacts.length > 0 || search)) || (tab === 'unregistered' && unregistered.length > 0)) && (
                     <div className="relative max-w-md">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                         <input
@@ -237,6 +258,10 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                         onQuickSave={quickSave}
                         savingIds={savingIds}
                     />
+                )}
+
+                {tab === 'registered' && (pagina?.last_page ?? 1) > 1 && (
+                    <Paginacion pagina={pagina} />
                 )}
             </div>
 
@@ -274,6 +299,34 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
 
 function tabClass(active) {
     return `relative px-4 py-2.5 text-sm font-semibold transition-colors -mb-px border-b-2 ${active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`;
+}
+
+/**
+ * Anterior / siguiente y en qué página se está.
+ *
+ * No se pintan los enlaces numerados que trae Laravel: con doce mil fichas son
+ * 240 páginas, y una tira de 240 números no ayuda a nadie a encontrar a nadie.
+ * Para eso está el buscador, que ahora consulta al servidor.
+ */
+function Paginacion({ pagina }) {
+    const ir = (url) => url && router.get(url, {}, { preserveState: true, preserveScroll: true });
+
+    return (
+        <div className="flex items-center justify-between gap-4 pt-2">
+            <p className="text-xs text-muted-foreground">
+                Página {pagina.current_page} de {pagina.last_page}
+                <span className="hidden sm:inline"> · {pagina.total.toLocaleString('es')} contactos</span>
+            </p>
+            <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={!pagina.prev_page_url} onClick={() => ir(pagina.prev_page_url)}>
+                    Anterior
+                </Button>
+                <Button variant="outline" size="sm" disabled={!pagina.next_page_url} onClick={() => ir(pagina.next_page_url)}>
+                    Siguiente
+                </Button>
+            </div>
+        </div>
+    );
 }
 
 function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDelete, onOptOut }) {

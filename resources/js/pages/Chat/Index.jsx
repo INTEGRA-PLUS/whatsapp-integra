@@ -1221,6 +1221,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [selectedInstanceId, setSelectedInstanceId] = useState('');
     const [conversations, setConversations] = useState([]);
     const [messages, setMessages] = useState([]);
+    // El hilo se abre por su tramo final. `hayMasAntiguos` dice si queda
+    // historial por detrás; con la coexistencia pueden ser seis meses.
+    const [hayMasAntiguos, setHayMasAntiguos] = useState(false);
+    const [cargandoAntiguos, setCargandoAntiguos] = useState(false);
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [newMessage, setNewMessage] = useState('');
     // Presencia del chat abierto: otros agentes que lo tienen delante ahora
@@ -2172,6 +2176,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
             forceScrollRef.current = true;
             setMessages(res.data.messages);
+            setHayMasAntiguos(!!res.data.has_more);
             setLastUpdateTimestamp(res.data.timestamp);
             setConversations(prev =>
                 prev.map(c => (c.id === conv.id ? { ...c, unread_count: 0 } : c)),
@@ -2181,6 +2186,54 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }, [clearNoteImage]);
 
+    /**
+     * Trae el tramo anterior del hilo y lo pone por encima.
+     *
+     * Se mide el alto del contenedor antes y después para devolver el scroll a
+     * donde estaba: al insertar mensajes arriba, el navegador conserva el
+     * `scrollTop` y el contenido se desplaza bajo el cursor, así que sin esto
+     * la vista salta y el agente pierde el mensaje que estaba leyendo.
+     */
+    const cargarAnteriores = useCallback(async () => {
+        const conv = selectedConversationRef.current;
+        const primero = messages[0];
+
+        if (!conv || !primero || cargandoAntiguos) return;
+
+        setCargandoAntiguos(true);
+
+        const el = messagesContainerRef.current;
+        const altoAntes = el ? el.scrollHeight : 0;
+        const scrollAntes = el ? el.scrollTop : 0;
+
+        try {
+            const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`, {
+                params: { before_id: primero.id },
+            });
+
+            const anteriores = res.data.messages || [];
+
+            if (anteriores.length) {
+                // No se reordena ni se deduplica por wamid: el corte va por
+                // fecha e id, así que los tramos no se solapan.
+                setMessages(prev => [...anteriores, ...prev]);
+            }
+
+            setHayMasAntiguos(!!res.data.has_more);
+
+            requestAnimationFrame(() => {
+                const contenedor = messagesContainerRef.current;
+                if (contenedor) {
+                    contenedor.scrollTop = scrollAntes + (contenedor.scrollHeight - altoAntes);
+                }
+            });
+        } catch (err) {
+            console.error('Error cargando mensajes anteriores:', err);
+        } finally {
+            setCargandoAntiguos(false);
+        }
+    }, [messages, cargandoAntiguos]);
+
     const openConversationById = useCallback(async (id) => {
         try {
             const res = await axios.get(`/api/chat/conversations/${id}/messages`);
@@ -2188,6 +2241,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 forceScrollRef.current = true;
                 setSelectedConversation(res.data.conversation);
                 setMessages(res.data.messages);
+                setHayMasAntiguos(!!res.data.has_more);
                 setLastUpdateTimestamp(res.data.timestamp);
             }
         } catch (err) {
@@ -4665,6 +4719,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         onScroll={handleMessagesScroll}
                                         className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 sm:py-5 2xl:px-10 space-y-2 custom-scrollbar relative z-10 flex flex-col"
                                     >
+                                        {hayMasAntiguos && (
+                                            <div className="flex justify-center pb-2 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={cargarAnteriores}
+                                                    disabled={cargandoAntiguos}
+                                                    className="text-[11px] font-bold uppercase tracking-tight px-3 py-1.5 rounded-full border border-border/40 bg-background/70 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+                                                >
+                                                    {cargandoAntiguos ? 'Cargando...' : 'Cargar mensajes anteriores'}
+                                                </button>
+                                            </div>
+                                        )}
+
                                         {messages.map((msg, i) => {
                                             const isOut = msg.direction === 'outbound';
                                             const quoted = msg.reply_to_wamid ? messagesByWamid.get(msg.reply_to_wamid) : null;
