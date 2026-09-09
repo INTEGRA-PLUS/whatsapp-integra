@@ -56,8 +56,15 @@ class ChatController extends Controller
     /**
      * Integraciones habilitadas que exponen un disparador en el composer del chat.
      */
-    private function activeChatIntegrations(int $companyId): array
+    private function activeChatIntegrations(?int $companyId): array
     {
+        // Un usuario sin empresa —el master, mientras no suplanta a nadie— no
+        // tiene integraciones que mostrar. Antes esto reventaba con un
+        // TypeError y un 500 en toda la pantalla del chat.
+        if (! $companyId) {
+            return [];
+        }
+
         return \App\Models\CompanyIntegration::where('company_id', $companyId)
             ->where('enabled', true)
             ->where('status', 'connected')
