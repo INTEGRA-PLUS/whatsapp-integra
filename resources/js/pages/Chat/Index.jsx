@@ -3794,7 +3794,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     type="button"
                                     onClick={() => setNavOpen(true)}
                                     title="Desplegar carpetas y etiquetas"
-                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
                                 >
                                     <PanelLeftOpen className="size-4" />
                                 </button>
@@ -3815,17 +3815,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             onClick={() => setFolder(item.key)}
                                             title={item.label}
                                             className={clsx(
-                                                "relative p-2 rounded-lg transition-colors",
+                                                "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
                                                 active
-                                                    ? "bg-primary/10 text-accent-foreground"
-                                                    : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                    ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                    : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
                                             )}
                                         >
                                             <Icon className="size-4" />
                                             {item.count > 0 && (
                                                 <span className={clsx(
                                                     "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
-                                                    active ? "bg-primary text-primary-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
                                                 )}>
                                                     {item.count > 99 ? '99+' : item.count}
                                                 </span>
@@ -3841,15 +3841,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onClick={() => setNavOpen(true)}
                                     title={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}
                                     className={clsx(
-                                        "relative p-2 rounded-lg transition-colors",
+                                        "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
                                         selectedTagIds.length > 0
-                                            ? "bg-primary/10 text-accent-foreground"
-                                            : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                            ? "bg-info/15 text-info ring-1 ring-info/25"
+                                            : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
                                     )}
                                 >
                                     <TagIcon className="size-4" />
                                     {selectedTagIds.length > 0 && (
-                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-primary text-primary-foreground">
+                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
                                             {selectedTagIds.length}
                                         </span>
                                     )}
@@ -3886,18 +3886,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             type="button"
                                             onClick={() => setFolder(item.key)}
                                             className={clsx(
-                                                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors group/nav",
+                                                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 group/nav",
                                                 active
-                                                    ? "bg-primary/10 text-accent-foreground font-semibold"
-                                                    : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                                    ? "bg-info/15 text-info font-semibold ring-1 ring-info/25"
+                                                    : "text-muted-foreground hover:bg-info/10 hover:text-info"
                                             )}
                                         >
-                                            <Icon className={clsx("size-4 shrink-0", active ? "text-accent-foreground" : "text-muted-foreground/60")} />
+                                            <Icon className={clsx("size-4 shrink-0", active ? "text-info" : "text-muted-foreground/60")} />
                                             <span className="flex-1 text-left truncate">{item.label}</span>
                                             {item.count > 0 && (
                                                 <span className={clsx(
                                                     "min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none",
-                                                    active ? "bg-primary text-primary-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
                                                 )}>
                                                     {item.count}
                                                 </span>
@@ -3928,8 +3928,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
                                                     active
-                                                        ? "bg-primary/10 text-accent-foreground font-semibold"
-                                                        : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                                        ? "bg-info/15 text-info font-semibold ring-1 ring-info/25"
+                                                        : "text-muted-foreground hover:bg-info/10 hover:text-info"
                                                 )}
                                             >
                                                 <span className={clsx("size-2 rounded-full shrink-0", inst.active === false ? "bg-muted" : "bg-[#25d366]")} />
