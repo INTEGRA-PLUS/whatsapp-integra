@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Support\ConversationNotice;
 use Illuminate\Http\Request;
@@ -21,21 +22,34 @@ class ContactController extends Controller
         'username.unique' => 'Ya hay otro contacto con ese nombre de usuario.',
     ];
 
+    /**
+     * El maestro de contactos, por páginas.
+     *
+     * Antes traía la tabla entera en el HTML inicial de Inertia, con un
+     * subconteo de conversaciones por fila. Con los cientos de contactos de un
+     * ISP se aguantaba; con los doce mil socios de una cooperativa la pantalla
+     * no llegaba a pintarse.
+     *
+     * El buscador pasa al servidor por lo mismo: filtrar en el navegador exige
+     * haber traído antes todo lo que se va a filtrar.
+     */
     public function index(Request $request)
     {
         $companyId = auth()->user()->company_id;
+        $busqueda = trim((string) $request->input('search', ''));
 
         $contacts = Contact::where('company_id', $companyId)
             ->withCount('conversations')
-            ->when($request->search, fn ($q, $search) => $q->search($search))
+            ->when($busqueda !== '', fn ($q) => $q->search($busqueda))
             ->orderBy('name')
-            ->get();
+            ->paginate(50)
+            ->withQueryString();
 
         return Inertia::render('Contacts/Index', $this->sanitizeUtf8([
             'contacts' => $contacts->toArray(),
-            'unregistered' => $this->unregisteredConversations($companyId)->toArray(),
+            'unregistered' => $this->unregisteredConversations($companyId, $busqueda)->toArray(),
             'optOutRequests' => $this->optOutRequests($companyId)->toArray(),
-            'filters' => ['search' => $request->search ?? ''],
+            'filters' => ['search' => $busqueda],
         ]));
     }
 
@@ -54,6 +68,7 @@ class ContactController extends Controller
             }
             unset($value);
         }
+
         return $input;
     }
 
@@ -61,22 +76,35 @@ class ContactController extends Controller
      * Conversations whose phone number is not yet saved as a contact.
      * One row per distinct phone number (most recent conversation wins).
      */
-    private function unregisteredConversations($companyId)
+    private function unregisteredConversations($companyId, string $busqueda = '')
     {
-        $instanceIds = \App\Models\Instance::where('company_id', $companyId)->pluck('id');
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
 
         if ($instanceIds->isEmpty()) {
             return collect();
         }
 
-        $existingPhones = Contact::where('company_id', $companyId)
-            ->whereNotNull('phone_number')
-            ->pluck('phone_number');
-
         return WhatsAppConversation::whereIn('instance_id', $instanceIds)
             ->whereNull('contact_id')
-            ->when($existingPhones->isNotEmpty(), fn ($q) => $q->whereNotIn('phone_number', $existingPhones))
+            // Antes se traían todos los teléfonos con ficha y se descartaban con
+            // un `whereNotIn`: con doce mil contactos, eso es una consulta con
+            // doce mil literales dentro. La subconsulta hace lo mismo apoyada en
+            // el único (company_id, phone_number).
+            ->whereNotExists(function ($q) use ($companyId) {
+                $q->selectRaw('1')
+                    ->from('contacts')
+                    ->whereColumn('contacts.phone_number', 'whatsapp_conversations.phone_number')
+                    ->where('contacts.company_id', $companyId);
+            })
+            ->when($busqueda !== '', fn ($q) => $q->where(function ($sub) use ($busqueda) {
+                $sub->where('name', 'like', "%{$busqueda}%")
+                    ->orWhere('phone_number', 'like', "%{$busqueda}%");
+            }))
             ->orderByDesc('last_message_at')
+            // Es una bandeja de pendientes por registrar, no un listado: sin
+            // techo, una cooperativa recién importada la llenaría con miles de
+            // filas que nadie va a recorrer de una sentada.
+            ->limit(200)
             ->get(['id', 'name', 'phone_number', 'wa_id', 'last_message', 'last_message_at'])
             ->unique('phone_number')
             ->values();
@@ -265,7 +293,7 @@ class ContactController extends Controller
      */
     private function optOutRequests(int $companyId)
     {
-        $instanceIds = \App\Models\Instance::where('company_id', $companyId)->pluck('id');
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
 
         if ($instanceIds->isEmpty()) {
             return collect();
@@ -390,7 +418,7 @@ class ContactController extends Controller
             'email' => 'nullable|email|max:255',
         ]);
 
-        if (!empty($validated['contact_id'])) {
+        if (! empty($validated['contact_id'])) {
             $contact = Contact::where('id', $validated['contact_id'])
                 ->where('company_id', $user->company_id)
                 ->firstOrFail();

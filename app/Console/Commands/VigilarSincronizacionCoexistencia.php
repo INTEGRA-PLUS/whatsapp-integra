@@ -37,6 +37,18 @@ class VigilarSincronizacionCoexistencia extends Command
     /** Horas de silencio tras las que ya conviene mirar qué pasó. */
     private const HORAS_SIN_AVANCE = 4;
 
+    /** La última fase del historial: hasta seis meses atrás. */
+    private const FASE_FINAL = 2;
+
+    /**
+     * Silencio tras el que se da por entregado lo que hay.
+     *
+     * Meta manda los lotes seguidos, en minutos. Media hora sin ninguno,
+     * estando ya en la última fase, significa que no queda nada por llegar: lo
+     * único que faltó fue el aviso de cierre.
+     */
+    private const MINUTOS_SIN_LOTES = 30;
+
     public function handle(): int
     {
         $pendientes = CoexistenceSync::with('instance')
@@ -56,6 +68,13 @@ class VigilarSincronizacionCoexistencia extends Command
 
         foreach ($pendientes as $sync) {
             $horas = $sync->requested_at->diffInHours(now());
+
+            // Lo primero, antes que cualquier alarma: puede que ya esté hecha y
+            // sólo falte decirlo.
+            if ($this->entregadaSinAviso($sync)) {
+                $this->cerrarEntregada($sync);
+                continue;
+            }
 
             if ($horas >= 24) {
                 $this->cerrarVencida($sync);
@@ -79,12 +98,70 @@ class VigilarSincronizacionCoexistencia extends Command
      * una importación que no va a llegar, y para que quede el registro de que
      * ese número necesita rehacerse.
      */
-    private function cerrarVencida(CoexistenceSync $sync): void
+    /**
+     * ¿Llegó todo y sólo faltó el aviso de cierre?
+     *
+     * Meta marca el final mandando la última fase al 100. Ese aviso a veces no
+     * llega, y entonces la barra se queda clavada en 99% con el historial
+     * entero ya dentro: pasó con una instancia que había importado 70.035
+     * mensajes de 9.890 chats (9-sep-2026).
+     *
+     * Sin esto, a las 24 horas se cerraba como fallida y se le decía al cliente
+     * que desconectara el número y repitiera la conexión —con un técnico y el
+     * cliente delante— para recuperar algo que ya estaba guardado.
+     */
+    private function entregadaSinAviso(CoexistenceSync $sync): bool
+    {
+        if ($sync->phase < self::FASE_FINAL) {
+            return false;
+        }
+
+        $ultimo = $sync->last_chunk_at ?? $sync->first_chunk_at;
+
+        return $ultimo !== null && $ultimo->diffInMinutes(now()) >= self::MINUTOS_SIN_LOTES;
+    }
+
+    /**
+     * Se cierra como completada, en silencio.
+     *
+     * No lleva notificación a propósito: para el cliente esto no es un suceso,
+     * es que la importación terminó. La tarjeta pasa sola a «Importación
+     * terminada» y no hay nada que decidir.
+     */
+    private function cerrarEntregada(CoexistenceSync $sync): void
     {
         $sync->update([
+            'status'        => CoexistenceSync::COMPLETADA,
+            'completed_at'  => now(),
+            'error_message' => null,
+        ]);
+
+        Log::channel('whatsapp')->info('✅ Importación de coexistencia cerrada por silencio', [
+            'instance_id' => $sync->instance_id,
+            'mensajes'    => $sync->messages_imported,
+            'chats'       => $sync->conversations_touched,
+            'contactos'   => $sync->contacts_imported,
+        ]);
+
+        $this->info("Instancia {$sync->instance_id}: entregada ({$sync->messages_imported} mensajes); se cierra sin el aviso final de Meta.");
+    }
+
+    private function cerrarVencida(CoexistenceSync $sync): void
+    {
+        // Con la última fase alcanzada no falta historial: falta el aviso de
+        // cierre. Cerrarlo como fallido mandaría a rehacer un proceso que no
+        // hace falta.
+        if ($sync->phase >= self::FASE_FINAL) {
+            $this->cerrarEntregada($sync);
+
+            return;
+        }
+
+        $sync->update([
             'status'        => CoexistenceSync::FALLIDA,
-            'error_message' => 'La ventana de 24 horas se cerró con la importación incompleta. '
-                . 'Para recuperar el historial hay que desconectar el número desde el celular y repetir la conexión.',
+            'error_message' => $this->loQueLlego($sync)
+                . 'La ventana de 24 horas se cerró con la importación incompleta. '
+                . 'Para recuperar el resto hay que desconectar el número desde el celular y repetir la conexión.',
             'completed_at'  => now(),
         ]);
 
@@ -107,8 +184,27 @@ class VigilarSincronizacionCoexistencia extends Command
             'Importación de WhatsApp incompleta',
             "La importación del historial de «{$instancia->name}» ({$instancia->display_phone_number}) "
                 . "se quedó en {$sync->porcentajeGlobal()}% y su plazo expiró. "
-                . 'Para recuperarlo hay que desconectar el número desde el celular y volver a conectarlo.'
+                . $this->loQueLlego($sync)
+                . 'Para recuperar el resto hay que desconectar el número desde el celular y volver a conectarlo.'
         );
+    }
+
+    /**
+     * Lo que sí entró, dicho antes de pedir nada.
+     *
+     * Un aviso que sólo dice «incompleta» empuja a rehacer la conexión aunque
+     * hayan entrado miles de mensajes. Diciendo primero lo que hay, quien lo lee
+     * puede decidir si le compensa molestar al cliente.
+     */
+    private function loQueLlego(CoexistenceSync $sync): string
+    {
+        if ($sync->messages_imported < 1) {
+            return 'No llegó ningún mensaje. ';
+        }
+
+        return "Se importaron {$sync->messages_imported} mensajes de "
+            . "{$sync->conversations_touched} chats y {$sync->contacts_imported} contactos, "
+            . 'y eso se conserva. ';
     }
 
     /** Todavía hay margen: alguien puede mirar qué está pasando. */
@@ -139,6 +235,7 @@ class VigilarSincronizacionCoexistencia extends Command
             'Importación de WhatsApp detenida',
             "La importación del historial de «{$instancia->name}» lleva {$horas} horas sin avanzar, "
                 . "al {$sync->porcentajeGlobal()}%. Quedan {$restantes} horas de plazo. "
+                . $this->loQueLlego($sync)
                 . 'Pídele al cliente que abra la app de WhatsApp Business en su celular.'
         );
     }

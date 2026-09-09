@@ -34,4 +34,78 @@ return [
         ),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Chat
+    |--------------------------------------------------------------------------
+    |
+    | Cuántos mensajes trae de una vez al abrir una conversación. El resto se
+    | pide hacia atrás con "cargar mensajes anteriores".
+    |
+    | Antes se traía el hilo entero. Con la coexistencia importando hasta seis
+    | meses, abrir un chat viejo eran miles de filas por clic —y el agente lee
+    | los últimos, porque el chat se abre abajo.
+    |
+    */
+
+    /*
+    |--------------------------------------------------------------------------
+    | API v1
+    |--------------------------------------------------------------------------
+    |
+    | `allow_legacy_token` decide si `/api/v1` sigue aceptando el
+    | `phone_number_id` como credencial.
+    |
+    | Era el esquema original, y no es un secreto: el propio producto lo enseña
+    | en la pantalla de Instancias y Meta lo enseña en su panel. Quien conociera
+    | uno podía leer los mensajes de esa empresa y enviar en su nombre.
+    |
+    | Se deja en `true` porque apagarlo de golpe deja sin servicio a los ERP de
+    | los clientes, que hoy mandan el phone_number_id. Cada uso queda registrado
+    | en el log de WhatsApp con la empresa y la instancia, para saber a quién
+    | falta migrar. Cuando el log deje de mostrarlos, se pone en `false`.
+    |
+    */
+
+    'api' => [
+        'allow_legacy_token' => (bool) env('WHATSAPP_API_ALLOW_LEGACY_TOKEN', true),
+    ],
+
+    'chat' => [
+        'message_window' => (int) env('CHAT_MESSAGE_WINDOW', 100),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Campañas
+    |--------------------------------------------------------------------------
+    |
+    | `max_selection` es el techo de "seleccionar todos los resultados". Existe
+    | para que una consulta sin filtros no traiga la base entera al navegador,
+    | no como límite de negocio: cuando corta, la respuesta lo dice
+    | (`truncated`) y el asistente lo avisa en pantalla. Antes era un 5000 fijo
+    | y mudo, así que una cooperativa de 12.000 socios se quedaba en 5.000 sin
+    | que nadie lo supiera hasta contar los enviados.
+    |
+    | `pacing.scope` decide contra qué reloj se escalonan los envíos:
+    |
+    |   instance → un solo reloj por número de WhatsApp (por defecto)
+    |   campaign → cada campaña con el suyo, como se hacía antes
+    |
+    | El ritmo lo pide cada campaña (`rate_per_minute`), pero quien manda es el
+    | número: Meta cuenta los mensajes por `phone_number_id`, no por campaña.
+    | Con el reloj por campaña, tres campañas a 60/min sobre el mismo número
+    | eran 180/min reales contra Meta y ninguna sabía de las otras. Con el reloj
+    | por instancia se reparten los turnos y el número nunca supera su ritmo.
+    |
+    */
+
+    'campaigns' => [
+        'max_selection' => (int) env('CAMPAIGNS_MAX_SELECTION', 25000),
+
+        'pacing' => [
+            'scope' => env('CAMPAIGNS_PACING_SCOPE', 'instance'),
+        ],
+    ],
+
 ];

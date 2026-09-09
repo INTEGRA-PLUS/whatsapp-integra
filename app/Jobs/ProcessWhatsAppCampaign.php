@@ -4,12 +4,16 @@ namespace App\Jobs;
 
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppCampaignRecipient;
+use App\Services\CampaignPacer;
+use App\Services\CampaignTemplateBuilder;
+use App\Services\MetaWhatsAppService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Reparte una campaña: encola un envío por destinatario, escalonados en el
@@ -27,26 +31,27 @@ class ProcessWhatsAppCampaign implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $timeout = 300;
+
     public int $tries = 1;
 
-    public function __construct(public int $campaignId, public int $delayMs = 0)
-    {
-    }
+    public function __construct(public int $campaignId, public int $delayMs = 0) {}
 
     public function handle(): void
     {
         $campaign = WhatsAppCampaign::with('instance')->find($this->campaignId);
 
-        if (!$campaign || !$campaign->instance) {
+        if (! $campaign || ! $campaign->instance) {
             Log::channel('whatsapp')->warning('Campaña no encontrada para procesar', ['campaign_id' => $this->campaignId]);
+
             return;
         }
 
-        if (!in_array($campaign->status, ['queued', 'sending'], true)) {
+        if (! in_array($campaign->status, ['queued', 'sending'], true)) {
             Log::channel('whatsapp')->info('Campaña en estado no procesable', [
                 'campaign_id' => $campaign->id,
                 'status' => $campaign->status,
             ]);
+
             return;
         }
 
@@ -54,7 +59,7 @@ class ProcessWhatsAppCampaign implements ShouldQueue
         // WhatsApp no la entrega, y una campaña va justo a quien no acaba de
         // escribir. Se para aquí, con el motivo escrito, en vez de gastar cientos
         // de llamadas que Meta acepta y luego rechaza en silencio.
-        if (!$campaign->usesTemplate()) {
+        if (! $campaign->usesTemplate()) {
             $campaign->update([
                 'status' => 'failed',
                 'completed_at' => now(),
@@ -63,10 +68,11 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             $campaign->recipients()->where('status', 'pending')->update([
                 'status' => 'failed',
                 'error_message' => 'Esta campaña se creó con texto libre. WhatsApp solo entrega mensajes masivos '
-                    . 'como plantilla aprobada: vuelve a crearla eligiendo una plantilla.',
+                    .'como plantilla aprobada: vuelve a crearla eligiendo una plantilla.',
             ]);
 
             $campaign->refreshCounters();
+
             return;
         }
 
@@ -77,7 +83,7 @@ class ProcessWhatsAppCampaign implements ShouldQueue
         // El archivo del encabezado se vuelve a subir a Meta al empezar cada
         // corrida: el media_id caduca a los 30 días, así que una campaña
         // recurrente moriría al mes con un "Format mismatch" por destinatario.
-        if (!$this->refreshHeaderMedia($campaign)) {
+        if (! $this->refreshHeaderMedia($campaign)) {
             return;
         }
 
@@ -88,18 +94,29 @@ class ProcessWhatsAppCampaign implements ShouldQueue
         ]);
 
         $rate = max(1, (int) ($campaign->rate_per_minute ?: 60));
-        $position = 0;
         $encolados = 0;
+        $arranque = null;
+        $pacer = app(CampaignPacer::class);
 
+        // Los turnos se piden por tandas, no de golpe: el reloj es de la
+        // instancia y pedir 12.000 de una vez lo dejaría bloqueado mientras se
+        // recorre la tabla entera. Cada tanda reserva lo suyo y suelta.
         WhatsAppCampaignRecipient::where('campaign_id', $campaign->id)
             ->where('status', 'pending')
             ->orderBy('id')
-            ->chunkById(200, function ($recipients) use ($rate, &$position, &$encolados) {
-                foreach ($recipients as $recipient) {
-                    SendCampaignMessage::dispatch($recipient->id)
-                        ->delay(now()->addSeconds((int) floor($position * 60 / $rate)));
+            ->chunkById(200, function ($recipients) use ($campaign, $rate, $pacer, &$encolados, &$arranque) {
+                [$inicio, $espaciadoMs] = $pacer->reserve(
+                    $campaign->instance_id,
+                    $recipients->count(),
+                    $rate
+                );
 
-                    $position++;
+                $arranque ??= $inicio;
+
+                foreach ($recipients->values() as $i => $recipient) {
+                    SendCampaignMessage::dispatch($recipient->id)
+                        ->delay($inicio->addMilliseconds($i * $espaciadoMs));
+
                     $encolados++;
                 }
             });
@@ -108,6 +125,12 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             'campaign_id' => $campaign->id,
             'destinatarios' => $encolados,
             'ritmo_por_minuto' => $rate,
+            // Cuánto tuvo que esperar por otras campañas del mismo número. Un
+            // valor alto no es un fallo: es el reloj de la instancia haciendo
+            // su trabajo, y explica por qué la campaña "no ha empezado".
+            'espera_por_el_numero' => $arranque
+                ? max(0, (int) round(now()->diffInSeconds($arranque, false)))
+                : 0,
         ]);
 
         // Nadie a quien enviar: la campaña ya está terminada.
@@ -129,9 +152,9 @@ class ProcessWhatsAppCampaign implements ShouldQueue
      */
     private function refreshHeaderMedia(WhatsAppCampaign $campaign): bool
     {
-        $formato = app(\App\Services\CampaignTemplateBuilder::class)->headerFormat($campaign);
+        $formato = app(CampaignTemplateBuilder::class)->headerFormat($campaign);
 
-        if (!in_array($formato, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+        if (! in_array($formato, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
             return true;
         }
 
@@ -142,13 +165,14 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             }
 
             $this->abortarSinEncabezado($campaign, 'La plantilla lleva un archivo en el encabezado y la campaña no tiene ninguno.');
+
             return false;
         }
 
         try {
-            $disco = \Illuminate\Support\Facades\Storage::disk('s3_media');
+            $disco = Storage::disk('s3_media');
 
-            if (!$disco->exists($campaign->header_media_path)) {
+            if (! $disco->exists($campaign->header_media_path)) {
                 throw new \RuntimeException('la copia del archivo ya no está en el almacenamiento');
             }
 
@@ -156,7 +180,7 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             file_put_contents($tmp, $disco->get($campaign->header_media_path));
 
             try {
-                $subida = app(\App\Services\MetaWhatsAppService::class)->uploadMedia(
+                $subida = app(MetaWhatsAppService::class)->uploadMedia(
                     $campaign->instance->phone_number_id,
                     $tmp,
                     $campaign->header_media_mime ?: 'application/octet-stream'
@@ -165,7 +189,7 @@ class ProcessWhatsAppCampaign implements ShouldQueue
                 @unlink($tmp);
             }
 
-            if (!($subida['success'] ?? false)) {
+            if (! ($subida['success'] ?? false)) {
                 throw new \RuntimeException('WhatsApp no aceptó el archivo');
             }
 
@@ -184,6 +208,7 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             }
 
             $this->abortarSinEncabezado($campaign, 'No se pudo preparar el archivo del encabezado de la plantilla.');
+
             return false;
         }
     }

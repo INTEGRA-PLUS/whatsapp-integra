@@ -37,6 +37,7 @@ class CoexistenceSync extends Model
         'conversations_touched',
         'requested_at',
         'first_chunk_at',
+        'last_chunk_at',
         'completed_at',
         'error_code',
         'error_message',
@@ -67,6 +68,7 @@ class CoexistenceSync extends Model
         'conversations_touched' => 'integer',
         'requested_at'          => 'datetime',
         'first_chunk_at'        => 'datetime',
+        'last_chunk_at'         => 'datetime',
         'completed_at'          => 'datetime',
     ];
 

@@ -3,9 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -13,6 +10,10 @@ use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFallbackTemplateService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class MessageApiController extends Controller
 {
@@ -42,7 +43,30 @@ class MessageApiController extends Controller
     {
         $token = $request->header('X-Instance-Token');
 
-        if (!$token) {
+        if (! $token) {
+            return null;
+        }
+
+        // Camino nuevo: un secreto de verdad. Se busca por su hash, que es lo
+        // único que guardamos, y es unívoco por definición: no hay ambigüedad
+        // posible entre empresas.
+        $porToken = Instance::where('api_token', Instance::hashApiToken($token))
+            ->where('active', true)
+            ->first();
+
+        if ($porToken) {
+            // Sin tocar `updated_at`: esta columna es un dato de operación, no
+            // un cambio de la instancia, y moverlo en cada petición ensuciaría
+            // cualquier consulta que mire cuándo se editó por última vez.
+            Instance::whereKey($porToken->id)->update(['api_token_last_used_at' => now()]);
+
+            return $porToken;
+        }
+
+        // Camino viejo: el phone_number_id como credencial. No es un secreto
+        // —se enseña en la pantalla de Instancias y en el panel de Meta— así
+        // que sólo se acepta mientras queden clientes por migrar.
+        if (! config('whatsapp.api.allow_legacy_token', true)) {
             return null;
         }
 
@@ -59,22 +83,35 @@ class MessageApiController extends Controller
 
             return response()->json([
                 'error' => 'Este phone_number_id está registrado como activo en más de una empresa, '
-                    . 'así que no identifica de forma única quién envía. Un administrador debe '
-                    . 'desactivar las instancias duplicadas antes de seguir enviando.',
+                    .'así que no identifica de forma única quién envía. Un administrador debe '
+                    .'desactivar las instancias duplicadas antes de seguir enviando.',
                 'code' => 'ambiguous_instance',
             ], 409);
         }
 
-        return $candidates->first();
+        $instance = $candidates->first();
+
+        // Cada uso del esquema viejo deja rastro con la empresa: es la lista de
+        // a quién falta avisar antes de poder apagarlo.
+        if ($instance) {
+            Log::channel('whatsapp')->info('Petición de API autenticada con el esquema antiguo', [
+                'instance_id' => $instance->id,
+                'company_id' => $instance->company_id,
+                'ruta' => $request->path(),
+                'tiene_token_nuevo' => $instance->tieneApiToken(),
+            ]);
+        }
+
+        return $instance;
     }
 
     public function sendMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -121,7 +158,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $to, // Fallback to phone number
                 'status' => 'open',
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]
         );
 
@@ -129,7 +166,7 @@ class MessageApiController extends Controller
         // Con texto libre Meta responde 200 y devuelve wamid, y sólo después
         // avisa por webhook de que falló: quien llama se queda creyendo que el
         // aviso salió y el cliente final nunca lo recibe.
-        $windowClosed = !$conversation->isWindowOpen();
+        $windowClosed = ! $conversation->isWindowOpen();
 
         // Camino bueno: si nos dieron una plantilla de respaldo, el aviso sale
         // como plantilla en vez de morir. Es lo que convierte una notificación
@@ -183,10 +220,10 @@ class MessageApiController extends Controller
                 'code' => 'window_closed',
                 'template_status' => $fallback['status'] ?? null,
                 'error' => 'El destinatario no escribe desde hace más de 24 horas. '
-                    . 'WhatsApp no permite texto libre fuera de esa ventana. '
-                    . $this->fallbackHint($fallback ?? null)
-                    . ' También puedes añadir "template_name" (y sus "components") a esta '
-                    . 'misma llamada, o usar POST /api/v1/messages/template.',
+                    .'WhatsApp no permite texto libre fuera de esa ventana. '
+                    .$this->fallbackHint($fallback ?? null)
+                    .' También puedes añadir "template_name" (y sus "components") a esta '
+                    .'misma llamada, o usar POST /api/v1/messages/template.',
             ], 422);
         }
 
@@ -236,29 +273,29 @@ class MessageApiController extends Controller
 
             $conversation->update([
                 'last_message' => $messageContent,
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message_id' => $message->id,
-                'wamid' => $message->wamid
+                'wamid' => $message->wamid,
             ]);
         }
 
         return response()->json([
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar a Meta'
+            'error' => $result['error']['error']['message'] ?? 'Error al enviar a Meta',
         ], 500);
     }
 
     public function sendTemplate(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -303,7 +340,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $to,
                 'status' => 'open',
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]
         );
 
@@ -312,20 +349,20 @@ class MessageApiController extends Controller
         // que el aviso no llegó. Aquí se entera ahora, con el motivo concreto.
         $guard = $this->templateGuard->check($instance, $templateName, $languageCode, $components);
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             Log::channel('whatsapp')->warning('⛔ Plantilla rechazada antes de llegar a Meta', [
-                'company_id'   => $instance->company_id,
+                'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
-                'template'     => $templateName,
-                'guard_code'   => $guard['code'],
-                'guard_error'  => $guard['error'],
+                'template' => $templateName,
+                'guard_code' => $guard['code'],
+                'guard_error' => $guard['error'],
             ]);
 
             return response()->json([
                 'success' => false,
-                'code'    => TemplateParameterGuard::CODE,
-                'reason'  => $guard['code'],
-                'error'   => $guard['error'],
+                'code' => TemplateParameterGuard::CODE,
+                'reason' => $guard['code'],
+                'error' => $guard['error'],
             ], 422);
         }
 
@@ -350,7 +387,7 @@ class MessageApiController extends Controller
             $filename = $this->headerFilename($mediaMetadata);
             $mediaMimeType = null;
 
-            if ($headerMediaId && !empty($instance->access_token)) {
+            if ($headerMediaId && ! empty($instance->access_token)) {
                 $mediaInfo = $this->metaService->downloadMedia($headerMediaId, $instance->access_token);
                 if ($mediaInfo) {
                     $mediaUrl = $mediaInfo['url'];
@@ -376,7 +413,7 @@ class MessageApiController extends Controller
                 'metadata' => [
                     'template' => $templateName,
                     'language' => $languageCode,
-                    'components' => $components
+                    'components' => $components,
                 ],
                 'incoming_invoice_id' => $request->incoming_invoice_id,
                 'incoming_contract_id' => $request->incoming_contract_id,
@@ -387,19 +424,19 @@ class MessageApiController extends Controller
 
             $conversation->update([
                 'last_message' => "[Plantilla: $templateName]",
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message_id' => $message->id,
-                'wamid' => $message->wamid
+                'wamid' => $message->wamid,
             ]);
         }
 
         return response()->json([
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar plantilla a Meta'
+            'error' => $result['error']['error']['message'] ?? 'Error al enviar plantilla a Meta',
         ], 500);
     }
 
@@ -410,14 +447,14 @@ class MessageApiController extends Controller
      */
     private function headerMediaId(?array $metadata): ?string
     {
-        if (!empty($metadata['header_media_id'])) {
+        if (! empty($metadata['header_media_id'])) {
             return (string) $metadata['header_media_id'];
         }
 
         foreach ($metadata['components'] ?? [] as $component) {
             foreach ($component['parameters'] ?? [] as $param) {
                 $mediaKey = $param['type'] ?? '';
-                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['id'])) {
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && ! empty($param[$mediaKey]['id'])) {
                     return (string) $param[$mediaKey]['id'];
                 }
             }
@@ -431,14 +468,14 @@ class MessageApiController extends Controller
      */
     private function headerFilename(?array $metadata): ?string
     {
-        if (!empty($metadata['filename'])) {
+        if (! empty($metadata['filename'])) {
             return (string) $metadata['filename'];
         }
 
         foreach ($metadata['components'] ?? [] as $component) {
             foreach ($component['parameters'] ?? [] as $param) {
                 $mediaKey = $param['type'] ?? '';
-                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['filename'])) {
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && ! empty($param[$mediaKey]['filename'])) {
                     return (string) $param[$mediaKey]['filename'];
                 }
             }
@@ -450,10 +487,10 @@ class MessageApiController extends Controller
     public function registerMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -511,7 +548,7 @@ class MessageApiController extends Controller
         // conoce el media_id que subió a Meta. Descargamos una copia a nuestro S3
         // para que el archivo quede visible/descargable en el chat. Si la descarga
         // falla igual guardamos el media_id: el chat lo reintenta al abrirlo.
-        if (!$mediaUrl && $mediaId && !empty($instance->access_token)) {
+        if (! $mediaUrl && $mediaId && ! empty($instance->access_token)) {
             $mediaInfo = $this->metaService->downloadMedia($mediaId, $instance->access_token);
             if ($mediaInfo) {
                 $mediaUrl = $mediaInfo['url'];
@@ -525,7 +562,7 @@ class MessageApiController extends Controller
         // además esconde el texto: los avisos de pago registrado llegaban con
         // aspecto de archivo roto. Si no hay nada que adjuntar, el mensaje vale
         // como texto y el agente lee la confirmación.
-        if (!$mediaUrl && !$mediaId && in_array($type, ['document', 'image', 'audio', 'video', 'sticker'], true)) {
+        if (! $mediaUrl && ! $mediaId && in_array($type, ['document', 'image', 'audio', 'video', 'sticker'], true)) {
             $type = 'text';
         }
 
@@ -537,7 +574,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $request->name ?? $to,
                 'status' => 'open',
-                'last_message_at' => $sentAt
+                'last_message_at' => $sentAt,
             ]
         );
 
@@ -563,35 +600,35 @@ class MessageApiController extends Controller
 
         $conversation->update([
             'last_message' => $content,
-            'last_message_at' => $sentAt
+            'last_message_at' => $sentAt,
         ]);
 
         return response()->json([
             'success' => true,
             'message_id' => $message->id,
-            'wamid' => $message->wamid
+            'wamid' => $message->wamid,
         ]);
     }
 
     public function getConversations(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
         $perPage = $request->query('per_page', 20);
-        
+
         $conversations = WhatsAppConversation::where('instance_id', $instance->id)
             ->orderBy('last_message_at', 'desc')
             ->paginate($perPage);
 
         $items = $conversations->items();
         // Ensure items are arrays for sanitization
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -602,18 +639,18 @@ class MessageApiController extends Controller
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
                 'per_page' => $conversations->perPage(),
-                'total' => $conversations->total()
-            ]
+                'total' => $conversations->total(),
+            ],
         ]);
     }
 
     public function getMessages(Request $request, $conversationId)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -627,7 +664,7 @@ class MessageApiController extends Controller
             ->paginate($perPage);
 
         $items = $messages->items();
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -638,18 +675,18 @@ class MessageApiController extends Controller
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
                 'per_page' => $messages->perPage(),
-                'total' => $messages->total()
-            ]
+                'total' => $messages->total(),
+            ],
         ]);
     }
 
     public function getWhatsAppMessages(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -658,35 +695,50 @@ class MessageApiController extends Controller
             'date_from' => 'required|date',
             'date_to' => 'required|date',
             'status' => 'nullable|string',
-            'per_page' => 'nullable|integer|min:1|max:500'
+            'per_page' => 'nullable|integer|min:1|max:500',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $query = WhatsAppMessage::query();
-        
+        // El NIT lo elige quien llama, así que por sí solo no acota nada: es una
+        // etiqueta que el ERP pone al registrar el mensaje, no una credencial.
+        // Consultando sólo por él, cualquiera con un token válido podía leer los
+        // mensajes de otra empresa pidiendo el NIT de esa otra empresa.
+        //
+        // Quien manda es la instancia del token: se acota por su empresa y el
+        // NIT queda como lo que siempre fue, un filtro dentro de lo tuyo.
+        $query = WhatsAppMessage::query()
+            ->join('whatsapp_conversations', 'whatsapp_conversations.id', '=', 'whatsapp_messages.conversation_id')
+            ->join('instances', 'instances.id', '=', 'whatsapp_conversations.instance_id')
+            ->where('instances.company_id', $instance->company_id)
+            ->select('whatsapp_messages.*');
+
         // Filter by company nit
-        $query->where('incoming_company_nit', $request->incoming_company_nit);
+        $query->where('whatsapp_messages.incoming_company_nit', $request->incoming_company_nit);
 
         // Filter by date range
         $dateFrom = Carbon::parse($request->date_from)->startOfDay();
         $dateTo = Carbon::parse($request->date_to)->endOfDay();
-        $query->whereBetween('created_at', [$dateFrom, $dateTo]);
+        $query->whereBetween('whatsapp_messages.created_at', [$dateFrom, $dateTo]);
 
         // Filter by status if provided
-        if ($request->has('status') && !empty($request->status)) {
+        //
+        // Cualificado con la tabla: `whatsapp_conversations` también tiene
+        // `status` y `created_at`, y sin el prefijo MySQL rechaza la consulta
+        // por ambigua desde que hay join.
+        if ($request->has('status') && ! empty($request->status)) {
             $statuses = array_map('trim', explode(',', $request->status));
-            $query->whereIn('status', $statuses);
+            $query->whereIn('whatsapp_messages.status', $statuses);
         }
 
         // Pagination
         $perPage = $request->query('per_page', 100);
-        $messages = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        $messages = $query->orderBy('whatsapp_messages.created_at', 'desc')->paginate($perPage);
 
         $items = $messages->items();
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -697,15 +749,15 @@ class MessageApiController extends Controller
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
                 'per_page' => $messages->perPage(),
-                'total' => $messages->total()
-            ]
+                'total' => $messages->total(),
+            ],
         ]);
     }
 
     /**
      * Recursively sanitize array data to ensure valid UTF-8.
      *
-     * @param mixed $input
+     * @param  mixed  $input
      * @return mixed
      */
     private function sanitizeUtf8($input)
@@ -718,6 +770,7 @@ class MessageApiController extends Controller
             }
             unset($value);
         }
+
         return $input;
     }
 
@@ -752,17 +805,17 @@ class MessageApiController extends Controller
             $fallback['components']
         );
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             Log::channel('whatsapp')->error('❌ La plantilla de respaldo no cuadra con su definición en Meta', [
-                'company_id'  => $instance->company_id,
-                'template'    => $fallback['name'],
+                'company_id' => $instance->company_id,
+                'template' => $fallback['name'],
                 'guard_error' => $guard['error'],
             ]);
 
             return response()->json([
                 'success' => false,
-                'code'    => 'fallback_template_failed',
-                'error'   => $guard['error'],
+                'code' => 'fallback_template_failed',
+                'error' => $guard['error'],
             ], 500);
         }
 
@@ -774,7 +827,7 @@ class MessageApiController extends Controller
             $guard['components']
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->error('❌ Falló el envío de la plantilla de respaldo', [
                 'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
@@ -839,17 +892,12 @@ class MessageApiController extends Controller
     private function fallbackHint(?array $fallback): string
     {
         return match ($fallback['status'] ?? null) {
-            WhatsAppFallbackTemplateService::STATUS_PENDING =>
-                'La plantilla de respaldo de esta línea ya está creada y espera aprobación de Meta; '
-                . 'en cuanto se apruebe, estos avisos saldrán solos como plantilla.',
-            WhatsAppFallbackTemplateService::STATUS_REJECTED =>
-                'Meta rechazó la plantilla de respaldo de esta línea: revísala en Ajustes > WhatsApp.',
-            WhatsAppFallbackTemplateService::STATUS_DISABLED =>
-                'El respaldo automático está desactivado para esta línea.',
-            WhatsAppFallbackTemplateService::STATUS_UNAVAILABLE =>
-                'No se pudo comprobar la plantilla de respaldo con Meta.',
-            default =>
-                'Esta línea todavía no tiene una plantilla de respaldo aprobada.',
+            WhatsAppFallbackTemplateService::STATUS_PENDING => 'La plantilla de respaldo de esta línea ya está creada y espera aprobación de Meta; '
+                .'en cuanto se apruebe, estos avisos saldrán solos como plantilla.',
+            WhatsAppFallbackTemplateService::STATUS_REJECTED => 'Meta rechazó la plantilla de respaldo de esta línea: revísala en Ajustes > WhatsApp.',
+            WhatsAppFallbackTemplateService::STATUS_DISABLED => 'El respaldo automático está desactivado para esta línea.',
+            WhatsAppFallbackTemplateService::STATUS_UNAVAILABLE => 'No se pudo comprobar la plantilla de respaldo con Meta.',
+            default => 'Esta línea todavía no tiene una plantilla de respaldo aprobada.',
         };
     }
 

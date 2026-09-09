@@ -236,6 +236,11 @@ Route::middleware('auth')->group(function () {
     // /instances/{algo} con otro significado.
     Route::get('/instances/{instance}/coexistence-sync', [InstanceController::class, 'coexistenceSync'])
         ->name('instances.coexistence-sync');
+    // Genera la credencial de la API v1. Sólo quien puede editar la instancia:
+    // el token deja enviar mensajes en nombre de la empresa.
+    Route::post('/instances/{instance}/api-token', [InstanceController::class, 'generateApiToken'])
+        ->middleware('permission:instances.update')
+        ->name('instances.api-token');
 
     // Apagar una instancia en vez de borrarla, que es lo que casi siempre se
     // quiere: el número deja de enviar y de recibir y el historial se queda.
@@ -265,6 +270,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:campaigns.view')->name('contacts.search');
         Route::get('/contacts/resolve', [WhatsAppCampaignController::class, 'resolveSelection'])
             ->middleware('permission:campaigns.view')->name('contacts.resolve');
+        Route::get('/capacity', [WhatsAppCampaignController::class, 'capacity'])
+            ->middleware('permission:campaigns.view')->name('capacity');
         Route::get('/templates', [WhatsAppCampaignController::class, 'templates'])
             ->middleware('permission:campaigns.view')->name('templates');
         Route::post('/template-media', [WhatsAppCampaignController::class, 'uploadTemplateMedia'])

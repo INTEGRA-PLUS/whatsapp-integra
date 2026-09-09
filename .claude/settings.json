@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Formateando con Pint...",
+            "command": "f=$(php -r '$d=json_decode(stream_get_contents(STDIN),true)?:[]; echo $d[\"tool_response\"][\"filePath\"] ?? $d[\"tool_input\"][\"file_path\"] ?? \"\";'); case \"$f\" in *.php) cd \"${CLAUDE_PROJECT_DIR:-.}\" && ./vendor/bin/pint \"$f\" >/dev/null 2>&1;; esac; true"
+          }
+        ]
+      }
+    ]
+  }
+}

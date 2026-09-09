@@ -4,7 +4,7 @@ import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
-    ChevronLeft, Download, Loader2, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
+    AlertTriangle, ChevronLeft, Download, Loader2, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
 } from 'lucide-react';
 import { WhatsAppPreview } from '@/pages/Templates/preview';
 import {
@@ -21,25 +21,60 @@ const FILTROS = [
     { key: 'skipped', label: 'Omitidos' },
 ];
 
-export default function CampaignsShow({ campaign: campaignInicial, recipients: recipientsIniciales }) {
+export default function CampaignsShow({ campaign: campaignInicial, recipients: recipientsIniciales, recipientsMeta: metaInicial }) {
     const [campaign, setCampaign] = useState(campaignInicial);
     const [recipients, setRecipients] = useState(recipientsIniciales);
+    const [meta, setMeta] = useState(metaInicial ?? { total: 0, limit: 200, truncated: false });
     const [filtro, setFiltro] = useState('all');
+    // Cuánta gente nueva admite hoy el número: se pregunta al abrir para que el
+    // aviso esté antes de pulsar «Enviar ahora», no después.
+    const [capacidad, setCapacidad] = useState(null);
 
     const enCurso = ['queued', 'sending'].includes(campaign.status);
 
     // Mientras envía, el detalle se refresca solo: una campaña larga se mira
     // desde esta pantalla y recargar a mano para ver si avanza es absurdo.
+    //
+    // La lista llega recortada y ya filtrada por el servidor. Traerla entera
+    // cada cuatro segundos, con doce mil socios, eran varios MB por tick y por
+    // operador con la pantalla abierta, durante todo el envío.
     useEffect(() => {
         if (!enCurso) return;
         const id = setInterval(() => {
-            axios.get(route('campaigns.progress', campaign.id)).then(res => {
+            axios.get(route('campaigns.progress', campaign.id), { params: { filter: filtro } }).then(res => {
                 setCampaign(res.data.campaign);
                 setRecipients(res.data.recipients);
+                setMeta(res.data.recipientsMeta);
             });
         }, 4000);
         return () => clearInterval(id);
-    }, [enCurso, campaign.id]);
+    }, [enCurso, campaign.id, filtro]);
+
+    // Cambiar de pestaña es una consulta nueva: el filtro lo resuelve quien
+    // tiene la lista completa, que es el servidor.
+    useEffect(() => {
+        let vivo = true;
+        axios.get(route('campaigns.progress', campaign.id), { params: { filter: filtro } }).then(res => {
+            if (!vivo) return;
+            setRecipients(res.data.recipients);
+            setMeta(res.data.recipientsMeta);
+        });
+
+        return () => { vivo = false; };
+    }, [filtro, campaign.id]);
+
+    useEffect(() => {
+        if (!campaign.can_launch || !campaign.instance?.id) return;
+
+        let vivo = true;
+        axios.get(route('campaigns.capacity'), {
+            params: { instance_id: campaign.instance.id, recipients: campaign.total_recipients },
+        })
+            .then(res => vivo && setCapacidad(res.data))
+            .catch(() => vivo && setCapacidad(null));
+
+        return () => { vivo = false; };
+    }, [campaign.can_launch, campaign.instance?.id, campaign.total_recipients]);
 
     const c = campaign.counts;
     const entregados = c.delivered + c.read;
@@ -47,11 +82,8 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
     const resueltos = enviados + c.failed + c.skipped;
     const progreso = campaign.total_recipients > 0 ? (resueltos / campaign.total_recipients) * 100 : 0;
 
-    const filtrados = useMemo(() => {
-        if (filtro === 'all') return recipients;
-        if (filtro === 'pending') return recipients.filter(r => ['pending', 'sending'].includes(r.status));
-        return recipients.filter(r => r.status === filtro);
-    }, [recipients, filtro]);
+    // El servidor ya devuelve la lista filtrada y recortada.
+    const filtrados = recipients;
 
     const modelo = useMemo(() => modeloDePlantilla(campaign), [campaign]);
 
@@ -136,6 +168,17 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                 </div>
 
                 <div className="space-y-1">
+                    {capacidad?.aviso && (
+                        <div className={`rounded-xl border px-4 py-3 text-sm flex gap-3 ${
+                            capacidad.cabe
+                                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200'
+                                : 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200'
+                        }`}>
+                            <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                            <div>{capacidad.aviso}</div>
+                        </div>
+                    )}
+
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                         <div className="h-full bg-success transition-all" style={{ width: `${progreso}%` }} />
                     </div>
@@ -161,6 +204,13 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                                 </button>
                             ))}
                         </div>
+
+                        {meta.truncated && (
+                            <p className="px-4 py-2 text-xs text-muted-foreground border-b bg-muted/30">
+                                Mostrando {meta.limit} de {meta.total.toLocaleString('es')}. La lista completa está
+                                en el CSV, con el botón «Exportar».
+                            </p>
+                        )}
 
                         <table className="w-full text-sm">
                             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">

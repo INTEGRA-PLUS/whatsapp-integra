@@ -682,6 +682,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
     const [pagina, setPagina] = useState(1);
     const [cargando, setCargando] = useState(false);
     const [misSegmentos, setMisSegmentos] = useState(segments);
+    const [recorte, setRecorte] = useState(null);
     const debounce = useRef(null);
 
     const seleccionados = form.recipients;
@@ -709,6 +710,16 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
         return () => clearTimeout(debounce.current);
     }, [buscar]);
 
+    /**
+     * "Seleccionar los N" tiene un techo, para no traerse la base entera al
+     * navegador. Cuando corta hay que decirlo: una campaña a la que le faltan
+     * dos mil personas sale igual, parece correcta, y nadie se entera hasta
+     * contar los enviados.
+     */
+    function anotarRecorte(data) {
+        setRecorte(data?.truncated ? data.limit : null);
+    }
+
     function alternar(row) {
         update(f => clavesSeleccionadas.has(row.key)
             ? { recipients: f.recipients.filter(r => r.key !== row.key) }
@@ -719,6 +730,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
         const res = await axios.get(route('campaigns.contacts.resolve'), {
             params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds },
         });
+        anotarRecorte(res.data);
         update(f => {
             const vistos = new Set(f.recipients.map(r => r.key));
             return { recipients: [...f.recipients, ...res.data.contacts.filter(c => !vistos.has(c.key))] };
@@ -745,6 +757,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                 tag_ids: segmento.filters?.tag_ids ?? [],
             },
         });
+        anotarRecorte(res.data);
         update(f => {
             const vistos = new Set(f.recipients.map(r => r.key));
             return { recipients: [...f.recipients, ...res.data.contacts.filter(c => !vistos.has(c.key))] };
@@ -814,6 +827,14 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                                 </button>
                             </div>
                         </div>
+
+                        {recorte !== null && (
+                            <Aviso tono="amber">
+                                Se añadieron {recorte.toLocaleString('es')} destinatarios, que es el máximo por
+                                selección. Si tu lista es más larga, afina el criterio o guárdala en varios
+                                segmentos: lo que se quedó fuera no se envía.
+                            </Aviso>
+                        )}
 
                         <div className="rounded-xl border divide-y max-h-72 overflow-y-auto">
                             {resultados.map(row => (
@@ -1023,8 +1044,33 @@ function PasoRevision({ form, update, errors, instance }) {
     const esRecurrente = form.schedule_type === 'recurring';
     const minutos = Math.ceil(form.recipients.length / Math.max(1, form.rate_per_minute));
 
+    // Cuánta gente nueva admite hoy el número. WhatsApp lo limita por tramos y
+    // no hay forma de acelerarlo: enterarse aquí es la diferencia entre repartir
+    // la campaña en varios días o ver cómo Meta rechaza la mitad, de una en una.
+    const [capacidad, setCapacidad] = useState(null);
+
+    useEffect(() => {
+        if (!form.instance_id || form.recipients.length === 0) return;
+
+        let vivo = true;
+        axios.get(route('campaigns.capacity'), {
+            params: { instance_id: form.instance_id, recipients: form.recipients.length },
+        })
+            .then(res => vivo && setCapacidad(res.data))
+            // Que no se pueda saber el tramo no es un problema de la campaña.
+            .catch(() => vivo && setCapacidad(null));
+
+        return () => { vivo = false; };
+    }, [form.instance_id, form.recipients.length]);
+
     return (
         <div className="space-y-6">
+            {capacidad?.aviso && (
+                <Aviso tono={capacidad.cabe ? 'amber' : 'rose'}>
+                    {capacidad.aviso}
+                </Aviso>
+            )}
+
             <Card title="Resumen">
                 <dl className="grid sm:grid-cols-2 gap-3 text-sm">
                     <Dato termino="Campaña" valor={form.name} />

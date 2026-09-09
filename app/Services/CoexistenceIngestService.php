@@ -513,26 +513,50 @@ class CoexistenceIngestService
      */
     private function avanzar(CoexistenceSync $sync, array $meta): void
     {
-        $fase     = (int) ($meta['phase'] ?? $sync->phase);
-        $progreso = (int) ($meta['progress'] ?? 0);
+        $fase = (int) ($meta['phase'] ?? $sync->phase);
 
-        $cambios = ['status' => CoexistenceSync::IMPORTANDO];
+        // Ausente no es cero. Un lote sin `progress` no dice «vamos por 0%»,
+        // dice que no trae el dato: tomarlo por cero es lo que dejaba la
+        // importación de Transintermet en fase 2 al 100 pero con el estado
+        // todavía en «importando» (9-sep-2026).
+        $progreso = array_key_exists('progress', $meta) ? (int) $meta['progress'] : null;
+
+        // `last_chunk_at` se escribe en cada lote, aunque no cambie ni la fase
+        // ni el progreso: es lo que permite distinguir después una importación
+        // que sigue viva de una que se quedó muda a mitad.
+        $cambios = ['last_chunk_at' => now()];
 
         if ($sync->first_chunk_at === null) {
             $cambios['first_chunk_at'] = now();
         }
 
         if ($fase > $sync->phase) {
-            $cambios['phase']    = $fase;
-            $cambios['progress'] = $progreso;
-        } elseif ($fase === $sync->phase && $progreso > $sync->progress) {
+            $cambios['phase'] = $fase;
+            // Fase nueva, cuenta nueva: aquí la ausencia sí es empezar de cero.
+            $cambios['progress'] = $progreso ?? 0;
+        } elseif ($fase === $sync->phase && $progreso !== null && $progreso > $sync->progress) {
             $cambios['progress'] = $progreso;
         }
 
-        // Fase 2 al 100 es el final del historial: no llegan más lotes.
-        if ($fase >= 2 && $progreso >= 100) {
-            $cambios['status']       = CoexistenceSync::COMPLETADA;
-            $cambios['completed_at'] = now();
+        // El estado se decide sobre el resultado acumulado, no sobre el lote que
+        // acaba de llegar. Los lotes vienen desordenados —para eso existe
+        // `chunk_order`— y decidiéndolo con el lote suelto, uno rezagado
+        // reabría una importación que ya había terminado.
+        $faseFinal     = $cambios['phase'] ?? $sync->phase;
+        $progresoFinal = $cambios['progress'] ?? $sync->progress;
+
+        if ($faseFinal >= 2 && $progresoFinal >= 100) {
+            // Sin volver a escribir `completed_at`: la importación terminó
+            // cuando terminó, no cada vez que llega un rezagado.
+            if ($sync->status !== CoexistenceSync::COMPLETADA) {
+                $cambios['status']       = CoexistenceSync::COMPLETADA;
+                $cambios['completed_at'] = now();
+            }
+        } elseif (! $sync->terminada()) {
+            // Sólo se marca «importando» lo que no estaba ya cerrado: quien
+            // eligió no compartir su historial no vuelve a estar importando
+            // porque llegue un lote suelto.
+            $cambios['status'] = CoexistenceSync::IMPORTANDO;
         }
 
         $sync->update($cambios);
