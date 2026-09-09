@@ -294,6 +294,71 @@ class CoexistenceIngestTest extends TestCase
         ]);
     }
 
+    /**
+     * El caso de Transintermet: fase 2 al 100, y aun así «importando».
+     *
+     * Los lotes de `history` llegan desordenados. Cuando uno rezagado llegaba
+     * después del que cerraba la importación, `avanzar()` lo volvía a poner en
+     * «importando»: el estado se decidía con el progreso de ese lote suelto, y
+     * un lote sin `progress` contaba como 0%.
+     *
+     * El resultado eran 70.035 mensajes ya guardados, la barra clavada en 99% y
+     * un vigilante a punto de decirle al cliente que rehiciera la conexión
+     * (9-sep-2026).
+     */
+    public function test_un_lote_rezagado_no_reabre_una_importacion_terminada(): void
+    {
+        $instancia = $this->instancia();
+
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.final', self::CLIENTE, 'el ultimo')],
+            fase: 2,
+            progreso: 100
+        ));
+
+        $sync = CoexistenceSync::where('instance_id', $instancia->id)->first();
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status);
+        $cerradaEn = $sync->completed_at;
+
+        // Llega uno de la misma fase con menos progreso, como los que Meta
+        // manda fuera de orden.
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.rezagado', self::CLIENTE, 'venia atras')],
+            fase: 2,
+            progreso: 40
+        ));
+
+        $sync->refresh();
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status, 'Un lote rezagado reabrió la importación.');
+        $this->assertSame(100, $sync->progress);
+        $this->assertEquals($cerradaEn, $sync->completed_at, 'Se reescribió la fecha de cierre con la del rezagado.');
+    }
+
+    /**
+     * Un lote sin `progress` en su metadata no dice «vamos por cero»: dice que
+     * no trae el dato. Tomarlo por cero borraba el avance.
+     */
+    public function test_un_lote_sin_progreso_no_borra_el_avance(): void
+    {
+        $instancia = $this->instancia();
+
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.uno', self::CLIENTE, 'hola')],
+            fase: 2,
+            progreso: 100
+        ));
+
+        $payload = $this->lote([$this->mensaje('wamid.dos', self::CLIENTE, 'otra')], fase: 2);
+        unset($payload['history'][0]['metadata']['progress']);
+
+        $this->ingesta()->importarHistorial($instancia, $payload);
+
+        $sync = CoexistenceSync::where('instance_id', $instancia->id)->first();
+
+        $this->assertSame(100, $sync->progress, 'Un lote sin progreso borró el avance acumulado.');
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status);
+    }
+
     /** Un webhook de `history` con un solo hilo. */
     private function lote(array $mensajes, int $fase = 0, int $progreso = 10): array
     {
