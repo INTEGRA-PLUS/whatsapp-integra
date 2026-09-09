@@ -19,20 +19,10 @@ class AgentReportService
             return $this->emptyReport();
         }
 
-        $conversationIds = WhatsAppConversation::whereIn('instance_id', $instanceIds)->pluck('id');
-
-        $messages = WhatsAppMessage::whereIn('conversation_id', $conversationIds)
-            ->where('is_internal', false)
-            ->whereBetween('created_at', [$from, $to])
-            ->orderBy('conversation_id')
-            ->orderBy('id')
-            ->get(['id', 'conversation_id', 'direction', 'sent_by', 'sent_at', 'created_at']);
-
         $perAgent = [];
         $totals = ['inbound' => 0, 'outbound' => 0, 'response_count' => 0, 'response_sum' => 0];
 
-        foreach ($messages->groupBy('conversation_id') as $msgs) {
-            $sorted = $msgs->sortBy(fn ($m) => optional($m->sent_at)->timestamp ?? $m->created_at->timestamp)->values();
+        foreach ($this->porConversacion($instanceIds, $from, $to) as $sorted) {
             $pendingInboundAt = null;
 
             foreach ($sorted as $m) {
@@ -147,23 +137,13 @@ class AgentReportService
             return $this->emptyAgentReport($user);
         }
 
-        $conversationIds = WhatsAppConversation::whereIn('instance_id', $instanceIds)->pluck('id');
-
-        $messages = WhatsAppMessage::whereIn('conversation_id', $conversationIds)
-            ->where('is_internal', false)
-            ->whereBetween('created_at', [$from, $to])
-            ->orderBy('conversation_id')
-            ->orderBy('id')
-            ->get(['id', 'conversation_id', 'direction', 'sent_by', 'sent_at', 'created_at']);
-
         $perDay = [];
         $perConversation = [];
         $totalSent = 0;
         $responseSum = 0;
         $responseCount = 0;
 
-        foreach ($messages->groupBy('conversation_id') as $convId => $msgs) {
-            $sorted = $msgs->sortBy(fn ($m) => optional($m->sent_at)->timestamp ?? $m->created_at->timestamp)->values();
+        foreach ($this->porConversacion($instanceIds, $from, $to) as $convId => $sorted) {
             $pendingInboundAt = null;
 
             foreach ($sorted as $m) {
@@ -288,24 +268,101 @@ class AgentReportService
         ];
     }
 
+    /**
+     * Los mensajes del periodo, conversación a conversación.
+     *
+     * Antes se traía la lista entera de ids de conversación a memoria y se
+     * metía en un `IN (...)`; con doce mil socios eso es una consulta que MySQL
+     * corta por tamaño y un plan que degenera. Ahora el filtro por empresa va
+     * por `join`, que es lo que el índice sabe resolver.
+     *
+     * Y se recorre con `cursor()` en vez de `get()`: el informe de un semestre
+     * son cientos de miles de filas, y hidratarlas todas antes de empezar a
+     * contar es lo que agota la memoria de PHP. Como la consulta llega ordenada
+     * por conversación, basta con acumular la que se está leyendo.
+     *
+     * @return \Generator<int, Collection>
+     */
+    private function porConversacion(Collection $instanceIds, CarbonInterface $from, CarbonInterface $to): \Generator
+    {
+        $filas = WhatsAppMessage::query()
+            ->join('whatsapp_conversations', 'whatsapp_conversations.id', '=', 'whatsapp_messages.conversation_id')
+            ->whereIn('whatsapp_conversations.instance_id', $instanceIds)
+            ->where('whatsapp_messages.is_internal', false)
+            ->whereBetween('whatsapp_messages.created_at', [$from, $to])
+            ->orderBy('whatsapp_messages.conversation_id')
+            ->orderBy('whatsapp_messages.id')
+            ->select([
+                'whatsapp_messages.id',
+                'whatsapp_messages.conversation_id',
+                'whatsapp_messages.direction',
+                'whatsapp_messages.sent_by',
+                'whatsapp_messages.sent_at',
+                'whatsapp_messages.created_at',
+            ])
+            ->cursor();
+
+        $actual = null;
+        $acumulado = [];
+
+        foreach ($filas as $m) {
+            if ($actual !== null && $m->conversation_id !== $actual) {
+                yield $actual => $this->ordenarPorEnvio($acumulado);
+                $acumulado = [];
+            }
+
+            $actual = $m->conversation_id;
+            $acumulado[] = $m;
+        }
+
+        if ($actual !== null) {
+            yield $actual => $this->ordenarPorEnvio($acumulado);
+        }
+    }
+
+    /**
+     * El orden real de la conversación es el de `sent_at`, no el del id.
+     *
+     * Se ordena aquí y no en SQL porque el historial importado entra con el id
+     * de hoy y la fecha de hace meses: por id, las respuestas saldrían antes que
+     * las preguntas y los tiempos de respuesta serían negativos.
+     */
+    private function ordenarPorEnvio(array $mensajes): Collection
+    {
+        return collect($mensajes)
+            ->sortBy(fn ($m) => optional($m->sent_at)->timestamp ?? $m->created_at->timestamp)
+            ->values();
+    }
+
     private function lastMessageDirections(Collection $conversationIds): array
     {
         if ($conversationIds->isEmpty()) {
             return [];
         }
 
-        $rows = WhatsAppMessage::selectRaw('conversation_id, direction, id')
-            ->whereIn('conversation_id', $conversationIds)
-            ->where('is_internal', false)
-            ->orderBy('conversation_id')
-            ->orderByDesc('id')
-            ->get();
-
         $out = [];
-        foreach ($rows as $r) {
-            if (! isset($out[$r->conversation_id])) {
-                $out[$r->conversation_id] = $r->direction;
+
+        // Antes se traían TODOS los mensajes de TODAS las conversaciones
+        // abiertas para quedarse con el último de cada una. Con una cooperativa
+        // eso es medio historial en memoria para leer un campo por conversación.
+        // La subconsulta pide sólo el id del último y luego su dirección.
+        foreach ($conversationIds->chunk(1000) as $tanda) {
+            $ultimos = WhatsAppMessage::query()
+                ->selectRaw('MAX(id) as id')
+                ->whereIn('conversation_id', $tanda)
+                ->where('is_internal', false)
+                ->groupBy('conversation_id')
+                ->pluck('id');
+
+            if ($ultimos->isEmpty()) {
+                continue;
             }
+
+            WhatsAppMessage::whereIn('id', $ultimos)
+                ->get(['conversation_id', 'direction'])
+                ->each(function ($m) use (&$out) {
+                    $out[$m->conversation_id] = $m->direction;
+                });
         }
 
         return $out;
