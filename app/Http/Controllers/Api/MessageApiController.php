@@ -665,25 +665,40 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $query = WhatsAppMessage::query();
-        
+        // El NIT lo elige quien llama, así que por sí solo no acota nada: es una
+        // etiqueta que el ERP pone al registrar el mensaje, no una credencial.
+        // Consultando sólo por él, cualquiera con un token válido podía leer los
+        // mensajes de otra empresa pidiendo el NIT de esa otra empresa.
+        //
+        // Quien manda es la instancia del token: se acota por su empresa y el
+        // NIT queda como lo que siempre fue, un filtro dentro de lo tuyo.
+        $query = WhatsAppMessage::query()
+            ->join('whatsapp_conversations', 'whatsapp_conversations.id', '=', 'whatsapp_messages.conversation_id')
+            ->join('instances', 'instances.id', '=', 'whatsapp_conversations.instance_id')
+            ->where('instances.company_id', $instance->company_id)
+            ->select('whatsapp_messages.*');
+
         // Filter by company nit
-        $query->where('incoming_company_nit', $request->incoming_company_nit);
+        $query->where('whatsapp_messages.incoming_company_nit', $request->incoming_company_nit);
 
         // Filter by date range
         $dateFrom = Carbon::parse($request->date_from)->startOfDay();
         $dateTo = Carbon::parse($request->date_to)->endOfDay();
-        $query->whereBetween('created_at', [$dateFrom, $dateTo]);
+        $query->whereBetween('whatsapp_messages.created_at', [$dateFrom, $dateTo]);
 
         // Filter by status if provided
+        //
+        // Cualificado con la tabla: `whatsapp_conversations` también tiene
+        // `status` y `created_at`, y sin el prefijo MySQL rechaza la consulta
+        // por ambigua desde que hay join.
         if ($request->has('status') && !empty($request->status)) {
             $statuses = array_map('trim', explode(',', $request->status));
-            $query->whereIn('status', $statuses);
+            $query->whereIn('whatsapp_messages.status', $statuses);
         }
 
         // Pagination
         $perPage = $request->query('per_page', 100);
-        $messages = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        $messages = $query->orderBy('whatsapp_messages.created_at', 'desc')->paginate($perPage);
 
         $items = $messages->items();
         $data = array_map(function($item) {
