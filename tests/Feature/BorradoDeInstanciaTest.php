@@ -233,7 +233,10 @@ class BorradoDeInstanciaTest extends TestCase
                 'direction' => 'inbound',
                 'type' => 'text',
                 'content' => 'hola',
-                'status' => 'received',
+                // 'received' no está en el enum de la columna: MySQL trunca y la
+                // inserción revienta. Los entrantes los guarda el webhook como
+                // 'delivered'.
+                'status' => 'delivered',
             ]);
         }
 
