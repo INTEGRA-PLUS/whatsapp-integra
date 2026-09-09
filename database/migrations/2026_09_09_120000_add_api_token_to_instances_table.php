@@ -26,18 +26,44 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Columna por columna y comprobando antes, que es como se escriben las
+        // migraciones en este repo desde que un despliegue se encontró la tabla
+        // en un estado que nadie había previsto.
+        //
+        // Aquí pasó exactamente eso: en producción ya había una columna
+        // `api_token`, sobrante del renombrado de julio de 2026 —cuya migración
+        // se salía sin borrarla si `access_token` ya existía—. El ALTER murió
+        // con «Duplicate column name», el contenedor entró en bucle de reinicio
+        // y el despliegue se llevó por delante la aplicación (9-sep-2026).
+        //
+        // Las pruebas no lo vieron porque la base de test se construye desde
+        // cero: no arrastra la historia que sí arrastra un servidor de tres años.
         Schema::table('instances', function (Blueprint $table) {
-            $table->string('api_token', 64)->nullable()->unique()->after('access_token');
-            $table->timestamp('api_token_created_at')->nullable()->after('api_token');
-            $table->timestamp('api_token_last_used_at')->nullable()->after('api_token_created_at');
+            if (! Schema::hasColumn('instances', 'api_token')) {
+                $table->string('api_token', 64)->nullable()->unique()->after('access_token');
+            }
+
+            if (! Schema::hasColumn('instances', 'api_token_created_at')) {
+                $table->timestamp('api_token_created_at')->nullable()->after('api_token');
+            }
+
+            if (! Schema::hasColumn('instances', 'api_token_last_used_at')) {
+                $table->timestamp('api_token_last_used_at')->nullable()->after('api_token_created_at');
+            }
         });
     }
 
     public function down(): void
     {
         Schema::table('instances', function (Blueprint $table) {
-            $table->dropUnique(['api_token']);
-            $table->dropColumn(['api_token', 'api_token_created_at', 'api_token_last_used_at']);
+            if (Schema::hasColumn('instances', 'api_token')) {
+                $table->dropUnique(['api_token']);
+            }
+
+            $table->dropColumn(array_values(array_filter(
+                ['api_token', 'api_token_created_at', 'api_token_last_used_at'],
+                fn ($columna) => Schema::hasColumn('instances', $columna)
+            )));
         });
     }
 };
