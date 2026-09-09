@@ -121,9 +121,19 @@ class Instance extends Model
         return $query->where('company_id', $companyId);
     }
 
+    /**
+     * ¿Esta línea puede hablar con Meta?
+     *
+     * El token cuenta tanto como los identificadores. Sin él no hay llamada
+     * posible, así que dar la línea por configurada sólo servía para que el
+     * fallo apareciera más tarde y peor: un envío aceptado, encolado, y muerto
+     * en el worker con un 401, en vez de dicho al crear la instancia.
+     */
     public function isMetaConfigured()
     {
-        return ! empty($this->phone_number_id) && ! empty($this->waba_id);
+        return ! empty($this->phone_number_id)
+            && ! empty($this->waba_id)
+            && ! empty($this->access_token);
     }
 
     public function calls()
