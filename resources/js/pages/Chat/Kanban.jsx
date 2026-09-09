@@ -7,8 +7,8 @@ import {
     Plus,
     User,
     Clock,
-    DollarSign,
     CheckCircle2,
+    Layers,
     AlertCircle,
     GripVertical,
     Calendar,
@@ -388,7 +388,7 @@ const NewCardModal = ({ instances, defaultColumnId, onClose, onCreated }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Kanban({ columns: initialColumns, total_conversations, instances: initialInstances }) {
+export default function Kanban({ columns: initialColumns, total_conversations, en_tablero = 0, estancadas = 0, instances: initialInstances }) {
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
@@ -686,13 +686,29 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         }
     };
 
-    // Stats memoized to avoid re-renders
+    /**
+     * Sólo se muestra lo que se puede calcular.
+     *
+     * Aquí había dos cifras inventadas: un «Pipeline Total» que era el número
+     * de conversaciones multiplicado por 150.000 pesos, y una «Conversión» fija
+     * del 94% escrita a mano, idéntica para todas las empresas. Parecían datos
+     * de negocio y no lo eran, en una pantalla que se enseña a clientes.
+     *
+     * Cuando las tarjetas tengan importe y fecha de entrada en cada etapa, el
+     * valor del embudo y la conversión real podrán calcularse de verdad. Hasta
+     * entonces, esto: cuántas conversaciones hay, cuántas están puestas en el
+     * tablero y cuántas llevan una semana sin moverse.
+     */
     const stats = useMemo(() => [
-        { label: 'Proyectos',      value: total_conversations,                              icon: User,          color: 'text-info',   bg: 'bg-info/5' },
-        { label: 'Etapas',         value: columns.length,                                   icon: LayoutDashboard, color: 'text-success', bg: 'bg-success/5' },
-        { label: 'Pipeline Total', value: `$ ${(total_conversations * 150000).toLocaleString()}`, icon: DollarSign, color: 'text-warning', bg: 'bg-warning/5' },
-        { label: 'Conversión',     value: '94%',                                            icon: CheckCircle2,  color: 'text-accent-foreground', bg: 'bg-primary/5' },
-    ], [total_conversations, columns.length]);
+        { label: 'Conversaciones', value: total_conversations.toLocaleString('es-CO'), icon: User,            color: 'text-info',              bg: 'bg-info/5',
+          hint: 'Todas las de la empresa' },
+        { label: 'En el tablero',  value: en_tablero.toLocaleString('es-CO'),          icon: LayoutDashboard, color: 'text-accent-foreground', bg: 'bg-primary/5',
+          hint: 'Colocadas en alguna etapa' },
+        { label: 'Sin mover +7d',  value: estancadas.toLocaleString('es-CO'),          icon: Clock,           color: estancadas > 0 ? 'text-warning' : 'text-muted-foreground', bg: 'bg-warning/5',
+          hint: 'Una semana sin actividad' },
+        { label: 'Etapas',         value: columns.length,                       icon: Layers,          color: 'text-success',           bg: 'bg-success/5',
+          hint: 'Columnas del tablero' },
+    ], [total_conversations, en_tablero, estancadas, columns.length]);
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -752,9 +768,10 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                                     <div className={clsx('p-3 rounded-2xl shadow-inner', stat.bg, stat.color)}>
                                         <stat.icon className="size-5" />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                         <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">{stat.label}</p>
                                         <p className="text-lg font-black text-foreground dark:text-white tracking-tighter leading-none">{stat.value}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1 truncate">{stat.hint}</p>
                                     </div>
                                 </div>
                             </div>
