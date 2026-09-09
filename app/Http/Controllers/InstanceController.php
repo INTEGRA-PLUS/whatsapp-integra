@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Instance;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use App\Models\Instance;
 use Inertia\Inertia;
 
 class InstanceController extends Controller
@@ -19,7 +20,7 @@ class InstanceController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->isMaster() && !session('impersonated_by')) {
+        if ($user->isMaster() && ! session('impersonated_by')) {
             return redirect()->route('master.index');
         }
 
@@ -80,9 +81,9 @@ class InstanceController extends Controller
 
         if ($owner) {
             throw ValidationException::withMessages([
-                'phone_number_id' => 'Ese Phone Number ID ya está activo en otra instancia (#' . $owner->id
-                    . '). Desactívala primero: si dos instancias comparten el número, los mensajes entrantes'
-                    . ' solo llegan a una de ellas.',
+                'phone_number_id' => 'Ese Phone Number ID ya está activo en otra instancia (#'.$owner->id
+                    .'). Desactívala primero: si dos instancias comparten el número, los mensajes entrantes'
+                    .' solo llegan a una de ellas.',
             ]);
         }
     }
@@ -94,7 +95,7 @@ class InstanceController extends Controller
             'phone_number_id' => 'required|string',
             'waba_id' => 'required|string',
             'display_phone_number' => 'nullable|string',
-            'access_token' => 'nullable|string'
+            'access_token' => 'nullable|string',
         ]);
 
         $this->assertPhoneNumberIdIsFree($request);
@@ -111,7 +112,7 @@ class InstanceController extends Controller
             'access_token' => $request->access_token,
             'type' => 'meta',
             'status' => 'active',
-            'active' => true
+            'active' => true,
         ]);
 
         return redirect()->route('instances.index')
@@ -121,7 +122,7 @@ class InstanceController extends Controller
     public function update(Request $request, $id)
     {
         $user = auth()->user();
-        
+
         $instance = Instance::where('id', $id)
             ->where('company_id', $user->company_id)
             ->firstOrFail();
@@ -132,7 +133,7 @@ class InstanceController extends Controller
             'waba_id' => 'required|string',
             'display_phone_number' => 'nullable|string',
             'access_token' => 'nullable|string',
-            'active' => 'boolean'
+            'active' => 'boolean',
         ]);
 
         if ($request->boolean('active', true)) {
@@ -145,7 +146,7 @@ class InstanceController extends Controller
             'waba_id' => $request->waba_id,
             'display_phone_number' => $request->display_phone_number,
             'access_token' => $request->access_token,
-            'active' => $request->has('active') ? $request->active : 0
+            'active' => $request->has('active') ? $request->active : 0,
         ]);
 
         return redirect()->route('instances.index')
@@ -164,5 +165,43 @@ class InstanceController extends Controller
 
         return redirect()->route('instances.index')
             ->with('success', 'Instancia eliminada');
+    }
+
+    /**
+     * Crea la credencial de la API v1 y la devuelve una sola vez.
+     *
+     * Hasta ahora el token era el `phone_number_id`, que se enseña en esta misma
+     * pantalla y en el panel de Meta: quien lo viera podía leer los mensajes de
+     * la empresa y enviar en su nombre.
+     *
+     * Va por JSON y no por redirección con flash porque el token no debe quedar
+     * guardado en la sesión: de ahí acabaría en el almacenamiento del navegador
+     * y en los logs del servidor.
+     */
+    public function generateApiToken($id)
+    {
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $id)
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        $yaTenia = $instance->tieneApiToken();
+        $token = $instance->generarApiToken();
+
+        Log::channel('whatsapp')->info('Token de API generado para una instancia', [
+            'instance_id' => $instance->id,
+            'company_id' => $instance->company_id,
+            'por_usuario' => $user->id,
+            'reemplaza_uno_anterior' => $yaTenia,
+        ]);
+
+        return response()->json([
+            'token' => $token,
+            'reemplaza_uno_anterior' => $yaTenia,
+            // Se dice también aquí y no sólo en la pantalla: quien llame a esta
+            // ruta desde un script tiene que saber que no hay segunda copia.
+            'aviso' => 'Guárdalo ahora. No se puede volver a ver: si se pierde, hay que generar otro.',
+        ]);
     }
 }

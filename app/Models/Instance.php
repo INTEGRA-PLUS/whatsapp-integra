@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Instance extends Model
 {
@@ -23,14 +24,68 @@ class Instance extends Model
         'health_checked_at',
         'health_error',
         'meta',
-        'access_token'
+        'access_token',
+    ];
+
+    /**
+     * El hash del token de API no sale nunca de aquí.
+     *
+     * No sirve para autenticarse —es un hash— pero enseñarlo invita a probar, y
+     * no hay ningún sitio de la aplicación que lo necesite.
+     */
+    protected $hidden = [
+        'api_token',
     ];
 
     protected $casts = [
         'active' => 'boolean',
         'health_checked_at' => 'datetime',
+        'api_token_created_at' => 'datetime',
+        'api_token_last_used_at' => 'datetime',
         'meta' => 'array',
     ];
+
+    /** El prefijo hace reconocible el token si aparece en un log o en un pegado. */
+    public const API_TOKEN_PREFIJO = 'wai_';
+
+    /**
+     * Crea un token nuevo y guarda sólo su hash.
+     *
+     * Devuelve el token en claro **una sola vez**: es la única ocasión en que
+     * existe fuera del cliente. Si se pierde, se genera otro; no hay forma de
+     * recuperarlo, y eso es lo que lo hace un secreto de verdad.
+     *
+     * Generarlo de nuevo invalida el anterior en el acto, así que rotarlo es
+     * también la forma de cortarle el acceso a una integración.
+     */
+    public function generarApiToken(): string
+    {
+        $token = self::API_TOKEN_PREFIJO.Str::random(40);
+
+        $this->forceFill([
+            'api_token' => self::hashApiToken($token),
+            'api_token_created_at' => now(),
+            'api_token_last_used_at' => null,
+        ])->save();
+
+        return $token;
+    }
+
+    /**
+     * SHA-256 y no bcrypt: hay que encontrar la instancia *por* el token en cada
+     * petición, y con bcrypt habría que recorrer la tabla comparando una a una.
+     * El token son 40 caracteres aleatorios, no una contraseña que alguien
+     * pueda adivinar, así que el coste de bcrypt no compra nada aquí.
+     */
+    public static function hashApiToken(string $token): string
+    {
+        return hash('sha256', $token);
+    }
+
+    public function tieneApiToken(): bool
+    {
+        return $this->api_token !== null;
+    }
 
     public function company()
     {
@@ -68,7 +123,7 @@ class Instance extends Model
 
     public function isMetaConfigured()
     {
-        return !empty($this->phone_number_id) && !empty($this->waba_id);
+        return ! empty($this->phone_number_id) && ! empty($this->waba_id);
     }
 
     public function calls()

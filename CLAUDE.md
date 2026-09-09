@@ -93,6 +93,23 @@ tres veces, una de ellas con `META_APP_SECRETS`.
   no reinicio. `REVERB_HOST` está fijado a `reverb` en el compose ignorando el `.env`, adrede.
 - `WHATSAPP_WINDOW_GUARD=shadow|enforce` y `WHATSAPP_WINDOW_GUARD_COMPANIES` (lista de `company_id`).
 
+## API v1 (`/api/v1/*`)
+
+Las rutas **no llevan middleware**: la autenticación vive dentro de
+`Api\MessageApiController::validateInstance()`, por la cabecera `X-Instance-Token`.
+
+Se aceptan dos credenciales durante la transición:
+
+- **`instances.api_token`** — la buena. Se guarda hasheada (SHA-256, para poder buscar por ella) y el token
+  en claro sólo existe al generarlo. Prefijo `wai_`.
+- **El `phone_number_id`** — el esquema original, y **no es un secreto**: se enseña en la pantalla de
+  Instancias y en el panel de Meta. Sigue aceptándose sólo mientras `whatsapp.api.allow_legacy_token` esté en
+  `true`; cada uso deja una línea en el log de WhatsApp con la empresa, para saber a quién falta migrar.
+
+Y la regla que se rompió una vez: **`incoming_company_nit` no es una credencial**, es una etiqueta que manda
+el ERP en el cuerpo. Filtrar por ella sin acotar además por la empresa del token deja leer los mensajes de
+otra empresa.
+
 ## Webhooks entrantes
 
 `GET|POST /webhooks/whatsapp`, exentas de CSRF (`bootstrap/app.php:25`), en

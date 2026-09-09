@@ -48,6 +48,29 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | API v1
+    |--------------------------------------------------------------------------
+    |
+    | `allow_legacy_token` decide si `/api/v1` sigue aceptando el
+    | `phone_number_id` como credencial.
+    |
+    | Era el esquema original, y no es un secreto: el propio producto lo enseña
+    | en la pantalla de Instancias y Meta lo enseña en su panel. Quien conociera
+    | uno podía leer los mensajes de esa empresa y enviar en su nombre.
+    |
+    | Se deja en `true` porque apagarlo de golpe deja sin servicio a los ERP de
+    | los clientes, que hoy mandan el phone_number_id. Cada uso queda registrado
+    | en el log de WhatsApp con la empresa y la instancia, para saber a quién
+    | falta migrar. Cuando el log deje de mostrarlos, se pone en `false`.
+    |
+    */
+
+    'api' => [
+        'allow_legacy_token' => (bool) env('WHATSAPP_API_ALLOW_LEGACY_TOKEN', true),
+    ],
+
     'chat' => [
         'message_window' => (int) env('CHAT_MESSAGE_WINDOW', 100),
     ],

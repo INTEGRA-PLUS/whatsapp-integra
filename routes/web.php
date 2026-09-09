@@ -182,6 +182,11 @@ Route::middleware('auth')->group(function () {
     // /instances/{algo} con otro significado.
     Route::get('/instances/{instance}/coexistence-sync', [InstanceController::class, 'coexistenceSync'])
         ->name('instances.coexistence-sync');
+    // Genera la credencial de la API v1. Sólo quien puede editar la instancia:
+    // el token deja enviar mensajes en nombre de la empresa.
+    Route::post('/instances/{instance}/api-token', [InstanceController::class, 'generateApiToken'])
+        ->middleware('permission:instances.update')
+        ->name('instances.api-token');
 
     // Registro insertado de Meta: conectar el WhatsApp del cliente sin pegar
     // tokens a mano. El GET sólo devuelve identificadores públicos; el POST es
