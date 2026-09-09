@@ -28,6 +28,14 @@ import {
     HEADER_MEDIA_ACCEPT,
     HEADER_MEDIA_LABEL,
 } from '@/lib/templates';
+import {
+    COUNTRIES,
+    DEFAULT_COUNTRY,
+    countryByCode,
+    splitPhoneNumber,
+    joinPhoneNumber,
+    cleanUsername,
+} from '@/lib/countries';
 import { 
     Search, 
     Send, 
@@ -480,7 +488,7 @@ const ConversationItem = memo(({
                             "text-sm font-bold truncate",
                             conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
                         )}>
-                            {conv.contact?.name || conv.name || conv.phone_number}
+                            {contactFullName(conv.contact) || conv.name || conv.phone_number}
                         </p>
                         {conv.assigned_agent && (
                             <span 
@@ -712,10 +720,31 @@ function hasPhone(conv) {
  * legible que queda. El identificador crudo es el último recurso: no dice nada,
  * pero es mejor que el hueco en blanco que la UI pintaba antes.
  */
+/**
+ * El nombre de la ficha, con apellido si lo tiene.
+ *
+ * Las fichas viejas y las que crea el webhook sólo llenan `name`: ahí el nombre
+ * completo ya está entero en ese campo, y `full_name` cae en él.
+ */
+function contactFullName(contact) {
+    if (!contact) return '';
+    return contact.full_name || [contact.name, contact.last_name].filter(Boolean).join(' ');
+}
+
+/** El nombre de usuario de WhatsApp: el del perfil, o el que se anotó a mano. */
+function contactUsername(conv) {
+    return conv?.metadata?.username || conv?.contact?.username || '';
+}
+
 function contactIdentity(conv) {
     if (!conv) return '';
     if (conv.phone_number) return conv.phone_number;
+
+    // El número que el agente anotó a mano en la ficha. Meta no lo manda para
+    // quien lo oculta, pero es el que sirve para llamar y para facturar.
+    if (conv.contact?.phone_number) return conv.contact.phone_number;
     if (conv.metadata?.username) return '@' + conv.metadata.username;
+    if (conv.contact?.username) return '@' + conv.contact.username;
 
     const id = conv.bsuid || conv.wa_id || '';
     return id ? `ID ${String(id).slice(0, 14)}…` : 'Sin número';
@@ -1259,7 +1288,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [showLinkContact, setShowLinkContact] = useState(false);
     const [showContactPanel, setShowContactPanel] = useState(false);
     const [editingContact, setEditingContact] = useState(false);
-    const [contactForm, setContactForm] = useState({ name: '', email: '', notes: '' });
+    const [contactForm, setContactForm] = useState({ name: '', last_name: '', username: '', country: DEFAULT_COUNTRY, phone: '', email: '', notes: '' });
     const [savingContact, setSavingContact] = useState(false);
     const [contactError, setContactError] = useState(null);
     const [showTemplates, setShowTemplates] = useState(false);
@@ -1932,8 +1961,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // Abre el modo edición del panel de contacto, precargando los datos actuales.
     const openContactEdit = useCallback(() => {
         const c = selectedConversation?.contact;
+
+        // El número puede venir del hilo (Meta lo manda) o de la propia ficha
+        // (lo escribió un agente porque el cliente lo oculta).
+        const { country, national } = splitPhoneNumber(c?.phone_number || selectedConversation?.phone_number || '');
+
+        // El hilo de quien oculta su número se titula "@usuario": eso no es un
+        // nombre, y precargarlo dejaba la ficha llamándose como el usuario.
+        const nombreDelHilo = (selectedConversation?.name || '').startsWith('@') ? '' : (selectedConversation?.name || '');
+
         setContactForm({
-            name: c?.name || selectedConversation?.name || '',
+            name: c?.name || nombreDelHilo,
+            last_name: c?.last_name || '',
+            username: c?.username || selectedConversation?.metadata?.username || '',
+            country,
+            phone: national,
             email: c?.email || '',
             notes: c?.notes || '',
         });
@@ -1945,7 +1987,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // vincula uno nuevo a partir del número de la conversación.
     const saveContact = useCallback(async () => {
         if (!selectedConversation) return;
-        const name = contactForm.name.trim();
+
+        // Al cliente que oculta su número se le identifica por el nombre de
+        // usuario, pero alguna de las dos cosas tiene que haber: una ficha sin
+        // ninguna no se puede volver a encontrar ni casa con Integra.
+        const username = cleanUsername(contactForm.username);
+        const phoneNumber = joinPhoneNumber(contactForm.country, contactForm.phone);
+
+        if (!phoneNumber && !username) {
+            setContactError('Pon el teléfono o el nombre de usuario de WhatsApp.');
+            return;
+        }
+
+        // Muchas veces el agente no sabe cómo se llama el cliente: con el
+        // usuario basta para tener ficha, y el nombre se corrige después.
+        const name = contactForm.name.trim() || (username ? '@' + username : '');
         if (!name) { setContactError('El nombre es obligatorio.'); return; }
 
         setSavingContact(true);
@@ -1955,27 +2011,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
             if (selectedConversation.contact?.id) {
                 const res = await axios.put(`/api/contacts/${selectedConversation.contact.id}`, {
                     name,
+                    last_name: contactForm.last_name.trim() || null,
+                    phone_number: phoneNumber || null,
+                    username: username || null,
                     email: contactForm.email.trim() || null,
                     notes: contactForm.notes.trim() || null,
                 });
                 contact = res.data;
             } else {
-                // La agenda se indexa por número: crear una ficha sin él daría un
-                // contacto que no casa con ningún abonado de Integra y que además
-                // choca con el de cualquier otro cliente sin teléfono.
-                if (!hasPhone(selectedConversation)) {
-                    setContactError('Este cliente oculta su número de WhatsApp, así que no se puede crear una ficha de contacto. Vincúlalo a un contacto existente desde "Vincular contacto".');
-                    return;
-                }
-
                 const res = await axios.post(`/api/chat/conversations/${selectedConversation.id}/attach-contact`, {
                     name,
-                    phone_number: selectedConversation.phone_number,
+                    last_name: contactForm.last_name.trim() || null,
+                    phone_number: phoneNumber || null,
+                    username: username || null,
                     email: contactForm.email.trim() || null,
                 });
                 contact = res.data.contact;
             }
-            const linkedName = contact?.name || name;
+            const linkedName = contactFullName(contact) || name;
             setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName } : prev);
             setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName } : c));
             setEditingContact(false);
@@ -3240,7 +3293,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     function quotedAuthor(m) {
         if (m.direction === 'outbound') return m.sender?.name || 'Tú';
-        return selectedConversation?.contact?.name || selectedConversation?.name || 'Cliente';
+        return contactFullName(selectedConversation?.contact) || selectedConversation?.name || 'Cliente';
     }
 
     function quotedSnippet(m) {
@@ -3337,7 +3390,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             await axios.post(`/api/chat/messages/${forwardSource.id}/forward`, {
                 conversation_id: targetConversation.id,
             });
-            setForwardDone(targetConversation.contact?.name || targetConversation.name || targetConversation.phone_number);
+            setForwardDone(contactFullName(targetConversation.contact) || targetConversation.name || targetConversation.phone_number);
             // Si el destino es el chat abierto, el mensaje reenviado se ve al
             // instante en vez de esperar al siguiente poll.
             if (selectedConversation?.id === targetConversation.id) {
@@ -4364,7 +4417,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         title="Ver información del contacto"
                                                         className="text-sm font-bold text-foreground leading-tight truncate cursor-pointer hover:underline"
                                                     >
-                                                        {selectedConversation.contact?.name || selectedConversation.name}
+                                                        {contactFullName(selectedConversation.contact) || selectedConversation.name}
                                                     </h3>
                                                     {selectedConversation.status === 'closed' && (
                                                         <span className="shrink-0 text-[9px] bg-muted/15 text-muted-foreground px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
@@ -4378,7 +4431,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             title="Contacto vinculado — clic para cambiar"
                                                             className="inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-0 max-w-[150px]"
                                                         >
-                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{selectedConversation.contact.name}</span>
+                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{contactFullName(selectedConversation.contact)}</span>
                                                         </button>
                                                     ) : (
                                                         <button
@@ -5805,7 +5858,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             forwardResults
                                                 .filter(c => c.id !== forwardSource.conversation_id)
                                                 .map(conv => {
-                                                    const name = conv.contact?.name || conv.name || conv.phone_number;
+                                                    const name = contactFullName(conv.contact) || conv.name || conv.phone_number;
                                                     return (
                                                         <button
                                                             key={conv.id}
@@ -5950,11 +6003,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     <LinkContactModal
                         conversationId={selectedConversation.id}
                         defaultPhone={selectedConversation.phone_number}
+                        defaultUsername={contactUsername(selectedConversation)}
+                        defaultIdentity={contactIdentity(selectedConversation)}
                         defaultName={selectedConversation.name}
                         currentContact={selectedConversation.contact}
                         onClose={() => setShowLinkContact(false)}
                         onLinked={(contact) => {
-                            const linkedName = contact?.name;
+                            const linkedName = contactFullName(contact);
                             setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName || prev.name } : prev);
                             setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName || c.name } : c));
                             setShowLinkContact(false);
@@ -5973,7 +6028,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         {selectedConversation.initials}
                                     </div>
                                     <div className="min-w-0 w-full">
-                                        <h2 className="text-lg font-bold text-foreground truncate">{selectedConversation.contact?.name || selectedConversation.name}</h2>
+                                        <h2 className="text-lg font-bold text-foreground truncate">{contactFullName(selectedConversation.contact) || selectedConversation.name}</h2>
                                         <p className="text-sm text-muted-foreground">{contactIdentity(selectedConversation)}</p>
                                     </div>
                                     <span className={clsx(
@@ -6004,31 +6059,69 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <div className="flex flex-col gap-4 px-6 py-6">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Editar contacto</p>
 
-                                        <div className="space-y-1.5">
-                                            <label className="text-sm font-medium text-foreground">Nombre</label>
-                                            <input
-                                                type="text"
-                                                value={contactForm.name}
-                                                onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                                                placeholder="Nombre del contacto"
-                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                                            />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-medium text-foreground">Nombre</label>
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.name}
+                                                    onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                                                    placeholder="Nombre"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-medium text-foreground">Apellido</label>
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.last_name}
+                                                    onChange={e => setContactForm(f => ({ ...f, last_name: e.target.value }))}
+                                                    placeholder="Apellido"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
                                         </div>
 
                                         <div className="space-y-1.5">
-                                            <label className="text-sm font-medium text-foreground">
-                                                {hasPhone(selectedConversation) ? 'Teléfono' : 'Identificador'}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={contactIdentity(selectedConversation)}
-                                                disabled
-                                                className="flex h-9 w-full rounded-md border border-input bg-muted/40 px-3 py-1 text-sm text-muted-foreground cursor-not-allowed"
-                                            />
+                                            <label className="text-sm font-medium text-foreground">Nombre de usuario</label>
+                                            <div className="relative">
+                                                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.username}
+                                                    onChange={e => setContactForm(f => ({ ...f, username: e.target.value }))}
+                                                    placeholder="usuario_de_whatsapp"
+                                                    autoCapitalize="off"
+                                                    spellCheck={false}
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-sm font-medium text-foreground">Teléfono</label>
+                                            <div className="flex gap-2">
+                                                <select
+                                                    value={contactForm.country}
+                                                    onChange={e => setContactForm(f => ({ ...f, country: e.target.value }))}
+                                                    className="h-9 w-28 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                >
+                                                    {COUNTRIES.map(c => (
+                                                        <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>
+                                                    ))}
+                                                </select>
+                                                <input
+                                                    type="tel"
+                                                    value={contactForm.phone}
+                                                    onChange={e => setContactForm(f => ({ ...f, phone: e.target.value }))}
+                                                    placeholder="3052583254"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
                                             <p className="text-[11px] text-muted-foreground">
                                                 {hasPhone(selectedConversation)
-                                                    ? 'El número de WhatsApp no se puede cambiar.'
-                                                    : 'Este cliente oculta su número tras un nombre de usuario de WhatsApp.'}
+                                                    ? 'El número con el que escribe por WhatsApp.'
+                                                    : 'Este cliente oculta su número tras un nombre de usuario. Si te lo da, anótalo aquí: es lo que permite llamarlo y cruzarlo con Integra. Se le sigue respondiendo por el mismo chat.'}
                                             </p>
                                         </div>
 
@@ -6092,11 +6185,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     </button>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">
-                                                    {hasPhone(selectedConversation)
+                                                    {hasPhone(selectedConversation) || selectedConversation.contact?.phone_number
                                                         ? <Phone className="size-4 text-muted-foreground shrink-0" />
                                                         : <AtSign className="size-4 text-muted-foreground shrink-0" />}
                                                     <span className="text-foreground truncate">{contactIdentity(selectedConversation)}</span>
+                                                    {!hasPhone(selectedConversation) && selectedConversation.contact?.phone_number && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70 shrink-0">Anotado</span>
+                                                    )}
                                                 </div>
+                                                {/* El nombre de usuario, cuando arriba ya se está pintando el número. */}
+                                                {contactUsername(selectedConversation) && contactIdentity(selectedConversation) !== '@' + contactUsername(selectedConversation) && (
+                                                    <div className="flex items-center gap-3 text-sm">
+                                                        <AtSign className="size-4 text-muted-foreground shrink-0" />
+                                                        <span className="text-foreground truncate">@{contactUsername(selectedConversation)}</span>
+                                                    </div>
+                                                )}
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <Mail className="size-4 text-muted-foreground shrink-0" />
                                                     {selectedConversation.contact?.email ? (
@@ -6108,7 +6211,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <Contact className="size-4 text-muted-foreground shrink-0" />
                                                     {selectedConversation.contact ? (
-                                                        <span className="text-foreground truncate">{selectedConversation.contact.name}</span>
+                                                        <span className="text-foreground truncate">{contactFullName(selectedConversation.contact)}</span>
                                                     ) : (
                                                         <span className="text-muted-foreground italic">Sin contacto vinculado</span>
                                                     )}
@@ -6206,7 +6309,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         conversationId={selectedConversation.id}
                         instanceId={selectedInstanceId}
                         windowClosedHint={windowExpired}
-                        contactName={selectedConversation.contact?.name || selectedConversation.name}
+                        contactName={contactFullName(selectedConversation.contact) || selectedConversation.name}
                         onClose={() => setShowTemplates(false)}
                         onSent={(message, preview) => {
                             if (message) setMessages(prev => [...prev, message]);
@@ -6556,7 +6659,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     );
 }
 
-function LinkContactModal({ conversationId, defaultPhone, defaultName, currentContact, onClose, onLinked }) {
+function LinkContactModal({ conversationId, defaultPhone, defaultUsername, defaultIdentity, defaultName, currentContact, onClose, onLinked }) {
     const [tab, setTab] = useState('existing');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
@@ -6566,7 +6669,10 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
 
     // New-contact form
     const [name, setName] = useState(defaultName ?? '');
-    const [phone, setPhone] = useState(defaultPhone ?? '');
+    const [lastName, setLastName] = useState('');
+    const [username, setUsername] = useState(defaultUsername ?? '');
+    const [country, setCountry] = useState(() => splitPhoneNumber(defaultPhone).country);
+    const [phone, setPhone] = useState(() => splitPhoneNumber(defaultPhone).national);
     const [email, setEmail] = useState('');
 
     useEffect(() => {
@@ -6612,7 +6718,7 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                         <div>
                             <h3 className="font-bold text-lg leading-tight">Vincular contacto</h3>
                             <p className="text-xs text-white/80">
-                                {currentContact ? `Vinculado a ${currentContact.name}` : `Asocia ${defaultPhone} a un contacto`}
+                                {currentContact ? `Vinculado a ${contactFullName(currentContact)}` : `Asocia ${defaultIdentity || defaultPhone || 'esta conversación'} a un contacto`}
                             </p>
                         </div>
                     </div>
@@ -6664,11 +6770,11 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                                                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-primary/15 dark:hover:bg-primary/30 transition-colors disabled:opacity-50"
                                             >
                                                 <div className="size-9 rounded-full bg-primary/10 text-accent-foreground flex items-center justify-center font-bold uppercase shrink-0">
-                                                    {(c.name ?? '?').slice(0, 2)}
+                                                    {(contactFullName(c) || '?').slice(0, 2)}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
-                                                    <p className="text-xs text-muted-foreground truncate">{c.phone_number}</p>
+                                                    <p className="text-sm font-semibold text-foreground truncate">{contactFullName(c)}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">{c.phone_number || (c.username ? '@' + c.username : '')}</p>
                                                 </div>
                                                 {currentContact?.id === c.id && <Check className="size-4 text-accent-foreground ml-auto shrink-0" />}
                                             </button>
@@ -6678,14 +6784,30 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                             </div>
                         </>
                     ) : (
-                        <form onSubmit={(e) => { e.preventDefault(); attach({ name: name.trim(), phone_number: phone.trim(), email: email.trim() || null }); }} className="space-y-3">
+                        <form onSubmit={(e) => { e.preventDefault(); attach({ name: name.trim(), last_name: lastName.trim() || null, phone_number: joinPhoneNumber(country, phone) || null, username: cleanUsername(username) || null, email: email.trim() || null }); }} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre</label>
+                                    <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Nombre" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Apellido</label>
+                                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Apellido" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                            </div>
                             <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Nombre del contacto" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre de usuario</label>
+                                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="usuario_de_whatsapp" autoCapitalize="off" spellCheck={false} className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Teléfono</label>
-                                <input type="text" value={phone} onChange={e => setPhone(e.target.value)} required className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary/20 outline-none" />
+                                <div className="flex gap-2">
+                                    <select value={country} onChange={e => setCountry(e.target.value)} className="w-28 shrink-0 bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none">
+                                        {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>)}
+                                    </select>
+                                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3052583254" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                                <p className="mt-1.5 text-[11px] text-muted-foreground">Teléfono o nombre de usuario: hace falta al menos uno.</p>
                             </div>
                             <div>
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Correo (opcional)</label>

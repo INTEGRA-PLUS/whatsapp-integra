@@ -1,9 +1,10 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { COUNTRIES, splitPhoneNumber, joinPhoneNumber, cleanUsername } from '@/lib/countries';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
+import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, AtSign, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
 export default function ContactsIndex({ contacts: initialContacts, unregistered: initialUnregistered, optOutRequests: initialOptOutRequests = [] }) {
     const { auth } = usePage().props;
@@ -23,6 +24,8 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
         if (!q) return contacts;
         return contacts.filter(c =>
             (c.name ?? '').toLowerCase().includes(q) ||
+            (c.last_name ?? '').toLowerCase().includes(q) ||
+            (c.username ?? '').toLowerCase().includes(q) ||
             (c.phone_number ?? '').toLowerCase().includes(q) ||
             (c.email ?? '').toLowerCase().includes(q)
         );
@@ -313,7 +316,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                         <tr key={contact.id} className="border-t hover:bg-muted/30 transition-colors">
                             <td className="px-4 py-3 align-top font-medium text-foreground">
                                 <div className="flex items-center gap-2">
-                                    <span>{contact.name}</span>
+                                    <span>{[contact.name, contact.last_name].filter(Boolean).join(' ')}</span>
                                     {contact.opted_out_at && (
                                         <span
                                             title="Pidió no recibir campañas. Se le puede seguir respondiendo en el chat."
@@ -334,7 +337,12 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                             </td>
                             <td className="px-4 py-3 align-top text-muted-foreground">
                                 <div className="flex flex-col gap-1">
-                                    <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 text-muted-foreground/60" /> {contact.phone_number}</span>
+                                    {contact.phone_number
+                                        ? <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 text-muted-foreground/60" /> {contact.phone_number}</span>
+                                        : <span className="inline-flex items-center gap-1.5 text-muted-foreground/60 italic">Sin número</span>}
+                                    {contact.username && (
+                                        <span className="inline-flex items-center gap-1.5"><AtSign className="size-3.5 text-muted-foreground/60" /> {contact.username}</span>
+                                    )}
                                     {contact.phone_numbers?.length > 0 && (
                                         <div className="flex flex-wrap gap-1 pl-5">
                                             {contact.phone_numbers.map((n, i) => (
@@ -461,7 +469,10 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
 
 function ContactFormModal({ title, description, submitLabel, initial, onClose, onSaved }) {
     const [name, setName] = useState(initial?.name ?? '');
-    const [phone, setPhone] = useState(initial?.phone_number ?? '');
+    const [lastName, setLastName] = useState(initial?.last_name ?? '');
+    const [username, setUsername] = useState(initial?.username ?? '');
+    const [country, setCountry] = useState(() => splitPhoneNumber(initial?.phone_number).country);
+    const [phone, setPhone] = useState(() => splitPhoneNumber(initial?.phone_number).national);
     const [extraNumbers, setExtraNumbers] = useState(initial?.phone_numbers ?? []);
     const [email, setEmail] = useState(initial?.email ?? '');
     const [notes, setNotes] = useState(initial?.notes ?? '');
@@ -475,7 +486,9 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
     function validate() {
         const next = {};
         if (!name.trim()) next.name = 'El nombre es obligatorio.';
-        if (!phone.trim()) next.phone_number = 'El teléfono es obligatorio.';
+        // Quien oculta su número en WhatsApp sólo deja el nombre de usuario: la
+        // ficha se puede crear con uno de los dos, pero no sin ninguno.
+        if (!phone.trim() && !cleanUsername(username)) next.phone_number = 'Pon el teléfono o el nombre de usuario de WhatsApp.';
         if (email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) next.email = 'Correo inválido.';
         return next;
     }
@@ -492,7 +505,9 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
         try {
             const payload = {
                 name: name.trim(),
-                phone_number: phone.trim(),
+                last_name: lastName.trim() || null,
+                username: cleanUsername(username) || null,
+                phone_number: joinPhoneNumber(country, phone) || null,
                 phone_numbers: extraNumbers.map(n => n.trim()).filter(Boolean),
                 email: email.trim() || null,
                 notes: notes.trim() || null,
@@ -507,6 +522,7 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
                 setErrors({
                     name: apiErrors.name?.[0],
                     phone_number: apiErrors.phone_number?.[0],
+                    username: apiErrors.username?.[0],
                     email: apiErrors.email?.[0],
                 });
             } else {
@@ -525,15 +541,36 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
                     {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">Nombre</label>
+                            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Juan" autoFocus className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                            {errors.name && <p className="text-xs text-destructive font-medium">{errors.name}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">Apellido <span className="text-muted-foreground font-normal">(opcional)</span></label>
+                            <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Pérez" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                    </div>
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-foreground">Nombre</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Juan Pérez" autoFocus className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
-                        {errors.name && <p className="text-xs text-destructive font-medium">{errors.name}</p>}
+                        <label className="text-sm font-medium text-foreground">Nombre de usuario de WhatsApp</label>
+                        <div className="relative">
+                            <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60" />
+                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="usuario_de_whatsapp" autoCapitalize="off" spellCheck={false} className="flex h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                        {errors.username && <p className="text-xs text-destructive font-medium">{errors.username}</p>}
                     </div>
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium text-foreground">Teléfono principal</label>
-                        <input type="text" value={phone} onChange={e => setPhone(e.target.value)} placeholder="573001234567" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
-                        {errors.phone_number && <p className="text-xs text-destructive font-medium">{errors.phone_number}</p>}
+                        <div className="flex gap-2">
+                            <select value={country} onChange={e => setCountry(e.target.value)} className="h-9 w-32 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>)}
+                            </select>
+                            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3001234567" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                        {errors.phone_number
+                            ? <p className="text-xs text-destructive font-medium">{errors.phone_number}</p>
+                            : <p className="text-xs text-muted-foreground">Quien oculta su número en WhatsApp se guarda sólo con el nombre de usuario.</p>}
                     </div>
                     <div className="space-y-1.5">
                         <div className="flex items-center justify-between">

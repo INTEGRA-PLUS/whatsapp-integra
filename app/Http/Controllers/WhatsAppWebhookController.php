@@ -589,7 +589,7 @@ class WhatsAppWebhookController extends Controller
         // el BSUID en la agenda como si fuera un teléfono.
         try {
             if (!$isBsuid) {
-                $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName);
+                $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName, $username);
             }
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
@@ -1176,7 +1176,7 @@ class WhatsAppWebhookController extends Controller
      * usando el nombre del perfil de WhatsApp. Así ningún contacto que escriba
      * queda "sin registrar".
      */
-    private function ensureContactRegistered(WhatsAppConversation $conversation, Instance $instance, string $phone, string $contactName): void
+    private function ensureContactRegistered(WhatsAppConversation $conversation, Instance $instance, string $phone, string $contactName, ?string $username = null): void
     {
         // Si la conversación ya está vinculada a un contacto, no hay nada que hacer
         if ($conversation->contact_id) {
@@ -1191,10 +1191,18 @@ class WhatsAppWebhookController extends Controller
             })
             ->first();
 
+        // El usuario es único por empresa: si ya lo lleva otra ficha no se copia
+        // aquí, o la inserción reventaría contra el índice y el mensaje entrante
+        // se quedaría sin registrar.
+        $usernameLibre = $username && !Contact::where('company_id', $instance->company_id)
+            ->where('username', $username)
+            ->exists();
+
         if (!$contact) {
             $contact = Contact::create([
                 'company_id' => $instance->company_id,
                 'phone_number' => $phone,
+                'username' => $usernameLibre ? $username : null,
                 'name' => $contactName,
             ]);
 
@@ -1203,15 +1211,28 @@ class WhatsAppWebhookController extends Controller
                 'company_id' => $instance->company_id,
                 'phone' => $phone,
             ]);
-        } elseif ((empty($contact->name) || $contact->name === 'Desconocido')
-            && $contactName && $contactName !== 'Desconocido') {
-            // El contacto existía sin nombre: lo completamos con el del perfil
-            $contact->update(['name' => $contactName]);
+        } else {
+            $completar = [];
+
+            if ((empty($contact->name) || $contact->name === 'Desconocido')
+                && $contactName && $contactName !== 'Desconocido') {
+                // El contacto existía sin nombre: lo completamos con el del perfil
+                $completar['name'] = $contactName;
+            }
+
+            // La ficha se creó antes de que el cliente tuviera nombre de usuario.
+            if (empty($contact->username) && $usernameLibre) {
+                $completar['username'] = $username;
+            }
+
+            if ($completar) {
+                $contact->update($completar);
+            }
         }
 
         $conversation->update([
             'contact_id' => $contact->id,
-            'name' => $contact->name ?: $conversation->name,
+            'name' => $contact->full_name ?: $conversation->name,
         ]);
     }
 

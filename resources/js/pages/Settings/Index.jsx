@@ -2460,6 +2460,205 @@ function AiSwitch({ checked, disabled, onChange }) {
     );
 }
 
+/**
+ * Quién es la IA de esta empresa.
+ *
+ * Va antes de los dos interruptores a propósito: la identidad la comparten los
+ * dos flujos, y ponerla dentro de la tarjeta de uno de ellos haría pensar que
+ * sólo aplica a ése.
+ *
+ * A diferencia de los interruptores, esto no se guarda al teclear: son campos
+ * de texto y guardar en cada letra dejaría a los clientes hablando con un
+ * asistente a medio renombrar.
+ */
+function AsistenteCard({ state, busy, save }) {
+    const saved = state.assistant;
+    const max = saved.limits;
+
+    const asDraft = a => ({
+        nombre_asistente: a.nombre_asistente ?? '',
+        tratamiento: a.tratamiento ?? 'tu',
+        tono: a.tono ?? '',
+        conocimiento: a.conocimiento ?? '',
+        limites: [...(a.limites ?? [])],
+    });
+
+    const [draft, setDraft] = useState(() => asDraft(saved));
+    const [nuevo, setNuevo] = useState('');
+
+    // Al guardar, el backend devuelve el perfil saneado —recortado, sin
+    // duplicados—: el formulario tiene que mostrar eso y no lo que se escribió.
+    useEffect(() => { setDraft(asDraft(saved)); }, [JSON.stringify(saved)]);
+
+    const dirty = JSON.stringify(draft) !== JSON.stringify(asDraft(saved));
+    const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+    function addLimite() {
+        const v = nuevo.trim();
+        if (!v || draft.limites.length >= max.limites || draft.limites.includes(v)) return;
+        set('limites', [...draft.limites, v]);
+        setNuevo('');
+    }
+
+    // La vista previa se arma aquí mientras hay cambios sin guardar; en cuanto
+    // se guarda manda la del backend, que es la que refleja lo que de verdad
+    // va a recibir el flujo.
+    const preview = dirty
+        ? (draft.nombre_asistente.trim() && saved.empresa
+            ? `${draft.nombre_asistente.trim()}, el asistente virtual de ${saved.empresa}`
+            : draft.nombre_asistente.trim()
+                || (saved.empresa ? `el asistente virtual de ${saved.empresa}` : 'el asistente virtual de esta empresa'))
+        : saved.presentacion;
+
+    return (
+        <Card>
+            <div className="p-6 space-y-5">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <BadgeCheck className="size-4 text-teal-600 dark:text-teal-400" />
+                        <p className="text-sm font-semibold text-foreground">Cómo se presenta</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                        Aplica a las dos IA. Si no pones nada, se presenta como el asistente de tu
+                        empresa sin nombre propio.
+                    </p>
+                </div>
+
+                {/* Vista previa: lo que el cliente va a leer */}
+                <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+                    <p className="text-[11px] font-medium text-muted-foreground">Se presentará como</p>
+                    <p className="text-sm text-foreground mt-1">{preview}</p>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-2">
+                    <div className="space-y-2">
+                        <label className="block text-xs font-medium text-muted-foreground">
+                            Nombre del asistente <span className="text-muted-foreground/60">(opcional)</span>
+                        </label>
+                        <input
+                            value={draft.nombre_asistente}
+                            onChange={e => set('nombre_asistente', e.target.value)}
+                            maxLength={max.nombre_asistente}
+                            placeholder="Sofía"
+                            className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="block text-xs font-medium text-muted-foreground">Cómo trata al cliente</label>
+                        <div className="flex gap-2">
+                            {[['tu', 'Tú'], ['usted', 'Usted']].map(([value, label]) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => set('tratamiento', value)}
+                                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                                        draft.tratamiento === value
+                                            ? 'border-teal-500 bg-teal-500/10 text-teal-700 dark:text-teal-300 font-medium'
+                                            : 'border-border text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="block text-xs font-medium text-muted-foreground">Tono</label>
+                    <input
+                        value={draft.tono}
+                        onChange={e => set('tono', e.target.value)}
+                        maxLength={max.tono}
+                        placeholder="cordial, claro y profesional"
+                        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <label className="block text-xs font-medium text-muted-foreground">Qué sabe de tu empresa</label>
+                        <span className="text-[11px] text-muted-foreground/70">
+                            {draft.conocimiento.length}/{max.conocimiento}
+                        </span>
+                    </div>
+                    <textarea
+                        value={draft.conocimiento}
+                        onChange={e => set('conocimiento', e.target.value)}
+                        maxLength={max.conocimiento}
+                        rows={6}
+                        placeholder={'Horarios de atención\nSedes y direcciones\nServicios que ofrecen\nPreguntas frecuentes'}
+                        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40 resize-y"
+                    />
+                    <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                        Sólo podrá afirmar lo que escribas aquí. De lo que no esté, dirá que no lo sabe
+                        con certeza y ofrecerá pasar el chat a un agente.
+                    </p>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="block text-xs font-medium text-muted-foreground">
+                        De qué no debe hablar <span className="text-muted-foreground/60">({draft.limites.length}/{max.limites})</span>
+                    </label>
+
+                    {draft.limites.length > 0 && (
+                        <div className="space-y-2">
+                            {draft.limites.map(l => (
+                                <div key={l} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                                    <span className="flex-1 text-sm text-foreground break-words">{l}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => set('limites', draft.limites.filter(x => x !== l))}
+                                        className="text-muted-foreground hover:text-destructive shrink-0"
+                                        aria-label="Quitar"
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex gap-2">
+                        <input
+                            value={nuevo}
+                            onChange={e => setNuevo(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLimite(); } }}
+                            maxLength={max.limite}
+                            disabled={draft.limites.length >= max.limites}
+                            placeholder="No dar plazos de entrega"
+                            className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40 disabled:opacity-50"
+                        />
+                        <Button
+                            type="button"
+                            onClick={addLimite}
+                            disabled={!nuevo.trim() || draft.limites.length >= max.limites}
+                            variant="outline"
+                            className="gap-1.5 shrink-0"
+                        >
+                            <Plus className="size-4" /> Añadir
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-5">
+                    {dirty && <span className="text-[11px] text-muted-foreground">Hay cambios sin guardar</span>}
+                    <Button
+                        onClick={() => save({ assistant: draft }, 'Perfil del asistente guardado.')}
+                        disabled={busy || !dirty}
+                        className="gap-2 bg-teal-600 hover:bg-teal-500 text-white"
+                    >
+                        {busy && <Loader2 className="size-4 animate-spin" />}
+                        <Save className="size-4" />
+                        Guardar
+                    </Button>
+                </div>
+            </div>
+        </Card>
+    );
+}
+
 function TabFlujoIA() {
     const [state, setState] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -2625,6 +2824,9 @@ function TabFlujoIA() {
                 </Card>
             ) : (
                 <>
+                    {/* Quién es la IA de esta empresa */}
+                    <AsistenteCard state={state} busy={busy} save={save} />
+
                     {/* IA de los chats */}
                     <Card>
                         <div className="p-6">

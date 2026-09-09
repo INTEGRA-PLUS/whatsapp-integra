@@ -8,6 +8,7 @@ use App\Models\WhatsAppBotFlow;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMessage;
+use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use Illuminate\Support\Facades\Http;
@@ -268,6 +269,16 @@ class WhatsAppAiClient
                 'habilitada' => true,
                 'permisos' => $integration->aiPermissionMap(),
             ],
+            // El mismo bloque que recibe el flujo de chats, para que las dos
+            // IA de una empresa se presenten igual: el cliente no distingue
+            // cuál le está contestando, y que cambien de nombre a mitad de
+            // conversación sería lo único que se lo revelaría.
+            //
+            // `puede_ejecutar` en true: este flujo sí tiene herramientas
+            // —consulta Integra, radica, cobra—. Hasta dónde llegan las suyas
+            // lo siguen diciendo los permisos de arriba; esto sólo le dice al
+            // prompt que puede confirmar lo que una herramienta le devuelva.
+            'asistente' => AiAssistantProfile::payload($instance->company_id, true),
             // El flujo consulta Integra por su cuenta con estas credenciales.
             // Si la empresa no lo tiene conectado se manda vacío y el flujo
             // deriva a un asesor, que es lo mismo que hace el menú.

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
+use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use Illuminate\Support\Facades\Http;
@@ -74,6 +75,15 @@ class WhatsAppChatAiClient
                     'tenant_id' => (string) $instance->company_id,
                     'channel' => 'whatsapp',
                     'message_id' => $wamid,
+                    // Quién es la IA de esta empresa. Sin esto el flujo sólo
+                    // recibe `tenant_id` —un número— y no tiene con qué
+                    // nombrar a nadie: de ahí que todas las empresas se
+                    // presentaran con la misma identidad escrita en el prompt.
+                    //
+                    // `puede_ejecutar` en false: este flujo conversa y no
+                    // tiene herramientas. Es lo que le dice al prompt que no
+                    // confirme acciones que no puede llevar a cabo.
+                    'asistente' => AiAssistantProfile::payload($instance->company_id, false),
                 ]);
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ El flujo de chat IA no respondió', [
