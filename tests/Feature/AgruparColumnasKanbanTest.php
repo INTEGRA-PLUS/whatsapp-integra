@@ -110,6 +110,35 @@ class AgruparColumnasKanbanTest extends TestCase
         $this->assertSame(1, KanbanColumn::where('es_bandeja', true)->count());
     }
 
+    /**
+     * Con dos columnas del mismo nombre no hay forma de saber cuál quiere el
+     * cliente, y elegir una en silencio parte los datos: en Star NET el comando
+     * agrupaba el «COVEÑAS» de 11 tarjetas y dejaba fuera el de 18, que pasaban
+     * a vivir en un grupo distinto sin que nadie lo notara.
+     */
+    public function test_se_planta_ante_nombres_repetidos_en_vez_de_elegir_uno(): void
+    {
+        $empresa = $this->empresaCon(['COVEÑAS', 'COVEÑAS', 'Nuevo']);
+        $archivo = $this->archivo(['Zona' => ['columnas' => ['COVEÑAS']]]);
+
+        $this->artisan("kanban:agrupar-columnas {$empresa->id} --archivo={$archivo} --aplicar")
+            ->expectsOutputToContain('nombres repetidos')
+            ->assertFailed();
+
+        $this->assertSame(0, KanbanColumn::whereNotNull('grupo')->count());
+    }
+
+    /** Y enseña cuál es cuál, para poder decidir. */
+    public function test_dice_cuantas_tarjetas_tiene_cada_repetida(): void
+    {
+        $empresa = $this->empresaCon(['COVEÑAS', 'COVEÑAS']);
+        $archivo = $this->archivo(['Zona' => ['columnas' => ['COVEÑAS']]]);
+
+        $this->artisan("kanban:agrupar-columnas {$empresa->id} --archivo={$archivo}")
+            ->expectsOutputToContain('tarjetas')
+            ->assertFailed();
+    }
+
     public function test_una_empresa_que_no_existe_falla_sin_romper_nada(): void
     {
         $this->artisan('kanban:agrupar-columnas "Empresa Fantasma"')
