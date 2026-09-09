@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppCampaignRecipient;
+use App\Services\CampaignPacer;
 use App\Services\CampaignTemplateBuilder;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Bus\Queueable;
@@ -93,18 +94,29 @@ class ProcessWhatsAppCampaign implements ShouldQueue
         ]);
 
         $rate = max(1, (int) ($campaign->rate_per_minute ?: 60));
-        $position = 0;
         $encolados = 0;
+        $arranque = null;
+        $pacer = app(CampaignPacer::class);
 
+        // Los turnos se piden por tandas, no de golpe: el reloj es de la
+        // instancia y pedir 12.000 de una vez lo dejaría bloqueado mientras se
+        // recorre la tabla entera. Cada tanda reserva lo suyo y suelta.
         WhatsAppCampaignRecipient::where('campaign_id', $campaign->id)
             ->where('status', 'pending')
             ->orderBy('id')
-            ->chunkById(200, function ($recipients) use ($rate, &$position, &$encolados) {
-                foreach ($recipients as $recipient) {
-                    SendCampaignMessage::dispatch($recipient->id)
-                        ->delay(now()->addSeconds((int) floor($position * 60 / $rate)));
+            ->chunkById(200, function ($recipients) use ($campaign, $rate, $pacer, &$encolados, &$arranque) {
+                [$inicio, $espaciadoMs] = $pacer->reserve(
+                    $campaign->instance_id,
+                    $recipients->count(),
+                    $rate
+                );
 
-                    $position++;
+                $arranque ??= $inicio;
+
+                foreach ($recipients->values() as $i => $recipient) {
+                    SendCampaignMessage::dispatch($recipient->id)
+                        ->delay($inicio->addMilliseconds($i * $espaciadoMs));
+
                     $encolados++;
                 }
             });
@@ -113,6 +125,12 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             'campaign_id' => $campaign->id,
             'destinatarios' => $encolados,
             'ritmo_por_minuto' => $rate,
+            // Cuánto tuvo que esperar por otras campañas del mismo número. Un
+            // valor alto no es un fallo: es el reloj de la instancia haciendo
+            // su trabajo, y explica por qué la campaña "no ha empezado".
+            'espera_por_el_numero' => $arranque
+                ? max(0, (int) round(now()->diffInSeconds($arranque, false)))
+                : 0,
         ]);
 
         // Nadie a quien enviar: la campaña ya está terminada.

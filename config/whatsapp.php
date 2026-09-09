@@ -52,4 +52,37 @@ return [
         'message_window' => (int) env('CHAT_MESSAGE_WINDOW', 100),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Campañas
+    |--------------------------------------------------------------------------
+    |
+    | `max_selection` es el techo de "seleccionar todos los resultados". Existe
+    | para que una consulta sin filtros no traiga la base entera al navegador,
+    | no como límite de negocio: cuando corta, la respuesta lo dice
+    | (`truncated`) y el asistente lo avisa en pantalla. Antes era un 5000 fijo
+    | y mudo, así que una cooperativa de 12.000 socios se quedaba en 5.000 sin
+    | que nadie lo supiera hasta contar los enviados.
+    |
+    | `pacing.scope` decide contra qué reloj se escalonan los envíos:
+    |
+    |   instance → un solo reloj por número de WhatsApp (por defecto)
+    |   campaign → cada campaña con el suyo, como se hacía antes
+    |
+    | El ritmo lo pide cada campaña (`rate_per_minute`), pero quien manda es el
+    | número: Meta cuenta los mensajes por `phone_number_id`, no por campaña.
+    | Con el reloj por campaña, tres campañas a 60/min sobre el mismo número
+    | eran 180/min reales contra Meta y ninguna sabía de las otras. Con el reloj
+    | por instancia se reparten los turnos y el número nunca supera su ritmo.
+    |
+    */
+
+    'campaigns' => [
+        'max_selection' => (int) env('CAMPAIGNS_MAX_SELECTION', 25000),
+
+        'pacing' => [
+            'scope' => env('CAMPAIGNS_PACING_SCOPE', 'instance'),
+        ],
+    ],
+
 ];

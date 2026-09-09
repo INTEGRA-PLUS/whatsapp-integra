@@ -10,6 +10,7 @@ use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppCampaignRecipient;
 use App\Models\WhatsAppCampaignSegment;
 use App\Models\WhatsAppConversation;
+use App\Services\CampaignPacer;
 use App\Services\CampaignTemplateBuilder;
 use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
@@ -331,6 +332,11 @@ class WhatsAppCampaignController extends Controller
         ]);
         $campaign->refreshCounters();
 
+        // Una campaña grande reserva horas del reloj del número. Cancelada, esa
+        // reserva ya no corresponde a nada: sin soltarla, la siguiente campaña
+        // esperaría un turno que nadie va a usar.
+        app(CampaignPacer::class)->releaseIfIdle($campaign->instance_id);
+
         return back()->with('success', 'Campaña cancelada');
     }
 
@@ -588,10 +594,16 @@ class WhatsAppCampaignController extends Controller
 
         $term = trim((string) $request->input('q', ''));
 
+        // Se pide uno más que el techo para saber si había más y poder decirlo.
+        // El tope existe para no traerse la base entera al navegador; antes era
+        // un 5000 fijo y mudo, y una lista de 12.000 se quedaba en 5.000 sin que
+        // nadie se enterara hasta contar los enviados.
+        $techo = max(1, (int) config('whatsapp.campaigns.max_selection', 25000));
+
         if ($request->input('source', 'conversations') === 'contacts') {
             $rows = Contact::where('company_id', $user->company_id)
                 ->when($term !== '', fn ($q) => $q->search($term))
-                ->limit(5000)
+                ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])
                 ->map(fn ($c) => [
                     'key' => 'contact:'.$c->id,
@@ -612,7 +624,7 @@ class WhatsAppCampaignController extends Controller
                     'tags',
                     fn ($t) => $t->whereIn('tags.id', $request->input('tag_ids'))
                 ))
-                ->limit(5000)
+                ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'wa_id'])
                 ->map(fn ($c) => [
                     'key' => 'conversation:'.$c->id,
@@ -624,7 +636,17 @@ class WhatsAppCampaignController extends Controller
                 ]);
         }
 
-        return response()->json(['contacts' => $rows->values(), 'total' => $rows->count()]);
+        $recortado = $rows->count() > $techo;
+
+        return response()->json([
+            'contacts' => $rows->take($techo)->values(),
+            'total' => min($rows->count(), $techo),
+            // El asistente lo usa para avisar en pantalla. Un recorte silencioso
+            // es peor que un error: la campaña sale, parece correcta, y falta
+            // gente.
+            'truncated' => $recortado,
+            'limit' => $techo,
+        ]);
     }
 
     public function storeSegment(Request $request)
@@ -811,8 +833,11 @@ class WhatsAppCampaignController extends Controller
             ];
         };
 
-        if (! empty($data['conversation_ids'])) {
-            WhatsAppConversation::whereIn('whatsapp_conversations.id', $data['conversation_ids'])
+        // Los ids llegan en tandas de 500 y no de una vez: una cooperativa manda
+        // doce mil, y eso en un solo `IN (...)` es una consulta que MySQL corta
+        // por `max_allowed_packet` y un plan de ejecución que degenera.
+        foreach (array_chunk($data['conversation_ids'] ?? [], 500) as $ids) {
+            WhatsAppConversation::whereIn('whatsapp_conversations.id', $ids)
                 ->where('whatsapp_conversations.instance_id', $data['instance_id'])
                 ->join('instances', 'instances.id', '=', 'whatsapp_conversations.instance_id')
                 ->where('instances.company_id', $companyId)
@@ -826,8 +851,8 @@ class WhatsAppCampaignController extends Controller
                 ->each(fn ($c) => $push($c->phone_number ?: ($c->bsuid ?: $c->wa_id), $c->name, null, $c->id));
         }
 
-        if (! empty($data['contact_ids'])) {
-            Contact::whereIn('id', $data['contact_ids'])
+        foreach (array_chunk($data['contact_ids'] ?? [], 500) as $ids) {
+            Contact::whereIn('id', $ids)
                 ->where('company_id', $companyId)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])
                 ->each(fn ($c) => $push($c->phone_number, $c->name, $c->id, null, [
