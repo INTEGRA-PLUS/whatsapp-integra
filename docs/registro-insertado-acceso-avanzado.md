@@ -25,6 +25,9 @@ automática: *Casos de uso → Conectar en WhatsApp → Permisos y funciones →
 Aumentar acceso*. Meta pide reintroducir la contraseña de la cuenta para aplicarlo. Comprobado después
 por API: `access_level: advanced`, `grant_status: DEVOPS_APPROVED`.
 
+**Confirmado el 9-sep-2026**: con el acceso avanzado concedido, una cuenta de Facebook **sin rol en la
+app** completa el registro insertado. El caso queda cerrado.
+
 Ojo: el diálogo de confirmación avisa de que `public_profile` también pertenece al caso de uso de la API
 de marketing —que esta app tiene sin usar— y de que el cambio "might mean new requirements and reviews".
 Las apps con acceso avanzado quedan sujetas a *Ongoing Review*, con requisitos reducidos para las de
