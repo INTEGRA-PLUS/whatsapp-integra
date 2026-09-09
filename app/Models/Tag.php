@@ -26,6 +26,7 @@ class Tag extends Model
      */
     public function conversations(): BelongsToMany
     {
-        return $this->belongsToMany(WhatsAppConversation::class, 'whatsapp_conversation_tag', 'tag_id', 'whatsapp_conversation_id');
+        return $this->belongsToMany(WhatsAppConversation::class, 'whatsapp_conversation_tag', 'tag_id', 'whatsapp_conversation_id')
+            ->withTimestamps();
     }
 }

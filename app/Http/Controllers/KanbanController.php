@@ -33,6 +33,15 @@ class KanbanController extends Controller
 
         $query = WhatsAppConversation::query()
             ->select(['id', 'instance_id', 'phone_number', 'name', 'last_message', 'last_message_at', 'status', 'kanban_column_id', 'assigned_to', 'unread_count'])
+            // Cuándo entró la tarjeta en esta columna: es la fecha en que se le
+            // enganchó la etiqueta. Va como subconsulta y no con el `pivot` de
+            // la relación porque cada tarjeta lleva etiquetas de varios grupos
+            // y aquí sólo interesa la de esta columna.
+            ->addSelect(['entro_en_etapa' => \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag')
+                ->select('created_at')
+                ->whereColumn('whatsapp_conversation_id', 'whatsapp_conversations.id')
+                ->where('tag_id', $column->tag_id)
+                ->limit(1)])
             ->with(['assignedAgent:id,name', 'tags'])
             ->whereIn('instance_id', Instance::where('company_id', $user->company_id)->pluck('id'))
             ->when($request->search, fn ($q, $s) => $q->search($s))

@@ -10,6 +10,8 @@ import {
     CheckCircle2,
     Layers,
     Inbox,
+    ChevronLeft,
+    ChevronRight,
     AlertCircle,
     GripVertical,
     Calendar,
@@ -58,88 +60,107 @@ async function apiRequest(method, url, body = null) {
 
 // ─── KanbanCard ──────────────────────────────────────────────────────────────
 
-const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
-    <div
-        {...props}
-        className={clsx(
-            'group relative bg-white dark:bg-muted p-4 rounded-[1.5rem] border select-none',
-            isOverlay
-                ? 'border-primary/30 shadow-2xl z-50 cursor-grabbing ring-2 ring-primary/10 scale-[1.02] rotate-1 transition-transform duration-200'
-                : isDragging
-                    ? 'opacity-0'
-                    : 'border-border/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
-        )}
-    >
-        {/* Placeholder dashed border when dragging (visible only if we don't use opacity-0 above) */}
-        <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-            <GripVertical className="size-4 text-muted-foreground group-hover:text-accent-foreground transition-colors" />
-        </div>
+/**
+ * Cuánto lleva la tarjeta en su columna.
+ *
+ * Cada columna es una etiqueta, así que la fecha en que se enganchó es la fecha
+ * en que la tarjeta entró. Las filas anteriores al 9-sep-2026 se guardaron sin
+ * hora —la relación no declaraba withTimestamps— y para esas no se inventa
+ * nada: no se pinta el distintivo.
+ */
+const diasEnEtapa = (entroEnEtapa) => {
+    if (!entroEnEtapa) return null;
 
-        <div className="flex items-start mb-4">
-            <div className="flex items-center gap-3.5">
-                <div className="relative">
-                    <div className="size-11 rounded-2xl bg-gradient-to-br from-background to-muted dark:from-card dark:to-background text-foreground dark:text-muted-foreground flex items-center justify-center font-black text-[13px] uppercase border border-border/50 shadow-inner">
+    const dias = Math.floor((Date.now() - new Date(entroEnEtapa).getTime()) / 86400000);
+
+    return Number.isFinite(dias) && dias >= 0 ? dias : null;
+};
+
+const DIAS_PARA_AVISAR = 7;
+
+const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
+    const dias = diasEnEtapa(conv.entro_en_etapa);
+    const estancada = dias !== null && dias >= DIAS_PARA_AVISAR;
+
+    return (
+        <div
+            {...props}
+            className={clsx(
+                'group relative bg-white dark:bg-muted px-3.5 py-3 rounded-2xl border select-none',
+                isOverlay
+                    ? 'border-primary/30 shadow-2xl z-50 cursor-grabbing ring-2 ring-primary/10 scale-[1.02] rotate-1 transition-transform duration-200'
+                    : isDragging
+                        ? 'opacity-0'
+                        : 'border-border/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
+            )}
+        >
+            <div className="flex items-center gap-3 mb-2">
+                <div className="relative shrink-0">
+                    <div className="size-9 rounded-xl bg-muted dark:bg-card text-foreground dark:text-muted-foreground flex items-center justify-center font-black text-[11px] uppercase border border-border/50">
                         {conv.initials}
                     </div>
                     {conv.unread_count > 0 && (
-                        <div className="absolute -top-1.5 -right-1.5 size-5 bg-primary text-primary-foreground text-[10px] font-black rounded-full border-2 border-white dark:border-border flex items-center justify-center shadow-lg shadow-primary/30">
+                        <div className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-primary text-primary-foreground text-[10px] font-black rounded-full border-2 border-white dark:border-muted flex items-center justify-center">
                             {conv.unread_count}
                         </div>
                     )}
                 </div>
-                <div className="min-w-0 pr-6">
-                    <h3 className="text-[14px] font-black text-foreground dark:text-muted-foreground truncate tracking-tight leading-none mb-1">
+
+                <div className="min-w-0 flex-1">
+                    <h3 className="text-[13px] font-black text-foreground dark:text-muted-foreground truncate tracking-tight leading-tight">
                         {conv.name || conv.phone_number}
                     </h3>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-bold uppercase tracking-wider opacity-80">
-                        <Clock className="size-3" />
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-bold leading-tight">
+                        <Clock className="size-2.5 shrink-0" />
                         {conv.last_message_at
                             ? new Date(conv.last_message_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
-                            : '—'}
+                            : 'sin mensajes'}
                     </div>
                 </div>
+
+                <GripVertical className="size-4 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
             </div>
-        </div>
 
-        <div className="relative mb-5">
-            <p className="text-[12px] text-muted-foreground line-clamp-2 leading-relaxed font-medium">
-                {conv.last_message || 'No hay mensajes previos...'}
+            <p className="text-[12px] text-muted-foreground line-clamp-2 leading-snug mb-2.5">
+                {conv.last_message || 'Sin mensajes todavía'}
             </p>
-        </div>
 
-        <div className="pt-4 border-t border-border flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                <div className="flex -space-x-2.5">
-                    <div className="size-7 rounded-full border-2 border-white dark:border-border bg-muted flex items-center justify-center text-[9px] font-black text-muted-foreground shadow-sm">
-                        <Users className="size-3.5" />
-                    </div>
-                    {conv.assigned_agent && (
+            <div className="flex items-center justify-between gap-2">
+                {conv.assigned_agent ? (
+                    <div className="flex items-center gap-1.5 min-w-0">
                         <div
-                            className="size-7 rounded-full border-2 border-white dark:border-border bg-gradient-to-br from-primary to-success flex items-center justify-center text-[9px] font-black text-primary-foreground shadow-md"
+                            className="size-5 shrink-0 rounded-full bg-primary/20 text-accent-foreground flex items-center justify-center text-[8px] font-black"
                             title={conv.assigned_agent.name}
                         >
                             {conv.assigned_agent.name.substring(0, 2).toUpperCase()}
                         </div>
-                    )}
-                </div>
-                <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-0.5">
-                        {conv.assigned_agent ? 'Asignado a' : 'Sin Agente'}
-                    </span>
-                    {conv.assigned_agent && (
-                        <span className="text-[10px] font-bold text-muted-foreground leading-none">
+                        <span className="text-[10px] font-bold text-muted-foreground truncate">
                             {conv.assigned_agent.name}
                         </span>
-                    )}
-                </div>
-            </div>
-            <div className="bg-success/10 px-2.5 py-1 rounded-full text-[9px] font-black text-success uppercase tracking-tighter flex items-center gap-1 border border-success/10">
-                <Zap className="size-2.5 fill-current" />
-                Lead
+                    </div>
+                ) : (
+                    <span className="text-[10px] font-bold text-muted-foreground/60">Sin agente</span>
+                )}
+
+                {dias !== null && (
+                    <span
+                        className={clsx(
+                            'shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums',
+                            estancada
+                                ? 'bg-warning/15 text-warning'
+                                : 'bg-muted text-muted-foreground'
+                        )}
+                        title={estancada
+                            ? `Lleva ${dias} días en esta etapa sin moverse`
+                            : `Entró en esta etapa hace ${dias} ${dias === 1 ? 'día' : 'días'}`}
+                    >
+                        {dias === 0 ? 'hoy' : `${dias} d`}
+                    </span>
+                )}
             </div>
         </div>
-    </div>
-));
+    );
+});
 
 const SortableKanbanCard = memo(({ conv, index }) => {
     return (
@@ -534,6 +555,21 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         [grupos, grupoActivo, columns]
     );
 
+    // ── Desplazamiento horizontal ──────────────────────────────────────────
+    //
+    // Con los grupos, un tablero baja a seis o siete columnas y cabe entero.
+    // Pero «Sin agrupar» puede seguir teniendo cuarenta, y entonces la única
+    // forma de llegar a la última era arrastrar una barra de 6 píxeles.
+    const tableroRef = useRef(null);
+    // Cada flecha se pinta sólo si hay algo hacia ese lado: si no, la de la
+    // izquierda tapa tarjetas de la primera columna sin hacer nada.
+    const [puedeIzquierda, setPuedeIzquierda] = useState(false);
+    const [puedeDerecha, setPuedeDerecha]     = useState(false);
+
+    const desplazar = (direccion) => {
+        tableroRef.current?.scrollBy({ left: direccion * 360, behavior: 'smooth' });
+    };
+
     // Para las dependencias de los efectos: un array nuevo en cada render los
     // dispararía en bucle.
     const filtrosKey = filtros.join(',');
@@ -542,6 +578,29 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     // argumentos, así que lee la vista actual de aquí en vez de recrearse.
     const vistaRef = useRef({ grupo: grupoActivo, filtros });
     useEffect(() => { vistaRef.current = { grupo: grupoActivo, filtros }; }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+        const tablero = tableroRef.current;
+        if (!tablero) return;
+
+        const medir = () => {
+            const restante = tablero.scrollWidth - tablero.clientWidth - tablero.scrollLeft;
+            setPuedeIzquierda(tablero.scrollLeft > 8);
+            setPuedeDerecha(restante > 8);
+        };
+        medir();
+
+        // Al cambiar de grupo cambian las columnas, y al cambiar el tamaño de
+        // la ventana cambia lo que cabe.
+        const observador = new ResizeObserver(medir);
+        observador.observe(tablero);
+        tablero.addEventListener('scroll', medir, { passive: true });
+
+        return () => {
+            observador.disconnect();
+            tablero.removeEventListener('scroll', medir);
+        };
+    }, [columnasVisibles.length, borradorEtapa]);
 
     // We keep a ref to the latest boardData so handleDragEnd can read the
     // current state synchronously without relying on stale closures.
@@ -940,7 +999,19 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 />
             )}
 
-            <div className="flex-1 flex flex-col min-h-0 bg-[#fdfdfe] dark:bg-[#080c14] overflow-hidden">
+            {/*
+                La altura se fija aquí, como en el chat (`h-[calc(100vh-49px)]`,
+                49px de la barra superior).
+
+                Sin eso, las columnas crecían con sus tarjetas, el `main` del
+                layout crecía con ellas —nada de la cadena acota la altura— y la
+                página entera medía 4.835px: el `overflow-y-auto` de cada columna
+                no llegaba a activarse nunca. Se desplazaba el documento, así
+                que las cabeceras de las etapas y las métricas se iban de la
+                vista, y no se podía comparar dos columnas porque cada una tenía
+                sus tarjetas a distinta altura.
+            */}
+            <div className="relative h-[calc(100vh-49px)] flex flex-col min-h-0 bg-[#fdfdfe] dark:bg-[#080c14] overflow-hidden">
                 {/* Header */}
                 <div className="px-6 lg:px-10 pt-8 pb-4 relative z-10">
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
@@ -1055,7 +1126,26 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 )}
 
                 {/* Board */}
-                <div className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
+                {puedeIzquierda && (
+                    <button
+                        onClick={() => desplazar(-1)}
+                        aria-label="Ver las etapas anteriores"
+                        className="absolute left-2 top-1/2 z-30 size-10 rounded-full bg-white/90 dark:bg-muted/90 border border-border shadow-lg backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-105 active:scale-95 transition-all"
+                    >
+                        <ChevronLeft className="size-5" />
+                    </button>
+                )}
+                {puedeDerecha && (
+                    <button
+                        onClick={() => desplazar(1)}
+                        aria-label="Ver las etapas siguientes"
+                        className="absolute right-2 top-1/2 z-30 size-10 rounded-full bg-white/90 dark:bg-muted/90 border border-border shadow-lg backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-105 active:scale-95 transition-all"
+                    >
+                        <ChevronRight className="size-5" />
+                    </button>
+                )}
+
+                <div ref={tableroRef} className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
                     <DragDropContext onDragEnd={handleDragEnd}>
                         {columnasVisibles.map(col => (
                             <BoardColumn

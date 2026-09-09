@@ -339,7 +339,17 @@ class WhatsAppConversation extends Model
      */
     public function tags(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
-        return $this->belongsToMany(Tag::class, 'whatsapp_conversation_tag', 'whatsapp_conversation_id', 'tag_id');
+        // withTimestamps es lo que da el «lleva 12 días en esta etapa»: cada
+        // columna del tablero es una etiqueta, así que la fecha en que se
+        // enganchó es la fecha en que la tarjeta entró en la columna.
+        //
+        // La tabla pivote tenía las dos columnas de fecha desde el principio,
+        // pero sin esto Eloquent nunca las rellenaba: las 1.026 filas
+        // anteriores al 9-sep-2026 están a NULL y no hay forma honrada de
+        // reconstruirlas. Se muestran como «sin dato» hasta que la tarjeta se
+        // mueva una vez.
+        return $this->belongsToMany(Tag::class, 'whatsapp_conversation_tag', 'whatsapp_conversation_id', 'tag_id')
+            ->withTimestamps();
     }
 
     public function markAsRead()
