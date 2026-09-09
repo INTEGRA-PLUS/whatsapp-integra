@@ -9,6 +9,7 @@ import {
     Clock,
     CheckCircle2,
     Layers,
+    Inbox,
     AlertCircle,
     GripVertical,
     Calendar,
@@ -209,7 +210,7 @@ const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error 
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo }) => {
+const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const [editandoGrupo, setEditandoGrupo] = useState(false);
@@ -270,6 +271,11 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                             </form>
                         ) : null}
                         <div className="flex items-center gap-2">
+                            {col.es_bandeja && (
+                                <span className="text-[9px] font-black text-accent-foreground uppercase tracking-widest" title="Recoge lo que no está clasificado en este grupo">
+                                    Bandeja
+                                </span>
+                            )}
                             <span className="text-[10px] font-bold text-muted-foreground/70">{col.subtitle || 'Procesos'}</span>
                             <span className="size-1 rounded-full bg-muted" />
                             <span className="text-[10px] font-black text-accent-foreground">{totalCount ?? items.length}</span>
@@ -278,6 +284,20 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover/column:opacity-100 transition-all">
+                    <button
+                        onClick={() => onCambiarBandeja(col.id, !col.es_bandeja)}
+                        className={clsx(
+                            'p-1.5 rounded-lg transition-colors',
+                            col.es_bandeja
+                                ? 'bg-primary/15 text-accent-foreground'
+                                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                        )}
+                        title={col.es_bandeja
+                            ? 'Recoge lo que no está clasificado en este grupo'
+                            : 'Hacer que recoja lo que no está clasificado en este grupo'}
+                    >
+                        <Inbox className="size-3.5" />
+                    </button>
                     <button onClick={() => setEditandoGrupo(true)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors" title="Grupo de la etapa">
                         <Layers className="size-3.5" />
                     </button>
@@ -771,6 +791,30 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         }
     };
 
+    /**
+     * Marcar qué columna recoge lo que no está clasificado.
+     *
+     * En «Estado» quieres que sea «Nuevo». En «Zona» no quieres ninguna: una
+     * conversación sin municipio no es de Cereté por ser Cereté la primera
+     * columna, y ahí la suma de las columnas debe ser menor que el total.
+     */
+    const cambiarBandeja = async (id, valor) => {
+        const col = columns.find(c => c.id === id);
+        try {
+            await apiRequest('PUT', `/api/kanban/columns/${id}`, { es_bandeja: valor });
+            // El servidor desmarca la anterior del mismo grupo; aquí lo mismo.
+            setColumns(prev => prev.map(c => {
+                if (c.id === id) return { ...c, es_bandeja: valor };
+                if (valor && (c.grupo ?? null) === (col?.grupo ?? null)) return { ...c, es_bandeja: false };
+                return c;
+            }));
+            loadCounts();
+            columnasVisibles.forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
+        } catch (err) {
+            console.error('Error al cambiar la bandeja:', err);
+        }
+    };
+
     const renameColumn = async (id, newName) => {
         try {
             const updated = await apiRequest('PUT', `/api/kanban/columns/${id}`, { name: newName });
@@ -1025,6 +1069,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 onLoadMore={handleLoadMore}
                                 onRename={renameColumn}
                                 onCambiarGrupo={cambiarGrupo}
+                                onCambiarBandeja={cambiarBandeja}
                                 onDelete={deleteColumn}
                                 onAddCard={setNewCardColumn}
                             />

@@ -197,15 +197,15 @@ class KanbanGruposTest extends TestCase
     }
 
     /**
-     * La primera columna de cada grupo hace de bandeja: recoge lo que no lleva
-     * ninguna etiqueta de ese grupo. Sin eso, las conversaciones nuevas no
-     * aparecerían en ninguna parte del CRM.
+     * La columna marcada como bandeja recoge lo que no lleva ninguna etiqueta
+     * de su grupo. Sin eso, las conversaciones nuevas no aparecerían en
+     * ninguna parte del CRM.
      */
-    public function test_la_primera_columna_del_grupo_recoge_lo_que_no_esta_clasificado(): void
+    public function test_la_bandeja_del_grupo_recoge_lo_que_no_esta_clasificado(): void
     {
         [$user, $instance] = $this->empresa();
 
-        $nuevo   = $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado', bandeja: true);
         $this->columna($user->company_id, 'Resuelto', 'Estado');
         $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
 
@@ -217,6 +217,62 @@ class KanbanGruposTest extends TestCase
             ->getJson("/api/kanban/columns/{$nuevo->id}/cards")
             ->assertOk()
             ->assertJsonPath('data.0.id', $conv->id);
+    }
+
+    /**
+     * Y un grupo **sin** bandeja no las recoge, que es justo lo que hace falta
+     * en «Zona»: una conversación sin municipio no es de Cereté por ser Cereté
+     * la primera columna. Aquí la suma de las columnas es menor que el total, y
+     * está bien que lo sea.
+     */
+    public function test_un_grupo_sin_bandeja_no_muestra_lo_no_clasificado(): void
+    {
+        [$user, $instance] = $this->empresa();
+
+        $cerete   = $this->columna($user->company_id, 'CERETE', 'Zona');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+
+        $sinZona = $this->conversacion($instance, null, '573001112233');
+        $conZona = $this->conversacion($instance, $monteria, '573004445566');
+        $conZona->tags()->attach([$monteria->tag_id]);
+
+        $this->actingAs($user)->getJson("/api/kanban/columns/{$cerete->id}/cards")
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($user)->getJson("/api/kanban/counts?grupo=Zona")
+            ->assertJson([$cerete->id => 0, $monteria->id => 1]);
+
+        // La conversación sin zona no ha desaparecido: sigue en el otro grupo.
+        $this->assertNotNull($sinZona->fresh());
+    }
+
+    /** Dos bandejas en un grupo mostrarían lo mismo en dos columnas. */
+    public function test_marcar_una_bandeja_desmarca_la_anterior(): void
+    {
+        [$user] = $this->empresa();
+
+        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado', bandeja: true);
+        $resuelto = $this->columna($user->company_id, 'Resuelto', 'Estado');
+
+        $this->actingAs($user)
+            ->putJson('/api/kanban/columns/'.$resuelto->id, ['es_bandeja' => true])
+            ->assertOk()
+            ->assertJsonPath('es_bandeja', true);
+
+        $this->assertFalse($nuevo->fresh()->es_bandeja);
+    }
+
+    /** Pero la bandeja de otro grupo no se toca. */
+    public function test_la_bandeja_de_otro_grupo_se_queda_como_esta(): void
+    {
+        [$user] = $this->empresa();
+
+        $nuevo = $this->columna($user->company_id, 'Nuevo', 'Estado', bandeja: true);
+        $zona  = $this->columna($user->company_id, 'CERETE', 'Zona');
+
+        $this->actingAs($user)->putJson('/api/kanban/columns/'.$zona->id, ['es_bandeja' => true])->assertOk();
+
+        $this->assertTrue($nuevo->fresh()->es_bandeja);
     }
 
     /**
@@ -246,9 +302,9 @@ class KanbanGruposTest extends TestCase
     {
         [$user, $instance] = $this->empresa();
 
-        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado');
+        $nuevo    = $this->columna($user->company_id, 'Nuevo', 'Estado', bandeja: true);
         $resuelto = $this->columna($user->company_id, 'Resuelto', 'Estado');
-        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona');
+        $monteria = $this->columna($user->company_id, 'MONTERIA', 'Zona', bandeja: true);
         $cerete   = $this->columna($user->company_id, 'CERETE', 'Zona');
 
         $uno = $this->conversacion($instance, $resuelto, '573001112233');
@@ -310,13 +366,13 @@ class KanbanGruposTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
-    private function columna(int $companyId, string $nombre, ?string $grupo): KanbanColumn
+    private function columna(int $companyId, string $nombre, ?string $grupo, bool $bandeja = false): KanbanColumn
     {
         $tag = Tag::create(['company_id' => $companyId, 'name' => $nombre, 'color' => '#64748b']);
 
         // El TagObserver ya creó la columna; sólo hay que ponerle el grupo.
         $col = KanbanColumn::where('company_id', $companyId)->where('tag_id', $tag->id)->firstOrFail();
-        $col->update(['grupo' => $grupo]);
+        $col->update(['grupo' => $grupo, 'es_bandeja' => $bandeja]);
 
         return $col->fresh();
     }

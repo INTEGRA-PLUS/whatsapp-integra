@@ -1,0 +1,21 @@
+{
+  "Estado": {
+    "bandeja": "Nuevo",
+    "columnas": ["Nuevo", "En proceso", "Escalado", "Agendado", "Pendiente cliente", "Resuelto"]
+  },
+  "Tipo de falla": {
+    "columnas": ["Sin servicio", "Lentitud", "Intermitencia", "WiFi / Clave", "Falla de zona", "Visita programada", "Cambio de equipo"]
+  },
+  "Área": {
+    "columnas": ["COMERCIAL", "LOGISTICA", "MESA DE AYUDA", "FACTURACION", "NOC"]
+  },
+  "Zona": {
+    "columnas": ["CERETE", "MONTERIA", "TOLU", "TOLU VIEJO", "COVEÑAS", "COVEÑAS BASE NAVAL", "SUPIA", "TUCHIN", "FUNDACION"]
+  },
+  "Comercial": {
+    "columnas": ["Nuevo lead", "Cotización enviada", "Cobertura", "Venta cerrada", "Retención", "Referido"]
+  },
+  "Cartera": {
+    "columnas": ["Recordatorio de pago", "Suspendido", "Pago confirmado", "Reclamo de factura"]
+  }
+}

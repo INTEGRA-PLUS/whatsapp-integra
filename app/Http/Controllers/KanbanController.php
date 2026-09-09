@@ -28,7 +28,6 @@ class KanbanController extends Controller
         $column = KanbanColumn::where('company_id', $user->company_id)->findOrFail($columnId);
 
         $delGrupo = $this->columnasDelGrupo($user->company_id, $column->grupo);
-        $esPrimera = $delGrupo->first()?->id === $column->id;
 
         $perPage = min((int) ($request->per_page ?? 30), 100);
 
@@ -39,7 +38,7 @@ class KanbanController extends Controller
             ->when($request->search, fn ($q, $s) => $q->search($s))
             ->orderByDesc('last_message_at');
 
-        $this->colocarEnColumna($query, $column, $delGrupo, $esPrimera);
+        $this->colocarEnColumna($query, $column, $delGrupo);
         $this->aplicarFiltros($query, $request->input('filtros', []), $user->company_id);
 
         $paginated = $query->simplePaginate($perPage);
@@ -78,11 +77,13 @@ class KanbanController extends Controller
      * de Star NET— se queda en la primera del grupo, para no salir duplicada en
      * dos columnas. Se coloca sola en su sitio en cuanto alguien la arrastre.
      *
-     * La primera columna del grupo hace además de bandeja: recoge lo que no
-     * tiene ninguna etiqueta del grupo, que es donde caen todas las
-     * conversaciones nuevas. Sin eso no aparecerían en ninguna parte del CRM.
+     * La columna marcada como bandeja recoge además lo que no lleva ninguna
+     * etiqueta del grupo. En «Estado» eso es «Nuevo», y sin ello las
+     * conversaciones nuevas no aparecerían en ninguna parte del CRM. En «Zona»
+     * no hay bandeja que valga: lo que no tiene municipio no es de Cereté, así
+     * que no sale, y la suma de las columnas es menor que el total.
      */
-    private function colocarEnColumna($query, KanbanColumn $column, \Illuminate\Support\Collection $delGrupo, bool $esPrimera): void
+    private function colocarEnColumna($query, KanbanColumn $column, \Illuminate\Support\Collection $delGrupo): void
     {
         $tagsDelGrupo = $delGrupo->pluck('tag_id')->filter();
         $anteriores   = $delGrupo->takeWhile(fn ($c) => $c->id !== $column->id)->pluck('tag_id')->filter();
@@ -90,7 +91,7 @@ class KanbanController extends Controller
         $tieneLaSuya = fn ($q) => $q->whereHas('tags', fn ($t) => $t->where('tags.id', $column->tag_id))
             ->when($anteriores->isNotEmpty(), fn ($qq) => $qq->whereDoesntHave('tags', fn ($t) => $t->whereIn('tags.id', $anteriores)));
 
-        if ($esPrimera) {
+        if ($column->es_bandeja) {
             $query->where(function ($q) use ($tieneLaSuya, $tagsDelGrupo) {
                 $q->where($tieneLaSuya)
                     ->orWhereDoesntHave('tags', fn ($t) => $t->whereIn('tags.id', $tagsDelGrupo));
@@ -200,9 +201,14 @@ class KanbanController extends Controller
             $result[$columnaPorTag[$tagId]]++;
         }
 
-        // Y la primera columna hace de bandeja de lo que no tiene ninguna
-        // etiqueta del grupo: las conversaciones nuevas.
-        $result[$delGrupo->first()->id] += (clone $base)->count() - $etiquetadas->count();
+        // Y la bandeja del grupo, si la hay, suma lo que no lleva ninguna
+        // etiqueta del grupo: las conversaciones nuevas. Un grupo sin bandeja
+        // —«Zona»— simplemente no las cuenta.
+        $bandeja = $delGrupo->firstWhere('es_bandeja', true);
+
+        if ($bandeja) {
+            $result[$bandeja->id] += (clone $base)->count() - $etiquetadas->count();
+        }
 
         return response()->json($result);
     }
@@ -217,6 +223,7 @@ class KanbanController extends Controller
             'icon'     => 'nullable|string|max:50',
             'subtitle' => 'nullable|string|max:100',
             'grupo'    => 'nullable|string|max:60',
+            'es_bandeja' => 'nullable|boolean',
         ]);
 
         // Dos etapas con el mismo nombre no se pueden distinguir en el tablero, y
@@ -268,6 +275,7 @@ class KanbanController extends Controller
             'icon'     => 'sometimes|string|max:50',
             'subtitle' => 'sometimes|string|max:100',
             'grupo'    => 'sometimes|nullable|string|max:60',
+            'es_bandeja' => 'sometimes|boolean',
             'position' => 'sometimes|integer|min:0',
         ]);
 
@@ -288,7 +296,13 @@ class KanbanController extends Controller
 
         $column->update($validated);
 
-        return response()->json($column);
+        // Dos bandejas en el mismo grupo mostrarían las mismas conversaciones
+        // sin clasificar en dos columnas a la vez.
+        if (! empty($validated['es_bandeja'])) {
+            $this->dejarUnaSolaBandeja($column);
+        }
+
+        return response()->json($column->fresh());
     }
 
     // DELETE /api/kanban/columns/{id}
@@ -322,6 +336,19 @@ class KanbanController extends Controller
         }
 
         return response()->json(['success' => true]);
+    }
+
+    /** La bandeja es única dentro de su grupo: al marcar una, se desmarca la otra. */
+    private function dejarUnaSolaBandeja(KanbanColumn $column): void
+    {
+        KanbanColumn::where('company_id', $column->company_id)
+            ->where('id', '!=', $column->id)
+            ->when(
+                $column->grupo === null,
+                fn ($q) => $q->whereNull('grupo'),
+                fn ($q) => $q->where('grupo', $column->grupo)
+            )
+            ->update(['es_bandeja' => false]);
     }
 
     /** ¿Hay ya otra etapa de esta empresa que se llame así? */
