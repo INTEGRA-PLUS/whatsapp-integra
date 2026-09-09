@@ -91,7 +91,7 @@ class WhatsAppCampaignController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $user = auth()->user();
 
@@ -100,16 +100,20 @@ class WhatsAppCampaignController extends Controller
             ->with('instance:id,name,display_phone_number', 'creator:id,name')
             ->firstOrFail();
 
+        $filtro = $this->filtroDestinatarios($request);
+        $resumen = $this->summary($campaign, true);
+
         return Inertia::render('Campaigns/Show', [
-            'campaign' => $this->summary($campaign, true),
-            'recipients' => $this->recipientRows($campaign),
+            'campaign' => $resumen,
+            'recipients' => $this->recipientRows($campaign, $filtro),
+            'recipientsMeta' => $this->metaDestinatarios($resumen, $filtro),
         ]);
     }
 
     /**
      * Progreso en vivo mientras la campaña está enviando, sin recargar la página.
      */
-    public function progress($id)
+    public function progress(Request $request, $id)
     {
         $user = auth()->user();
 
@@ -117,10 +121,55 @@ class WhatsAppCampaignController extends Controller
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
+        $filtro = $this->filtroDestinatarios($request);
+        $resumen = $this->summary($campaign, true);
+
         return response()->json([
-            'campaign' => $this->summary($campaign, true),
-            'recipients' => $this->recipientRows($campaign),
+            'campaign' => $resumen,
+            'recipients' => $this->recipientRows($campaign, $filtro),
+            'recipientsMeta' => $this->metaDestinatarios($resumen, $filtro),
         ]);
+    }
+
+    /**
+     * El estado por el que se está mirando la lista de destinatarios.
+     */
+    private function filtroDestinatarios(Request $request): string
+    {
+        $filtro = (string) $request->input('filter', 'all');
+
+        return in_array($filtro, ['all', 'pending', 'sent', 'delivered', 'read', 'failed', 'skipped'], true)
+            ? $filtro
+            : 'all';
+    }
+
+    /**
+     * Cuántos hay de verdad detrás de la lista recortada.
+     *
+     * Los totales salen del GROUP BY que ya hace `summary()`, así que saberlo no
+     * cuesta ninguna consulta extra. La pantalla lo necesita para no dar a
+     * entender que una campaña de doce mil tiene doscientos destinatarios.
+     */
+    private function metaDestinatarios(array $resumen, string $filtro): array
+    {
+        $c = $resumen['counts'];
+
+        $total = match ($filtro) {
+            'pending' => $c['pending'],
+            'sent' => $c['sent'],
+            'delivered' => $c['delivered'],
+            'read' => $c['read'],
+            'failed' => $c['failed'],
+            'skipped' => $c['skipped'] ?? 0,
+            default => (int) $resumen['total_recipients'],
+        };
+
+        return [
+            'filter' => $filtro,
+            'total' => $total,
+            'limit' => 200,
+            'truncated' => $total > 200,
+        ];
     }
 
     public function store(Request $request)
@@ -764,10 +813,29 @@ class WhatsAppCampaignController extends Controller
         return $data;
     }
 
-    private function recipientRows(WhatsAppCampaign $campaign): array
+    /**
+     * Los destinatarios que se pintan en el detalle, filtrados y con techo.
+     *
+     * Antes devolvía la lista entera, y el detalle se refresca solo cada cuatro
+     * segundos mientras la campaña envía: con doce mil socios son varios MB de
+     * JSON cada cuatro segundos, por cada operador con la pantalla abierta, y
+     * durante todas las horas que dure el envío. Los contadores de arriba no
+     * salen de esta lista sino de un GROUP BY, así que recortarla no le quita
+     * información a nadie.
+     *
+     * El filtro se resuelve aquí y no en el navegador por lo mismo: filtrar
+     * doce mil filas en el cliente obliga a habérselas traído antes.
+     */
+    private function recipientRows(WhatsAppCampaign $campaign, ?string $filtro = null, int $limite = 200): array
     {
         return $campaign->recipients()
+            ->when($filtro === 'pending', fn ($q) => $q->whereIn('status', ['pending', 'sending']))
+            ->when(
+                $filtro !== null && ! in_array($filtro, ['all', 'pending'], true),
+                fn ($q) => $q->where('status', $filtro)
+            )
             ->orderBy('id')
+            ->limit($limite)
             ->get()
             ->map(fn (WhatsAppCampaignRecipient $r) => [
                 'id' => $r->id,
