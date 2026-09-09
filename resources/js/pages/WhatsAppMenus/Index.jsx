@@ -287,9 +287,9 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
         <div className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
             <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
+                    <div className="flex size-10 items-center justify-center rounded-lg bg-success/15">
                         {menu.active
-                            ? <Power className="size-5 text-green-600 dark:text-green-400" />
+                            ? <Power className="size-5 text-success" />
                             : <PowerOff className="size-5 text-muted-foreground" />}
                     </div>
                     <div>
@@ -300,7 +300,7 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
                     </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${menu.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${menu.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
                         {menu.active ? 'Activo' : 'Inactivo'}
                     </span>
                     <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -326,13 +326,13 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
                                     <span>
                                         Se abre desde <span className="font-medium text-foreground">{from.menu}</span>
                                         {' › '}<span className="text-foreground">{from.option}</span>
-                                        {!from.active && <span className="text-amber-600"> (ese menú está apagado)</span>}
+                                        {!from.active && <span className="text-warning"> (ese menú está apagado)</span>}
                                     </span>
                                 </p>
                             ))}
                         </div>
                     ) : (
-                        <span className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
+                        <span className="flex items-start gap-1.5 text-warning">
                             <AlertTriangle className="mt-px size-3 shrink-0" />
                             Ningún menú lleva aquí todavía: los clientes no pueden llegar a este submenú.
                         </span>
@@ -359,12 +359,12 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
                                         : (meta?.label ?? o.action_type)}
                                 </span>
                                 {o.action_type === 'submenu' && !target && (
-                                    <span className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                    <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning dark:bg-warning/30 dark:text-warning">
                                         sin destino
                                     </span>
                                 )}
                                 {meta?.group === 'pending' && (
-                                    <span className="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                    <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning dark:bg-warning/30 dark:text-warning">
                                         pendiente
                                     </span>
                                 )}
@@ -553,7 +553,7 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                     </p>
 
                     {tooLongForButton && (
-                        <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                        <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
                             <AlertTriangle className="size-3.5 shrink-0 mt-px" />
                             Como botón sólo se muestran {limits.max_button_title} caracteres del título. Los más largos se recortarán.
                         </p>
@@ -700,10 +700,10 @@ function useIntegraCatalogs(enabled) {
  */
 function OptionLegend() {
     const items = [
-        { tone: 'bg-emerald-400', label: 'Consulta Integra', hint: 'Necesita el complemento conectado' },
-        { tone: 'bg-sky-400', label: 'Lo resuelve la plataforma', hint: 'Funciona siempre, sin depender de nadie' },
-        { tone: 'bg-amber-400', label: 'Todavía no disponible', hint: 'Responde un aviso de «próximamente»' },
-        { tone: 'bg-zinc-300', label: 'Sin acción', hint: 'El cliente la ve y no recibe nada' },
+        { tone: 'bg-success', label: 'Consulta Integra', hint: 'Necesita el complemento conectado' },
+        { tone: 'bg-info', label: 'Lo resuelve la plataforma', hint: 'Funciona siempre, sin depender de nadie' },
+        { tone: 'bg-warning', label: 'Todavía no disponible', hint: 'Responde un aviso de «próximamente»' },
+        { tone: 'bg-muted', label: 'Sin acción', hint: 'El cliente la ve y no recibe nada' },
     ];
 
     return (
@@ -723,16 +723,16 @@ function OptionLegend() {
 
 const GROUP_TONES = {
     core: {
-        card: 'border-l-sky-400 bg-sky-50/60 dark:bg-sky-950/20',
-        badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+        card: 'border-l-sky-400 bg-info/60',
+        badge: 'bg-info/15 text-info dark:bg-info/40 dark:text-info',
     },
     integra: {
-        card: 'border-l-emerald-400 bg-emerald-50/60 dark:bg-emerald-950/20',
-        badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+        card: 'border-l-success bg-success/60',
+        badge: 'bg-success/15 text-success dark:bg-success/40 dark:text-success',
     },
     pending: {
-        card: 'border-l-amber-400 bg-amber-50/60 dark:bg-amber-950/20',
-        badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+        card: 'border-l-warning bg-warning/60',
+        badge: 'bg-warning/15 text-warning dark:bg-warning/40 dark:text-warning',
     },
     none: {
         card: 'border-l-zinc-300 bg-muted/40',
@@ -791,7 +791,7 @@ function SettingField({ label, hint, wide = false, required = false, children })
     return (
         <div className={`space-y-1 ${wide ? 'col-span-2' : ''}`}>
             <label className="text-[10px] font-medium text-muted-foreground">
-                {label}{required && <span className="text-amber-600"> · falta</span>}
+                {label}{required && <span className="text-warning"> · falta</span>}
             </label>
             {children}
             {hint && <p className="text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
@@ -828,7 +828,7 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
 
     return (
         <div className="space-y-2 rounded-md border bg-muted/30 p-2.5">
-            <p className={`text-[11px] ${warns ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
+            <p className={`text-[11px] ${warns ? 'text-warning' : 'text-muted-foreground'}`}>
                 <span className="font-medium text-foreground">Qué pasa: </span>{does}
             </p>
 
@@ -837,8 +837,8 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
                     <p className="mb-1 text-[10px] font-medium text-muted-foreground">
                         Así lo verá el cliente:
                     </p>
-                    <div className="rounded-lg rounded-tl-none bg-white p-2 shadow-sm dark:bg-zinc-800">
-                        <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+                    <div className="rounded-lg rounded-tl-none bg-white p-2 shadow-sm dark:bg-muted">
+                        <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground dark:text-muted-foreground">
                             {bubble}
                         </p>
                     </div>
@@ -902,7 +902,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
     return (
         <div ref={ref}
             className={`space-y-2 rounded-md border border-l-[3px] p-2.5 transition-shadow ${tone.card} ${
-                focused ? 'ring-2 ring-primary ring-offset-2' : broken ? 'ring-1 ring-amber-400' : ''
+                focused ? 'ring-2 ring-primary ring-offset-2' : broken ? 'ring-1 ring-warning/30' : ''
             }`}>
             <div className="flex items-center gap-2">
                 <span className={`flex size-6 shrink-0 items-center justify-center rounded text-xs font-semibold ${tone.badge}`}>
@@ -932,7 +932,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
             </div>
 
             {broken && (
-                <p className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
                     <AlertTriangle className="size-3.5 shrink-0" /> Le falta algo para funcionar
                 </p>
             )}
@@ -1043,7 +1043,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
             {meta?.group === 'integra' && (
                 <>
                     {!integra.connected && (
-                        <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                        <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
                             <Plug className="size-3.5 shrink-0 mt-px" />
                             Tu software Integra no está conectado. Conéctalo desde Integraciones; mientras
                             tanto, quien elija esta opción será derivado a un asesor.
@@ -1133,7 +1133,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
 
             {meta?.group === 'pending' && (
                 <>
-                    <p className="flex items-start gap-1.5 rounded-md bg-amber-50 dark:bg-amber-900/20 px-2.5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                    <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
                         <Construction className="size-3.5 shrink-0 mt-px" />
                         La opción ya sale en el menú, pero todavía no consulta nada. Mientras se
                         conecte, el cliente recibe este aviso.
@@ -1256,12 +1256,12 @@ function ReviewPanel({ onEditMenu }) {
     const clean = issues.length === 0;
 
     return (
-        <div className={`rounded-xl border ${blockers.length ? 'border-destructive/40 bg-destructive/5' : clean ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+        <div className={`rounded-xl border ${blockers.length ? 'border-destructive/40 bg-destructive/5' : clean ? 'border-success/30 bg-success/5' : 'border-warning/30 bg-warning/5'}`}>
             <button type="button" onClick={() => setOpen(o => !o)}
                 className="flex w-full items-center gap-2.5 px-4 py-3 text-left">
                 {clean
-                    ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-                    : <AlertTriangle className={`size-4 shrink-0 ${blockers.length ? 'text-destructive' : 'text-amber-600'}`} />}
+                    ? <CheckCircle2 className="size-4 shrink-0 text-success" />
+                    : <AlertTriangle className={`size-4 shrink-0 ${blockers.length ? 'text-destructive' : 'text-warning'}`} />}
                 <span className="text-sm font-medium text-foreground">
                     {clean
                         ? 'Tu menú está listo para responder'
@@ -1282,7 +1282,7 @@ function ReviewPanel({ onEditMenu }) {
                             <span className="text-[11px] text-muted-foreground">Tu token de Integra puede:</span>
                             {Object.entries(state.data.labels ?? {}).map(([key, label]) => (
                                 <span key={key}
-                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${capabilities.can?.[key] ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${capabilities.can?.[key] ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
                                     {capabilities.can?.[key] ? '✓' : '✕'} {label}
                                 </span>
                             ))}
@@ -1291,7 +1291,7 @@ function ReviewPanel({ onEditMenu }) {
 
                     {issues.map((issue, i) => (
                         <div key={i} className="flex gap-2 text-xs">
-                            <span className={`mt-1 size-1.5 shrink-0 rounded-full ${issue.level === 'blocker' ? 'bg-destructive' : 'bg-amber-500'}`} />
+                            <span className={`mt-1 size-1.5 shrink-0 rounded-full ${issue.level === 'blocker' ? 'bg-destructive' : 'bg-warning'}`} />
                             <div className="min-w-0 space-y-1">
                                 <p className="text-foreground">
                                     {issue.menu && (
@@ -1450,7 +1450,7 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
                 </span>
             </div>
 
-            <div className="overflow-hidden rounded-[1.75rem] border-[6px] border-zinc-800 bg-zinc-800 shadow-lg">
+            <div className="overflow-hidden rounded-[1.75rem] border-[6px] border-border bg-muted shadow-lg">
                 <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2 text-white">
                     <div className="size-6 rounded-full bg-white/25" />
                     <div className="leading-tight">
@@ -1459,20 +1459,20 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
                     </div>
                 </div>
 
-                <div className="min-h-[18rem] space-y-1.5 bg-[#ECE5DD] p-2.5 dark:bg-zinc-900">
-                    <div className="max-w-[88%] rounded-lg rounded-tl-sm bg-white px-2.5 py-2 shadow-sm dark:bg-zinc-800">
+                <div className="min-h-[18rem] space-y-1.5 bg-[#ECE5DD] p-2.5 dark:bg-muted">
+                    <div className="max-w-[88%] rounded-lg rounded-tl-sm bg-white px-2.5 py-2 shadow-sm dark:bg-muted">
                         {header && (
-                            <p className="mb-1 text-[11px] font-semibold text-zinc-900 dark:text-zinc-100">{cut(header, limits.max_row_title)}</p>
+                            <p className="mb-1 text-[11px] font-semibold text-foreground dark:text-muted-foreground">{cut(header, limits.max_row_title)}</p>
                         )}
-                        <p className={`whitespace-pre-wrap break-words text-[11px] leading-snug ${body ? 'text-zinc-800 dark:text-zinc-200' : 'italic text-zinc-400'}`}>
+                        <p className={`whitespace-pre-wrap break-words text-[11px] leading-snug ${body ? 'text-foreground dark:text-muted-foreground' : 'italic text-muted-foreground'}`}>
                             {body || 'Aquí va el mensaje del menú…'}
                         </p>
-                        {footer && <p className="mt-1 text-[10px] text-zinc-500">{footer}</p>}
-                        <p className="mt-0.5 text-right text-[9px] text-zinc-400">9:41</p>
+                        {footer && <p className="mt-1 text-[10px] text-muted-foreground">{footer}</p>}
+                        <p className="mt-0.5 text-right text-[9px] text-muted-foreground">9:41</p>
                     </div>
 
                     {rows.length === 0 && (
-                        <p className="pt-2 text-center text-[10px] italic text-zinc-500">
+                        <p className="pt-2 text-center text-[10px] italic text-muted-foreground">
                             Escribe el título de las opciones para verlas aquí.
                         </p>
                     )}
@@ -1481,7 +1481,7 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
                         debajo de la burbuja; de cuatro en adelante, un único botón
                         que abre el listado. */}
                     {!isList && rows.map((option, i) => (
-                        <div key={i} className="max-w-[88%] rounded-lg bg-white py-1.5 text-center text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-zinc-800">
+                        <div key={i} className="max-w-[88%] rounded-lg bg-white py-1.5 text-center text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-muted">
                             {cut(option.title, limits.max_button_title)}
                         </div>
                     ))}
@@ -1491,30 +1491,30 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
                             <button
                                 type="button"
                                 onClick={() => setListOpen(open => !open)}
-                                className="flex w-[88%] items-center justify-center gap-1.5 rounded-lg bg-white py-1.5 text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-zinc-800"
+                                className="flex w-[88%] items-center justify-center gap-1.5 rounded-lg bg-white py-1.5 text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-muted"
                             >
                                 <List className="size-3" />
                                 {cut(form.list_button_text || 'Ver opciones', limits.max_button_title)}
                             </button>
 
                             {listOpen && (
-                                <div className="overflow-hidden rounded-lg bg-white shadow-sm dark:bg-zinc-800">
-                                    <p className="border-b border-zinc-100 px-2.5 py-1.5 text-[10px] font-semibold text-zinc-500 dark:border-zinc-700">
+                                <div className="overflow-hidden rounded-lg bg-white shadow-sm dark:bg-muted">
+                                    <p className="border-b border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground dark:border-border">
                                         Opciones
                                     </p>
                                     {rows.map((option, i) => (
-                                        <div key={i} className="flex items-start gap-2 border-b border-zinc-100 px-2.5 py-2 last:border-0 dark:border-zinc-700">
+                                        <div key={i} className="flex items-start gap-2 border-b border-border px-2.5 py-2 last:border-0 dark:border-border">
                                             <div className="min-w-0 flex-1">
-                                                <p className="truncate text-[11px] text-zinc-800 dark:text-zinc-200">
+                                                <p className="truncate text-[11px] text-foreground dark:text-muted-foreground">
                                                     {cut(option.title, limits.max_row_title)}
                                                 </p>
                                                 {(option.description ?? '').trim() !== '' && (
-                                                    <p className="truncate text-[10px] text-zinc-500">
+                                                    <p className="truncate text-[10px] text-muted-foreground">
                                                         {cut(option.description, limits.max_row_description)}
                                                     </p>
                                                 )}
                                             </div>
-                                            <span className="mt-0.5 size-3 shrink-0 rounded-full border border-zinc-300 dark:border-zinc-600" />
+                                            <span className="mt-0.5 size-3 shrink-0 rounded-full border border-border" />
                                         </div>
                                     ))}
                                 </div>
@@ -1677,11 +1677,11 @@ function AiSwitch({ ai }) {
     }
 
     return (
-        <div className={`rounded-xl border p-4 ${encendida ? 'border-violet-500/40 bg-violet-500/5' : 'bg-card'}`}>
+        <div className={`rounded-xl border p-4 ${encendida ? 'border-primary/40 bg-primary/5' : 'bg-card'}`}>
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-start gap-3 min-w-0">
                     <div className={`size-10 shrink-0 rounded-xl flex items-center justify-center ${
-                        encendida ? 'bg-violet-500 text-white' : 'bg-muted text-muted-foreground'
+                        encendida ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                     }`}>
                         <Bot className="size-5" />
                     </div>
@@ -1699,7 +1699,7 @@ function AiSwitch({ ai }) {
                             Las cifras y las fechas las sigue calculando el sistema, no el modelo.
                         </p>
                         {!ai.available && (
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                            <p className="text-[11px] text-warning mt-1.5">
                                 Falta configurar el flujo de IA en el servidor. Avisa al equipo técnico.
                             </p>
                         )}
@@ -1732,7 +1732,7 @@ function AiSwitch({ ai }) {
                                 <label
                                     key={permiso.value}
                                     className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 transition-colors ${
-                                        activo ? 'border-violet-500/40 bg-violet-500/10' : 'bg-card hover:bg-muted/50'
+                                        activo ? 'border-primary/40 bg-primary/10' : 'bg-card hover:bg-muted/50'
                                     } ${busy ? 'pointer-events-none opacity-60' : ''}`}
                                 >
                                     <input
@@ -1740,7 +1740,7 @@ function AiSwitch({ ai }) {
                                         checked={activo}
                                         disabled={busy}
                                         onChange={() => togglePermiso(permiso.value)}
-                                        className="mt-0.5 size-3.5 shrink-0 accent-violet-600"
+                                        className="mt-0.5 size-3.5 shrink-0 accent-primary"
                                     />
                                     <span className="min-w-0">
                                         <span className="block text-[12px] font-semibold text-foreground">{permiso.label}</span>

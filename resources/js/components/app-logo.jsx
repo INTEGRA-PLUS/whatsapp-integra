@@ -9,7 +9,7 @@
  * ese mismo color: sobre blanco, el cuadrado del PNG se notaría. Ese hexadecimal
  * es del archivo, no del tema, y por eso no es un token.
  *
- * El texto sí lo es. Iba en `text-gray-900` fijo y en tema oscuro quedaba negro
+ * El texto sí lo es. Iba en `text-foreground` fijo y en tema oscuro quedaba negro
  * sobre el navy: el nombre de la marca desaparecía de la barra lateral
  * (9-sep-2026).
  */

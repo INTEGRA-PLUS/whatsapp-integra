@@ -54,16 +54,16 @@ export default function RolesIndex({ roles }) {
                                     className="group bg-card border rounded-[2rem] p-8 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col relative overflow-hidden"
                                 >
                                     <div className="flex items-center justify-between mb-6">
-                                        <div className="size-14 rounded-2xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
+                                        <div className="size-14 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
                                             <Shield className="size-7" />
                                         </div>
                                         <div className="flex gap-2">
-                                            <Button asChild variant="ghost" size="icon" className="rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                                            <Button asChild variant="ghost" size="icon" className="rounded-full hover:bg-muted dark:hover:bg-muted">
                                                 <Link href={route('roles.edit', role.id)}>
                                                     <Pencil className="size-4" />
                                                 </Link>
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-red-50 dark:hover:bg-red-950/30" onClick={() => handleDelete(role)}>
+                                            <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/30" onClick={() => handleDelete(role)}>
                                                 <Trash2 className="size-4" />
                                             </Button>
                                         </div>
@@ -75,10 +75,10 @@ export default function RolesIndex({ roles }) {
                                         <span className="text-sm font-medium">{role.permissions.length} permisos asignados</span>
                                     </div>
 
-                                    <div className="mt-auto pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                                    <div className="mt-auto pt-6 border-t border-border">
                                         <div className="flex flex-wrap gap-2">
                                             {role.permissions.slice(0, 3).map(perm => (
-                                                <span key={perm.id} className="px-3 py-1 bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                                <span key={perm.id} className="px-3 py-1 bg-muted text-muted-foreground rounded-lg text-[10px] font-bold uppercase tracking-wider">
                                                     {perm.name.split('.')[1]}
                                                 </span>
                                             ))}
@@ -94,7 +94,7 @@ export default function RolesIndex({ roles }) {
                         </div>
 
                         {roles.length === 0 && (
-                            <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-900/50 rounded-[3rem] border-2 border-dashed">
+                            <div className="text-center py-20 bg-muted rounded-[3rem] border-2 border-dashed">
                                 <Shield className="size-20 text-muted-foreground/20 mx-auto mb-6" />
                                 <h3 className="text-2xl font-bold text-foreground">No hay roles definidos</h3>
                                 <p className="text-muted-foreground mt-2">Comienza creando un rol para gestionar los permisos de tu equipo.</p>

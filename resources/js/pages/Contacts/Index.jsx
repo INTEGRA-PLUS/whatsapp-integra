@@ -146,10 +146,10 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                 </div>
 
                 {optOutRequests.length > 0 && can('contacts.update') && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
+                    <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 p-4 space-y-3">
                         <div className="flex items-start gap-2">
-                            <BellOff className="size-4 mt-0.5 text-amber-700 dark:text-amber-400 shrink-0" />
-                            <div className="text-sm text-amber-900 dark:text-amber-100">
+                            <BellOff className="size-4 mt-0.5 text-warning shrink-0" />
+                            <div className="text-sm text-warning">
                                 <p className="font-medium">
                                     {optOutRequests.length === 1
                                         ? 'Un cliente pidió no recibir campañas'
@@ -199,7 +199,7 @@ export default function ContactsIndex({ contacts: initialContacts, unregistered:
                         className={tabClass(tab === 'unregistered')}
                     >
                         Sin registrar
-                        <span className={`ml-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${unregistered.length > 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-muted text-muted-foreground'}`}>{unregistered.length}</span>
+                        <span className={`ml-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${unregistered.length > 0 ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>{unregistered.length}</span>
                     </button>
                 </div>
 
@@ -317,7 +317,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                                     {contact.opted_out_at && (
                                         <span
                                             title="Pidió no recibir campañas. Se le puede seguir respondiendo en el chat."
-                                            className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                                            className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning"
                                         >
                                             <BellOff className="size-3" /> Sin campañas
                                         </span>
@@ -325,7 +325,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                                     {contact.metadata?.integra_contactos && (
                                         <span
                                             title={`Visto en Contactos como "${contact.metadata.integra_contactos.nombre_api}"`}
-                                            className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 px-1.5 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-400"
+                                            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground"
                                         >
                                             <Link2 className="size-3" /> Contactos
                                         </span>
@@ -361,7 +361,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                                             variant="ghost"
                                             size="icon"
                                             title={contact.opted_out_at ? 'Volver a incluirlo en las campañas' : 'Excluirlo de las campañas'}
-                                            className={contact.opted_out_at ? 'text-amber-600' : ''}
+                                            className={contact.opted_out_at ? 'text-warning' : ''}
                                             onClick={() => onOptOut(contact)}
                                         >
                                             {contact.opted_out_at ? <BellOff className="size-4" /> : <Bell className="size-4" />}
@@ -392,7 +392,7 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
     if (unregistered.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-                <Check className="size-12 text-emerald-500/50 mb-4" />
+                <Check className="size-12 text-success/50 mb-4" />
                 <p className="text-lg font-medium text-foreground">¡Todo registrado!</p>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm">
                     Todos los números que han escrito en el chat ya están asociados a un contacto.
@@ -405,8 +405,8 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
     }
     return (
         <>
-            <div className="flex items-start gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-xs text-muted-foreground max-w-3xl">
-                <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl text-xs text-muted-foreground max-w-3xl">
+                <Info className="size-4 text-warning shrink-0 mt-0.5" />
                 <p>Estos números han escrito en el chat pero aún no están guardados como contacto. Regístralos para identificarlos en futuras conversaciones.</p>
             </div>
             <div className="rounded-xl border bg-card overflow-hidden">

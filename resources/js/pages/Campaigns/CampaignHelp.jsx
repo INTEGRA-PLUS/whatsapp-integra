@@ -348,13 +348,13 @@ function Field({ children }) {
 }
 
 function Punto({ ok }) {
-    return <span className={`size-2 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : 'bg-amber-500'}`} />;
+    return <span className={`size-2 rounded-full shrink-0 ${ok ? 'bg-success' : 'bg-warning'}`} />;
 }
 
 function Note({ tono = 'teal', children }) {
     const clases = {
-        teal: 'border-teal-300 bg-teal-50 text-teal-900 dark:bg-teal-900/20 dark:border-teal-800 dark:text-teal-100',
-        amber: 'border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-100',
+        teal: 'border-primary/30 bg-primary/15 text-accent-foreground dark:bg-primary/20 dark:border-primary/30 dark:text-accent-foreground',
+        amber: 'border-warning/30 bg-warning/15 text-warning dark:bg-warning/20 dark:border-warning/30 dark:text-warning',
     }[tono];
 
     return (

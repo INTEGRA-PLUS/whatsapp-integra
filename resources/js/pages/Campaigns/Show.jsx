@@ -121,7 +121,7 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                 </div>
 
                 {!campaign.uses_template && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning">
                         Esta campaña se creó cuando el envío era de texto libre. WhatsApp solo entrega mensajes masivos como
                         plantilla aprobada, así que no se puede lanzar: crea una nueva eligiendo una plantilla.
                     </div>
@@ -137,7 +137,7 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
 
                 <div className="space-y-1">
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-green-500 transition-all" style={{ width: `${progreso}%` }} />
+                        <div className="h-full bg-success transition-all" style={{ width: `${progreso}%` }} />
                     </div>
                     <p className="text-xs text-muted-foreground">
                         {resueltos} de {campaign.total_recipients} procesados
@@ -185,10 +185,10 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
                                         </td>
                                         <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-md">
                                             {r.status === 'skipped' ? (
-                                                <span className="text-amber-600 dark:text-amber-400">{r.reason_detail}</span>
+                                                <span className="text-warning">{r.reason_detail}</span>
                                             ) : r.status === 'failed' ? (
                                                 <>
-                                                    <div className="text-red-600 dark:text-red-400">{r.reason}</div>
+                                                    <div className="text-destructive">{r.reason}</div>
                                                     {r.reason_detail && <div className="opacity-70 line-clamp-2">{r.reason_detail}</div>}
                                                 </>
                                             ) : (
@@ -232,9 +232,9 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
 
 function Metrica({ titulo, valor, total, tono }) {
     const color = {
-        teal: 'text-teal-600 dark:text-teal-400',
-        green: 'text-green-600 dark:text-green-400',
-        red: 'text-red-600 dark:text-red-400',
+        teal: 'text-accent-foreground',
+        green: 'text-success',
+        red: 'text-destructive',
     }[tono] ?? 'text-foreground';
 
     const porcentaje = total > 0 ? Math.round((valor / total) * 100) : null;

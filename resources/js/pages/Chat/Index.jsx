@@ -922,7 +922,7 @@ function PaymentModal({ integration, conversation, onClose }) {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 {/* Header */}
-                <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-white shrink-0">
+                <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-primary-foreground shrink-0">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -4353,7 +4353,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 type="button"
                                                 onClick={() => setShowContactPanel(true)}
                                                 title="Ver información del contacto"
-                                                className="size-10 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm hover:ring-2 hover:ring-primary/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                                                className="size-10 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm hover:ring-2 hover:ring-primary/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                                             >
                                                 {selectedConversation.initials}
                                             </button>
@@ -5969,7 +5969,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             <div className="flex flex-col h-full overflow-y-auto">
                                 {/* Encabezado del panel */}
                                 <div className="flex flex-col items-center text-center gap-3 px-6 pt-10 pb-6 bg-gradient-to-b from-primary/10 to-transparent border-b border-border/40">
-                                    <div className="size-20 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-white font-bold text-2xl uppercase shadow-md">
+                                    <div className="size-20 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-2xl uppercase shadow-md">
                                         {selectedConversation.initials}
                                     </div>
                                     <div className="min-w-0 w-full">
@@ -6254,7 +6254,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={closeNewChat}>
                         <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                             {/* Header */}
-                            <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-white">
+                            <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-primary-foreground">
                                 <button onClick={closeNewChat} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                                     <XIcon className="size-4" />
                                 </button>
@@ -6601,7 +6601,7 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                <div className="relative bg-gradient-to-br from-primary to-violet-600 px-6 py-5 text-white">
+                <div className="relative bg-gradient-to-br from-primary to-violet-600 px-6 py-5 text-primary-foreground">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -6992,7 +6992,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                <div className="relative bg-gradient-to-br from-success to-primary px-6 py-5 text-white shrink-0">
+                <div className="relative bg-gradient-to-br from-success to-primary px-6 py-5 text-primary-foreground shrink-0">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>

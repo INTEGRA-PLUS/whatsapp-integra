@@ -327,8 +327,8 @@ export default function TemplatesAnalytics({ instances = [] }) {
                             <h2 className="text-sm font-semibold text-foreground">Volumen diario</h2>
                             <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                                 <Legend color="bg-primary/70" label="Enviadas" />
-                                <Legend color="bg-emerald-500/70" label="Entregadas" />
-                                <Legend color="bg-indigo-500/70" label="Leídas" />
+                                <Legend color="bg-success/70" label="Entregadas" />
+                                <Legend color="bg-primary/70" label="Leídas" />
                             </div>
                         </div>
                         <TimeSeriesChart series={data.series} />
@@ -458,9 +458,9 @@ function BenefitCard({ icon: Icon, title, desc }) {
 function MetricCard({ icon: Icon, label, value, sub, tone, loading }) {
     const tones = {
         primary: 'bg-primary/10 text-primary',
-        emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-        indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+        emerald: 'bg-success/10 text-success',
+        amber: 'bg-warning/10 text-warning',
+        indigo: 'bg-primary/10 text-accent-foreground',
     };
     return (
         <div className="rounded-xl border bg-card p-5 hover:shadow-sm transition-shadow">
@@ -531,8 +531,8 @@ function TimeSeriesChart({ series }) {
                 ))}
                 {/* lines */}
                 <path d={pointPath(d => d.sent)} fill="none" stroke="currentColor" strokeWidth={2} className="text-primary/80" />
-                <path d={pointPath(d => d.delivered)} fill="none" stroke="currentColor" strokeWidth={2} className="text-emerald-500/80" />
-                <path d={pointPath(d => d.read)} fill="none" stroke="currentColor" strokeWidth={2} className="text-indigo-500/80" />
+                <path d={pointPath(d => d.delivered)} fill="none" stroke="currentColor" strokeWidth={2} className="text-success/80" />
+                <path d={pointPath(d => d.read)} fill="none" stroke="currentColor" strokeWidth={2} className="text-accent-foreground/80" />
                 {/* points */}
                 {series.map((d, i) => {
                     const x = padX + i * stepX;
@@ -569,10 +569,10 @@ function TemplateRow({ t }) {
                 {t.sent.toLocaleString('es')}
             </td>
             <td className="px-4 py-3">
-                <RatePill value={t.delivered} percent={delivery} barClass="bg-emerald-500" />
+                <RatePill value={t.delivered} percent={delivery} barClass="bg-success" />
             </td>
             <td className="px-4 py-3">
-                <RatePill value={t.read} percent={read} barClass="bg-indigo-500" />
+                <RatePill value={t.read} percent={read} barClass="bg-primary" />
             </td>
             <td className="px-4 py-3 text-right tabular-nums text-foreground">
                 {t.clicked.toLocaleString('es')}
@@ -625,12 +625,12 @@ const TYPE_LABELS = {
     UNKNOWN: 'Desconocido',
 };
 const CATEGORY_COLORS = {
-    AUTHENTICATION: 'bg-teal-500',
+    AUTHENTICATION: 'bg-primary',
     MARKETING: 'bg-fuchsia-500',
-    UTILITY: 'bg-blue-500',
-    SERVICE: 'bg-emerald-500',
-    REFERRAL_CONVERSION: 'bg-indigo-500',
-    UNKNOWN: 'bg-zinc-500',
+    UTILITY: 'bg-info',
+    SERVICE: 'bg-success',
+    REFERRAL_CONVERSION: 'bg-primary',
+    UNKNOWN: 'bg-muted',
 };
 
 function ConversationsPanel({ instanceId }) {
@@ -784,7 +784,7 @@ function ConversationsPanel({ instanceId }) {
                                             <span className="text-muted-foreground tabular-nums">{count.toLocaleString('es')} · {pct}%</span>
                                         </div>
                                         <div className="h-2 rounded-full bg-muted overflow-hidden">
-                                            <div className={`h-full rounded-full ${CATEGORY_COLORS[cat] ?? 'bg-zinc-500'}`} style={{ width: `${pct}%` }} />
+                                            <div className={`h-full rounded-full ${CATEGORY_COLORS[cat] ?? 'bg-muted'}`} style={{ width: `${pct}%` }} />
                                         </div>
                                     </div>
                                 );

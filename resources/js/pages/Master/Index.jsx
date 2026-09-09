@@ -171,21 +171,21 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         className="absolute top-0 z-30 transition-all duration-75 pointer-events-none"
                         style={{ left: `${(activeIdx / (data.length - 1)) * 100}%`, transform: 'translateX(-50%)' }}
                     >
-                        <div className="bg-card border-2 border-indigo-500/20 px-4 py-3 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col items-center gap-1 min-w-[120px] animate-in zoom-in-95 duration-200">
+                        <div className="bg-card border-2 border-primary/20 px-4 py-3 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col items-center gap-1 min-w-[120px] animate-in zoom-in-95 duration-200">
                             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest border-b border-border/40 pb-1 mb-1 w-full text-center">{data[activeIdx].date}</p>
                             <div className="flex gap-4">
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-black text-indigo-500/60 uppercase">Inbound</span>
-                                    <span className="text-sm font-black text-indigo-600">{data[activeIdx].inbound.toLocaleString()}</span>
+                                    <span className="text-[8px] font-black text-accent-foreground/60 uppercase">Inbound</span>
+                                    <span className="text-sm font-black text-accent-foreground">{data[activeIdx].inbound.toLocaleString()}</span>
                                 </div>
                                 <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-black text-emerald-500/60 uppercase">Outbound</span>
-                                    <span className="text-sm font-black text-emerald-600">{data[activeIdx].outbound.toLocaleString()}</span>
+                                    <span className="text-[8px] font-black text-success/60 uppercase">Outbound</span>
+                                    <span className="text-sm font-black text-success">{data[activeIdx].outbound.toLocaleString()}</span>
                                 </div>
                             </div>
                         </div>
                         {/* Guideline */}
-                        <div className="w-px h-64 bg-indigo-500/10 absolute top-12 left-1/2 -translate-x-1/2 -z-10" />
+                        <div className="w-px h-64 bg-primary/10 absolute top-12 left-1/2 -translate-x-1/2 -z-10" />
                     </div>
                 )}
 
@@ -198,8 +198,8 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             className={`flex-1 flex flex-col items-center gap-1 relative h-full justify-end cursor-pointer group transition-all duration-300 ${activeIdx !== null && activeIdx !== i ? 'opacity-30 scale-x-95' : 'opacity-100'}`}
                         >
                             <div className="flex gap-0.5 w-full items-end justify-center h-full">
-                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-indigo-500/80 rounded-t-sm transition-all group-hover:bg-indigo-600 group-hover:scale-y-105 origin-bottom" />
-                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-emerald-500/80 rounded-t-sm transition-all group-hover:bg-emerald-600 group-hover:scale-y-105 origin-bottom" />
+                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-primary/80 rounded-t-sm transition-all group-hover:bg-primary group-hover:scale-y-105 origin-bottom" />
+                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-success/80 rounded-t-sm transition-all group-hover:bg-success group-hover:scale-y-105 origin-bottom" />
                             </div>
                         </div>
                     ))}
@@ -211,25 +211,25 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     return (
         <>
             <Head title="Panel Master Ultra" />
-            <div className="flex flex-col min-h-screen bg-muted/10 selection:bg-indigo-500 selection:text-white">
+            <div className="flex flex-col min-h-screen bg-muted/10 selection:bg-primary selection:text-primary-foreground">
                 
                 {/* Master Header Pulido & Profesional */}
                 <div className="bg-card/40 backdrop-blur-3xl px-8 py-8 sticky top-0 z-40 border-b border-border/20 shadow-sm">
                     <div className="max-w-[1700px] mx-auto flex flex-col xl:flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-6">
-                            <div className="size-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-2xl shadow-indigo-600/20 transform transition-all hover:scale-105 active:scale-95 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
+                            <div className="size-14 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/20 transform transition-all hover:scale-105 active:scale-95 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
                                 <Zap className="size-8 group-hover:animate-pulse" />
                             </div>
                             <div className="h-10 w-px bg-border/40 hidden md:block" />
                             <div>
                                 <h1 className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-3">
                                     {activeTab === 'dashboard' ? 'Centro de Analítica' : activeTab === 'companies' ? 'Directorio de Empresas' : 'Gestión de Planes'}
-                                    <span className="text-[10px] font-black bg-indigo-500/10 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-500/20 tracking-widest hidden sm:inline-block">MASTER</span>
+                                    <span className="text-[10px] font-black bg-primary/10 text-accent-foreground px-2 py-0.5 rounded-full border border-primary/20 tracking-widest hidden sm:inline-block">MASTER</span>
                                 </h1>
                                 <div className="flex items-center gap-3 mt-1.5">
                                     <div className="flex items-center gap-2 group cursor-help">
-                                        <div className="size-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                                        <span className="text-[10px] font-black text-emerald-600/80 tracking-widest uppercase">Integra Cluster Online</span>
+                                        <div className="size-2 rounded-full bg-success animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                                        <span className="text-[10px] font-black text-success/80 tracking-widest uppercase">Integra Cluster Online</span>
                                     </div>
                                     <span className="text-[10px] font-bold text-muted-foreground/30 uppercase tracking-[0.2em]">• v2.4.0 PRO</span>
                                 </div>
@@ -237,14 +237,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         </div>
 
                         <div className="flex items-center gap-3 bg-muted/20 p-1.5 rounded-2xl border border-border/40 backdrop-blur-sm">
-                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-indigo-600 uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
+                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-accent-foreground uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
                                 <Download className="size-4" /> Exportar Datos
                             </Button>
-                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-indigo-600 uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
+                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-accent-foreground uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
                                 <Search className="size-4" /> Búsqueda Global
                             </Button>
                             <div className="w-px h-6 bg-border/40 mx-2 hidden lg:block" />
-                            <Button onClick={() => setShowCreate(true)} className="rounded-xl h-11 px-8 font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/10 bg-indigo-600 hover:bg-indigo-700 text-white gap-2 transition-all active:scale-95">
+                            <Button onClick={() => setShowCreate(true)} className="rounded-xl h-11 px-8 font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/10 bg-primary hover:bg-primary text-primary-foreground gap-2 transition-all active:scale-95">
                                 <Plus className="size-4" /> Nueva Organización
                             </Button>
                         </div>
@@ -258,7 +258,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         <>
                             <div className="bg-card border border-border/40 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-500">
                                 <div className="flex items-center gap-4">
-                                    <div className="size-12 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-600 shadow-inner">
+                                    <div className="size-12 rounded-2xl bg-primary/15 flex items-center justify-center text-accent-foreground shadow-inner">
                                         <Calendar className="size-6" />
                                     </div>
                                     <div>
@@ -267,7 +267,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3 bg-muted/20 p-2 rounded-2xl border border-border/40">
-                                    <select value={range} onChange={handleRangeChange} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none">
+                                    <select value={range} onChange={handleRangeChange} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs uppercase tracking-widest focus:ring-4 focus:ring-primary/10 transition-all outline-none">
                                         <option value="week">Última Semana</option>
                                         <option value="month">Último Mes</option>
                                         <option value="year">Último Año</option>
@@ -278,7 +278,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs" />
                                             <span className="text-muted-foreground font-bold">al</span>
                                             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs" />
-                                            <Button onClick={() => applyFilters()} size="icon" className="h-11 w-11 rounded-xl bg-indigo-600 hover:bg-indigo-700"><SearchCheck className="size-5" /></Button>
+                                            <Button onClick={() => applyFilters()} size="icon" className="h-11 w-11 rounded-xl bg-primary hover:bg-primary"><SearchCheck className="size-5" /></Button>
                                         </div>
                                     )}
                                 </div>
@@ -294,33 +294,33 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <div className="flex flex-col md:flex-row items-center justify-between mb-12">
                                         <h3 className="text-2xl font-black tracking-tight">Volumen de Actividad</h3>
                                         <div className="flex gap-6 mt-4 md:mt-0 bg-muted/30 px-5 py-2.5 rounded-2xl border border-border/40">
-                                            <div className="flex items-center gap-2 text-xs font-black text-indigo-500 uppercase tracking-widest"><span className="size-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" /> Inbound</div>
-                                            <div className="flex items-center gap-2 text-xs font-black text-emerald-500 uppercase tracking-widest"><span className="size-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" /> Outbound</div>
+                                            <div className="flex items-center gap-2 text-xs font-black text-accent-foreground uppercase tracking-widest"><span className="size-3 rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.5)]" /> Inbound</div>
+                                            <div className="flex items-center gap-2 text-xs font-black text-success uppercase tracking-widest"><span className="size-3 rounded-full bg-success shadow-[0_0_10px_rgba(16,185,129,0.5)]" /> Outbound</div>
                                         </div>
                                     </div>
                                     <div className="h-80"><BarChart data={cleanVolume} height={280} /></div>
                                     <div className="mt-8 flex flex-wrap gap-4 items-center justify-between bg-muted/10 p-6 rounded-3xl border border-border/10">
                                         <StatLabel label="PICO MÁXIMO" value={Math.max(...cleanVolume.map(m => m.inbound + m.outbound), 0).toLocaleString()} border />
                                         <StatLabel label="PROMEDIO DIARIO" value={Math.round(cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0) / (cleanVolume.length || 1)).toLocaleString()} border />
-                                        <StatLabel label="TOTAL PERIODO" value={cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0).toLocaleString()} color="text-indigo-600" />
+                                        <StatLabel label="TOTAL PERIODO" value={cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0).toLocaleString()} color="text-accent-foreground" />
                                     </div>
                                 </div>
                                 <div className="lg:col-span-4 bg-card border border-border/40 rounded-[2.5rem] p-10 shadow-sm relative group">
                                     <div className="flex items-center justify-between mb-10">
                                         <h3 className="text-xl font-black tracking-tight">Top Clientes</h3>
-                                        <div className="size-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600"><TrendingUp className="size-6" /></div>
+                                        <div className="size-12 rounded-2xl bg-primary/15 flex items-center justify-center text-accent-foreground"><TrendingUp className="size-6" /></div>
                                     </div>
                                     <div className="space-y-8">
                                         {top_companies.map((co) => (
                                             <div key={co.id} className="group/item">
                                                 <div className="flex items-center justify-between mb-2.5">
                                                     <div className="flex items-center gap-4">
-                                                        <div className="size-10 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-700 font-black text-sm">{co.name.charAt(0)}</div>
+                                                        <div className="size-10 rounded-2xl bg-primary/10 flex items-center justify-center text-accent-foreground font-black text-sm">{co.name.charAt(0)}</div>
                                                         <span className="text-sm font-black truncate max-w-[120px]">{co.name}</span>
                                                     </div>
                                                     <span className="text-sm font-black text-foreground">{Number(co.messages_count || 0).toLocaleString()} <span className="text-[8px] opacity-40 uppercase ml-1">MSG</span></span>
                                                 </div>
-                                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max((Number(co.messages_count || 1) / (Number(top_companies[0].messages_count || 1))) * 100, 2)}%` }} /></div>
+                                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{ width: `${Math.max((Number(co.messages_count || 1) / (Number(top_companies[0].messages_count || 1))) * 100, 2)}%` }} /></div>
                                             </div>
                                         ))}
                                     </div>
@@ -335,7 +335,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                         <p className="text-sm font-medium text-muted-foreground">Histórico de expansión y nuevas integraciones corporativas</p>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                        <div className="size-10 rounded-2xl bg-indigo-600/10 flex items-center justify-center text-indigo-600"><TrendingUp className="size-5" /></div>
+                                        <div className="size-10 rounded-2xl bg-primary/10 flex items-center justify-center text-accent-foreground"><TrendingUp className="size-5" /></div>
                                         <span className="text-[11px] font-black text-muted-foreground uppercase tracking-widest">Global +{companies_growth.reduce((a, b) => a + Number(b.count), 0)}</span>
                                     </div>
                                 </div>
@@ -350,11 +350,11 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             <div className="p-10 border-b bg-muted/20">
                                 <div className="flex flex-col lg:flex-row gap-6">
                                     <div className="relative flex-1 group">
-                                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 size-6 text-muted-foreground group-focus-within:text-indigo-500 transition-all" />
-                                        <input type="text" placeholder="Auditar empresas, emails o administradores activos..." value={search} onChange={handleSearchChange} className="w-full h-14 pl-14 pr-6 bg-background border border-border/40 focus:border-indigo-500/60 rounded-2xl text-base transition-all focus:ring-8 focus:ring-indigo-500/5 outline-none font-medium shadow-inner" />
+                                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 size-6 text-muted-foreground group-focus-within:text-accent-foreground transition-all" />
+                                        <input type="text" placeholder="Auditar empresas, emails o administradores activos..." value={search} onChange={handleSearchChange} className="w-full h-14 pl-14 pr-6 bg-background border border-border/40 focus:border-primary/60 rounded-2xl text-base transition-all focus:ring-8 focus:ring-primary/5 outline-none font-medium shadow-inner" />
                                     </div>
                                     <div className="flex gap-4">
-                                        <select value={status} onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }, { only: LIST_ONLY }); }} className="h-14 rounded-2xl border border-border/40 bg-background px-8 text-sm outline-none font-black uppercase tracking-widest cursor-pointer hover:border-indigo-500/40 transition-all shadow-sm">
+                                        <select value={status} onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }, { only: LIST_ONLY }); }} className="h-14 rounded-2xl border border-border/40 bg-background px-8 text-sm outline-none font-black uppercase tracking-widest cursor-pointer hover:border-primary/40 transition-all shadow-sm">
                                             <option value="">Todos los Estados</option>
                                             <option value="active">Activas</option>
                                             <option value="inactive">Inactivas</option>
@@ -374,23 +374,23 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     </thead>
                                     <tbody className="divide-y divide-border/30">
                                         {list.map(company => (
-                                            <tr key={company.id} className="hover:bg-indigo-500/[0.02] transition-colors group">
+                                            <tr key={company.id} className="hover:bg-primary/[0.02] transition-colors group">
                                                 <td className="px-10 py-7">
                                                     <div className="flex items-center gap-5">
-                                                        <div className="size-14 rounded-[1.25rem] bg-indigo-500/5 border border-indigo-500/20 flex items-center justify-center text-indigo-700 font-black text-xl group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300 shadow-sm">{company.name.charAt(0)}</div>
-                                                        <div className="min-w-0"><p className="font-bold text-lg text-foreground truncate group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{company.name}</p><p className="text-xs font-bold text-muted-foreground/60">{company.email}</p></div>
+                                                        <div className="size-14 rounded-[1.25rem] bg-primary/5 border border-primary/20 flex items-center justify-center text-accent-foreground font-black text-xl group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300 shadow-sm">{company.name.charAt(0)}</div>
+                                                        <div className="min-w-0"><p className="font-bold text-lg text-foreground truncate group-hover:text-accent-foreground transition-colors uppercase tracking-tight">{company.name}</p><p className="text-xs font-bold text-muted-foreground/60">{company.email}</p></div>
                                                     </div>
                                                 </td>
                                                 <td className="px-10 py-7 hidden md:table-cell">
                                                     {company.users?.[0] ? <div className="text-sm font-black text-foreground">{company.users[0].name}</div> : <span className="text-xs opacity-40">Sin Admin</span>}
                                                 </td>
                                                 <td className="px-10 py-7 text-center">
-                                                    <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${company.active ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' : 'bg-muted text-muted-foreground border border-border/40'}`}>{company.active ? 'Activa' : 'Inactiva'}</span>
+                                                    <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${company.active ? 'bg-success/10 text-success border border-success/20' : 'bg-muted text-muted-foreground border border-border/40'}`}>{company.active ? 'Activa' : 'Inactiva'}</span>
                                                 </td>
                                                 <td className="px-10 py-7">
                                                     <div className="flex items-center justify-end gap-3 opacity-20 group-hover:opacity-100 transition-all duration-300">
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-indigo-600 hover:text-white transition-all"><Pencil className="size-5" /></Button>
-                                                        <Button onClick={() => router.post(route('master.impersonate', company.id))} className="h-11 px-6 rounded-xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-600/20 hover:bg-indigo-700 transition-all"><LogIn className="size-4 mr-2" /> Entrar</Button>
+                                                        <Button variant="ghost" size="icon" onClick={() => openEdit(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><Pencil className="size-5" /></Button>
+                                                        <Button onClick={() => router.post(route('master.impersonate', company.id))} className="h-11 px-6 rounded-xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:bg-primary transition-all"><LogIn className="size-4 mr-2" /> Entrar</Button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -409,15 +409,15 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <h3 className="text-2xl font-black tracking-tight uppercase">Gestión de Planes</h3>
                                     <p className="text-sm font-medium text-muted-foreground mt-1 text-xs uppercase tracking-widest opacity-60">Configuración comercial y suscripciones corporativas</p>
                                 </div>
-                                <Button className="rounded-2xl h-12 px-6 font-black uppercase tracking-widest text-[11px] bg-indigo-600 shadow-xl shadow-indigo-600/20">
+                                <Button className="rounded-2xl h-12 px-6 font-black uppercase tracking-widest text-[11px] bg-primary shadow-xl shadow-primary/20">
                                     <Plus className="size-4 mr-2" /> Nuevo Plan
                                 </Button>
                             </div>
                             <div className="p-10">
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    <PlanCard icon={<Rocket className="size-10 text-blue-600" />} name="Startup" price="49.99" color="blue" features={["5 Instancias", "Usuarios Ilimitados", "Reportes Básicos"]} />
-                                    <PlanCard icon={<Crown className="size-10 text-indigo-600" />} name="Business Pro" price="129.99" color="indigo" features={["20 Instancias", "Soporte Prioritario", "API Access", "Reportes Avanzados"]} popular />
-                                    <PlanCard icon={<ShieldCheck className="size-10 text-emerald-600" />} name="Enterprise" price="499.99" color="emerald" features={["Instancias Ilimitadas", "Dedicated Manager", "SLA 99.99%", "Custom Integrations"]} />
+                                    <PlanCard icon={<Rocket className="size-10 text-info" />} name="Startup" price="49.99" color="blue" features={["5 Instancias", "Usuarios Ilimitados", "Reportes Básicos"]} />
+                                    <PlanCard icon={<Crown className="size-10 text-accent-foreground" />} name="Business Pro" price="129.99" color="indigo" features={["20 Instancias", "Soporte Prioritario", "API Access", "Reportes Avanzados"]} popular />
+                                    <PlanCard icon={<ShieldCheck className="size-10 text-success" />} name="Enterprise" price="499.99" color="emerald" features={["Instancias Ilimitadas", "Dedicated Manager", "SLA 99.99%", "Custom Integrations"]} />
                                 </div>
                                 <div className="mt-12 overflow-x-auto rounded-[2rem] border border-border/20 shadow-inner">
                                     <table className="w-full">
@@ -438,9 +438,9 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                 <tr key={i} className="hover:bg-muted/10 transition-colors">
                                                     <td className="px-8 py-6 font-black text-foreground uppercase tracking-tight">{plan.name}</td>
                                                     <td className="px-8 py-6 text-center font-bold">{plan.subs}</td>
-                                                    <td className="px-8 py-6 text-center font-black text-indigo-600">{plan.cost}</td>
+                                                    <td className="px-8 py-6 text-center font-black text-accent-foreground">{plan.cost}</td>
                                                     <td className="px-8 py-6 text-right">
-                                                        <Button variant="ghost" size="sm" className="font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50">Configurar</Button>
+                                                        <Button variant="ghost" size="sm" className="font-black text-[10px] uppercase tracking-widest hover:bg-primary/15">Configurar</Button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -458,8 +458,8 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             </div>
 
             {/* Modals for Create/Edit Company */}
-            {showCreate && <Modal title="Deploy New Organization" onClose={() => setShowCreate(false)}><form onSubmit={handleCreate} className="space-y-8"><Field label="Nombre Empresa" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} required /><Field label="Email Empresa" type="email" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-500/10 space-y-6"><Field label="Nombre Admin" value={createForm.admin_name} onChange={v => setCreateForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" value={createForm.admin_email} onChange={v => setCreateForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} required /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20">Ejecutar Deployment</Button></form></Modal>}
-            {editingCompany && <Modal title="Edit Organization" onClose={() => setEditingCompany(null)}><form onSubmit={handleEdit} className="space-y-8"><Field label="Nombre" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} required /><Field label="Email" type="email" value={editForm.email} onChange={v => setEditForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-indigo-50/50 border border-indigo-500/10 space-y-6"><Field label="Admin" value={editForm.admin_name} onChange={v => setEditForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" type="email" value={editForm.admin_email} onChange={v => setEditForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={editForm.password} onChange={v => setEditForm(f => ({ ...f, password: v }))} /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20">Guardar Cambios</Button></form>
+            {showCreate && <Modal title="Deploy New Organization" onClose={() => setShowCreate(false)}><form onSubmit={handleCreate} className="space-y-8"><Field label="Nombre Empresa" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} required /><Field label="Email Empresa" type="email" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-primary/50 border border-primary/10 space-y-6"><Field label="Nombre Admin" value={createForm.admin_name} onChange={v => setCreateForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" value={createForm.admin_email} onChange={v => setCreateForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} required /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest text-primary-foreground shadow-xl shadow-primary/20">Ejecutar Deployment</Button></form></Modal>}
+            {editingCompany && <Modal title="Edit Organization" onClose={() => setEditingCompany(null)}><form onSubmit={handleEdit} className="space-y-8"><Field label="Nombre" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} required /><Field label="Email" type="email" value={editForm.email} onChange={v => setEditForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-primary/50 border border-primary/10 space-y-6"><Field label="Admin" value={editForm.admin_name} onChange={v => setEditForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" type="email" value={editForm.admin_email} onChange={v => setEditForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={editForm.password} onChange={v => setEditForm(f => ({ ...f, password: v }))} /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest text-primary-foreground shadow-xl shadow-primary/20">Guardar Cambios</Button></form>
                 <UsuariosDeLaEmpresa
                     usuarios={company_users}
                     flash={flash}
@@ -481,8 +481,8 @@ function StatLabel({ label, value, border, color = "text-foreground" }) {
 
 function PlanCard({ icon, name, price, color, features, popular }) {
     return (
-        <div className={`relative p-8 rounded-[2.5rem] border transition-all duration-500 hover:-translate-y-3 ${popular ? 'border-indigo-500 bg-indigo-500/[0.03] scale-105 shadow-2xl shadow-indigo-500/10' : 'border-border/40 bg-card'} overflow-hidden`}>
-            {popular && <div className="absolute top-0 right-0 bg-indigo-500 text-white px-6 py-2 rounded-bl-[2rem] text-[10px] font-black uppercase tracking-widest shadow-xl">Más Seleccionado</div>}
+        <div className={`relative p-8 rounded-[2.5rem] border transition-all duration-500 hover:-translate-y-3 ${popular ? 'border-primary/30 bg-primary/[0.03] scale-105 shadow-2xl shadow-primary/10' : 'border-border/40 bg-card'} overflow-hidden`}>
+            {popular && <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-6 py-2 rounded-bl-[2rem] text-[10px] font-black uppercase tracking-widest shadow-xl">Más Seleccionado</div>}
             <div className="mb-6 transform transition-transform group-hover:scale-110">{icon}</div>
             <h4 className="text-xl font-black tracking-tight mb-2 uppercase">{name}</h4>
             <div className="flex items-baseline gap-1 mb-8">
@@ -492,22 +492,22 @@ function PlanCard({ icon, name, price, color, features, popular }) {
             <ul className="space-y-4 mb-10">
                 {features.map((f, i) => (
                     <li key={i} className="flex items-center gap-3 text-xs font-bold opacity-80 uppercase tracking-wide">
-                        <CheckCircle2 className={`size-4 ${popular ? 'text-indigo-500' : 'text-emerald-500'}`} /> {f}
+                        <CheckCircle2 className={`size-4 ${popular ? 'text-accent-foreground' : 'text-success'}`} /> {f}
                     </li>
                 ))}
             </ul>
-            <Button className={`w-full rounded-2xl font-black uppercase tracking-widest text-[10px] h-12 shadow-xl transition-all active:scale-95 ${popular ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20' : 'bg-foreground hover:bg-foreground/90 text-background'}`}>Suscripción Corporate</Button>
+            <Button className={`w-full rounded-2xl font-black uppercase tracking-widest text-[10px] h-12 shadow-xl transition-all active:scale-95 ${popular ? 'bg-primary hover:bg-primary text-primary-foreground shadow-primary/20' : 'bg-foreground hover:bg-foreground/90 text-background'}`}>Suscripción Corporate</Button>
         </div>
     );
 }
 
 function KPICard({ label, value, sub, icon, trend, color }) {
-    const colors = { indigo: "text-indigo-700", blue: "text-blue-700", emerald: "text-emerald-700", purple: "text-purple-700" };
+    const colors = { indigo: "text-accent-foreground", blue: "text-info", emerald: "text-success", purple: "text-accent-foreground" };
     return (
         <div className={`bg-card border border-border/40 rounded-[2.5rem] p-9 shadow-sm transition-all hover:shadow-2xl hover:-translate-y-2 group relative overflow-hidden`}>
             <div className="flex justify-between items-start mb-8">
                 <div className={`size-14 rounded-2xl flex items-center justify-center bg-muted/30 shadow-inner ${colors[color]}`}>{icon}</div>
-                {trend && <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest bg-emerald-500/10 text-emerald-600 border border-emerald-500/10 animate-in fade-in duration-700">{trend}</span>}
+                {trend && <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest bg-success/10 text-success border border-success/10 animate-in fade-in duration-700">{trend}</span>}
             </div>
             <h4 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 opacity-60">{label}</h4>
             <div className="flex flex-col gap-1.5">
@@ -526,7 +526,7 @@ function Modal({ title, onClose, children }) {
                 se corta por abajo y la rueda mueve la página de detrás, así que
                 el botón de guardar queda inalcanzable. */}
             <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[3rem] bg-card border border-border/40 shadow-2xl p-14 animate-in zoom-in-95 duration-500 relative" onClick={e => e.stopPropagation()}>
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 to-blue-500" />
+                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary to-info" />
                 <h2 className="text-3xl font-black text-center mb-12 tracking-tight uppercase text-foreground">{title}</h2>
                 {children}
             </div>
@@ -564,9 +564,9 @@ function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
             </div>
 
             {flash?.temp_password && (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-5 space-y-3">
+                <div className="rounded-2xl border border-warning/30 bg-warning/[0.06] p-5 space-y-3">
                     <div className="flex items-start gap-2.5">
-                        <ShieldAlert className="size-4 mt-0.5 shrink-0 text-amber-600" />
+                        <ShieldAlert className="size-4 mt-0.5 shrink-0 text-warning" />
                         <p className="text-xs font-bold leading-relaxed text-foreground">
                             Contraseña temporal de <span className="font-mono">{flash.temp_password_for}</span>.
                             Se muestra una sola vez: cópiala y pide que la cambien al entrar.
@@ -606,7 +606,7 @@ function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
                                         {u.role}
                                     </span>
                                     {!u.active && (
-                                        <span className="shrink-0 rounded-lg bg-red-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-red-600">
+                                        <span className="shrink-0 rounded-lg bg-destructive/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-destructive">
                                             Inactivo
                                         </span>
                                     )}
@@ -632,7 +632,7 @@ function Field({ label, value, onChange, type = 'text', required = false, placeh
     return (
         <div className="space-y-3">
             <label className="text-[11px] font-black text-muted-foreground uppercase tracking-widest ml-1">{label}</label>
-            <input type={type} value={value} onChange={e => onChange(e.target.value)} required={required} placeholder={placeholder} className="h-14 w-full rounded-2xl border border-border/40 bg-background px-6 text-sm font-bold shadow-inner outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/40 transition-all font-mono" />
+            <input type={type} value={value} onChange={e => onChange(e.target.value)} required={required} placeholder={placeholder} className="h-14 w-full rounded-2xl border border-border/40 bg-background px-6 text-sm font-bold shadow-inner outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary/40 transition-all font-mono" />
         </div>
     );
 }

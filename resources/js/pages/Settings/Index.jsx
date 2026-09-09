@@ -53,8 +53,8 @@ function Field({ label, icon: IconComponent, children, error }) {
             </label>
             {children}
             {error && (
-                <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
-                    <span className="size-1 rounded-full bg-red-500 inline-block" />
+                <p className="text-xs text-destructive flex items-center gap-1">
+                    <span className="size-1 rounded-full bg-destructive inline-block" />
                     {error}
                 </p>
             )}
@@ -65,7 +65,7 @@ function Field({ label, icon: IconComponent, children, error }) {
 function Input({ className = '', ...props }) {
     return (
         <input
-            className={`w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50 hover:border-border ${className}`}
+            className={`w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 hover:border-border ${className}`}
             {...props}
         />
     );
@@ -75,8 +75,8 @@ function SectionHeader({ title, description, icon: IconComponent }) {
     return (
         <div className="flex items-start gap-3">
             {IconComponent && (
-                <div className="mt-0.5 rounded-xl bg-teal-500/10 dark:bg-teal-500/15 p-2.5">
-                    <IconComponent className="size-5 text-teal-600 dark:text-teal-400" />
+                <div className="mt-0.5 rounded-xl bg-primary/10 dark:bg-primary/15 p-2.5">
+                    <IconComponent className="size-5 text-accent-foreground" />
                 </div>
             )}
             <div>
@@ -120,17 +120,17 @@ function TabPerfil() {
                     {/* Avatar row */}
                     <div className="flex items-center gap-5 mb-8 pb-6 border-b border-border/40">
                         <div className="relative group">
-                            <div className="size-20 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-teal-500/20 ring-4 ring-teal-500/10">
+                            <div className="size-20 rounded-2xl bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground text-2xl font-bold shadow-lg shadow-primary/20 ring-4 ring-primary/10">
                                 {getInitials(user.name)}
                             </div>
-                            <div className="absolute -bottom-1 -right-1 size-6 rounded-full bg-green-500 border-[3px] border-card flex items-center justify-center">
+                            <div className="absolute -bottom-1 -right-1 size-6 rounded-full bg-success border-[3px] border-card flex items-center justify-center">
                                 <CheckCircle2 className="size-3 text-white" />
                             </div>
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-base font-semibold text-foreground truncate">{user.name ?? 'Sin nombre'}</p>
                             <p className="text-sm text-muted-foreground truncate">{user.email ?? 'Sin correo'}</p>
-                            <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-teal-600 dark:text-teal-400 bg-teal-500/10 dark:bg-teal-500/15 px-2.5 py-1 rounded-full">
+                            <span className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-accent-foreground bg-primary/10 dark:bg-primary/15 px-2.5 py-1 rounded-full">
                                 <CheckCircle2 className="size-3" />
                                 Cuenta activa
                             </span>
@@ -154,7 +154,7 @@ function TabPerfil() {
                             />
                         </Field>
                         <div className="pt-2">
-                            <Button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white border-0 rounded-xl px-6 gap-2 shadow-md shadow-teal-600/20 transition-all duration-200 hover:shadow-lg hover:shadow-teal-600/30 hover:-translate-y-px">
+                            <Button type="submit" className="bg-primary hover:bg-primary text-primary-foreground border-0 rounded-xl px-6 gap-2 shadow-md shadow-primary/20 transition-all duration-200 hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-px">
                                 <Save className="size-4" />
                                 Guardar cambios
                             </Button>
@@ -253,10 +253,10 @@ function TabContrasena() {
                                             className={`h-1 flex-1 rounded-full transition-colors duration-300 ${
                                                 form.password.length >= i * 3
                                                     ? form.password.length >= 12
-                                                        ? 'bg-green-500'
+                                                        ? 'bg-success'
                                                         : form.password.length >= 8
-                                                            ? 'bg-yellow-500'
-                                                            : 'bg-red-500'
+                                                            ? 'bg-warning'
+                                                            : 'bg-destructive'
                                                     : 'bg-muted'
                                             }`}
                                         />
@@ -269,7 +269,7 @@ function TabContrasena() {
                         )}
 
                         <div className="pt-2">
-                            <Button type="submit" className="bg-teal-600 hover:bg-teal-500 text-white border-0 rounded-xl px-6 gap-2 shadow-md shadow-teal-600/20 transition-all duration-200 hover:shadow-lg hover:shadow-teal-600/30 hover:-translate-y-px">
+                            <Button type="submit" className="bg-primary hover:bg-primary text-primary-foreground border-0 rounded-xl px-6 gap-2 shadow-md shadow-primary/20 transition-all duration-200 hover:shadow-lg hover:shadow-primary/30 hover:-translate-y-px">
                                 <Save className="size-4" />
                                 Actualizar contraseña
                             </Button>
@@ -292,9 +292,9 @@ function TabDosPasos() {
             />
             <Card>
                 <CardBody className="space-y-5">
-                    <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/30 dark:bg-muted/10 border border-border/30">
-                        <div className="rounded-xl bg-teal-500/10 dark:bg-teal-500/15 p-3 flex-shrink-0">
-                            <ShieldCheck className="size-6 text-teal-600 dark:text-teal-400" />
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-muted/30 border border-border/30">
+                        <div className="rounded-xl bg-primary/10 dark:bg-primary/15 p-3 flex-shrink-0">
+                            <ShieldCheck className="size-6 text-accent-foreground" />
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="font-semibold text-foreground text-sm">Autenticación por aplicación</p>
@@ -302,14 +302,14 @@ function TabDosPasos() {
                                 Usa una aplicación de autenticación como Google Authenticator o Authy para generar códigos de un solo uso.
                             </p>
                         </div>
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 dark:bg-amber-500/15 rounded-full px-3 py-1.5 self-start flex-shrink-0">
-                            <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-warning bg-warning/10 rounded-full px-3 py-1.5 self-start flex-shrink-0">
+                            <span className="size-1.5 rounded-full bg-warning animate-pulse" />
                             No activado
                         </span>
                     </div>
 
                     <div className="rounded-xl border-2 border-dashed border-border/50 p-8 text-center">
-                        <div className="mx-auto size-12 rounded-2xl bg-muted/50 dark:bg-muted/20 flex items-center justify-center mb-4">
+                        <div className="mx-auto size-12 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
                             <KeyRound className="size-6 text-muted-foreground/60" />
                         </div>
                         <p className="text-sm font-medium text-muted-foreground mb-1">Próximamente</p>
@@ -382,25 +382,25 @@ function TabSesiones({ sessions }) {
                                 key={session.id}
                                 className={`flex items-center gap-4 rounded-xl p-4 transition-colors ${
                                     session.is_current
-                                        ? 'bg-teal-500/5 dark:bg-teal-500/10 border border-teal-500/20'
-                                        : 'bg-muted/20 dark:bg-muted/10 border border-border/30 hover:bg-muted/40 dark:hover:bg-muted/20'
+                                        ? 'bg-primary/5 dark:bg-primary/10 border border-primary/20'
+                                        : 'bg-muted/20 border border-border/30 hover:bg-muted/40 dark:hover:bg-muted/20'
                                 }`}
                             >
                                 <div className={`flex-shrink-0 rounded-xl p-2.5 ${
                                     session.is_current
-                                        ? 'bg-teal-500/10 dark:bg-teal-500/15'
-                                        : 'bg-muted/50 dark:bg-muted/20'
+                                        ? 'bg-primary/10 dark:bg-primary/15'
+                                        : 'bg-muted/50'
                                 }`}>
                                     <DeviceIcon className={`size-5 ${
-                                        session.is_current ? 'text-teal-600 dark:text-teal-400' : 'text-muted-foreground'
+                                        session.is_current ? 'text-accent-foreground' : 'text-muted-foreground'
                                     }`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-foreground flex items-center gap-2">
                                         {browser} en {os}
                                         {session.is_current && (
-                                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 bg-teal-500/10 dark:bg-teal-500/15 px-2 py-0.5 rounded-full">
-                                                <span className="size-1.5 rounded-full bg-teal-500 animate-pulse" />
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-foreground bg-primary/10 dark:bg-primary/15 px-2 py-0.5 rounded-full">
+                                                <span className="size-1.5 rounded-full bg-primary animate-pulse" />
                                                 Actual
                                             </span>
                                         )}
@@ -412,7 +412,7 @@ function TabSesiones({ sessions }) {
                                     </p>
                                 </div>
                                 {session.is_current && (
-                                    <CheckCircle2 className="size-5 text-teal-500 flex-shrink-0" />
+                                    <CheckCircle2 className="size-5 text-accent-foreground flex-shrink-0" />
                                 )}
                             </div>
                         );
@@ -421,7 +421,7 @@ function TabSesiones({ sessions }) {
             </Card>
 
             {sessions.length > 1 && (
-                <Card className="border-red-500/20 dark:border-red-500/10">
+                <Card className="border-destructive/20">
                     <CardBody>
                         <form onSubmit={handleRevoke} className="space-y-4">
                             <div>
@@ -460,21 +460,21 @@ function TabApariencia() {
             label: 'Claro',
             desc: 'Fondo claro con textos oscuros',
             Icon: Sun,
-            gradient: 'from-amber-400 to-orange-400',
+            gradient: 'from-warning to-warning',
         },
         {
             value: 'dark',
             label: 'Oscuro',
             desc: 'Fondo oscuro, menos fatiga visual',
             Icon: Moon,
-            gradient: 'from-indigo-500 to-purple-500',
+            gradient: 'from-primary to-primary',
         },
         {
             value: 'system',
             label: 'Sistema',
             desc: 'Usa la configuración de tu SO',
             Icon: SunMoon,
-            gradient: 'from-teal-400 to-cyan-400',
+            gradient: 'from-primary to-info',
         },
     ];
 
@@ -497,25 +497,25 @@ function TabApariencia() {
                                     onClick={() => updateAppearance(value)}
                                     className={`group relative flex flex-col items-center gap-3 rounded-2xl border-2 p-5 text-sm transition-all duration-300 ${
                                         isActive
-                                            ? 'border-teal-500 bg-teal-500/5 dark:bg-teal-500/10 shadow-md shadow-teal-500/10'
+                                            ? 'border-primary/30 bg-primary/5 dark:bg-primary/10 shadow-md shadow-primary/10'
                                             : 'border-border/50 hover:border-border hover:bg-muted/30 dark:hover:bg-muted/15'
                                     }`}
                                 >
                                     <div className={`rounded-2xl p-3 transition-all duration-300 ${
                                         isActive
                                             ? `bg-gradient-to-br ${gradient} shadow-lg`
-                                            : 'bg-muted/50 dark:bg-muted/20 group-hover:bg-muted/80 dark:group-hover:bg-muted/30'
+                                            : 'bg-muted/50 group-hover:bg-muted/80 dark:group-hover:bg-muted/30'
                                     }`}>
                                         <Icon className={`size-6 transition-colors ${isActive ? 'text-white' : 'text-muted-foreground'}`} />
                                     </div>
                                     <div className="text-center">
-                                        <span className={`font-semibold text-sm block ${isActive ? 'text-teal-600 dark:text-teal-400' : 'text-foreground'}`}>
+                                        <span className={`font-semibold text-sm block ${isActive ? 'text-accent-foreground' : 'text-foreground'}`}>
                                             {label}
                                         </span>
                                         <span className="text-[11px] text-muted-foreground mt-0.5 block">{desc}</span>
                                     </div>
                                     {isActive && (
-                                        <div className="absolute -top-2 -right-2 size-5 rounded-full bg-teal-500 flex items-center justify-center shadow-md">
+                                        <div className="absolute -top-2 -right-2 size-5 rounded-full bg-primary flex items-center justify-center shadow-md">
                                             <CheckCircle2 className="size-3 text-white" />
                                         </div>
                                     )}
@@ -528,16 +528,16 @@ function TabApariencia() {
                     <div className="rounded-2xl border border-border/50 overflow-hidden">
                         <div className="bg-sidebar/80 px-4 py-3 border-b border-border/40 flex items-center gap-2">
                             <div className="flex gap-1.5">
-                                <div className="size-3 rounded-full bg-red-400/70 dark:bg-red-500/50" />
-                                <div className="size-3 rounded-full bg-yellow-400/70 dark:bg-yellow-500/50" />
-                                <div className="size-3 rounded-full bg-green-400/70 dark:bg-green-500/50" />
+                                <div className="size-3 rounded-full bg-destructive/70" />
+                                <div className="size-3 rounded-full bg-warning/70" />
+                                <div className="size-3 rounded-full bg-success/70" />
                             </div>
                             <span className="ml-2 text-xs text-muted-foreground/70">Vista previa del tema</span>
                         </div>
                         <div className="bg-background/80 p-5 flex gap-4">
                             <div className="w-28 bg-sidebar/60 rounded-xl p-3 flex flex-col gap-2">
                                 <div className="h-2.5 w-full bg-muted rounded-full" />
-                                <div className="h-2.5 w-3/4 bg-teal-500/30 rounded-full" />
+                                <div className="h-2.5 w-3/4 bg-primary/30 rounded-full" />
                                 <div className="h-2.5 w-full bg-muted rounded-full" />
                                 <div className="h-2.5 w-5/6 bg-muted rounded-full" />
                             </div>
@@ -545,7 +545,7 @@ function TabApariencia() {
                                 <div className="h-2.5 w-2/5 bg-foreground/15 rounded-full" />
                                 <div className="h-2.5 w-full bg-muted/60 rounded-full" />
                                 <div className="h-2.5 w-4/5 bg-muted/40 rounded-full" />
-                                <div className="mt-2 h-8 w-24 bg-teal-500/20 rounded-lg" />
+                                <div className="mt-2 h-8 w-24 bg-primary/20 rounded-lg" />
                             </div>
                         </div>
                     </div>
@@ -567,11 +567,11 @@ const STATE_META = {
 
 function stateClasses(color) {
     return {
-        emerald: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
-        amber:   'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-inset ring-amber-500/30',
-        sky:     'bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30',
-        rose:    'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-1 ring-inset ring-rose-500/30',
-        zinc:    'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-1 ring-inset ring-zinc-500/30',
+        emerald: 'bg-success/15 text-success ring-1 ring-inset ring-success/30',
+        amber:   'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
+        sky:     'bg-info/15 text-info ring-1 ring-inset ring-info/30',
+        rose:    'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
+        zinc:    'bg-muted/15 text-foreground dark:text-muted-foreground ring-1 ring-inset ring-border/30',
     }[color];
 }
 
@@ -674,7 +674,7 @@ function TabWhatsApp() {
                     value={instanceId ?? ''}
                     onChange={e => setInstanceId(Number(e.target.value) || null)}
                     disabled={!instances.length}
-                    className="flex-1 rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                    className="flex-1 rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 >
                     {!instances.length && <option>No hay instancias con WABA configurado</option>}
                     {instances.map(i => (
@@ -692,12 +692,12 @@ function TabWhatsApp() {
                             key={t.id}
                             onClick={() => setSubTab(t.id)}
                             className={`relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                                active ? 'text-teal-600 dark:text-teal-400' : 'text-muted-foreground hover:text-foreground'
+                                active ? 'text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
                             }`}
                         >
                             <t.Icon className="size-4" />
                             {t.label}
-                            {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-500 rounded-t" />}
+                            {active && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t" />}
                         </button>
                     );
                 })}
@@ -718,7 +718,7 @@ function TabWhatsApp() {
             </div>
 
             {error && (
-                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-start gap-2">
                     <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                     <span>{error}</span>
                 </div>
@@ -727,8 +727,8 @@ function TabWhatsApp() {
             {toast && (
                 <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
                     toast.kind === 'error'
-                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                        : 'border-success/30 bg-success/10 text-success'
                 }`}>
                     {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
                     <span>{toast.text}</span>
@@ -737,7 +737,7 @@ function TabWhatsApp() {
 
             {/* Progress card */}
             {data && (
-                <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-teal-500/5 via-card to-card p-5">
+                <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-primary/5 via-card to-card p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <p className="text-sm font-semibold text-foreground">Preparación de la cuenta</p>
@@ -745,11 +745,11 @@ function TabWhatsApp() {
                                 {okCount} de {total} chequeos completos · {progress}%
                             </p>
                         </div>
-                        <BadgeCheck className={`size-7 ${progress === 100 ? 'text-emerald-500' : 'text-muted-foreground/50'}`} />
+                        <BadgeCheck className={`size-7 ${progress === 100 ? 'text-success' : 'text-muted-foreground/50'}`} />
                     </div>
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                         <div
-                            className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all"
+                            className="h-full rounded-full bg-gradient-to-r from-primary to-success transition-all"
                             style={{ width: `${progress}%` }}
                         />
                     </div>
@@ -882,7 +882,7 @@ function CheckRow({ check, busy, onAction, onRequestPin, onRequestCode, onVerify
 
 function CheckAction({ check, busy, onAction, onRequestPin, onRequestCode, onVerifyCode }) {
     if (check.state === 'ok') {
-        return <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Activado</span>;
+        return <span className="text-xs text-success font-medium">Activado</span>;
     }
 
     const action = check.action_type;
@@ -891,7 +891,7 @@ function CheckAction({ check, busy, onAction, onRequestPin, onRequestCode, onVer
     if (check.state === 'pending' && check.id === 'phone_registration') {
         return (
             <div className="flex items-center gap-2">
-                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Esperando a WhatsApp</span>
+                <span className="text-xs text-warning font-medium">Esperando a WhatsApp</span>
                 {action === 'register_number' && (
                     <Button size="sm" variant="outline" onClick={onRequestPin} disabled={!!busy.register_number} className="gap-1.5 h-7 text-xs">
                         {busy.register_number ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
@@ -979,7 +979,7 @@ function RequestCodeModal({ onClose, onSubmit, busy }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
             <div className="w-full max-w-md rounded-2xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
                 <div className="mb-5 flex items-start gap-3">
-                    <div className="size-10 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <div className="size-10 rounded-xl bg-info/15 text-info flex items-center justify-center shrink-0">
                         <MessageCircle className="size-5" />
                     </div>
                     <div>
@@ -999,7 +999,7 @@ function RequestCodeModal({ onClose, onSubmit, busy }) {
                                 onClick={() => setCodeMethod('SMS')}
                                 className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                                     codeMethod === 'SMS'
-                                        ? 'border-sky-500 bg-sky-500/10 text-foreground'
+                                        ? 'border-info/30 bg-info/10 text-foreground'
                                         : 'border-border/70 bg-background text-muted-foreground hover:bg-muted'
                                 }`}
                             >
@@ -1011,7 +1011,7 @@ function RequestCodeModal({ onClose, onSubmit, busy }) {
                                 onClick={() => setCodeMethod('VOICE')}
                                 className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                                     codeMethod === 'VOICE'
-                                        ? 'border-sky-500 bg-sky-500/10 text-foreground'
+                                        ? 'border-info/30 bg-info/10 text-foreground'
                                         : 'border-border/70 bg-background text-muted-foreground hover:bg-muted'
                                 }`}
                             >
@@ -1064,7 +1064,7 @@ function VerifyCodeModal({ onClose, onSubmit, onResend, busy }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
             <div className="w-full max-w-md rounded-2xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
                 <div className="mb-5 flex items-start gap-3">
-                    <div className="size-10 rounded-xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <div className="size-10 rounded-xl bg-info/15 text-info flex items-center justify-center shrink-0">
                         <BadgeCheck className="size-5" />
                     </div>
                     <div>
@@ -1088,9 +1088,9 @@ function VerifyCodeModal({ onClose, onSubmit, onResend, busy }) {
                             className="mt-1 w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-mono tracking-widest text-center"
                         />
                     </div>
-                    {error && <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+                    {error && <p className="text-xs text-destructive">{error}</p>}
                     <div className="flex items-center justify-between text-xs">
-                        <button type="button" onClick={onResend} disabled={busy} className="text-sky-600 dark:text-sky-400 hover:underline disabled:opacity-50">
+                        <button type="button" onClick={onResend} disabled={busy} className="text-info hover:underline disabled:opacity-50">
                             Reenviar código
                         </button>
                     </div>
@@ -1132,13 +1132,13 @@ const VERTICAL_OPTIONS = [
 
 // Estado del "display name" (verified_name) según Meta. Es solo lectura por API.
 const NAME_STATUS_META = {
-    APPROVED: { label: 'Aprobado', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30' },
-    AVAILABLE_WITHOUT_REVIEW: { label: 'Disponible', cls: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30' },
-    PENDING_REVIEW: { label: 'En revisión', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30' },
-    PENDING: { label: 'En revisión', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30' },
-    DECLINED: { label: 'Rechazado', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 ring-1 ring-inset ring-rose-500/30' },
-    EXPIRED: { label: 'Expirado', cls: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 ring-1 ring-inset ring-rose-500/30' },
-    NONE: { label: 'Sin nombre', cls: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 ring-1 ring-inset ring-zinc-500/30' },
+    APPROVED: { label: 'Aprobado', cls: 'bg-success/15 text-success ring-1 ring-inset ring-success/30' },
+    AVAILABLE_WITHOUT_REVIEW: { label: 'Disponible', cls: 'bg-success/15 text-success ring-1 ring-inset ring-success/30' },
+    PENDING_REVIEW: { label: 'En revisión', cls: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30' },
+    PENDING: { label: 'En revisión', cls: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30' },
+    DECLINED: { label: 'Rechazado', cls: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30' },
+    EXPIRED: { label: 'Expirado', cls: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30' },
+    NONE: { label: 'Sin nombre', cls: 'bg-muted/15 text-muted-foreground ring-1 ring-inset ring-border/30' },
 };
 
 function BusinessProfilePanel({ instanceId, setToast }) {
@@ -1237,7 +1237,7 @@ function BusinessProfilePanel({ instanceId, setToast }) {
         return <div className="flex items-center gap-2 text-sm text-muted-foreground py-10 justify-center"><Loader2 className="size-4 animate-spin" /> Cargando perfil...</div>;
     }
     if (error) {
-        return <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">{error}</div>;
+        return <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>;
     }
     if (!profile) return null;
 
@@ -1308,7 +1308,7 @@ function BusinessProfilePanel({ instanceId, setToast }) {
                         placeholder="Describe brevemente a qué se dedica tu empresa..."
                         maxLength={512}
                         rows={3}
-                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-teal-500/30 resize-y"
+                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
                     />
                     <div className="text-[10px] text-muted-foreground text-right">{profile.description.length}/512</div>
                 </Field>
@@ -1352,7 +1352,7 @@ function BusinessProfilePanel({ instanceId, setToast }) {
                     <select
                         value={profile.vertical}
                         onChange={e => setProfile(p => ({ ...p, vertical: e.target.value }))}
-                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                        className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                         {VERTICAL_OPTIONS.map(v => (
                             <option key={v.value} value={v.value}>{v.label}</option>
@@ -1408,7 +1408,7 @@ function PhoneNumbersPanel({ instanceId }) {
             </div>
 
             {error && (
-                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">{error}</div>
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
             )}
 
             {data && (
@@ -1416,13 +1416,13 @@ function PhoneNumbersPanel({ instanceId }) {
                     {(data.phone_numbers ?? []).map(p => {
                         const isCurrent = String(p.id) === String(data.current_phone_number_id);
                         return (
-                            <div key={p.id} className={`rounded-2xl border p-4 ${isCurrent ? 'border-teal-500/40 bg-teal-500/5' : 'border-border/60 bg-card/50'}`}>
+                            <div key={p.id} className={`rounded-2xl border p-4 ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60 bg-card/50'}`}>
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-mono font-semibold text-foreground">{p.display_phone_number}</span>
                                             {isCurrent && (
-                                                <span className="inline-flex items-center gap-1 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-teal-500/30">
+                                                <span className="inline-flex items-center gap-1 rounded-md bg-primary/15 text-accent-foreground px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-primary/30">
                                                     <CheckCircle2 className="size-3" /> Actual
                                                 </span>
                                             )}
@@ -1517,14 +1517,14 @@ function CallingSettingsPanel({ instanceId, showToast }) {
             </p>
 
             {/* Habilitar la función de llamadas en el número */}
-            <div className={`rounded-2xl border p-5 ${enabled ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border/60 bg-card/50'}`}>
+            <div className={`rounded-2xl border p-5 ${enabled ? 'border-success/40 bg-success/5' : 'border-border/60 bg-card/50'}`}>
                 <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                            <PhoneCall className="size-4 text-teal-600 dark:text-teal-400" />
+                            <PhoneCall className="size-4 text-accent-foreground" />
                             <p className="text-sm font-semibold text-foreground">Llamadas en el número</p>
                             {enabled && (
-                                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-emerald-500/30">
+                                <span className="inline-flex items-center gap-1 rounded-md bg-success/15 text-success px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ring-success/30">
                                     <CheckCircle2 className="size-3" /> Habilitado
                                 </span>
                             )}
@@ -1545,14 +1545,14 @@ function CallingSettingsPanel({ instanceId, showToast }) {
             </div>
 
             {/* Toggle de salientes con aviso de costo */}
-            <div className={`rounded-2xl border p-5 ${outbound ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/60 bg-card/50'} ${!enabled ? 'opacity-60' : ''}`}>
+            <div className={`rounded-2xl border p-5 ${outbound ? 'border-warning/40 bg-warning/5' : 'border-border/60 bg-card/50'} ${!enabled ? 'opacity-60' : ''}`}>
                 <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground">Llamadas salientes</p>
                         <p className="text-xs text-muted-foreground mt-1">
                             Permite que los agentes inicien llamadas a los clientes (requiere que el cliente otorgue permiso).
                         </p>
-                        <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                        <div className="mt-2 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
                             <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
                             <span>{cost?.outbound ?? 'Las llamadas salientes tienen costo por minuto facturado por Meta.'}</span>
                         </div>
@@ -1563,7 +1563,7 @@ function CallingSettingsPanel({ instanceId, showToast }) {
                         aria-checked={!!outbound}
                         disabled={busy || !enabled}
                         onClick={() => toggleOutbound(!outbound)}
-                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${outbound ? 'bg-amber-500' : 'bg-muted'}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${outbound ? 'bg-warning' : 'bg-muted'}`}
                     >
                         <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${outbound ? 'translate-x-5' : 'translate-x-0.5'}`} />
                     </button>
@@ -1643,7 +1643,7 @@ function ResumeTemplatePanel({ instanceId, showToast }) {
                             <select
                                 value={selectedKey}
                                 onChange={e => setSelectedKey(e.target.value)}
-                                className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                             >
                                 <option value="">Sin configurar</option>
                                 {templates.map(t => (
@@ -1681,12 +1681,12 @@ const FALLBACK_TOKENS = [
 ];
 
 const FALLBACK_STATUS = {
-    APPROVED:    { label: 'Aprobada',   tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30' },
-    PENDING:     { label: 'En revisión', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-amber-500/30' },
-    REJECTED:    { label: 'Rechazada',  tone: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30' },
-    MISSING:     { label: 'Sin crear',  tone: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30' },
-    UNAVAILABLE: { label: 'Sin verificar', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30' },
-    DISABLED:    { label: 'Desactivado', tone: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30' },
+    APPROVED:    { label: 'Aprobada',   tone: 'bg-success/15 text-success ring-success/30' },
+    PENDING:     { label: 'En revisión', tone: 'bg-warning/15 text-warning ring-warning/30' },
+    REJECTED:    { label: 'Rechazada',  tone: 'bg-destructive/15 text-destructive ring-destructive/30' },
+    MISSING:     { label: 'Sin crear',  tone: 'bg-destructive/15 text-destructive ring-destructive/30' },
+    UNAVAILABLE: { label: 'Sin verificar', tone: 'bg-muted/15 text-foreground dark:text-muted-foreground ring-border/30' },
+    DISABLED:    { label: 'Desactivado', tone: 'bg-muted/15 text-foreground dark:text-muted-foreground ring-border/30' },
 };
 
 // Huecos {{n}} del cuerpo, ordenados como los espera la Cloud API.
@@ -1811,7 +1811,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                             </span>
                         </div>
                         {state?.last_error && (
-                            <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1.5 break-words">{state.last_error}</p>
+                            <p className="text-[11px] text-destructive mt-1.5 break-words">{state.last_error}</p>
                         )}
                         {state?.status === 'PENDING' && (
                             <p className="text-[11px] text-muted-foreground mt-1.5">
@@ -1845,7 +1845,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                         aria-checked={!disabled}
                         disabled={busy}
                         onClick={() => toggleDisabled(!disabled)}
-                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${!disabled ? 'bg-teal-500' : 'bg-muted'}`}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${!disabled ? 'bg-primary' : 'bg-muted'}`}
                     >
                         <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${!disabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                     </button>
@@ -1859,7 +1859,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                         <select
                             value={selectedKey}
                             onChange={e => { setSelectedKey(e.target.value); setVariables([]); }}
-                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                         >
                             <option value="">Plantilla por defecto de Integra CRM</option>
                             {templates.map(t => (
@@ -1892,7 +1892,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                                                 next[i] = e.target.value;
                                                 setVariables(next);
                                             }}
-                                            className="flex-1 rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                            className="flex-1 rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                                         >
                                             <option value="">Elegir…</option>
                                             {FALLBACK_TOKENS.map(t => (
@@ -1902,7 +1902,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                                     </div>
                                 ))}
                                 {!variables.includes('message') && slots.length > 0 && (
-                                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                    <p className="text-[11px] text-warning">
                                         Uno de los huecos debe ser «Texto del aviso»; si no, el aviso del sistema no
                                         llegaría a ninguna parte.
                                     </p>
@@ -1930,10 +1930,10 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
 
 function QualityPill({ rating }) {
     const map = {
-        GREEN: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-emerald-500/30',
-        YELLOW: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-amber-500/30',
-        RED: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-rose-500/30',
-        UNKNOWN: 'bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-zinc-500/30',
+        GREEN: 'bg-success/15 text-success ring-success/30',
+        YELLOW: 'bg-warning/15 text-warning ring-warning/30',
+        RED: 'bg-destructive/15 text-destructive ring-destructive/30',
+        UNKNOWN: 'bg-muted/15 text-foreground dark:text-muted-foreground ring-border/30',
     };
     return (
         <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${map[rating] ?? map.UNKNOWN}`}>
@@ -2189,8 +2189,8 @@ function TabHorarios() {
             {toast && (
                 <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-2 ${
                     toast.kind === 'error'
-                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                        : 'border-success/30 bg-success/10 text-success'
                 }`}>
                     {toast.kind === 'error' ? <AlertTriangle className="size-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="size-4 mt-0.5 shrink-0" />}
                     <span>{toast.text}</span>
@@ -2201,14 +2201,14 @@ function TabHorarios() {
                 <p className="text-sm text-muted-foreground">
                     {items.length === 0 ? 'Aún no tienes horarios configurados.' : `${items.length} horario(s) configurado(s).`}
                 </p>
-                <Button onClick={openCreate} className="bg-teal-600 hover:bg-teal-500 text-white rounded-xl gap-2">
+                <Button onClick={openCreate} className="bg-primary hover:bg-primary text-primary-foreground rounded-xl gap-2">
                     <Plus className="size-4" />
                     Nuevo horario
                 </Button>
             </div>
 
             {error && (
-                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {error}
                 </div>
             )}
@@ -2227,12 +2227,12 @@ function TabHorarios() {
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <h3 className="font-semibold text-foreground">{item.name}</h3>
                                         {item.active ? (
-                                            <span className="inline-flex items-center rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Activo</span>
+                                            <span className="inline-flex items-center rounded-md bg-success/15 text-success ring-1 ring-inset ring-success/30 px-1.5 py-0.5 text-[10px] font-semibold">Activo</span>
                                         ) : (
-                                            <span className="inline-flex items-center rounded-md bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-1 ring-inset ring-zinc-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Pausado</span>
+                                            <span className="inline-flex items-center rounded-md bg-muted/15 text-foreground dark:text-muted-foreground ring-1 ring-inset ring-border/30 px-1.5 py-0.5 text-[10px] font-semibold">Pausado</span>
                                         )}
                                         {item.instance ? (
-                                            <span className="inline-flex items-center rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30 px-1.5 py-0.5 text-[10px] font-semibold">{item.instance.name}</span>
+                                            <span className="inline-flex items-center rounded-md bg-info/15 text-info ring-1 ring-inset ring-info/30 px-1.5 py-0.5 text-[10px] font-semibold">{item.instance.name}</span>
                                         ) : (
                                             <span className="inline-flex items-center rounded-md bg-muted text-muted-foreground ring-1 ring-inset ring-border/50 px-1.5 py-0.5 text-[10px] font-semibold">Todas las instancias</span>
                                         )}
@@ -2247,7 +2247,7 @@ function TabHorarios() {
                                         <Pencil className="size-3.5" />
                                         Editar
                                     </Button>
-                                    <Button onClick={() => remove(item.id)} variant="outline" size="sm" className="gap-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-700">
+                                    <Button onClick={() => remove(item.id)} variant="outline" size="sm" className="gap-1.5 rounded-lg text-destructive hover:text-destructive">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
@@ -2261,7 +2261,7 @@ function TabHorarios() {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !saving && setEditing(null)}>
                     <div className="w-full max-w-2xl rounded-2xl border bg-card shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-3 mb-5">
-                            <div className="size-10 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                            <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground flex items-center justify-center shrink-0">
                                 <CalendarClock className="size-5" />
                             </div>
                             <h3 className="font-semibold text-foreground text-lg">
@@ -2282,7 +2282,7 @@ function TabHorarios() {
                                 <select
                                     value={editing.instance_id ?? ''}
                                     onChange={e => setEditing(s => ({ ...s, instance_id: e.target.value }))}
-                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                                 >
                                     <option value="">Todas las instancias</option>
                                     {instances.map(i => (
@@ -2305,7 +2305,7 @@ function TabHorarios() {
                                                             type="checkbox"
                                                             checked={dayCfg.enabled}
                                                             onChange={() => toggleDayEnabled(key)}
-                                                            className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                                            className="size-4 rounded border-border/60 text-accent-foreground focus:ring-primary/30"
                                                         />
                                                         <span className="text-sm font-medium text-foreground">{d.label}</span>
                                                     </label>
@@ -2317,7 +2317,7 @@ function TabHorarios() {
                                                                     type="checkbox"
                                                                     checked={dayCfg.all_day}
                                                                     onChange={() => toggleAllDay(key)}
-                                                                    className="size-3.5 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                                                    className="size-3.5 rounded border-border/60 text-accent-foreground focus:ring-primary/30"
                                                                 />
                                                                 Todo el día
                                                             </label>
@@ -2329,7 +2329,7 @@ function TabHorarios() {
                                                                             <select
                                                                                 value={range.start}
                                                                                 onChange={e => updateRange(key, idx, { start: e.target.value })}
-                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
                                                                             >
                                                                                 {TIME_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                                                                             </select>
@@ -2337,7 +2337,7 @@ function TabHorarios() {
                                                                             <select
                                                                                 value={range.end}
                                                                                 onChange={e => updateRange(key, idx, { end: e.target.value })}
-                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                                className="rounded-lg border border-border/70 bg-background/80 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
                                                                             >
                                                                                 {TIME_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                                                                             </select>
@@ -2345,7 +2345,7 @@ function TabHorarios() {
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => removeRange(key, idx)}
-                                                                                    className="p-1 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400"
+                                                                                    className="p-1 text-muted-foreground hover:text-destructive dark:hover:text-destructive"
                                                                                 >
                                                                                     <Trash2 className="size-3.5" />
                                                                                 </button>
@@ -2355,7 +2355,7 @@ function TabHorarios() {
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => addRange(key)}
-                                                                        className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-600 dark:text-teal-400 hover:text-teal-700"
+                                                                        className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-foreground hover:text-accent-foreground"
                                                                     >
                                                                         <Plus className="size-3" /> Agregar rango (ej. almuerzo)
                                                                     </button>
@@ -2366,7 +2366,7 @@ function TabHorarios() {
                                                         <p className="flex-1 text-xs text-muted-foreground pt-1.5">Cerrado</p>
                                                     )}
 
-                                                    <span className="shrink-0 mt-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-inset ring-sky-500/30 px-2 py-1 text-[11px] font-semibold">
+                                                    <span className="shrink-0 mt-0.5 rounded-md bg-info/15 text-info ring-1 ring-inset ring-info/30 px-2 py-1 text-[11px] font-semibold">
                                                         {formatHours(hours)}
                                                     </span>
                                                 </div>
@@ -2391,7 +2391,7 @@ function TabHorarios() {
                                     placeholder="Hola {name}, nuestro horario de hoy es {schedule}..."
                                     rows={4}
                                     maxLength={4096}
-                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-teal-500/30 resize-y"
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
                                 />
                                 <p className="text-[11px] text-muted-foreground mt-1">
                                     Variables: <code className="text-foreground">{'{name}'}</code>, <code className="text-foreground">{'{phone}'}</code>, <code className="text-foreground">{'{schedule}'}</code> (horario de hoy), <code className="text-foreground">{'{start}'}</code>, <code className="text-foreground">{'{end}'}</code> (primer rango de hoy)
@@ -2414,14 +2414,14 @@ function TabHorarios() {
                                     type="checkbox"
                                     checked={!!editing.active}
                                     onChange={e => setEditing(s => ({ ...s, active: e.target.checked }))}
-                                    className="size-4 rounded border-border/60 text-teal-600 focus:ring-teal-500/30"
+                                    className="size-4 rounded border-border/60 text-accent-foreground focus:ring-primary/30"
                                 />
                                 <span className="text-foreground">Activo</span>
                             </label>
                         </div>
 
                         <div className="flex gap-2 pt-5">
-                            <Button onClick={save} disabled={saving} className="flex-1 gap-2 bg-teal-600 hover:bg-teal-500 text-white">
+                            <Button onClick={save} disabled={saving} className="flex-1 gap-2 bg-primary hover:bg-primary text-primary-foreground">
                                 {saving && <Loader2 className="size-4 animate-spin" />}
                                 <Save className="size-4" />
                                 Guardar
@@ -2453,7 +2453,7 @@ function AiSwitch({ checked, disabled, onChange }) {
             aria-checked={!!checked}
             disabled={disabled}
             onClick={() => onChange(!checked)}
-            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-teal-500' : 'bg-muted'}`}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-primary' : 'bg-muted'}`}
         >
             <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
         </button>
@@ -2566,7 +2566,7 @@ function TabFlujoIA() {
                 </div>
             )}
             {ok && (
-                <div className="flex items-start gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 px-4 py-3 text-sm text-teal-700 dark:text-teal-300">
+                <div className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-accent-foreground">
                     <CheckCircle2 className="size-4 mt-0.5 shrink-0" /><span>{ok}</span>
                 </div>
             )}
@@ -2575,8 +2575,8 @@ function TabFlujoIA() {
                 <Card>
                     <div className="p-6">
                         <div className="flex items-start gap-4">
-                            <div className="rounded-xl bg-amber-500/10 p-3">
-                                <Lock className="size-5 text-amber-600 dark:text-amber-400" />
+                            <div className="rounded-xl bg-warning/10 p-3">
+                                <Lock className="size-5 text-warning" />
                             </div>
                             <div className="min-w-0 flex-1">
                                 <p className="text-sm font-semibold text-foreground">Este apartado está bloqueado</p>
@@ -2587,7 +2587,7 @@ function TabFlujoIA() {
                                 </p>
 
                                 {!platform.secret_configured ? (
-                                    <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2.5 text-xs text-amber-800 dark:text-amber-200">
+                                    <div className="mt-4 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2.5 text-xs text-warning">
                                         <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
                                         <span>El servidor todavía no tiene configurado el secreto de activación. Avisa al equipo técnico.</span>
                                     </div>
@@ -2602,7 +2602,7 @@ function TabFlujoIA() {
                                                 onChange={e => setSecret(e.target.value)}
                                                 autoComplete="off"
                                                 placeholder="Pégalo aquí"
-                                                className="w-full rounded-xl border border-border bg-background pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                                                className="w-full rounded-xl border border-border bg-background pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                                             />
                                             <button
                                                 type="button"
@@ -2612,7 +2612,7 @@ function TabFlujoIA() {
                                                 {showSecret ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                                             </button>
                                         </div>
-                                        <Button type="submit" disabled={busy || !secret.trim()} className="gap-2 bg-teal-600 hover:bg-teal-500 text-white">
+                                        <Button type="submit" disabled={busy || !secret.trim()} className="gap-2 bg-primary hover:bg-primary text-primary-foreground">
                                             {busy && <Loader2 className="size-4 animate-spin" />}
                                             <ShieldCheck className="size-4" />
                                             Desbloquear
@@ -2631,7 +2631,7 @@ function TabFlujoIA() {
                             <div className="flex items-start justify-between gap-6">
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <MessageCircle className="size-4 text-teal-600 dark:text-teal-400" />
+                                        <MessageCircle className="size-4 text-accent-foreground" />
                                         <p className="text-sm font-semibold text-foreground">IA en los chats</p>
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -2639,7 +2639,7 @@ function TabFlujoIA() {
                                         datos ni ejecuta acciones: solo responde y, si no puede, deja el chat a un agente.
                                     </p>
                                     {!platform.chat_configured && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
                                             <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
                                             <span>Falta configurar el flujo de chats en el servidor.</span>
                                         </div>
@@ -2660,7 +2660,7 @@ function TabFlujoIA() {
                             <div className="flex items-start justify-between gap-6">
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <ListChecks className="size-4 text-teal-600 dark:text-teal-400" />
+                                        <ListChecks className="size-4 text-accent-foreground" />
                                         <p className="text-sm font-semibold text-foreground">IA en los menús</p>
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
@@ -2668,7 +2668,7 @@ function TabFlujoIA() {
                                         factura, radica una falla o le envía el enlace de pago.
                                     </p>
                                     {!platform.menus_configured && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
                                             <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
                                             <span>Falta configurar el flujo de menús en el servidor.</span>
                                         </div>
@@ -2758,16 +2758,16 @@ export default function SettingsIndex({ sessions = [] }) {
                                         onClick={() => setActiveTab(tab.id)}
                                         className={`flex items-center gap-3 w-full text-left rounded-xl px-3.5 py-2.5 text-sm transition-all duration-200 whitespace-nowrap ${
                                             isActive
-                                                ? 'bg-teal-500/10 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300 font-semibold shadow-sm'
+                                                ? 'bg-primary/10 dark:bg-primary/15 text-accent-foreground font-semibold shadow-sm'
                                                 : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 dark:hover:bg-muted/20'
                                         }`}
                                     >
                                         <tab.Icon className={`size-4 flex-shrink-0 transition-colors ${
-                                            isActive ? 'text-teal-600 dark:text-teal-400' : ''
+                                            isActive ? 'text-accent-foreground' : ''
                                         }`} />
                                         <span>{tab.label}</span>
                                         {isActive && (
-                                            <span className="ml-auto size-1.5 rounded-full bg-teal-500 flex-shrink-0 hidden lg:block" />
+                                            <span className="ml-auto size-1.5 rounded-full bg-primary flex-shrink-0 hidden lg:block" />
                                         )}
                                     </button>
                                 );

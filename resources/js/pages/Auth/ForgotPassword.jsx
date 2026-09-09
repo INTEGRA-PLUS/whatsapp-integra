@@ -27,7 +27,7 @@ export default function ForgotPassword() {
             footer={
                 <Link
                     href={route('login')}
-                    className="inline-flex items-center gap-2 text-[10px] font-black text-slate-500 hover:text-green-400 transition-colors uppercase tracking-[0.2em]"
+                    className="inline-flex items-center gap-2 text-[10px] font-black text-muted-foreground hover:text-success transition-colors uppercase tracking-[0.2em]"
                 >
                     <ArrowLeft size={14} />
                     Volver a iniciar sesión
@@ -35,10 +35,10 @@ export default function ForgotPassword() {
             }
         >
             {status ? (
-                <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-5">
+                <div className="rounded-xl border border-success/20 bg-success/5 p-5">
                     <div className="flex gap-3">
-                        <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-green-500" />
-                        <p className="text-sm leading-relaxed text-slate-300">{status}</p>
+                        <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-success" />
+                        <p className="text-sm leading-relaxed text-muted-foreground">{status}</p>
                     </div>
                 </div>
             ) : (
@@ -48,7 +48,7 @@ export default function ForgotPassword() {
                             Correo Electrónico
                         </label>
                         <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500 group-focus-within:text-green-500 transition-colors duration-300">
+                            <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-muted-foreground group-focus-within:text-success transition-colors duration-300">
                                 <Mail size={18} />
                             </div>
                             <input

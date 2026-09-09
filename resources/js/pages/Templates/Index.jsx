@@ -43,29 +43,29 @@ function byNumberThenName(a, b) {
 }
 
 const STATUS_STYLES = {
-    APPROVED: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30',
-    PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30',
-    REJECTED: 'bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-inset ring-red-500/30',
-    DISABLED: 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400 ring-1 ring-inset ring-zinc-500/30',
-    PAUSED: 'bg-orange-500/15 text-orange-600 dark:text-orange-400 ring-1 ring-inset ring-orange-500/30',
-    IN_APPEAL: 'bg-sky-500/15 text-sky-600 dark:text-sky-400 ring-1 ring-inset ring-sky-500/30',
-    DELETED: 'bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-inset ring-red-500/30',
+    APPROVED: 'bg-success/15 text-success ring-1 ring-inset ring-success/30',
+    PENDING: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
+    REJECTED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
+    DISABLED: 'bg-muted/15 text-muted-foreground ring-1 ring-inset ring-border/30',
+    PAUSED: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
+    IN_APPEAL: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
+    DELETED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
 };
 
 const STATUS_DOT = {
-    APPROVED: 'bg-emerald-500',
-    PENDING: 'bg-amber-500',
-    REJECTED: 'bg-red-500',
-    DISABLED: 'bg-zinc-500',
-    PAUSED: 'bg-orange-500',
-    IN_APPEAL: 'bg-sky-500',
-    DELETED: 'bg-red-500',
+    APPROVED: 'bg-success',
+    PENDING: 'bg-warning',
+    REJECTED: 'bg-destructive',
+    DISABLED: 'bg-muted',
+    PAUSED: 'bg-warning',
+    IN_APPEAL: 'bg-info',
+    DELETED: 'bg-destructive',
 };
 
 const CATEGORY_STYLES = {
     MARKETING: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 ring-1 ring-inset ring-fuchsia-500/30',
-    UTILITY: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-1 ring-inset ring-blue-500/30',
-    AUTHENTICATION: 'bg-teal-500/15 text-teal-600 dark:text-teal-400 ring-1 ring-inset ring-teal-500/30',
+    UTILITY: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
+    AUTHENTICATION: 'bg-primary/15 text-accent-foreground ring-1 ring-inset ring-primary/30',
 };
 
 const CATEGORY_ICONS = {
@@ -393,10 +393,10 @@ export default function TemplatesIndex({ instances = [] }) {
 function StatCard({ icon: Icon, label, value, tone }) {
     const tones = {
         primary: 'bg-primary/10 text-primary',
-        emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-        indigo: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-        red: 'bg-red-500/10 text-red-600 dark:text-red-400',
+        emerald: 'bg-success/10 text-success',
+        amber: 'bg-warning/10 text-warning',
+        indigo: 'bg-primary/10 text-accent-foreground',
+        red: 'bg-destructive/10 text-destructive',
     };
     return (
         <div className="rounded-xl border bg-card p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
@@ -433,7 +433,7 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                                 {variantCount} {variantCount === 1 ? 'idioma' : 'idiomas'}
                             </span>
                             {approvedCount > 0 && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                                <span className="inline-flex items-center gap-1 text-[11px] text-success">
                                     <CheckCircle2 className="size-3" />
                                     {approvedCount} aprobada{approvedCount > 1 ? 's' : ''}
                                 </span>
@@ -602,7 +602,7 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                             </div>
 
                             {template.rejected_reason && template.rejected_reason !== 'NONE' && (
-                                <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                                <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                                     <strong>Motivo de rechazo:</strong> {template.rejected_reason}
                                 </div>
                             )}

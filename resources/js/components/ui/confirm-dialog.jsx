@@ -76,8 +76,8 @@ export function ConfirmDialog({
                     <div className={clsx(
                         'size-10 rounded-full flex items-center justify-center shrink-0',
                         isDanger
-                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                            : 'bg-teal-500/15 text-teal-600 dark:text-teal-400',
+                            ? 'bg-destructive/15 text-destructive'
+                            : 'bg-primary/15 text-accent-foreground',
                     )}>
                         <AlertTriangle className="size-5" />
                     </div>
@@ -113,8 +113,8 @@ export function ConfirmDialog({
                         className={clsx(
                             'h-9 px-4 rounded-lg text-[13px] font-bold text-white inline-flex items-center gap-2 disabled:opacity-60 transition-colors',
                             isDanger
-                                ? 'bg-rose-600 hover:bg-rose-500'
-                                : 'bg-teal-600 hover:bg-teal-500',
+                                ? 'bg-destructive hover:bg-destructive'
+                                : 'bg-primary hover:bg-primary',
                         )}
                     >
                         {loading && <Loader2 className="size-3.5 animate-spin" />}

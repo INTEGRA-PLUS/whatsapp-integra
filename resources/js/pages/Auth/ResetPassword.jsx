@@ -38,7 +38,7 @@ export default function ResetPassword({ token, email }) {
                         Correo Electrónico
                     </label>
                     <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500 group-focus-within:text-green-500 transition-colors duration-300">
+                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-muted-foreground group-focus-within:text-success transition-colors duration-300">
                             <Mail size={18} />
                         </div>
                         <input
@@ -62,13 +62,13 @@ export default function ResetPassword({ token, email }) {
                         <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="text-[10px] font-black uppercase tracking-tighter text-slate-500 hover:text-slate-300 transition-colors"
+                            className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground hover:text-muted-foreground transition-colors"
                         >
                             {showPassword ? 'Ocultar' : 'Mostrar'}
                         </button>
                     </div>
                     <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500 group-focus-within:text-green-500 transition-colors duration-300">
+                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-muted-foreground group-focus-within:text-success transition-colors duration-300">
                             <Lock size={18} />
                         </div>
                         <input
@@ -91,7 +91,7 @@ export default function ResetPassword({ token, email }) {
                         Repite la contraseña
                     </label>
                     <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500 group-focus-within:text-green-500 transition-colors duration-300">
+                        <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-muted-foreground group-focus-within:text-success transition-colors duration-300">
                             <KeyRound size={18} />
                         </div>
                         <input

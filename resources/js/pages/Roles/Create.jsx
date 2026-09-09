@@ -78,14 +78,14 @@ export default function Create({ availablePermissions }) {
                                         type="text"
                                         value={data.name}
                                         onChange={e => setData('name', e.target.value)}
-                                        className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-transparent rounded-2xl px-6 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-lg font-bold"
+                                        className="w-full h-14 bg-muted border-transparent rounded-2xl px-6 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-lg font-bold"
                                         placeholder="Ej: Ventas, Soporte, Logística..."
                                         required
                                     />
-                                    {errors.name && <p className="text-xs text-red-500 font-medium ml-1">{errors.name}</p>}
+                                    {errors.name && <p className="text-xs text-destructive font-medium ml-1">{errors.name}</p>}
                                 </div>
                                 
-                                <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                <div className="flex items-start gap-3 p-4 bg-muted rounded-2xl border border-border">
                                     <Info className="size-5 text-primary shrink-0 mt-0.5" />
                                     <p className="text-xs text-muted-foreground leading-relaxed">
                                         Al crear el rol <span className="font-bold text-foreground">"{data.name || 'Nombre'}"</span>, el sistema creará automáticamente el módulo <span className="font-bold text-foreground">"{data.name.toLowerCase() || 'nombre'}"</span> con sus 4 permisos base (Ver, Crear, Editar, Eliminar).
@@ -97,7 +97,7 @@ export default function Create({ availablePermissions }) {
                         {/* Permissions Matrix */}
                         <section className="bg-card border rounded-[2.5rem] p-8 shadow-sm">
                             <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-purple-100 text-purple-600 dark:bg-purple-900/20 flex items-center justify-center">
+                                <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground dark:bg-primary/20 flex items-center justify-center">
                                     <TrendingUp className="size-5" />
                                 </div>
                                 <h2 className="text-xl font-bold">Matriz de Permisos Cruzados</h2>
@@ -105,9 +105,9 @@ export default function Create({ availablePermissions }) {
 
                             <div className="space-y-6">
                                 {Object.entries(availablePermissions).map(([module, permissions]) => (
-                                    <div key={module} className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 rounded-3xl overflow-hidden">
-                                        <div className="px-6 py-4 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-between">
-                                            <h3 className="font-black text-sm uppercase tracking-widest text-zinc-500">{module}</h3>
+                                    <div key={module} className="bg-muted border border-border rounded-3xl overflow-hidden">
+                                        <div className="px-6 py-4 bg-muted flex items-center justify-between">
+                                            <h3 className="font-black text-sm uppercase tracking-widest text-muted-foreground">{module}</h3>
                                             <Button 
                                                 type="button" 
                                                 variant="ghost" 
@@ -123,9 +123,9 @@ export default function Create({ availablePermissions }) {
                                                 <div 
                                                     key={perm.id}
                                                     onClick={() => togglePermission(perm.id)}
-                                                    className={`cursor-pointer flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${data.permissions.includes(perm.id) ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white dark:bg-zinc-950 hover:border-zinc-200 dark:hover:border-zinc-800'}`}
+                                                    className={`cursor-pointer flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${data.permissions.includes(perm.id) ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white dark:bg-muted hover:border-border dark:hover:border-border'}`}
                                                 >
-                                                    <div className={`size-6 rounded-lg flex items-center justify-center transition-colors ${data.permissions.includes(perm.id) ? 'bg-primary text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-transparent'}`}>
+                                                    <div className={`size-6 rounded-lg flex items-center justify-center transition-colors ${data.permissions.includes(perm.id) ? 'bg-primary text-primary-foreground' : 'bg-muted text-transparent'}`}>
                                                         <Check className="size-4" />
                                                     </div>
                                                     <span className={`text-sm font-bold capitalize ${data.permissions.includes(perm.id) ? 'text-foreground' : 'text-muted-foreground'}`}>
@@ -156,12 +156,12 @@ export default function Create({ availablePermissions }) {
                             <div className="space-y-6">
                                 <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
                                     <div className="flex items-center justify-between mb-4">
-                                        <span className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Permisos Base</span>
+                                        <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Permisos Base</span>
                                         <span className="text-primary text-xs font-black uppercase">Automático</span>
                                     </div>
                                     <ul className="space-y-2">
                                         {['view', 'create', 'update', 'delete'].map(action => (
-                                            <li key={action} className="flex items-center gap-2 text-[10px] font-bold text-zinc-300 capitalize">
+                                            <li key={action} className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground capitalize">
                                                 <div className="size-1.5 rounded-full bg-primary" />
                                                 {action} {data.name.toLowerCase() || 'módulo'}
                                             </li>
@@ -171,15 +171,15 @@ export default function Create({ availablePermissions }) {
 
                                 <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
                                     <div className="flex items-center justify-between mb-4">
-                                        <span className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Permisos Extra</span>
-                                        <span className="text-zinc-500 text-xs font-black uppercase">{data.permissions.length}</span>
+                                        <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Permisos Extra</span>
+                                        <span className="text-muted-foreground text-xs font-black uppercase">{data.permissions.length}</span>
                                     </div>
                                     {data.permissions.length > 0 ? (
-                                        <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                        <p className="text-[10px] text-muted-foreground leading-relaxed">
                                             Has seleccionado permisos adicionales de otros módulos que se añadirán a este rol.
                                         </p>
                                     ) : (
-                                        <p className="text-[10px] text-zinc-500 italic leading-relaxed">
+                                        <p className="text-[10px] text-muted-foreground italic leading-relaxed">
                                             No has seleccionado permisos de otros módulos aún.
                                         </p>
                                     )}
@@ -189,7 +189,7 @@ export default function Create({ availablePermissions }) {
                                     <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
                                         <Save className="size-5 mr-2" /> GUARDAR ROL
                                     </Button>
-                                    <Button asChild variant="ghost" className="w-full text-zinc-400 hover:text-white hover:bg-white/5 font-bold">
+                                    <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-white hover:bg-white/5 font-bold">
                                         <Link href={route('roles.index')}>Descartar cambios</Link>
                                     </Button>
                                 </div>

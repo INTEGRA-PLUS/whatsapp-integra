@@ -143,7 +143,7 @@ function CompanyReport({ report }) {
                                         <div className="text-xs text-muted-foreground">{a.email}</div>
                                     </td>
                                     <td className="px-4 py-2 text-right font-mono">
-                                        <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300">
+                                        <span className="inline-flex items-center gap-1 text-success">
                                             <ArrowUp className="size-3.5" /> {a.messages_sent}
                                         </span>
                                     </td>
@@ -153,7 +153,7 @@ function CompanyReport({ report }) {
                                     <td className="px-4 py-2 text-right font-mono text-muted-foreground">{formatSeconds(a.slowest_response_seconds)}</td>
                                     <td className="px-4 py-2 text-right">
                                         {a.unanswered_count > 0 ? (
-                                            <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">
+                                            <span className="inline-flex items-center gap-1 text-destructive font-medium">
                                                 <AlertCircle className="size-3.5" /> {a.unanswered_count}
                                             </span>
                                         ) : (
@@ -177,7 +177,7 @@ function CompanyReport({ report }) {
             </div>
 
             {totals.unanswered_unassigned > 0 && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200 flex items-center gap-2 mt-4">
+                <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning flex items-center gap-2 mt-4">
                     <AlertCircle className="size-4" />
                     Hay <strong>{totals.unanswered_unassigned}</strong> conversaciones sin responder y sin agente asignado.
                 </div>
@@ -191,7 +191,7 @@ function AgentReport({ report }) {
     return (
         <>
             <div className="rounded-xl border bg-card p-5 flex items-center gap-3">
-                <div className="flex size-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                <div className="flex size-12 items-center justify-center rounded-full bg-success/15 text-success">
                     <UserIcon className="size-6" />
                 </div>
                 <div>
@@ -267,7 +267,7 @@ function AgentReport({ report }) {
             </div>
 
             <div className="rounded-xl border bg-card overflow-hidden mt-2">
-                <div className="px-4 py-3 border-b bg-muted/30 text-sm font-medium flex items-center gap-2 text-red-700 dark:text-red-300">
+                <div className="px-4 py-3 border-b bg-muted/30 text-sm font-medium flex items-center gap-2 text-destructive">
                     <AlertCircle className="size-4" /> Conversaciones sin responder asignadas a este agente
                 </div>
                 {unanswered.length === 0 ? (
@@ -325,10 +325,10 @@ function formatSeconds(seconds) {
 
 function Tile({ icon: Icon, label, value, sub, tone = 'blue' }) {
     const tones = {
-        blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
-        green: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
-        amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-        red: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+        blue: 'bg-info/15 text-info',
+        green: 'bg-success/15 text-success',
+        amber: 'bg-warning/15 text-warning',
+        red: 'bg-destructive/15 text-destructive',
     };
     return (
         <div className="rounded-xl border bg-card p-4">

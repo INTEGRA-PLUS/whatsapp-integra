@@ -13,8 +13,8 @@ import { Sun, Moon, Monitor } from 'lucide-react';
  * otro repositorio, en tres meses documentaría unos colores que ya no son.
  *
  * La regla que sostiene todo esto: **usar tokens, nunca colores crudos**. Decir
- * `bg-primary` y no `bg-green-500`, `text-muted-foreground` y no
- * `text-slate-500`. Es lo que permite cambiar la marca en un archivo en vez de
+ * `bg-primary` y no `bg-success`, `text-muted-foreground` y no
+ * `text-muted-foreground`. Es lo que permite cambiar la marca en un archivo en vez de
  * en mil clases, y lo que hace que el tema claro y el oscuro salgan solos.
  */
 export default function SistemaDiseno() {

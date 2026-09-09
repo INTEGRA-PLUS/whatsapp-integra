@@ -14,12 +14,12 @@ export const STATUS_LABEL = {
 
 export const STATUS_CLASS = {
     draft: 'bg-muted text-muted-foreground',
-    queued: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    sending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    paused: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    queued: 'bg-info/15 text-info dark:bg-info/30 dark:text-info',
+    sending: 'bg-warning/15 text-warning dark:bg-warning/30 dark:text-warning',
+    paused: 'bg-warning/15 text-warning dark:bg-warning/30 dark:text-warning',
+    completed: 'bg-success/15 text-success dark:bg-success/30 dark:text-success',
     cancelled: 'bg-muted text-muted-foreground',
-    failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    failed: 'bg-destructive/15 text-destructive dark:bg-destructive/30 dark:text-destructive',
 };
 
 /** Estado de cada destinatario, que no es el mismo que el de la campaña. */
@@ -35,11 +35,11 @@ export const RECIPIENT_LABEL = {
 
 export const RECIPIENT_CLASS = {
     pending: 'bg-muted text-muted-foreground',
-    sending: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    sent: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
-    delivered: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
-    read: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
-    failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    sending: 'bg-info/15 text-info dark:bg-info/30 dark:text-info',
+    sent: 'bg-info/15 text-info dark:bg-info/30 dark:text-info',
+    delivered: 'bg-primary/15 text-accent-foreground dark:bg-primary/30 dark:text-accent-foreground',
+    read: 'bg-success/15 text-success dark:bg-success/30 dark:text-success',
+    failed: 'bg-destructive/15 text-destructive dark:bg-destructive/30 dark:text-destructive',
     skipped: 'bg-muted text-muted-foreground',
 };
 

@@ -15,32 +15,32 @@ const ACTION_STYLES = {
     send_message: {
         label: 'Enviar mensaje',
         icon: MessageSquareText,
-        active: 'bg-sky-500/15 border-sky-500/40 text-sky-700 dark:text-sky-300',
+        active: 'bg-info/15 border-info/40 text-info',
         border: 'border-l-sky-500',
     },
     add_tag: {
         label: 'Aplicar etiqueta',
         icon: TagIcon,
-        active: 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-300',
-        border: 'border-l-teal-500',
+        active: 'bg-primary/15 border-primary/40 text-accent-foreground',
+        border: 'border-l-primary',
     },
     remove_tag: {
         label: 'Quitar etiqueta',
         icon: TagsIcon,
-        active: 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300',
-        border: 'border-l-amber-500',
+        active: 'bg-warning/15 border-warning/40 text-warning',
+        border: 'border-l-warning',
     },
     assign: {
         label: 'Asignar agente',
         icon: UserPlus,
-        active: 'bg-indigo-500/15 border-indigo-500/40 text-indigo-700 dark:text-indigo-300',
-        border: 'border-l-indigo-500',
+        active: 'bg-primary/15 border-primary/40 text-accent-foreground',
+        border: 'border-l-primary',
     },
     change_status: {
         label: 'Cambiar estado',
         icon: CheckCircle2,
-        active: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300',
-        border: 'border-l-emerald-500',
+        active: 'bg-success/15 border-success/40 text-success',
+        border: 'border-l-success',
     },
 };
 
@@ -176,9 +176,9 @@ export default function MacrosIndex({ macros: initialMacros, tags, companyUsers 
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <h3 className="font-semibold text-foreground">{macro.name}</h3>
                                         {macro.active ? (
-                                            <span className="inline-flex items-center rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-inset ring-emerald-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Activo</span>
+                                            <span className="inline-flex items-center rounded-md bg-success/15 text-success ring-1 ring-inset ring-success/30 px-1.5 py-0.5 text-[10px] font-semibold">Activo</span>
                                         ) : (
-                                            <span className="inline-flex items-center rounded-md bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 ring-1 ring-inset ring-zinc-500/30 px-1.5 py-0.5 text-[10px] font-semibold">Pausado</span>
+                                            <span className="inline-flex items-center rounded-md bg-muted/15 text-foreground dark:text-muted-foreground ring-1 ring-inset ring-border/30 px-1.5 py-0.5 text-[10px] font-semibold">Pausado</span>
                                         )}
                                     </div>
                                     <ol className="mt-2 space-y-0.5 text-xs text-muted-foreground list-decimal list-inside">
@@ -195,7 +195,7 @@ export default function MacrosIndex({ macros: initialMacros, tags, companyUsers 
                                         </Button>
                                     )}
                                     {can('macros.delete') && (
-                                        <Button onClick={() => handleDelete(macro)} variant="outline" size="sm" className="gap-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-700">
+                                        <Button onClick={() => handleDelete(macro)} variant="outline" size="sm" className="gap-1.5 rounded-lg text-destructive hover:text-destructive">
                                             <Trash2 className="size-3.5" />
                                         </Button>
                                     )}
