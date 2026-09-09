@@ -146,6 +146,7 @@ class KanbanController extends Controller
             'color'    => 'nullable|string|max:50',
             'icon'     => 'nullable|string|max:50',
             'subtitle' => 'nullable|string|max:100',
+            'grupo'    => 'nullable|string|max:60',
         ]);
 
         // Dos etapas con el mismo nombre no se pueden distinguir en el tablero, y
@@ -177,6 +178,12 @@ class KanbanController extends Controller
             ->where('tag_id', $tag->id)
             ->first();
 
+        // El observador de etiquetas crea la columna, así que el grupo se pone
+        // después: la etiqueta no sabe nada de tableros.
+        if ($column && ! empty($validated['grupo'])) {
+            $column->update(['grupo' => trim($validated['grupo'])]);
+        }
+
         return response()->json($column, 201);
     }
 
@@ -190,6 +197,7 @@ class KanbanController extends Controller
             'color'    => 'sometimes|string|max:50',
             'icon'     => 'sometimes|string|max:50',
             'subtitle' => 'sometimes|string|max:100',
+            'grupo'    => 'sometimes|nullable|string|max:60',
             'position' => 'sometimes|integer|min:0',
         ]);
 
@@ -283,16 +291,30 @@ class KanbanController extends Controller
         // move would reorder conversations everywhere, not just on the kanban.
         $conversation->update(['kanban_column_id' => $column->id]);
 
-        // Keep tags in sync with the board position: the card now "is" the
-        // destination column, so detach every other column-linked (status) tag
-        // and attach the destination one. Non-column tags are left untouched.
+        // La etiqueta se sincroniza con la posición en el tablero: la tarjeta
+        // ahora «es» la columna de destino. Pero sólo dentro de su grupo.
+        //
+        // Antes se desenganchaban **todas** las demás etiquetas de columna, y
+        // eso borraba datos: en Star NET, donde las 43 columnas eran seis
+        // dimensiones distintas mezcladas (área, tipo de falla, etapa
+        // comercial, cartera, estado y municipio), una tarjeta etiquetada
+        // «MESA DE AYUDA + Sin servicio + Falla de zona + TOLU VIEJO» perdía
+        // tres etiquetas al arrastrarla una sola vez. 119 de las 396 tarjetas
+        // del tablero llevaban más de una (9-sep-2026).
+        //
+        // Mover dentro del grupo «Estado» ya no toca el municipio ni el área.
         if ($column->tag_id) {
-            $statusTagIds = KanbanColumn::where('company_id', $user->company_id)
+            $delMismoGrupo = KanbanColumn::where('company_id', $user->company_id)
                 ->whereNotNull('tag_id')
                 ->where('tag_id', '!=', $column->tag_id)
+                ->when(
+                    $column->grupo === null,
+                    fn ($q) => $q->whereNull('grupo'),
+                    fn ($q) => $q->where('grupo', $column->grupo)
+                )
                 ->pluck('tag_id');
 
-            $conversation->tags()->detach($statusTagIds);
+            $conversation->tags()->detach($delMismoGrupo);
             $conversation->tags()->syncWithoutDetaching([$column->tag_id]);
         }
 

@@ -15,6 +15,7 @@ class KanbanColumn extends Model
         'color',
         'icon',
         'subtitle',
+        'grupo',
         'position',
     ];
 
