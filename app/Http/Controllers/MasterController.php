@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Company;
-use App\Models\User;
 use App\Models\Instance;
+use App\Models\User;
 use App\Models\WhatsAppMessage;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use Inertia\Inertia;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class MasterController extends Controller
 {
@@ -37,7 +39,7 @@ class MasterController extends Controller
         }
 
         $daysDiff = $startDate->diffInDays($endDate);
-        
+
         // Define grouping based on range duration
         $dateFormat = '%Y-%m-%d';
         if ($daysDiff > 90 && $daysDiff <= 365) {
@@ -68,9 +70,9 @@ class MasterController extends Controller
 
         // Growth Chart: New Companies
         $companies_growth = fn () => Company::select(
-                DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"), 
-                DB::raw('count(*) as count')
-            )
+            DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"),
+            DB::raw('count(*) as count')
+        )
             ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('date')
             ->orderBy('date')
@@ -78,10 +80,10 @@ class MasterController extends Controller
 
         // Message Volume: Inbound vs Outbound
         $messages_volume = fn () => WhatsAppMessage::select(
-                DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"),
-                DB::raw('SUM(CASE WHEN direction = "inbound" THEN 1 ELSE 0 END) as inbound'),
-                DB::raw('SUM(CASE WHEN direction = "outbound" THEN 1 ELSE 0 END) as outbound')
-            )
+            DB::raw("DATE_FORMAT(created_at, '$dateFormat') as date"),
+            DB::raw('SUM(CASE WHEN direction = "inbound" THEN 1 ELSE 0 END) as inbound'),
+            DB::raw('SUM(CASE WHEN direction = "outbound" THEN 1 ELSE 0 END) as outbound')
+        )
             ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('date')
             ->orderBy('date')
@@ -111,23 +113,23 @@ class MasterController extends Controller
                 ->get();
         };
 
-        $query = Company::with(['users' => function($query) {
+        $query = Company::with(['users' => function ($query) {
             $query->where('role', 'admin');
         }])->withCount(['users', 'instances']);
 
         // Search Scope
         if ($request->has('search') && $request->search != '') {
             $searchTerm = $request->search;
-            $query->where(function($q) use ($searchTerm) {
+            $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'like', "%{$searchTerm}%")
-                  ->orWhere('email', 'like', "%{$searchTerm}%")
-                  ->orWhereHas('users', function($q) use ($searchTerm) {
-                      $q->where('role', 'admin')
-                        ->where(function($subQ) use ($searchTerm) {
-                            $subQ->where('name', 'like', "%{$searchTerm}%")
-                                 ->orWhere('email', 'like', "%{$searchTerm}%");
-                        });
-                  });
+                    ->orWhere('email', 'like', "%{$searchTerm}%")
+                    ->orWhereHas('users', function ($q) use ($searchTerm) {
+                        $q->where('role', 'admin')
+                            ->where(function ($subQ) use ($searchTerm) {
+                                $subQ->where('name', 'like', "%{$searchTerm}%")
+                                    ->orWhere('email', 'like', "%{$searchTerm}%");
+                            });
+                    });
             });
         }
 
@@ -148,7 +150,7 @@ class MasterController extends Controller
             'messages_volume' => $messages_volume,
             'top_companies' => $top_companies,
             'companies' => $companies,
-            'filters'   => [
+            'filters' => [
                 'search' => $request->search,
                 'status' => $request->status,
                 'range' => $range,
@@ -170,38 +172,44 @@ class MasterController extends Controller
             'password' => 'required|string|min:8',
         ]);
 
-        $company = Company::create([
-            'name' => $request->name,
-            'slug' => \Illuminate\Support\Str::slug($request->name),
-            'email' => $request->email,
-            'active' => true,
-        ]);
+        // Todo el alta en una transacción: una empresa sin administrador, o con
+        // el rol a medio permisar, no se puede arreglar desde el panel —hay que
+        // entrar a la base de datos—, y encima deja el nombre y el email
+        // ocupados, así que el reintento choca contra su propio primer intento.
+        DB::transaction(function () use ($request) {
+            $company = Company::create([
+                'name' => $request->name,
+                'slug' => Company::slugUnico($request->name),
+                'email' => $request->email,
+                'active' => true,
+            ]);
 
-        // Explicitly set team ID for spatie permissions
-        setPermissionsTeamId($company->id);
+            // Explicitly set team ID for spatie permissions
+            setPermissionsTeamId($company->id);
 
-        $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
-            'name' => 'admin',
-            'company_id' => $company->id,
-            'guard_name' => 'web',
-        ]);
+            $adminRole = Role::firstOrCreate([
+                'name' => 'admin',
+                'company_id' => $company->id,
+                'guard_name' => 'web',
+            ]);
 
-        // El admin de una empresa siempre debe tener TODOS los permisos disponibles,
-        // incluyendo cualquier permiso nuevo agregado por migraciones futuras.
-        $adminRole->syncPermissions(\Spatie\Permission\Models\Permission::all());
+            // El admin de una empresa siempre debe tener TODOS los permisos disponibles,
+            // incluyendo cualquier permiso nuevo agregado por migraciones futuras.
+            $adminRole->syncPermissions(Permission::all());
 
-        $adminUser = User::create([
-            'company_id' => $company->id,
-            'name' => $request->admin_name,
-            'email' => $request->admin_email,
-            'password' => bcrypt($request->password),
-            'role' => 'admin',
-            'active' => true,
-        ]);
+            $adminUser = User::create([
+                'company_id' => $company->id,
+                'name' => $request->admin_name,
+                'email' => $request->admin_email,
+                'password' => bcrypt($request->password),
+                'role' => 'admin',
+                'active' => true,
+            ]);
 
-        if (!$adminUser->hasRole('admin')) {
-            $adminUser->assignRole($adminRole);
-        }
+            if (! $adminUser->hasRole('admin')) {
+                $adminUser->assignRole($adminRole);
+            }
+        });
 
         return redirect()->route('master.index')->with('success', 'Empresa creada exitosamente con administrador configurado.');
     }
@@ -215,18 +223,18 @@ class MasterController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:companies,email,' . $company->id,
+            'email' => 'required|email|unique:companies,email,'.$company->id,
             'active' => 'boolean',
             'admin_name' => 'required|string|max:255',
-            'admin_email' => 'required|email|unique:users,email,' . $adminUserId,
+            'admin_email' => 'required|email|unique:users,email,'.$adminUserId,
             'password' => 'nullable|string|min:8',
         ]);
 
         $company->update([
             'name' => $request->name,
-            'slug' => \Illuminate\Support\Str::slug($request->name),
+            'slug' => Company::slugUnico($request->name, $company->id),
             'email' => $request->email,
-            'active' => $request->active ?? false
+            'active' => $request->active ?? false,
         ]);
 
         if ($adminUser) {
@@ -244,16 +252,16 @@ class MasterController extends Controller
 
             // Ensure they have the admin role in spatie permissions too
             setPermissionsTeamId($company->id);
-            $adminRole = \Spatie\Permission\Models\Role::firstOrCreate([
+            $adminRole = Role::firstOrCreate([
                 'name' => 'admin',
                 'company_id' => $company->id,
-                'guard_name' => 'web'
+                'guard_name' => 'web',
             ]);
-            
+
             // Re-sync permissions just in case new ones were added
-            $adminRole->syncPermissions(\Spatie\Permission\Models\Permission::all());
-            
-            if (!$adminUser->hasRole('admin')) {
+            $adminRole->syncPermissions(Permission::all());
+
+            if (! $adminUser->hasRole('admin')) {
                 $adminUser->assignRole($adminRole);
             }
         }
@@ -271,7 +279,7 @@ class MasterController extends Controller
             ->whereIn('role', ['admin', 'agent'])
             ->first();
 
-        if (!$userToImpersonate) {
+        if (! $userToImpersonate) {
             return back()->with('error', 'No se encontró un usuario administrador o agente en esta empresa para suplantar.');
         }
 
@@ -279,7 +287,7 @@ class MasterController extends Controller
         session()->put('from_master', true);
         session()->put('company_id', $userToImpersonate->company_id);
         session()->put('company_name', $userToImpersonate->company->name);
-        
+
         Auth::login($userToImpersonate);
 
         return redirect()->route('chat.index')->with('success', "Ahora estás actuando como {$userToImpersonate->name} en {$userToImpersonate->company->name}");
@@ -287,7 +295,7 @@ class MasterController extends Controller
 
     public function stopImpersonating()
     {
-        if (!session()->has('impersonated_by')) {
+        if (! session()->has('impersonated_by')) {
             return redirect()->route('chat.index');
         }
 
@@ -306,18 +314,20 @@ class MasterController extends Controller
             if ($originalUser->isMaster()) {
                 Auth::login($originalUser);
                 session()->put('company_id', $originalUser->company_id);
+
                 return redirect()->route('master.index')->with('success', 'Bienvenido de vuelta, Master.');
             }
         }
 
         session()->forget('company_id');
         Auth::logout();
+
         return redirect()->route('login');
     }
 
     private function authorizeMaster()
     {
-        if (!Auth::user() || !Auth::user()->isMaster()) {
+        if (! Auth::user() || ! Auth::user()->isMaster()) {
             abort(403, 'Acceso denegado. Solo usuarios Master.');
         }
     }
