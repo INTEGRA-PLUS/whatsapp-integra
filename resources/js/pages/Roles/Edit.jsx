@@ -1,38 +1,24 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { useMemo } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { 
-    Save, 
-    ArrowLeft, 
-    Shield, 
-    ShieldCheck, 
-    Check,
-    TrendingUp,
-    Info,
-    AlertCircle
-} from 'lucide-react';
+import { AlertCircle, ArrowLeft, Save } from 'lucide-react';
+import EditorAccesos from '@/components/roles/EditorAccesos';
+import ResumenAccesos from '@/components/roles/ResumenAccesos';
 
-export default function Edit({ role, availablePermissions, rolePermissions }) {
+export default function Edit({ role, grupos, niveles, rolePermissions }) {
     const { data, setData, put, processing, errors } = useForm({
         name: role.name,
+        description: role.description || '',
         permissions: rolePermissions || [],
     });
 
-    const togglePermission = (id) => {
-        const newPermissions = data.permissions.includes(id)
-            ? data.permissions.filter(p => p !== id)
-            : [...data.permissions, id];
-        setData('permissions', newPermissions);
-    };
+    const esAdmin = String(role.name).toLowerCase() === 'admin';
 
-    const toggleModule = (moduleName, permissionIds) => {
-        const allInModule = permissionIds.every(id => data.permissions.includes(id));
-        if (allInModule) {
-            setData('permissions', data.permissions.filter(id => !permissionIds.includes(id)));
-        } else {
-            setData('permissions', [...new Set([...data.permissions, ...permissionIds])]);
-        }
-    };
+    const totalPermisos = useMemo(
+        () => grupos.reduce((n, g) => n + g.modulos.reduce((m, mod) => m + mod.permisos.length, 0), 0),
+        [grupos],
+    );
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -41,129 +27,126 @@ export default function Edit({ role, availablePermissions, rolePermissions }) {
 
     return (
         <>
-            <Head title={`Editar Rol: ${role.name}`} />
-            <div className="max-w-6xl mx-auto p-6 lg:p-10">
-                <div className="flex items-center justify-between mb-10">
-                    <div className="flex items-center gap-4">
-                        <Button asChild variant="outline" size="icon" className="rounded-full shadow-sm">
-                            <Link href={route('roles.index')}>
-                                <ArrowLeft className="size-4" />
-                            </Link>
-                        </Button>
-                        <div>
-                            <h1 className="text-3xl font-black tracking-tight text-foreground">Editar Rol: {role.name}</h1>
-                            <p className="text-muted-foreground mt-1">Ajusta los permisos y el nivel de acceso.</p>
-                        </div>
+            <Head title={`Editar rol: ${role.name}`} />
+
+            <div className="mx-auto max-w-6xl p-6 lg:p-10">
+                <div className="mb-8 flex items-center gap-4">
+                    <Button asChild variant="outline" size="icon" className="rounded-full">
+                        <Link href={route('roles.index')} aria-label="Volver a roles">
+                            <ArrowLeft className="size-4" />
+                        </Link>
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                            Editar «{role.name}»
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            Los cambios se aplican de inmediato a todas las personas con este rol.
+                        </p>
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="grid lg:grid-cols-12 gap-8">
-                    {/* Main Content */}
-                    <div className="lg:col-span-8 space-y-8">
-                        {/* Basic Info */}
-                        <section className="bg-card border rounded-[2.5rem] p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                                    <Shield className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">General</h2>
-                            </div>
-                            
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Nombre del Rol</label>
-                                    <input
-                                        type="text"
-                                        value={data.name}
-                                        onChange={e => setData('name', e.target.value)}
-                                        className="w-full h-14 bg-muted border-transparent rounded-2xl px-6 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-lg font-bold"
-                                        placeholder="Ej: Ventas, Soporte, Logística..."
-                                        required
-                                    />
-                                    {errors.name && <p className="text-xs text-destructive font-medium ml-1">{errors.name}</p>}
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* Permissions Matrix */}
-                        <section className="bg-card border rounded-[2.5rem] p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground dark:bg-primary/20 flex items-center justify-center">
-                                    <TrendingUp className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Matriz de Permisos</h2>
-                            </div>
-
-                            <div className="space-y-6">
-                                {Object.entries(availablePermissions).map(([module, permissions]) => (
-                                    <div key={module} className="bg-muted border border-border rounded-3xl overflow-hidden">
-                                        <div className="px-6 py-4 bg-muted flex items-center justify-between">
-                                            <h3 className="font-black text-sm uppercase tracking-widest text-muted-foreground">{module}</h3>
-                                            <Button 
-                                                type="button" 
-                                                variant="ghost" 
-                                                size="sm" 
-                                                className="text-[10px] font-black uppercase tracking-tighter"
-                                                onClick={() => toggleModule(module, permissions.map(p => p.id))}
-                                            >
-                                                {permissions.every(p => data.permissions.includes(p.id)) ? 'Desmarcar Todo' : 'Marcar Todo'}
-                                            </Button>
-                                        </div>
-                                        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {permissions.map(perm => (
-                                                <div 
-                                                    key={perm.id}
-                                                    onClick={() => togglePermission(perm.id)}
-                                                    className={`cursor-pointer flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${data.permissions.includes(perm.id) ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white dark:bg-muted hover:border-border dark:hover:border-border'}`}
-                                                >
-                                                    <div className={`size-6 rounded-lg flex items-center justify-center transition-colors ${data.permissions.includes(perm.id) ? 'bg-primary text-primary-foreground' : 'bg-muted text-transparent'}`}>
-                                                        <Check className="size-4" />
-                                                    </div>
-                                                    <span className={`text-sm font-bold capitalize ${data.permissions.includes(perm.id) ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                                        {perm.name.split('.')[1]}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
+                {esAdmin && (
+                    <div className="mb-8 flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/[0.07] p-5">
+                        <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                            Este es el rol de <span className="font-semibold text-foreground">administrador</span>.
+                            Quitarle accesos aquí puede dejar a la empresa sin nadie que pueda
+                            configurar el sistema, incluida esta misma pantalla.
+                        </p>
                     </div>
+                )}
 
-                    {/* Sidebar Actions */}
-                    <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-black rounded-[2.5rem] p-8 text-white shadow-xl sticky top-10">
-                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                                <ShieldCheck className="size-5 text-primary" /> Resumen del Rol
-                            </h3>
-                            
-                            <div className="space-y-6">
-                                <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Permisos</span>
-                                        <span className="text-primary text-xs font-black uppercase">{data.permissions.length} Activos</span>
-                                    </div>
-                                    <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-                                        Los cambios se aplicarán instantáneamente a todos los usuarios que tengan asignado este rol.
+                <form onSubmit={handleSubmit} className="grid gap-8 lg:grid-cols-12">
+                    <div className="space-y-8 lg:col-span-8">
+                        <div className="grid gap-4 rounded-2xl border bg-card p-6 sm:grid-cols-2">
+                            <div>
+                                <label
+                                    htmlFor="rol-nombre"
+                                    className="mb-2 block text-sm font-semibold text-foreground"
+                                >
+                                    Nombre del rol
+                                </label>
+                                <input
+                                    id="rol-nombre"
+                                    type="text"
+                                    value={data.name}
+                                    onChange={(e) => setData('name', e.target.value)}
+                                    className="h-12 w-full rounded-xl border bg-background px-4 transition-colors focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10"
+                                    required
+                                />
+                                {errors.name && (
+                                    <p className="mt-2 text-sm text-destructive">{errors.name}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label
+                                    htmlFor="rol-descripcion"
+                                    className="mb-2 block text-sm font-semibold text-foreground"
+                                >
+                                    ¿Para qué sirve?{' '}
+                                    <span className="font-normal text-muted-foreground">(opcional)</span>
+                                </label>
+                                <input
+                                    id="rol-descripcion"
+                                    type="text"
+                                    value={data.description}
+                                    onChange={(e) => setData('description', e.target.value)}
+                                    className="h-12 w-full rounded-xl border bg-background px-4 transition-colors focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10"
+                                    placeholder="Atiende chats y actualiza contactos"
+                                    maxLength={255}
+                                />
+                                {errors.description && (
+                                    <p className="mt-2 text-sm text-destructive">{errors.description}</p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+                                <div>
+                                    <h2 className="text-lg font-bold text-foreground">
+                                        ¿A qué puede entrar este rol?
+                                    </h2>
+                                    <p className="text-sm text-muted-foreground">
+                                        Los módulos están agrupados igual que el menú lateral.
                                     </p>
                                 </div>
+                                <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                                    {data.permissions.length} de {totalPermisos} permisos
+                                </span>
+                            </div>
 
-                                <div className="space-y-3 pt-4">
-                                    <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
-                                        <Save className="size-5 mr-2" /> ACTUALIZAR ROL
-                                    </Button>
-                                    <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-white hover:bg-white/5 font-bold">
-                                        <Link href={route('roles.index')}>Cancelar</Link>
-                                    </Button>
-                                </div>
+                            <EditorAccesos
+                                grupos={grupos}
+                                seleccionados={data.permissions}
+                                onCambiar={(ids) => setData('permissions', ids)}
+                                niveles={niveles}
+                            />
+                        </div>
+                    </div>
 
-                                <div className="pt-8 border-t border-white/10 flex items-start gap-3">
-                                    <AlertCircle className="size-5 text-primary shrink-0" />
-                                    <div className="text-[10px] text-muted-foreground leading-relaxed italic">
-                                        Creado el {new Date(role.created_at).toLocaleDateString()}. Todas las modificaciones son auditadas.
-                                    </div>
-                                </div>
+                    <div className="lg:col-span-4">
+                        <div className="sticky top-6 space-y-4">
+                            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                                Cómo queda
+                            </h2>
+
+                            <ResumenAccesos
+                                grupos={grupos}
+                                seleccionados={data.permissions}
+                                niveles={niveles}
+                                nombre={data.name}
+                            />
+
+                            <div className="space-y-2 pt-2">
+                                <Button type="submit" className="w-full" disabled={processing}>
+                                    <Save className="mr-2 size-4" />
+                                    {processing ? 'Guardando…' : 'Guardar cambios'}
+                                </Button>
+                                <Button asChild variant="ghost" className="w-full">
+                                    <Link href={route('roles.index')}>Descartar cambios</Link>
+                                </Button>
                             </div>
                         </div>
                     </div>
@@ -173,4 +156,4 @@ export default function Edit({ role, availablePermissions, rolePermissions }) {
     );
 }
 
-Edit.layout = page => <AppLayout breadcrumb={['Roles', 'Editar']}>{page}</AppLayout>;
+Edit.layout = (page) => <AppLayout breadcrumb={['Roles', 'Editar']}>{page}</AppLayout>;

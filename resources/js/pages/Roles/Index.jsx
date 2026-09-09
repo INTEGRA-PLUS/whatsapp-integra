@@ -12,7 +12,26 @@ import {
     ChevronRight
 } from 'lucide-react';
 
-export default function RolesIndex({ roles }) {
+export default function RolesIndex({ roles, modulos = [] }) {
+    // La tarjeta mostraba `perm.name.split('.')[1]`: tres chips que decían
+    // «view», «create», «update» y no distinguían un rol de otro. Lo que
+    // importa saber de un vistazo es a qué MÓDULOS entra, en español.
+    const modulosDelRol = (role) => {
+        const ids = role.permissions.map((p) => p.id);
+        const nombres = [];
+
+        modulos.forEach((grupo) => {
+            if (grupo.sobrante) return;
+            grupo.modulos.forEach((modulo) => {
+                if (modulo.permisos.some((p) => ids.includes(p.id))) {
+                    nombres.push(modulo.nombre);
+                }
+            });
+        });
+
+        return nombres;
+    };
+
     function handleDelete(role) {
         if (!confirm('¿Estás seguro de que deseas eliminar este rol? Todos los usuarios con este rol perderán sus permisos.')) return;
         router.delete(route('roles.destroy', role.id));
@@ -33,7 +52,7 @@ export default function RolesIndex({ roles }) {
                                     </div>
                                     Roles y Permisos
                                 </h1>
-                                <p className="text-muted-foreground mt-2 text-lg">Define los niveles de acceso y módulos dinámicos del sistema.</p>
+                                <p className="text-muted-foreground mt-2 text-lg">Define a qué parte del sistema entra cada persona del equipo.</p>
                             </div>
                             <Button asChild size="lg" className="gap-2 shadow-xl shadow-primary/20 h-12 px-8 rounded-xl transition-all hover:scale-105 active:scale-95">
                                 <Link href={route('roles.create')}>
@@ -70,24 +89,43 @@ export default function RolesIndex({ roles }) {
                                     </div>
 
                                     <h3 className="text-2xl font-black text-foreground mb-2 capitalize">{role.name}</h3>
+                                    {role.description ? (
+                                        <p className="text-sm text-muted-foreground leading-snug mb-4">{role.description}</p>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground/60 italic mb-4">Sin descripción</p>
+                                    )}
                                     <div className="flex items-center gap-2 text-muted-foreground mb-8">
                                         <Lock className="size-4" />
                                         <span className="text-sm font-medium">{role.permissions.length} permisos asignados</span>
                                     </div>
 
                                     <div className="mt-auto pt-6 border-t border-border">
-                                        <div className="flex flex-wrap gap-2">
-                                            {role.permissions.slice(0, 3).map(perm => (
-                                                <span key={perm.id} className="px-3 py-1 bg-muted text-muted-foreground rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                                    {perm.name.split('.')[1]}
-                                                </span>
-                                            ))}
-                                            {role.permissions.length > 3 && (
-                                                <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                                    +{role.permissions.length - 3}
-                                                </span>
-                                            )}
-                                        </div>
+                                        {(() => {
+                                            const nombres = modulosDelRol(role);
+
+                                            if (nombres.length === 0) {
+                                                return (
+                                                    <p className="text-xs text-muted-foreground italic">
+                                                        Sin acceso a ningún módulo
+                                                    </p>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {nombres.slice(0, 4).map(nombre => (
+                                                        <span key={nombre} className="px-3 py-1 bg-muted text-muted-foreground rounded-lg text-[11px] font-semibold">
+                                                            {nombre}
+                                                        </span>
+                                                    ))}
+                                                    {nombres.length > 4 && (
+                                                        <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-[11px] font-semibold">
+                                                            +{nombres.length - 4} más
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             ))}
