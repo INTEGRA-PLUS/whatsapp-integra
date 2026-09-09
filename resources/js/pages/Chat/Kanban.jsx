@@ -162,6 +162,51 @@ const SortableKanbanCard = memo(({ conv, index }) => {
     );
 });
 
+// ─── ColumnaBorrador ─────────────────────────────────────────────────────────
+//
+// La etapa que todavía no existe: ocupa el sitio de la columna, con el cursor
+// dentro. Enter la crea, Escape o dejarla vacía la descarta.
+
+const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error }) => (
+    <div className="flex-1 min-w-[300px] max-w-[400px] flex flex-col">
+        <form
+            onSubmit={e => { e.preventDefault(); onCrear(valor); }}
+            className="mb-6 px-3"
+        >
+            <label className="block text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-2">
+                Nombre de la etapa
+            </label>
+            <input
+                autoFocus
+                value={valor}
+                disabled={creando}
+                onChange={e => onCambio(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') onCancelar(); }}
+                placeholder="Ej. Cotización enviada"
+                className="w-full px-4 py-2.5 bg-white dark:bg-muted border border-border rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/40 transition-all shadow-sm placeholder:text-muted-foreground disabled:opacity-60"
+            />
+            {error && <p className="text-[10px] text-destructive mt-2 font-bold">{error}</p>}
+            <div className="flex items-center gap-2 mt-3">
+                <button
+                    type="submit"
+                    disabled={creando || !valor.trim()}
+                    className="px-4 py-2 bg-foreground text-background rounded-2xl text-[11px] font-black disabled:opacity-40 transition-all"
+                >
+                    {creando ? 'Creando…' : 'Crear etapa'}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancelar}
+                    className="px-3 py-2 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                    Cancelar
+                </button>
+            </div>
+        </form>
+        <div className="flex-1 rounded-[1.75rem] border-2 border-dashed border-border/60" />
+    </div>
+);
+
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
 const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard }) => {
@@ -392,6 +437,9 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
+    const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
+    const [creandoEtapa, setCreandoEtapa]   = useState(false);
+    const [errorEtapa, setErrorEtapa]       = useState(null);
     const [newCardColumn, setNewCardColumn] = useState(null);
 
     // boardData[colId] = Card[]
@@ -589,14 +637,42 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
     // ── Column CRUD ────────────────────────────────────────────────────────
 
-    const addColumn = async () => {
+    /**
+     * Una etapa no se crea hasta que tiene nombre.
+     *
+     * Antes este botón creaba de golpe una columna llamada literalmente «Nueva
+     * Etapa» —y con ella una etiqueta real, porque cada columna es una
+     * etiqueta— y aparecía al final del tablero, fuera de la vista, esperando a
+     * que alguien cayera en que hay que hacer clic en el título para
+     * renombrarla. El 9-sep-2026 había **14 columnas «Nueva Etapa»** en la
+     * flota, cuatro de las siete de INCO INTEGRATEC y dos de las diez de CMNET.
+     *
+     * Ahora aparece un borrador con el cursor dentro: se escribe el nombre y se
+     * crea, o se deja vacío y no se crea nada.
+     */
+    const addColumn = () => {
+        setErrorEtapa(null);
+        setBorradorEtapa('');
+    };
+
+    const crearEtapa = async (nombre) => {
+        const limpio = nombre.trim();
+        if (!limpio) { setBorradorEtapa(null); return; }
+
+        setCreandoEtapa(true);
         try {
-            const col = await apiRequest('POST', '/api/kanban/columns', { name: 'Nueva Etapa', color: 'bg-muted', icon: 'Zap', subtitle: 'Personalizado' });
+            const col = await apiRequest('POST', '/api/kanban/columns', { name: limpio, color: 'bg-muted', icon: 'Zap', subtitle: 'Personalizado' });
             setColumns(prev => [...prev, col]);
             setBoardData(prev => ({ ...prev, [col.id]: [] }));
             setColMeta(prev => ({ ...prev, [col.id]: { page: 1, hasMore: false, loading: false } }));
+            setBorradorEtapa(null);
+            setErrorEtapa(null);
         } catch (err) {
-            console.error('Error al crear columna:', err);
+            // El nombre repetido es el caso normal aquí, y hay que poder
+            // corregirlo sin perder lo escrito: el borrador se queda abierto.
+            setErrorEtapa(err.message);
+        } finally {
+            setCreandoEtapa(false);
         }
     };
 
@@ -798,12 +874,23 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                             />
                         ))}
 
-                        <div className="flex-shrink-0 w-[100px] flex flex-col items-center justify-start pt-12">
-                            <button onClick={addColumn} className="size-12 rounded-full border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:text-accent-foreground hover:border-primary/30 hover:bg-primary/5 transition-all group">
-                                <Plus className="size-6 group-hover:rotate-90 transition-transform duration-300" />
-                            </button>
-                            <p className="text-[10px] font-black text-muted-foreground mt-4 uppercase tracking-widest">Añadir</p>
-                        </div>
+                        {borradorEtapa !== null ? (
+                            <ColumnaBorrador
+                                valor={borradorEtapa}
+                                onCambio={setBorradorEtapa}
+                                onCrear={crearEtapa}
+                                onCancelar={() => { setBorradorEtapa(null); setErrorEtapa(null); }}
+                                creando={creandoEtapa}
+                                error={errorEtapa}
+                            />
+                        ) : (
+                            <div className="flex-shrink-0 w-[100px] flex flex-col items-center justify-start pt-12">
+                                <button onClick={addColumn} className="size-12 rounded-full border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:text-accent-foreground hover:border-primary/30 hover:bg-primary/5 transition-all group">
+                                    <Plus className="size-6 group-hover:rotate-90 transition-transform duration-300" />
+                                </button>
+                                <p className="text-[10px] font-black text-muted-foreground mt-4 uppercase tracking-widest">Añadir</p>
+                            </div>
+                        )}
 
                         <div className="flex-shrink-0 w-2 lg:w-4" />
                     </DragDropContext>

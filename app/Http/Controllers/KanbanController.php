@@ -148,6 +148,21 @@ class KanbanController extends Controller
             'subtitle' => 'nullable|string|max:100',
         ]);
 
+        // Dos etapas con el mismo nombre no se pueden distinguir en el tablero, y
+        // como cada una crea su propia etiqueta, la que ve el agente en el chat
+        // depende de cuál se arrastró la última vez. El 9-sep-2026 había 22
+        // columnas repetidas en la flota: «CLIENTE» tres veces en CMNET,
+        // «COVEÑAS» tres veces y «MONTERIA» dos en Star NET.
+        // La comparación se hace en PHP y no con LOWER() en SQL: el LOWER de
+        // sqlite sólo baja ASCII, así que «COVEÑAS» y «coveñas» le parecen
+        // distintos, y el de MySQL depende de la colación de la tabla. Son 43
+        // columnas en el peor caso de la flota; no hay nada que optimizar.
+        if ($this->nombreOcupado($user->company_id, $validated['name'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'Ya existe una etapa con ese nombre.',
+            ]);
+        }
+
         // Columns are backed by tags: creating a tag fires the TagObserver, which
         // creates the matching kanban column. Creating a bare (tag-less) column
         // here would be hidden by columns()/columnCounts() (both filter on tag_id)
@@ -177,6 +192,15 @@ class KanbanController extends Controller
             'subtitle' => 'sometimes|string|max:100',
             'position' => 'sometimes|integer|min:0',
         ]);
+
+        // Renombrar tampoco puede acabar en dos etapas iguales.
+        if (array_key_exists('name', $validated)) {
+            if ($this->nombreOcupado($column->company_id, $validated['name'], $column->id)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'name' => 'Ya existe una etapa con ese nombre.',
+                ]);
+            }
+        }
 
         // Keep the backing tag's name in sync so it doesn't get reverted later
         // (the TagObserver pushes the tag name back onto the column on tag updates).
@@ -220,6 +244,17 @@ class KanbanController extends Controller
         }
 
         return response()->json(['success' => true]);
+    }
+
+    /** ¿Hay ya otra etapa de esta empresa que se llame así? */
+    private function nombreOcupado(int $companyId, string $nombre, ?int $exceptoId = null): bool
+    {
+        $buscado = mb_strtolower(trim($nombre));
+
+        return KanbanColumn::where('company_id', $companyId)
+            ->when($exceptoId, fn ($q) => $q->where('id', '!=', $exceptoId))
+            ->pluck('name')
+            ->contains(fn ($existente) => mb_strtolower(trim($existente)) === $buscado);
     }
 
     // POST /api/kanban/conversations/{id}/move
