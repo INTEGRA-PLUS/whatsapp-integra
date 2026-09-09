@@ -43,8 +43,27 @@ En `star-net.json` faltan cuatro de sus 43 columnas, y es deliberado:
 - **INSTALACION**, **SOPORTE TV**, **EMPRESAS** — no está claro si son trámite,
   área o zona. Que lo diga el cliente.
 - La segunda **COVEÑAS**, la segunda **MONTERIA** y la segunda **COVEÑAS BASE
-  NAVAL** son duplicados exactos: hay que fusionarlas antes, no agruparlas.
-  Mover las tarjetas de una a otra y borrar la sobrante.
+  NAVAL** son duplicados exactos. Hay que fusionarlas antes, y el comando de
+  agrupar **se planta** si encuentra un nombre repetido en vez de elegir uno:
+  la primera versión escogía en silencio, y en Star NET habría agrupado el
+  «COVEÑAS» de 11 tarjetas dejando fuera el de 18.
+
+Para eso está el otro comando:
+
+```bash
+php artisan kanban:fusionar-columnas "Star NET"             # enseña qué juntaría
+php artisan kanban:fusionar-columnas "Star NET" --aplicar   # lo hace
+```
+
+Se queda la columna con más tarjetas —la que la gente ha estado usando— y la
+otra le pasa sus conversaciones antes de borrarse. **Borra columnas y
+etiquetas, y no hay papelera**: copia de seguridad antes.
+
+```bash
+docker compose --env-file .env.docker exec -T db mysqldump -u root -pXXX \
+  whatsapp_integra kanban_columns whatsapp_conversation_tag tags \
+  | gzip > /root/respaldo-kanban-$(date +%Y%m%d-%H%M).sql.gz
+```
 
 Lo que no se menciona en el archivo se queda sin grupo y aparece como un grupo
 aparte llamado «Sin agrupar». No desaparece nada: se queda a la vista para que

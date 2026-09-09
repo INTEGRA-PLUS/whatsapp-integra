@@ -64,10 +64,11 @@ class AgruparColumnasKanban extends Command
         }
 
         $columnas = KanbanColumn::where('company_id', $empresa->id)->orderBy('position')->get();
-        $porNombre = $columnas->keyBy(fn ($c) => $this->normalizar($c->name));
+        $porNombre = $columnas->groupBy(fn ($c) => $this->normalizar($c->name));
 
         $plan = [];          // [columna, grupo, bandeja, posición]
         $noEncontradas = [];
+        $duplicadas = [];
         $posicion = 1;
 
         foreach ($grupos as $grupo => $definicion) {
@@ -75,13 +76,25 @@ class AgruparColumnasKanban extends Command
             $bandeja = $definicion['bandeja'] ?? null;
 
             foreach ($nombres as $nombre) {
-                $columna = $porNombre->get($this->normalizar($nombre));
+                $iguales = $porNombre->get($this->normalizar($nombre));
 
-                if (! $columna) {
+                if (! $iguales) {
                     $noEncontradas[] = "{$grupo} → {$nombre}";
 
                     continue;
                 }
+
+                // Con dos columnas del mismo nombre no hay forma de saber cuál
+                // quiere el cliente, y elegir una en silencio parte los datos:
+                // en Star NET habría agrupado el «COVEÑAS» de 11 tarjetas y
+                // dejado fuera el de 18. Hay que fusionarlas antes.
+                if ($iguales->count() > 1) {
+                    $duplicadas[$nombre] = $iguales;
+
+                    continue;
+                }
+
+                $columna = $iguales->first();
 
                 $plan[] = [
                     'columna'  => $columna,
@@ -121,6 +134,18 @@ class AgruparColumnasKanban extends Command
             }
         }
 
+        if ($duplicadas) {
+            $this->newLine();
+            $this->error('Hay nombres repetidos, y no se puede elegir por el cliente:');
+            foreach ($duplicadas as $nombre => $iguales) {
+                $this->line("  · {$nombre}:");
+                foreach ($iguales as $c) {
+                    $this->line("      id {$c->id}, posición {$c->position}, {$this->tarjetas($c)} tarjetas");
+                }
+            }
+            $this->line('Fusiónalas primero; mientras tanto se quedan sin agrupar.');
+        }
+
         $sinBandeja = collect($plan)->pluck('grupo')->unique()
             ->reject(fn ($g) => collect($plan)->contains(fn ($p) => $p['grupo'] === $g && $p['bandeja']));
 
@@ -135,7 +160,14 @@ class AgruparColumnasKanban extends Command
             $this->newLine();
             $this->comment('Esto es sólo la vista previa. Añade --aplicar para escribirlo.');
 
-            return self::SUCCESS;
+            return $duplicadas ? self::FAILURE : self::SUCCESS;
+        }
+
+        if ($duplicadas) {
+            $this->newLine();
+            $this->error('No se aplica nada hasta resolver los nombres repetidos.');
+
+            return self::FAILURE;
         }
 
         DB::transaction(function () use ($plan) {
