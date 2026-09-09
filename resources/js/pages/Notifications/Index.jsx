@@ -78,7 +78,7 @@ export default function NotificationsIndex({ users: initialUsers, announcements:
                     {/* Compose */}
                     <form onSubmit={handleSubmit} className="lg:col-span-2 rounded-xl border bg-card p-5 space-y-4 h-fit">
                         {flash && (
-                            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800/30 dark:bg-green-950/30 dark:text-green-400">
+                            <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/15 px-3 py-2 text-sm text-success dark:border-success/30 dark:bg-success/30 dark:text-success">
                                 <CheckCircle2 className="size-4 shrink-0" /> {flash}
                             </div>
                         )}
@@ -171,7 +171,7 @@ export default function NotificationsIndex({ users: initialUsers, announcements:
                                                 <h3 className="font-semibold text-foreground">{a.title}</h3>
                                                 <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap break-words">{a.body}</p>
                                             </div>
-                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0 ${a.target === 'all' ? 'bg-primary/10 text-primary' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0 ${a.target === 'all' ? 'bg-primary/10 text-primary' : 'bg-warning/15 text-warning dark:bg-warning/30 dark:text-warning'}`}>
                                                 {a.target === 'all' ? 'Todos' : (a.target_user?.name ?? 'Usuario')}
                                             </span>
                                         </div>

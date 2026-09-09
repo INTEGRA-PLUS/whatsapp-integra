@@ -111,7 +111,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                 {/* Cabecera con el avance */}
                 <div className="shrink-0 border-b px-5 py-4">
                     <div className="flex items-start gap-3">
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-teal-500/15 text-teal-600 dark:text-teal-400">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-accent-foreground">
                             <Smartphone className="size-4.5" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -134,7 +134,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                             <span
                                 key={i}
                                 className={`h-1 flex-1 rounded-full transition-colors ${
-                                    i + 1 <= paso ? 'bg-teal-600' : 'bg-muted'
+                                    i + 1 <= paso ? 'bg-primary' : 'bg-muted'
                                 }`}
                             />
                         ))}
@@ -157,7 +157,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                         className={`flex items-start justify-between gap-4 px-3.5 py-2.5 text-[12.5px] ${i > 0 ? 'border-t border-border/50' : ''}`}
                                     >
                                         <span className="font-medium text-foreground">{que}</span>
-                                        <span className={`shrink-0 text-right ${bueno ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                        <span className={`shrink-0 text-right ${bueno ? 'text-success' : 'text-warning'}`}>
                                             {comoQueda}
                                         </span>
                                     </div>
@@ -189,11 +189,11 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                             onClick={() => setConfirmado(c => ({ ...c, [r.id]: !c[r.id] }))}
                                             aria-pressed={marcado}
                                             className={`flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-                                                marcado ? 'border-teal-500/50 bg-teal-500/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
+                                                marcado ? 'border-primary/50 bg-primary/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
                                             }`}
                                         >
                                             <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${
-                                                marcado ? 'border-teal-600 bg-teal-600 text-white' : 'border-muted-foreground/50'
+                                                marcado ? 'border-primary/30 bg-primary text-primary-foreground' : 'border-muted-foreground/50'
                                             }`}>
                                                 {marcado && <Check className="size-3" strokeWidth={3} />}
                                             </span>
@@ -239,12 +239,12 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 ))}
                             </ol>
 
-                            <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
-                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-amber-700 dark:text-amber-400">
+                            <div className="mt-3 rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-3">
+                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-warning">
                                     <TriangleAlert className="size-4 shrink-0" />
                                     Completa la información del negocio
                                 </p>
-                                <p className="mt-1 text-[12px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+                                <p className="mt-1 text-[12px] leading-relaxed text-warning/90 dark:text-warning/90">
                                     Nombre legal, dirección, sitio web y teléfono. Meta puede restringir cuentas
                                     con esos datos incompletos, y suele hacerlo semanas después, cuando ya
                                     estás usando el número a diario.
@@ -255,7 +255,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 href="https://business.facebook.com/"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-teal-600 underline underline-offset-2 dark:text-teal-400"
+                                className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-accent-foreground underline underline-offset-2 dark:text-accent-foreground"
                             >
                                 Abrir Meta Business Suite en otra pestaña
                                 <ExternalLink className="size-3" />
@@ -266,11 +266,11 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 onClick={() => setPortafolio(v => !v)}
                                 aria-pressed={portafolio}
                                 className={`mt-3 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${
-                                    portafolio ? 'border-teal-500/50 bg-teal-500/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
+                                    portafolio ? 'border-primary/50 bg-primary/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
                                 }`}
                             >
                                 <span className={`flex size-4 shrink-0 items-center justify-center rounded border ${
-                                    portafolio ? 'border-teal-600 bg-teal-600 text-white' : 'border-muted-foreground/50'
+                                    portafolio ? 'border-primary/30 bg-primary text-primary-foreground' : 'border-muted-foreground/50'
                                 }`}>
                                     {portafolio && <Check className="size-3" strokeWidth={3} />}
                                 </span>
@@ -283,12 +283,12 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
 
                     {paso === 4 && (
                         <>
-                            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
-                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-amber-700 dark:text-amber-400">
+                            <div className="rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-3">
+                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-warning">
                                     <TriangleAlert className="size-4 shrink-0" />
                                     Este es el paso que más se salta
                                 </p>
-                                <p className="mt-1 text-[12px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+                                <p className="mt-1 text-[12px] leading-relaxed text-warning/90 dark:text-warning/90">
                                     Tu cuenta de WhatsApp Business tiene que estar vinculada a tu portafolio de Meta
                                     <strong> antes</strong> de continuar. Si no, la ventana rechazará tu número
                                     diciendo que ya está registrado.
@@ -317,7 +317,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 href="https://business.facebook.com/latest/settings/whatsapp_account"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-teal-600 underline underline-offset-2 dark:text-teal-400"
+                                className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-accent-foreground underline underline-offset-2 dark:text-accent-foreground"
                             >
                                 Abrir Meta Business Suite en otra pestaña
                                 <ExternalLink className="size-3" />
@@ -328,11 +328,11 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 onClick={() => setVinculada(v => !v)}
                                 aria-pressed={vinculada}
                                 className={`mt-3 flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${
-                                    vinculada ? 'border-teal-500/50 bg-teal-500/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
+                                    vinculada ? 'border-primary/50 bg-primary/10' : 'border-border/60 hover:bg-black/[.03] dark:hover:bg-white/[.04]'
                                 }`}
                             >
                                 <span className={`flex size-4 shrink-0 items-center justify-center rounded border ${
-                                    vinculada ? 'border-teal-600 bg-teal-600 text-white' : 'border-muted-foreground/50'
+                                    vinculada ? 'border-primary/30 bg-primary text-primary-foreground' : 'border-muted-foreground/50'
                                 }`}>
                                     {vinculada && <Check className="size-3" strokeWidth={3} />}
                                 </span>
@@ -368,17 +368,17 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                                 ))}
                             </ol>
 
-                            <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-3">
-                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-amber-700 dark:text-amber-400">
+                            <div className="mt-4 rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-3">
+                                <p className="flex items-center gap-2 text-[12.5px] font-bold text-warning">
                                     <Keyboard className="size-4 shrink-0" />
                                     Escribe tu número, no lo busques en la lista
                                 </p>
-                                <p className="mt-1 text-[12px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+                                <p className="mt-1 text-[12px] leading-relaxed text-warning/90 dark:text-warning/90">
                                     En la pantalla del número, deja <strong>«Enter a new phone number»</strong> y
                                     escríbelo. Tu número <strong>no aparece</strong> en el desplegable: esa lista
                                     sólo trae números que ya están en la API.
                                 </p>
-                                <p className="mt-1.5 text-[12px] leading-relaxed text-amber-700/90 dark:text-amber-400/90">
+                                <p className="mt-1.5 text-[12px] leading-relaxed text-warning/90 dark:text-warning/90">
                                     Al escribirlo, Meta reconoce que está en uso en tu celular y cambia solo al
                                     proceso correcto.
                                 </p>
@@ -412,7 +412,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
                         <button
                             onClick={siguiente}
                             disabled={!puedeAvanzar}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal-600 px-4 text-[13px] font-bold text-white transition-colors hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-bold text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {paso < TOTAL ? <>Continuar <ArrowRight className="size-3.5" /></> : 'Abrir ventana de conexión'}
                         </button>

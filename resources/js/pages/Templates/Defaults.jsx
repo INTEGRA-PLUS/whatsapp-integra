@@ -18,15 +18,15 @@ import {
 
 const CATEGORY_STYLES = {
     MARKETING: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 ring-1 ring-inset ring-fuchsia-500/30',
-    UTILITY: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 ring-1 ring-inset ring-blue-500/30',
-    AUTHENTICATION: 'bg-teal-500/15 text-teal-600 dark:text-teal-400 ring-1 ring-inset ring-teal-500/30',
+    UTILITY: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
+    AUTHENTICATION: 'bg-primary/15 text-accent-foreground ring-1 ring-inset ring-primary/30',
 };
 const CATEGORY_ICONS = { MARKETING: Megaphone, UTILITY: Wrench, AUTHENTICATION: KeyRound };
 
 const STATUS_STYLES = {
-    APPROVED: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-inset ring-emerald-500/30',
-    PENDING: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-1 ring-inset ring-amber-500/30',
-    REJECTED: 'bg-red-500/15 text-red-600 dark:text-red-400 ring-1 ring-inset ring-red-500/30',
+    APPROVED: 'bg-success/15 text-success ring-1 ring-inset ring-success/30',
+    PENDING: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
+    REJECTED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
 };
 
 export default function TemplatesDefaults({ instances = [], catalog = {} }) {
@@ -88,7 +88,7 @@ export default function TemplatesDefaults({ instances = [], catalog = {} }) {
                     </Link>
                     <div className="flex-1">
                         <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
-                            <Sparkles className="size-5 text-teal-600" /> Plantillas por defecto Integra CRM
+                            <Sparkles className="size-5 text-accent-foreground" /> Plantillas por defecto Integra CRM
                         </h1>
                         <p className="text-sm text-muted-foreground mt-1 max-w-xl">
                             Catálogo de plantillas mantenido por Integra CRM, disponible para todas las empresas. Sincronízalas
@@ -183,8 +183,8 @@ export default function TemplatesDefaults({ instances = [], catalog = {} }) {
                                     {result && (
                                         <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
                                             result.ok
-                                                ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                                : 'border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                                                ? 'border border-success/30 bg-success/10 text-success'
+                                                : 'border border-destructive/30 bg-destructive/10 text-destructive'
                                         }`}>
                                             {result.ok ? <CheckCircle2 className="size-3.5 mt-0.5 shrink-0" /> : <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />}
                                             <span>{result.message}</span>

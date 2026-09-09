@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, WifiOff, KeyRound, Copy, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
@@ -14,6 +14,13 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
     // no hay dónde volver a verlo, y ese es justo el punto.
     const [tokenNuevo, setTokenNuevo] = useState(null);
     const [generando, setGenerando] = useState(null);
+
+    // El diálogo de borrado: la instancia en cuestión, el resumen que pide al
+    // servidor y el nombre que hay que teclear para confirmar.
+    const [deletingInstance, setDeletingInstance] = useState(null);
+    const [deleteSummary, setDeleteSummary] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState('');
+    const [deleteError, setDeleteError] = useState(null);
 
     const [createForm, setCreateForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '' });
     const [editForm, setEditForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '', active: false });
@@ -52,9 +59,41 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
         });
     }
 
-    function handleDelete(instance) {
-        if (!confirm('¿Eliminar esta instancia?')) return;
-        router.delete(route('instances.destroy', instance.id));
+    /**
+     * Abrir el diálogo pide al servidor lo que se va a perder. Hasta que llega,
+     * el botón de borrar sigue deshabilitado: nadie debería poder confirmar un
+     * borrado irreversible antes de ver de qué tamaño es.
+     */
+    function openDelete(instance) {
+        setDeletingInstance(instance);
+        setDeleteSummary(null);
+        setDeleteConfirm('');
+        setDeleteError(null);
+
+        fetch(route('instances.resumen-borrado', instance.id), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(r => (r.ok ? r.json() : Promise.reject(r)))
+            .then(setDeleteSummary)
+            .catch(() => setDeleteError('No se pudo consultar qué contiene esta instancia. Recarga la página antes de borrar nada.'));
+    }
+
+    function handleDelete(e) {
+        e.preventDefault();
+        router.delete(route('instances.destroy', deletingInstance.id), {
+            data: { confirmacion: deleteConfirm },
+            onSuccess: () => setDeletingInstance(null),
+            onError: (errors) => setDeleteError(errors.confirmacion ?? 'No se pudo borrar la instancia.'),
+        });
+    }
+
+    function handleDesconectar(instance) {
+        router.post(route('instances.desconectar', instance.id), {}, { preserveScroll: true });
+    }
+
+    function handleReconectar(instance) {
+        router.post(route('instances.reconectar', instance.id), {}, { preserveScroll: true });
     }
 
     function openEdit(instance) {
@@ -98,12 +137,12 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     <div className="flex items-center gap-3">
                                         <div className={`flex size-10 items-center justify-center rounded-lg ${
                                             !instance.active ? 'bg-muted'
-                                                : instance.health_status === 'unreachable' ? 'bg-red-100 dark:bg-red-900/30'
-                                                : 'bg-green-100 dark:bg-green-900/30'
+                                                : instance.health_status === 'unreachable' ? 'bg-destructive/10'
+                                                : 'bg-success/15'
                                         }`}>
                                             {instance.active && instance.health_status !== 'unreachable'
-                                                ? <Wifi className="size-5 text-green-600 dark:text-green-400" />
-                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`} />
+                                                ? <Wifi className="size-5 text-success" />
+                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-destructive' : 'text-muted-foreground'}`} />
                                             }
                                         </div>
                                         <div>
@@ -117,8 +156,8 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                         un mensaje. */}
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                                         !instance.active ? 'bg-muted text-muted-foreground'
-                                            : instance.health_status === 'unreachable' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                            : instance.health_status === 'unreachable' ? 'bg-destructive/10 text-destructive'
+                                            : 'bg-success/15 text-success'
                                     }`}>
                                         {!instance.active ? 'Inactiva'
                                             : instance.health_status === 'unreachable' ? 'Sin conexión'
@@ -134,7 +173,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     initial={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
                                 />
                                 {instance.active && instance.health_status === 'unreachable' && (
-                                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-400">
+                                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                                         <p className="font-medium">Meta no responde por esta cuenta.</p>
                                         <p className="opacity-90 mt-0.5">
                                             {instance.health_error ?? 'El token o el número ya no existen.'}
@@ -166,7 +205,16 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                         <KeyRound className="size-3.5" />
                                         {instance.api_token_created_at ? 'Rotar token' : 'Token API'}
                                     </Button>
-                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(instance)}>
+                                    {instance.active ? (
+                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
+                                            <PowerOff className="size-3.5" /> Desconectar
+                                        </Button>
+                                    ) : (
+                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
+                                            <Power className="size-3.5" /> Reconectar
+                                        </Button>
+                                    )}
+                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
@@ -211,12 +259,102 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         <Field label="Número de Teléfono" value={editForm.display_phone_number} onChange={v => setEditForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
                         <Field label="Access Token" value={editForm.access_token} onChange={v => setEditForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
                         <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-green-600" />
+                            <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-primary" />
                             <span className="text-sm text-foreground">Instancia Activa</span>
                         </label>
                         <div className="flex gap-2 pt-2">
                             <Button type="submit" className="flex-1">Guardar Cambios</Button>
                             <Button type="button" variant="outline" onClick={() => setEditingInstance(null)}>Cancelar</Button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {deletingInstance && (
+                <Modal
+                    title="Eliminar instancia"
+                    description="Esta acción no se puede deshacer"
+                    onClose={() => setDeletingInstance(null)}
+                >
+                    <form onSubmit={handleDelete} className="space-y-4">
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                            <div className="flex gap-2.5">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
+                                <div className="space-y-2 text-sm">
+                                    <p className="font-medium text-foreground">
+                                        Se borrará «{deletingInstance.name}» y, con ella:
+                                    </p>
+                                    {deleteSummary ? (
+                                        <ul className="space-y-1 text-muted-foreground">
+                                            <li>· <strong className="text-foreground">{deleteSummary.conversaciones}</strong> conversaciones</li>
+                                            <li>· <strong className="text-foreground">{deleteSummary.mensajes}</strong> mensajes</li>
+                                            {deleteSummary.campanas > 0 && (
+                                                <li>· <strong className="text-foreground">{deleteSummary.campanas}</strong> campañas</li>
+                                            )}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-muted-foreground italic">Consultando qué contiene…</p>
+                                    )}
+                                    {deleteSummary && (
+                                        <p className="text-muted-foreground">
+                                            Los <strong className="text-foreground">{deleteSummary.contactos_empresa}</strong> contactos
+                                            de la empresa <strong className="text-foreground">no</strong> se borran: son de la empresa, no del número.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {deleteSummary?.historial_importado && (
+                            <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 text-sm">
+                                <p className="font-medium text-foreground">Este número importó su historial por coexistencia.</p>
+                                <p className="text-muted-foreground mt-1">
+                                    Meta solo permite una importación por número: el historial no se podrá volver a traer.
+                                    Recuperarlo exigiría que el cliente desconecte el número desde su app de WhatsApp Business
+                                    y repetir el registro completo.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="rounded-lg bg-muted/50 p-4 text-sm">
+                            <p className="text-muted-foreground">
+                                Borrar la instancia <strong className="text-foreground">no desconecta el número en Meta</strong>.
+                                Para eso, el cliente debe entrar en su app de WhatsApp Business →
+                                Configuración → Cuenta → Plataforma empresarial → Desconectar. Mientras no lo haga,
+                                sus mensajes seguirán llegando al servidor y se descartarán.
+                            </p>
+                        </div>
+
+                        <p className="text-sm text-muted-foreground">
+                            Si solo quieres dejar de usar el número, <strong className="text-foreground">desconéctala</strong> en
+                            lugar de borrarla: se conserva todo y puedes volver cuando quieras.
+                        </p>
+
+                        <Field
+                            label={`Escribe «${deletingInstance.name}» para confirmar`}
+                            value={deleteConfirm}
+                            onChange={setDeleteConfirm}
+                            placeholder={deletingInstance.name}
+                        />
+
+                        {deleteError && <p className="text-sm font-medium text-destructive">{deleteError}</p>}
+
+                        <div className="flex gap-2 pt-2">
+                            <Button
+                                type="submit"
+                                variant="destructive"
+                                className="flex-1"
+                                disabled={!deleteSummary || deleteConfirm.trim().toLowerCase() !== deletingInstance.name.trim().toLowerCase()}
+                            >
+                                Eliminar definitivamente
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => { handleDesconectar(deletingInstance); setDeletingInstance(null); }}
+                            >
+                                Mejor desconectar
+                            </Button>
                         </div>
                     </form>
                 </Modal>

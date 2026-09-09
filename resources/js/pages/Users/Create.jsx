@@ -33,11 +33,11 @@ export default function Create({ roles }) {
     };
 
     const PermissionRow = ({ label, admin, agent, user }) => (
-        <tr className="border-b last:border-0 border-slate-100 dark:border-slate-800">
+        <tr className="border-b last:border-0 border-border">
             <td className="py-3 text-xs font-medium text-foreground">{label}</td>
-            <td className="py-3 text-center">{admin ? <Check className="size-4 text-green-500 mx-auto" /> : <X className="size-4 text-slate-300 mx-auto" />}</td>
-            <td className="py-3 text-center">{agent ? <Check className="size-4 text-green-500 mx-auto" /> : <X className="size-4 text-slate-300 mx-auto" />}</td>
-            <td className="py-3 text-center">{user ? <Check className="size-4 text-green-500 mx-auto" /> : <X className="size-4 text-slate-300 mx-auto" />}</td>
+            <td className="py-3 text-center">{admin ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
+            <td className="py-3 text-center">{agent ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
+            <td className="py-3 text-center">{user ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
         </tr>
     );
 
@@ -77,12 +77,12 @@ export default function Create({ roles }) {
                                             type="text"
                                             value={data.name}
                                             onChange={e => setData('name', e.target.value)}
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-900 border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
+                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
                                             placeholder="Ej: Alejandro Magno"
                                             required
                                         />
                                     </div>
-                                    {errors.name && <p className="text-xs text-red-500 font-medium ml-1">{errors.name}</p>}
+                                    {errors.name && <p className="text-xs text-destructive font-medium ml-1">{errors.name}</p>}
                                 </div>
 
                                 <div className="space-y-2">
@@ -93,12 +93,12 @@ export default function Create({ roles }) {
                                             type="email"
                                             value={data.email}
                                             onChange={e => setData('email', e.target.value)}
-                                            className="w-full h-12 bg-slate-50 dark:bg-slate-900 border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
+                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
                                             placeholder="alejandro@empresa.com"
                                             required
                                         />
                                     </div>
-                                    {errors.email && <p className="text-xs text-red-500 font-medium ml-1">{errors.email}</p>}
+                                    {errors.email && <p className="text-xs text-destructive font-medium ml-1">{errors.email}</p>}
                                 </div>
 
                                 <div className="space-y-2 sm:col-span-2">
@@ -109,12 +109,12 @@ export default function Create({ roles }) {
                                         type="password"
                                         value={data.password}
                                         onChange={e => setData('password', e.target.value)}
-                                        className="w-full h-12 bg-slate-50 dark:bg-slate-900 border-transparent rounded-2xl px-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
+                                        className="w-full h-12 bg-muted border-transparent rounded-2xl px-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
                                         placeholder="Mínimo 8 caracteres"
                                         required
                                         minLength={8}
                                     />
-                                    {errors.password && <p className="text-xs text-red-500 font-medium ml-1">{errors.password}</p>}
+                                    {errors.password && <p className="text-xs text-destructive font-medium ml-1">{errors.password}</p>}
                                 </div>
                             </div>
                         </section>
@@ -122,7 +122,7 @@ export default function Create({ roles }) {
                         {/* Roles interactivos */}
                         <section className="bg-card border rounded-3xl p-8 shadow-sm">
                             <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center dark:bg-purple-900/20">
+                                <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground flex items-center justify-center dark:bg-primary/20">
                                     <ShieldCheck className="size-5" />
                                 </div>
                                 <h2 className="text-xl font-bold">Asignación de Rol</h2>
@@ -133,10 +133,10 @@ export default function Create({ roles }) {
                                     <div 
                                         key={role.id}
                                         onClick={() => setData('role_id', role.id)}
-                                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all relative overflow-hidden group ${data.role_id === role.id ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700'}`}
+                                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all relative overflow-hidden group ${data.role_id === role.id ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-border dark:hover:border-border'}`}
                                     >
                                         <div className="flex items-center justify-between mb-4">
-                                            <div className={`size-10 rounded-xl flex items-center justify-center ${data.role_id === role.id ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                                            <div className={`size-10 rounded-xl flex items-center justify-center ${data.role_id === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
                                                 {role.name.toLowerCase() === 'admin' ? <Shield className="size-5" /> : <UserIcon className="size-5" />}
                                             </div>
                                             {data.role_id === role.id && <Check className="size-5 text-primary" />}
@@ -151,7 +151,7 @@ export default function Create({ roles }) {
 
                     {/* Columna Derecha: Guía de Permisos (4 columnas) */}
                     <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-black dark:bg-black rounded-3xl p-8 text-white shadow-xl shadow-slate-200 dark:shadow-none sticky top-10">
+                        <div className="bg-black dark:bg-black rounded-3xl p-8 text-white shadow-xl shadow-border dark:shadow-none sticky top-10">
                             <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
                                 <TrendingUp className="size-5 text-primary" /> Guía de Permisos
                             </h3>
@@ -159,7 +159,7 @@ export default function Create({ roles }) {
                                 <table className="w-full">
                                     <thead>
                                         <tr className="border-b border-white/10">
-                                            <th className="py-2 text-[10px] text-left text-slate-400 font-black uppercase">Acción</th>
+                                            <th className="py-2 text-[10px] text-left text-muted-foreground font-black uppercase">Acción</th>
                                             <th className="py-2 text-[10px] font-black uppercase">Adm</th>
                                             <th className="py-2 text-[10px] font-black uppercase">Age</th>
                                             <th className="py-2 text-[10px] font-black uppercase">Usr</th>
@@ -180,12 +180,12 @@ export default function Create({ roles }) {
                                 <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
                                     <div>
                                         <p className="text-sm font-bold">Acceso Activo</p>
-                                        <p className="text-[10px] text-slate-400">¿Habilitar sesión ahora?</p>
+                                        <p className="text-[10px] text-muted-foreground">¿Habilitar sesión ahora?</p>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setData('active', !data.active)}
-                                        className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${data.active ? 'bg-primary' : 'bg-slate-700'}`}
+                                        className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${data.active ? 'bg-primary' : 'bg-muted'}`}
                                     >
                                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-1 ${data.active ? 'translate-x-6' : 'translate-x-1'}`} />
                                     </button>
@@ -195,7 +195,7 @@ export default function Create({ roles }) {
                                     <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
                                         <UserPlus className="size-5 mr-2" /> FINALIZAR REGISTRO
                                     </Button>
-                                    <Button asChild variant="ghost" className="w-full text-slate-400 hover:text-white hover:bg-white/5 font-bold">
+                                    <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-white hover:bg-white/5 font-bold">
                                         <Link href={route('users.index')}>Descartar cambios</Link>
                                     </Button>
                                 </div>

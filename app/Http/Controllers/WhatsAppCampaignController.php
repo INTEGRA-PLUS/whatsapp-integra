@@ -610,7 +610,11 @@ class WhatsAppCampaignController extends Controller
         $page = max(1, $request->integer('page') ?: 1);
 
         if ($source === 'contacts') {
+            // Las fichas sin número (clientes que lo ocultan tras un nombre de
+            // usuario) no entran: la campaña envía por teléfono y el envío se
+            // descartaría después, con el recuento ya cuadrado de más.
             $query = Contact::where('company_id', $user->company_id)
+                ->whereNotNull('phone_number')
                 ->when($term !== '', fn ($q) => $q->search($term));
 
             $total = $query->count();
@@ -688,6 +692,7 @@ class WhatsAppCampaignController extends Controller
 
         if ($request->input('source', 'conversations') === 'contacts') {
             $rows = Contact::where('company_id', $user->company_id)
+                ->whereNotNull('phone_number')
                 ->when($term !== '', fn ($q) => $q->search($term))
                 ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])

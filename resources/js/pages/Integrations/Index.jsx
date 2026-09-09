@@ -181,7 +181,7 @@ function WebhooksSection({ webhooks: initialWebhooks, eventCatalog, can }) {
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
                                         <h3 className="font-semibold text-foreground truncate">{wh.name}</h3>
-                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${wh.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${wh.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
                                             {wh.active ? 'Activo' : 'Inactivo'}
                                         </span>
                                     </div>
@@ -199,7 +199,7 @@ function WebhooksSection({ webhooks: initialWebhooks, eventCatalog, can }) {
                                 <div className="flex items-center gap-1 shrink-0">
                                     {can('integrations.update') && (
                                         <Button variant="ghost" size="icon" title={wh.active ? 'Desactivar' : 'Activar'} onClick={() => toggleActive(wh)}>
-                                            <Power className={`size-4 ${wh.active ? 'text-green-600' : 'text-muted-foreground'}`} />
+                                            <Power className={`size-4 ${wh.active ? 'text-success' : 'text-muted-foreground'}`} />
                                         </Button>
                                     )}
                                     {can('integrations.update') && (
@@ -271,7 +271,7 @@ function WebhookHealth({ health }) {
     const { state, total, ok, failed, says, fix, last_at: lastAt } = health;
 
     const tone = state === 'ok'
-        ? 'text-emerald-700 dark:text-emerald-400'
+        ? 'text-success'
         : state === 'failing'
             ? 'text-destructive'
             : 'text-muted-foreground';
@@ -344,7 +344,7 @@ function UrlProbe({ url, probe, setProbe }) {
             </button>
 
             {probe && (
-                <div className={`rounded-md px-2.5 py-2 text-xs ${probe.ok ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'}`}>
+                <div className={`rounded-md px-2.5 py-2 text-xs ${probe.ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
                     <p className="font-medium">{probe.says}</p>
                     {probe.fix && <p className="mt-1 opacity-90">{probe.fix}</p>}
                 </div>
@@ -524,7 +524,7 @@ function DeliveriesModal({ webhook, eventCatalog, onClose }) {
                                         <td className="px-3 py-2">{eventCatalog?.[d.event] ?? d.event}</td>
                                         <td className="px-3 py-2">
                                             {d.success ? (
-                                                <span className="inline-flex items-center gap-1 text-green-600"><CheckCircle2 className="size-4" /> OK</span>
+                                                <span className="inline-flex items-center gap-1 text-success"><CheckCircle2 className="size-4" /> OK</span>
                                             ) : (
                                                 <span className="inline-flex items-center gap-1 text-destructive" title={d.error ?? ''}><XCircle className="size-4" /> Falló</span>
                                             )}
@@ -578,7 +578,7 @@ function ProviderHeader({ integration }) {
                     <div className="flex items-center gap-2">
                         <h2 className="text-lg font-semibold text-foreground">{provider.name}</h2>
                         {integration.connected && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
                                 <CheckCircle2 className="size-3" /> Conectado
                             </span>
                         )}
@@ -663,7 +663,7 @@ function ProviderGallery({ onOpen }) {
                                 {rows === null ? (
                                     <span className="text-[11px] text-muted-foreground">Comprobando…</span>
                                 ) : on ? (
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
                                         <CheckCircle2 className="size-3" /> Conectado
                                     </span>
                                 ) : (
@@ -763,8 +763,8 @@ function ProviderSection({ can, onBack }) {
             {toast && (
                 <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${
                     toast.kind === 'error'
-                        ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                        : 'border-success/30 bg-success/10 text-success'
                 }`}>
                     {toast.kind === 'error' ? <AlertTriangle className="mt-0.5 size-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0" />}
                     <span>{toast.text}</span>
@@ -772,7 +772,7 @@ function ProviderSection({ can, onBack }) {
             )}
 
             {!canManage && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
+                <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
                     No tienes permisos para modificar esta integración. Pide a un administrador que la configure.
                 </div>
             )}
@@ -867,10 +867,10 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
 
     return (
         <div className="rounded-xl border bg-card p-5 space-y-5">
-            <div className={`flex items-start gap-3 rounded-xl p-4 ${ok ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-rose-500/10 border border-rose-500/30'}`}>
-                {ok ? <CheckCircle2 className="size-6 text-emerald-600 dark:text-emerald-400 shrink-0" /> : <XCircle className="size-6 text-rose-600 dark:text-rose-400 shrink-0" />}
+            <div className={`flex items-start gap-3 rounded-xl p-4 ${ok ? 'bg-success/10 border border-success/30' : 'bg-destructive/10 border border-destructive/30'}`}>
+                {ok ? <CheckCircle2 className="size-6 text-success shrink-0" /> : <XCircle className="size-6 text-destructive shrink-0" />}
                 <div className="min-w-0">
-                    <p className={`font-semibold ${ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+                    <p className={`font-semibold ${ok ? 'text-success' : 'text-destructive'}`}>
                         {ok ? 'Conectado a Integra' : 'Sin conexión'}
                     </p>
                     {ok ? (
@@ -972,14 +972,14 @@ function StepActivate({ integration, onUpdated, showToast }) {
                                     key={opt.value}
                                     onClick={() => setForm(f => ({ ...f, trigger_type: opt.value }))}
                                     className={`flex items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
-                                        isActive ? 'border-teal-500 bg-teal-500/5' : 'border-border/60 hover:border-border'
+                                        isActive ? 'border-primary/30 bg-primary/5' : 'border-border/60 hover:border-border'
                                     }`}
                                 >
                                     <span className={`flex items-center justify-center size-9 rounded-lg font-mono text-lg font-bold ${
-                                        isActive ? 'bg-teal-500 text-white' : 'bg-muted text-muted-foreground'
+                                        isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                                     }`}>{opt.symbol}</span>
                                     <div>
-                                        <p className={`text-sm font-semibold ${isActive ? 'text-teal-600 dark:text-teal-400' : 'text-foreground'}`}>{opt.label}</p>
+                                        <p className={`text-sm font-semibold ${isActive ? 'text-accent-foreground' : 'text-foreground'}`}>{opt.label}</p>
                                         <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
                                     </div>
                                 </button>
@@ -999,7 +999,7 @@ function StepActivate({ integration, onUpdated, showToast }) {
                         />
                     </div>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                        Los agentes escribirán <code className="font-mono font-semibold text-teal-600 dark:text-teal-400">{prefix}{form.trigger_command || 'pagos'}</code> en el chat para abrir el formulario de pago.
+                        Los agentes escribirán <code className="font-mono font-semibold text-accent-foreground">{prefix}{form.trigger_command || 'pagos'}</code> en el chat para abrir el formulario de pago.
                     </p>
                 </Field>
 
@@ -1043,7 +1043,7 @@ function StepActivate({ integration, onUpdated, showToast }) {
                     )}
 
                     {canEmit !== false && form.emit_electronic_invoice && (
-                        <p className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-500 mt-2">
+                        <p className="flex items-start gap-1.5 text-[11px] text-warning mt-2">
                             <FileCheck2 className="size-3.5 shrink-0 mt-px" />
                             Cada pago desde el chat emitirá un documento fiscal real. Una factura ya
                             emitida no se puede deshacer desde aquí: se corrige con nota crédito en Integra.
@@ -1116,10 +1116,10 @@ function StepSync({ integration, onUpdated, showToast }) {
 
     return (
         <div className="rounded-xl border bg-card p-5 space-y-5">
-            <div className="flex items-start gap-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4">
-                <CheckCircle2 className="size-6 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="flex items-start gap-3 rounded-xl bg-success/10 border border-success/30 p-4">
+                <CheckCircle2 className="size-6 text-success shrink-0" />
                 <div className="min-w-0">
-                    <p className="font-semibold text-emerald-700 dark:text-emerald-300">Conectado a Integra</p>
+                    <p className="font-semibold text-success">Conectado a Integra</p>
                     <p className="text-xs text-muted-foreground mt-1">
                         {integration.last_synced_at
                             ? `Última sincronización: ${new Date(integration.last_synced_at).toLocaleString('es-CO')}`
@@ -1132,7 +1132,7 @@ function StepSync({ integration, onUpdated, showToast }) {
                 <div className="space-y-2">
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                         <div
-                            className="h-full bg-teal-500 transition-all"
+                            className="h-full bg-primary transition-all"
                             style={{ width: progressPct !== null ? `${progressPct}%` : '30%' }}
                         />
                     </div>

@@ -14,7 +14,9 @@ class Contact extends Model
     protected $fillable = [
         'company_id',
         'name',
+        'last_name',
         'phone_number',
+        'username',
         'phone_numbers',
         'email',
         'notes',
@@ -33,7 +35,17 @@ class Contact extends Model
         'opted_out_at' => 'datetime',
     ];
 
-    protected $appends = ['all_numbers'];
+    protected $appends = ['all_numbers', 'full_name'];
+
+    /**
+     * Nombre y apellido en una sola línea, que es como se pinta el contacto en
+     * todas partes. Las fichas viejas —y las que crea el webhook— sólo tienen
+     * `name`: ahí el nombre completo ya está entero en ese campo.
+     */
+    public function getFullNameAttribute(): string
+    {
+        return trim(($this->name ?? '') . ' ' . ($this->last_name ?? ''));
+    }
 
     /**
      * Every number that belongs to this contact: the primary plus any extras.
@@ -91,6 +103,8 @@ class Contact extends Model
     {
         return $query->where(function ($q) use ($search) {
             $q->where('name', 'like', "%{$search}%")
+              ->orWhere('last_name', 'like', "%{$search}%")
+              ->orWhere('username', 'like', "%{$search}%")
               ->orWhere('phone_number', 'like', "%{$search}%")
               ->orWhere('phone_numbers', 'like', "%{$search}%")
               ->orWhere('email', 'like', "%{$search}%");

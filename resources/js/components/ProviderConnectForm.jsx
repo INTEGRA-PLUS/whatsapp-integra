@@ -133,7 +133,7 @@ export default function ProviderConnectForm({
             )}
 
             <div className="flex items-start gap-3 rounded-xl border bg-muted/40 p-4 text-xs text-muted-foreground">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-teal-600 dark:text-teal-400" />
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-accent-foreground" />
                 <p>
                     {mode === 'login'
                         ? 'Tu contraseña sólo se usa una vez para generar el token y no se guarda. El token queda cifrado y sólo se usa desde el servidor.'

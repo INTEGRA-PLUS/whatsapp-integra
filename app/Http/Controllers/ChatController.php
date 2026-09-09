@@ -64,9 +64,16 @@ class ChatController extends Controller
     /**
      * Integraciones habilitadas que exponen un disparador en el composer del chat.
      */
-    private function activeChatIntegrations(int $companyId): array
+    private function activeChatIntegrations(?int $companyId): array
     {
-        return CompanyIntegration::where('company_id', $companyId)
+        // Un usuario sin empresa —el master, mientras no suplanta a nadie— no
+        // tiene integraciones que mostrar. Antes esto reventaba con un
+        // TypeError y un 500 en toda la pantalla del chat.
+        if (! $companyId) {
+            return [];
+        }
+
+        return \App\Models\CompanyIntegration::where('company_id', $companyId)
             ->where('enabled', true)
             ->where('status', 'connected')
             ->whereNotNull('trigger_command')
@@ -100,6 +107,27 @@ class ChatController extends Controller
 
         $total = WhatsAppConversation::whereIn('instance_id', $instanceIds)->count();
 
+        // Métricas del tablero. Sólo se muestra lo que se puede calcular: antes
+        // la cabecera pintaba un «pipeline» que era el número de conversaciones
+        // por 150.000 pesos inventados y una conversión fija del 94%, iguales
+        // para todas las empresas y sin ningún dato detrás (9-sep-2026). Una
+        // cifra falsa con pinta de dato de negocio es peor que no mostrar nada:
+        // alguien la lee en una reunión.
+        $enTablero = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->whereNotNull('kanban_column_id')
+            ->count();
+
+        // Estancadas: llevan una semana en su etapa sin que el cliente escriba
+        // ni se le responda. Es la pregunta que un tablero debe contestar de un
+        // vistazo: qué se está quedando parado.
+        $estancadas = WhatsAppConversation::whereIn('instance_id', $instanceIds)
+            ->whereNotNull('kanban_column_id')
+            ->where(function ($q) {
+                $q->where('last_message_at', '<', now()->subDays(7))
+                    ->orWhereNull('last_message_at');
+            })
+            ->count();
+
         $instances = Instance::where('company_id', $user->company_id)
             ->where('active', true)
             ->get(['id', 'name']);
@@ -107,7 +135,9 @@ class ChatController extends Controller
         return Inertia::render('Chat/Kanban', [
             'columns' => $columns,
             'total_conversations' => $total,
-            'instances' => $instances,
+            'en_tablero'          => $enTablero,
+            'estancadas'          => $estancadas,
+            'instances'           => $instances,
         ]);
     }
 

@@ -34,8 +34,8 @@ function Etiqueta({ donde }) {
     return (
         <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
             esCelular
-                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                : 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
+                ? 'bg-success/15 text-success'
+                : 'bg-info/15 text-info'
         }`}>
             <Icono className="size-2.5" />
             {esCelular ? 'Celular' : 'Escritorio'}
@@ -45,10 +45,10 @@ function Etiqueta({ donde }) {
 
 function Aviso({ tono = 'info', titulo, children }) {
     const estilos = {
-        info: 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400',
-        ojo:  'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
-        alto: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400',
-        bien: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+        info: 'border-info/30 bg-info/10 text-info',
+        ojo:  'border-warning/30 bg-warning/10 text-warning',
+        alto: 'border-destructive/30 bg-destructive/10 text-destructive',
+        bien: 'border-success/30 bg-success/10 text-success',
     }[tono];
     const Icono = { info: Info, ojo: TriangleAlert, alto: TriangleAlert, bien: CheckCircle2 }[tono];
 
@@ -101,7 +101,7 @@ function Paso({ n, total, donde, titulo, ruta, abierto, hecho, onAbrir, onHecho,
             >
                 <span className={`flex size-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold tabular-nums ${
                     hecho
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-success text-primary-foreground'
                         : abierto ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                 }`}>
                     {hecho ? <Check className="size-4" strokeWidth={3} /> : n}
@@ -236,7 +236,7 @@ export default function GuiaCoexistencia() {
                     </div>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                         <div
-                            className={`h-full rounded-full transition-[width] duration-500 ${terminado ? 'bg-emerald-600' : 'bg-primary'}`}
+                            className={`h-full rounded-full transition-[width] duration-500 ${terminado ? 'bg-success' : 'bg-primary'}`}
                             style={{ width: `${porcentaje}%` }}
                         />
                     </div>

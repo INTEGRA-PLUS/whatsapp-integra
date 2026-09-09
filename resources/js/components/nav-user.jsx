@@ -59,7 +59,7 @@ export function NavUser() {
                             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                         >
                             <Avatar className="h-8 w-8 rounded-lg">
-                                <AvatarFallback className="rounded-lg bg-green-600 text-white text-xs font-bold">
+                                <AvatarFallback className="rounded-lg bg-success text-primary-foreground text-xs font-bold">
                                     {getInitials(user.name)}
                                 </AvatarFallback>
                             </Avatar>
@@ -86,7 +86,7 @@ export function NavUser() {
                         <DropdownMenuLabel className="p-0 font-normal">
                             <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                                 <Avatar className="h-8 w-8 rounded-lg">
-                                    <AvatarFallback className="rounded-lg bg-green-600 text-white text-xs font-bold">
+                                    <AvatarFallback className="rounded-lg bg-success text-primary-foreground text-xs font-bold">
                                         {getInitials(user.name)}
                                     </AvatarFallback>
                                 </Avatar>
@@ -110,7 +110,7 @@ export function NavUser() {
                         {auth?.fromMaster && (
                             <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={handleReturnToMaster} className="cursor-pointer text-indigo-600 focus:text-indigo-600 focus:bg-indigo-50 dark:focus:bg-indigo-950/40">
+                                <DropdownMenuItem onClick={handleReturnToMaster} className="cursor-pointer text-accent-foreground focus:text-accent-foreground focus:bg-primary/15 dark:focus:bg-primary/40">
                                     <ShieldCheck className="mr-2 size-4" />
                                     Volver al Master
                                 </DropdownMenuItem>

@@ -1,3 +1,18 @@
+/**
+ * El chat.
+ *
+ * **Los colores de WhatsApp de esta pantalla son deliberados.** Los
+ * hexadecimales escritos a mano —#f0f2f5 y #202c33 de fondo, #dcf8c6 y #005c4b
+ * en las burbujas, #25d366 en los acentos— imitan WhatsApp Web para que el
+ * agente reconozca dónde está. Se decidió mantenerlos el 9-sep-2026, al llevar
+ * el resto del producto a la marca de Integra: la familiaridad pesa más aquí
+ * que la coherencia visual.
+ *
+ * Lo demás —estados, avisos, botones, neutros— sí usa los tokens del tema
+ * (`bg-primary`, `text-success`, `text-muted-foreground`…). Si vas a unificar
+ * colores en esta pantalla, ese es el límite: los tokens sí, el esqueleto de
+ * WhatsApp no.
+ */
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
@@ -13,6 +28,14 @@ import {
     HEADER_MEDIA_ACCEPT,
     HEADER_MEDIA_LABEL,
 } from '@/lib/templates';
+import {
+    COUNTRIES,
+    DEFAULT_COUNTRY,
+    countryByCode,
+    splitPhoneNumber,
+    joinPhoneNumber,
+    cleanUsername,
+} from '@/lib/countries';
 import { 
     Search, 
     Send, 
@@ -297,7 +320,7 @@ function DocumentAttachment({ msg, label, className = '' }) {
                 </div>
             </div>
             {error && (
-                <p className="mt-1.5 text-[10.5px] font-semibold text-red-600 dark:text-red-400 pr-10">{error}</p>
+                <p className="mt-1.5 text-[10.5px] font-semibold text-destructive pr-10">{error}</p>
             )}
         </div>
     );
@@ -348,7 +371,7 @@ function ReactionRow({ current, onPick }) {
             onClick={() => onPick(emoji)}
             title={current === emoji ? 'Quitar reacción' : `Reaccionar con ${emoji}`}
             className={`size-8 rounded-full text-[17px] leading-none flex items-center justify-center transition-transform hover:scale-125 ${
-                current === emoji ? 'bg-teal-500/25' : 'hover:bg-black/5 dark:hover:bg-white/10'
+                current === emoji ? 'bg-primary/25' : 'hover:bg-black/5 dark:hover:bg-white/10'
             }`}
         >
             {emoji}
@@ -376,10 +399,10 @@ const StatusIcons = memo(({ status, onFailedClick }) => {
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onFailedClick?.(); }}
-                className="cursor-pointer rounded-sm hover:bg-red-500/10"
+                className="cursor-pointer rounded-sm hover:bg-destructive/10"
                 title="Ver motivo del error"
             >
-                <AlertTriangle className="size-3 text-red-500" />
+                <AlertTriangle className="size-3 text-destructive" />
             </button>
         );
     }
@@ -432,13 +455,13 @@ const ConversationItem = memo(({
             onClick={() => selectionMode ? onToggleSelect(conv.id) : onSelect(conv)}
             className={clsx(
                 "flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-all border-b border-border/5 group/conv",
-                selected ? 'bg-teal-50 dark:bg-teal-950/30' : isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
+                selected ? 'bg-primary/15 dark:bg-primary/30' : isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
             )}
         >
             {selectionMode && (
                 <div className={clsx(
                     "size-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors",
-                    selected ? "bg-teal-600 border-teal-600 text-white" : "border-muted-foreground/40"
+                    selected ? "bg-primary border-primary/30 text-primary-foreground" : "border-muted-foreground/40"
                 )}>
                     {selected && <Check className="size-3.5" />}
                 </div>
@@ -457,7 +480,7 @@ const ConversationItem = memo(({
                 <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                         {conv.status === 'closed' && (
-                            <span title="Conversación cerrada" className="shrink-0 text-slate-400 dark:text-slate-500">
+                            <span title="Conversación cerrada" className="shrink-0 text-muted-foreground">
                                 <CheckCircle2 className="size-3.5" />
                             </span>
                         )}
@@ -465,12 +488,12 @@ const ConversationItem = memo(({
                             "text-sm font-bold truncate",
                             conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
                         )}>
-                            {conv.contact?.name || conv.name || conv.phone_number}
+                            {contactFullName(conv.contact) || conv.name || conv.phone_number}
                         </p>
                         {conv.assigned_agent && (
                             <span 
                                 title={`Asignado a ${conv.assigned_agent.name}`}
-                                className="shrink-0 text-[7px] leading-none bg-teal-500/10 text-teal-600 dark:text-teal-400 px-1.5 py-1 rounded-md font-black uppercase tracking-tighter border border-teal-500/10"
+                                className="shrink-0 text-[7px] leading-none bg-primary/10 text-accent-foreground px-1.5 py-1 rounded-md font-black uppercase tracking-tighter border border-primary/10"
                             >
                                 {conv.assigned_agent.name.split(' ')[0]}
                             </span>
@@ -491,7 +514,7 @@ const ConversationItem = memo(({
                                         onClick={onClick}
                                         className={clsx(
                                             "p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all",
-                                            conv.assigned_to ? "text-teal-600" : "text-muted-foreground/60 hover:text-teal-600"
+                                            conv.assigned_to ? "text-accent-foreground" : "text-muted-foreground/60 hover:text-accent-foreground"
                                         )}
                                         title={conv.assigned_agent?.name ? `Asignado a ${conv.assigned_agent.name}` : "Asignar agente"}
                                     >
@@ -509,7 +532,7 @@ const ConversationItem = memo(({
                                         >
                                             <XIcon className="size-3 text-muted-foreground" />
                                             <span className="text-[11px] font-bold flex-1">Sin Asignar</span>
-                                            {!conv.assigned_to && <Check className="size-3 text-teal-600" />}
+                                            {!conv.assigned_to && <Check className="size-3 text-accent-foreground" />}
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator className="bg-border/5" />
                                         <div className="max-h-48 overflow-y-auto">
@@ -521,10 +544,10 @@ const ConversationItem = memo(({
                                                 >
                                                     <div className={clsx(
                                                         "size-2.5 rounded-full",
-                                                        Number(conv.assigned_to) === Number(u.id) ? "bg-teal-600" : "bg-slate-200 dark:bg-slate-700"
+                                                        Number(conv.assigned_to) === Number(u.id) ? "bg-primary" : "bg-muted"
                                                     )} />
                                                     <span className="text-[11px] font-bold flex-1">{u.name}</span>
-                                                    {Number(conv.assigned_to) === Number(u.id) && <Check className="size-3 text-teal-600" />}
+                                                    {Number(conv.assigned_to) === Number(u.id) && <Check className="size-3 text-accent-foreground" />}
                                                 </DropdownMenuItem>
                                             ))}
                                         </div>
@@ -539,7 +562,7 @@ const ConversationItem = memo(({
                             renderTrigger={(onClick) => (
                                 <button
                                     onClick={onClick}
-                                    className="p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-teal-600"
+                                    className="p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-accent-foreground"
                                 >
                                     <TagIcon className="size-3" />
                                 </button>
@@ -563,7 +586,7 @@ const ConversationItem = memo(({
                                                 >
                                                     <div className="size-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
                                                     <span className="text-[11px] font-bold flex-1">{tag.name}</span>
-                                                    {hasTag && <Check className="size-3 text-teal-600" />}
+                                                    {hasTag && <Check className="size-3 text-accent-foreground" />}
                                                 </DropdownMenuItem>
                                             );
                                         })}
@@ -574,7 +597,7 @@ const ConversationItem = memo(({
                                             e.stopPropagation();
                                             onNewTag(conv.id);
                                         }}
-                                        className="flex items-center gap-2 py-2 px-3 cursor-pointer text-teal-600"
+                                        className="flex items-center gap-2 py-2 px-3 cursor-pointer text-accent-foreground"
                                     >
                                         <PlusCircle className="size-3" />
                                         <span className="text-[11px] font-bold">Nueva Etiqueta</span>
@@ -603,7 +626,7 @@ const ConversationItem = memo(({
                     {isActive && <StatusIcons status="read" />}
                     <div className="flex-1 flex items-center gap-1.5 min-w-0">
                         {conv.assigned_agent && (
-                            <span className="text-[9px] font-black text-teal-600/60 uppercase tracking-tighter whitespace-nowrap">
+                            <span className="text-[9px] font-black text-accent-foreground/60 uppercase tracking-tighter whitespace-nowrap">
                                 @{conv.assigned_agent.name.split(' ')[0]}:
                             </span>
                         )}
@@ -697,10 +720,31 @@ function hasPhone(conv) {
  * legible que queda. El identificador crudo es el último recurso: no dice nada,
  * pero es mejor que el hueco en blanco que la UI pintaba antes.
  */
+/**
+ * El nombre de la ficha, con apellido si lo tiene.
+ *
+ * Las fichas viejas y las que crea el webhook sólo llenan `name`: ahí el nombre
+ * completo ya está entero en ese campo, y `full_name` cae en él.
+ */
+function contactFullName(contact) {
+    if (!contact) return '';
+    return contact.full_name || [contact.name, contact.last_name].filter(Boolean).join(' ');
+}
+
+/** El nombre de usuario de WhatsApp: el del perfil, o el que se anotó a mano. */
+function contactUsername(conv) {
+    return conv?.metadata?.username || conv?.contact?.username || '';
+}
+
 function contactIdentity(conv) {
     if (!conv) return '';
     if (conv.phone_number) return conv.phone_number;
+
+    // El número que el agente anotó a mano en la ficha. Meta no lo manda para
+    // quien lo oculta, pero es el que sirve para llamar y para facturar.
+    if (conv.contact?.phone_number) return conv.contact.phone_number;
     if (conv.metadata?.username) return '@' + conv.metadata.username;
+    if (conv.contact?.username) return '@' + conv.contact.username;
 
     const id = conv.bsuid || conv.wa_id || '';
     return id ? `ID ${String(id).slice(0, 14)}…` : 'Sin número';
@@ -728,9 +772,9 @@ function ElectronicInvoiceNotice({ fe }) {
     if (!fe) return null;
 
     const STATES = {
-        emitida:    { cls: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', label: 'Factura electrónica emitida a la DIAN' },
+        emitida:    { cls: 'border-success/30 bg-success/10 text-success', label: 'Factura electrónica emitida a la DIAN' },
         en_proceso: { cls: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400',                 label: 'Factura electrónica en camino a la DIAN' },
-        rechazada:  { cls: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400',                 label: 'La DIAN rechazó la factura electrónica' },
+        rechazada:  { cls: 'border-destructive/30 bg-destructive/10 text-destructive',                 label: 'La DIAN rechazó la factura electrónica' },
         no_aplica:  { cls: 'border-border/70 bg-muted/40 text-muted-foreground',                             label: 'No se emitió factura electrónica' },
     };
     const state = STATES[fe.estado] ?? STATES.no_aplica;
@@ -907,7 +951,7 @@ function PaymentModal({ integration, conversation, onClose }) {
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                 {/* Header */}
-                <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white shrink-0">
+                <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-primary-foreground shrink-0">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -931,8 +975,8 @@ function PaymentModal({ integration, conversation, onClose }) {
                 {success ? (
                     /* ── Éxito ── */
                     <div className="px-6 py-8 text-center space-y-4">
-                        <div className="mx-auto size-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
-                            <CheckCircle2 className="size-8 text-emerald-600 dark:text-emerald-400" />
+                        <div className="mx-auto size-14 rounded-full bg-success/15 flex items-center justify-center">
+                            <CheckCircle2 className="size-8 text-success" />
                         </div>
                         <div className="space-y-1">
                             <p className="font-semibold text-foreground">Pago registrado</p>
@@ -944,7 +988,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                             )}
                             {success.factura_estado && (
                                 <p className="text-sm text-muted-foreground">
-                                    Factura: <span className={`font-medium ${success.factura_estado === 'cerrada' ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>{success.factura_estado}</span>
+                                    Factura: <span className={`font-medium ${success.factura_estado === 'cerrada' ? 'text-success' : 'text-foreground'}`}>{success.factura_estado}</span>
                                     {success.factura_por_pagar != null && Number(success.factura_por_pagar) > 0 && (
                                         <> · queda por pagar <span className="font-medium text-foreground">{formatCOP(success.factura_por_pagar)}</span></>
                                     )}
@@ -957,7 +1001,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                             <button onClick={() => backToInvoices({ refresh: true })} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                 Registrar otro pago
                             </button>
-                            <button onClick={onClose} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-medium py-2.5 transition-colors">
+                            <button onClick={onClose} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground font-medium py-2.5 transition-colors">
                                 Listo
                             </button>
                         </div>
@@ -972,7 +1016,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                 onChange={e => setQuery(e.target.value)}
                                 placeholder="Celular, cédula/NIT o nombre del cliente"
                                 autoFocus
-                                className="w-full rounded-xl border border-border/70 bg-background/80 pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                className="w-full rounded-xl border border-border/70 bg-background/80 pl-10 pr-10 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                             />
                             {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />}
                         </div>
@@ -983,7 +1027,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                         )}
 
                         {searchError && (
-                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                 <span>{searchError}</span>
                             </div>
@@ -998,7 +1042,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                         onClick={() => selectClient(c)}
                                         className="w-full text-left px-3.5 py-2.5 hover:bg-muted/50 transition-colors flex items-center gap-3"
                                     >
-                                        <div className="size-9 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                        <div className="size-9 rounded-full bg-primary/10 text-accent-foreground flex items-center justify-center shrink-0">
                                             <User className="size-4" />
                                         </div>
                                         <div className="min-w-0 flex-1">
@@ -1008,7 +1052,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                             </p>
                                         </div>
                                         {c.total_por_pagar != null && (
-                                            <span className={`shrink-0 text-xs font-semibold tabular-nums ${Number(c.total_por_pagar) > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                            <span className={`shrink-0 text-xs font-semibold tabular-nums ${Number(c.total_por_pagar) > 0 ? 'text-destructive' : 'text-success'}`}>
                                                 {Number(c.total_por_pagar) > 0 ? `Debe ${formatCOP(c.total_por_pagar)}` : 'Al día'}
                                             </span>
                                         )}
@@ -1039,7 +1083,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                             {invoices && facturas.length > 0 && (
                                 <div className="text-right shrink-0">
                                     <p className="text-[10px] text-muted-foreground">Total por pagar</p>
-                                    <p className="text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums">{formatCOP(invoices.total_por_pagar)}</p>
+                                    <p className="text-sm font-bold text-destructive tabular-nums">{formatCOP(invoices.total_por_pagar)}</p>
                                 </div>
                             )}
                         </div>
@@ -1051,16 +1095,16 @@ function PaymentModal({ integration, conversation, onClose }) {
                         )}
 
                         {invoicesError && !loadingInvoices && (
-                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                            <div className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning flex items-start gap-2">
                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                 <span>{invoicesError}</span>
                             </div>
                         )}
 
                         {invoices && !loadingInvoices && facturas.length === 0 && (
-                            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-6 text-center space-y-1.5">
-                                <CheckCircle2 className="size-7 mx-auto text-emerald-600 dark:text-emerald-400" />
-                                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Cliente al día</p>
+                            <div className="rounded-xl border border-success/30 bg-success/10 px-4 py-6 text-center space-y-1.5">
+                                <CheckCircle2 className="size-7 mx-auto text-success" />
+                                <p className="text-sm font-medium text-success">Cliente al día</p>
                                 <p className="text-xs text-muted-foreground">No tiene facturas pendientes por pagar en Integra.</p>
                             </div>
                         )}
@@ -1075,14 +1119,14 @@ function PaymentModal({ integration, conversation, onClose }) {
                                         type="button"
                                         key={f.id}
                                         onClick={() => selectInvoice(f)}
-                                        className="w-full text-left rounded-xl border border-border/60 hover:border-teal-500/50 hover:bg-teal-500/5 transition-colors px-3.5 py-3"
+                                        className="w-full text-left rounded-xl border border-border/60 hover:border-primary/50 hover:bg-primary/5 transition-colors px-3.5 py-3"
                                     >
                                         <div className="flex items-center justify-between gap-2">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <Receipt className="size-4 text-muted-foreground shrink-0" />
                                                 <span className="text-sm font-medium text-foreground font-mono truncate">{f.codigo ?? `#${f.id}`}</span>
                                                 {f.vencida && (
-                                                    <span className="rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 px-2 py-0.5 text-[10px] font-semibold shrink-0">Vencida</span>
+                                                    <span className="rounded-full bg-destructive/15 text-destructive px-2 py-0.5 text-[10px] font-semibold shrink-0">Vencida</span>
                                                 )}
                                             </div>
                                             <span className="text-sm font-bold text-foreground tabular-nums shrink-0">{formatCOP(f.montos?.por_pagar)}</span>
@@ -1113,12 +1157,12 @@ function PaymentModal({ integration, conversation, onClose }) {
                             </div>
                             <div className="text-right shrink-0">
                                 <p className="text-[10px] text-muted-foreground">Por pagar</p>
-                                <p className="text-sm font-bold text-rose-600 dark:text-rose-400 tabular-nums">{formatCOP(invoice.montos?.por_pagar)}</p>
+                                <p className="text-sm font-bold text-destructive tabular-nums">{formatCOP(invoice.montos?.por_pagar)}</p>
                             </div>
                         </div>
 
                         {catalogsError && (
-                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                 <span>{catalogsError}</span>
                             </div>
@@ -1131,7 +1175,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                     <select
                                         value={cuenta}
                                         onChange={e => setCuenta(e.target.value)}
-                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                     >
                                         <option value="">Selecciona…</option>
                                         {(catalogs?.cuentas ?? []).map(c => (
@@ -1144,7 +1188,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                     <select
                                         value={metodoPago}
                                         onChange={e => setMetodoPago(e.target.value)}
-                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                        className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                     >
                                         <option value="">Selecciona…</option>
                                         {(catalogs?.metodos_pago ?? []).map(m => (
@@ -1165,7 +1209,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                     inputMode="decimal"
                                     value={monto}
                                     onChange={e => setMonto(e.target.value)}
-                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                 />
                                 <p className="text-[11px] text-muted-foreground mt-1">
                                     Si el valor supera el saldo, Integra lo topa al saldo pendiente. Si cubre el total, la factura se cierra y se reactiva el servicio.
@@ -1180,12 +1224,12 @@ function PaymentModal({ integration, conversation, onClose }) {
                                     onChange={e => setObservaciones(e.target.value)}
                                     maxLength={255}
                                     placeholder="Pago recibido por WhatsApp"
-                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                    className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                 />
                             </div>
 
                             {payError && (
-                                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                     <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                     <span>{payError}</span>
                                 </div>
@@ -1195,7 +1239,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                 <button type="button" onClick={() => backToInvoices()} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                     Volver
                                 </button>
-                                <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                                <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                                     {saving ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
                                     Registrar pago
                                 </button>
@@ -1248,7 +1292,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [showLinkContact, setShowLinkContact] = useState(false);
     const [showContactPanel, setShowContactPanel] = useState(false);
     const [editingContact, setEditingContact] = useState(false);
-    const [contactForm, setContactForm] = useState({ name: '', email: '', notes: '' });
+    const [contactForm, setContactForm] = useState({ name: '', last_name: '', username: '', country: DEFAULT_COUNTRY, phone: '', email: '', notes: '' });
     const [savingContact, setSavingContact] = useState(false);
     const [contactError, setContactError] = useState(null);
     const [showTemplates, setShowTemplates] = useState(false);
@@ -1921,8 +1965,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // Abre el modo edición del panel de contacto, precargando los datos actuales.
     const openContactEdit = useCallback(() => {
         const c = selectedConversation?.contact;
+
+        // El número puede venir del hilo (Meta lo manda) o de la propia ficha
+        // (lo escribió un agente porque el cliente lo oculta).
+        const { country, national } = splitPhoneNumber(c?.phone_number || selectedConversation?.phone_number || '');
+
+        // El hilo de quien oculta su número se titula "@usuario": eso no es un
+        // nombre, y precargarlo dejaba la ficha llamándose como el usuario.
+        const nombreDelHilo = (selectedConversation?.name || '').startsWith('@') ? '' : (selectedConversation?.name || '');
+
         setContactForm({
-            name: c?.name || selectedConversation?.name || '',
+            name: c?.name || nombreDelHilo,
+            last_name: c?.last_name || '',
+            username: c?.username || selectedConversation?.metadata?.username || '',
+            country,
+            phone: national,
             email: c?.email || '',
             notes: c?.notes || '',
         });
@@ -1934,7 +1991,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
     // vincula uno nuevo a partir del número de la conversación.
     const saveContact = useCallback(async () => {
         if (!selectedConversation) return;
-        const name = contactForm.name.trim();
+
+        // Al cliente que oculta su número se le identifica por el nombre de
+        // usuario, pero alguna de las dos cosas tiene que haber: una ficha sin
+        // ninguna no se puede volver a encontrar ni casa con Integra.
+        const username = cleanUsername(contactForm.username);
+        const phoneNumber = joinPhoneNumber(contactForm.country, contactForm.phone);
+
+        if (!phoneNumber && !username) {
+            setContactError('Pon el teléfono o el nombre de usuario de WhatsApp.');
+            return;
+        }
+
+        // Muchas veces el agente no sabe cómo se llama el cliente: con el
+        // usuario basta para tener ficha, y el nombre se corrige después.
+        const name = contactForm.name.trim() || (username ? '@' + username : '');
         if (!name) { setContactError('El nombre es obligatorio.'); return; }
 
         setSavingContact(true);
@@ -1944,27 +2015,24 @@ export default function ChatIndex({ instances, integrations = [] }) {
             if (selectedConversation.contact?.id) {
                 const res = await axios.put(`/api/contacts/${selectedConversation.contact.id}`, {
                     name,
+                    last_name: contactForm.last_name.trim() || null,
+                    phone_number: phoneNumber || null,
+                    username: username || null,
                     email: contactForm.email.trim() || null,
                     notes: contactForm.notes.trim() || null,
                 });
                 contact = res.data;
             } else {
-                // La agenda se indexa por número: crear una ficha sin él daría un
-                // contacto que no casa con ningún abonado de Integra y que además
-                // choca con el de cualquier otro cliente sin teléfono.
-                if (!hasPhone(selectedConversation)) {
-                    setContactError('Este cliente oculta su número de WhatsApp, así que no se puede crear una ficha de contacto. Vincúlalo a un contacto existente desde "Vincular contacto".');
-                    return;
-                }
-
                 const res = await axios.post(`/api/chat/conversations/${selectedConversation.id}/attach-contact`, {
                     name,
-                    phone_number: selectedConversation.phone_number,
+                    last_name: contactForm.last_name.trim() || null,
+                    phone_number: phoneNumber || null,
+                    username: username || null,
                     email: contactForm.email.trim() || null,
                 });
                 contact = res.data.contact;
             }
-            const linkedName = contact?.name || name;
+            const linkedName = contactFullName(contact) || name;
             setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName } : prev);
             setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName } : c));
             setEditingContact(false);
@@ -3279,7 +3347,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
     function quotedAuthor(m) {
         if (m.direction === 'outbound') return m.sender?.name || 'Tú';
-        return selectedConversation?.contact?.name || selectedConversation?.name || 'Cliente';
+        return contactFullName(selectedConversation?.contact) || selectedConversation?.name || 'Cliente';
     }
 
     function quotedSnippet(m) {
@@ -3300,8 +3368,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
         const el = document.getElementById(`msg-${id}`);
         if (!el) return;
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('ring-2', 'ring-teal-400');
-        setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1500);
+        el.classList.add('ring-2', 'ring-primary/30');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-primary/30'), 1500);
     }
 
     // --- Menú de la burbuja: acciones sobre un mensaje concreto ---
@@ -3376,7 +3444,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             await axios.post(`/api/chat/messages/${forwardSource.id}/forward`, {
                 conversation_id: targetConversation.id,
             });
-            setForwardDone(targetConversation.contact?.name || targetConversation.name || targetConversation.phone_number);
+            setForwardDone(contactFullName(targetConversation.contact) || targetConversation.name || targetConversation.phone_number);
             // Si el destino es el chat abierto, el mensaje reenviado se ve al
             // instante en vez de esperar al siguiente poll.
             if (selectedConversation?.id === targetConversation.id) {
@@ -3726,8 +3794,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             <div className={clsx(
                                 'size-10 rounded-full flex items-center justify-center shrink-0',
                                 deletionPending.error
-                                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+                                    ? 'bg-destructive/15 text-destructive'
+                                    : 'bg-warning/15 text-warning',
                             )}>
                                 {deletionPending.error ? <AlertTriangle className="size-5" /> : <Clock className="size-5" />}
                             </div>
@@ -3743,7 +3811,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         <div className="flex justify-end px-5 py-4 mt-2">
                             <button
                                 onClick={() => setDeletionPending(null)}
-                                className="h-9 px-4 rounded-lg text-[13px] font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
+                                className="h-9 px-4 rounded-lg text-[13px] font-bold text-primary-foreground bg-primary hover:bg-primary transition-colors"
                             >
                                 Entendido
                             </button>
@@ -3780,9 +3848,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                         <DropdownMenuItem
                             onClick={() => handleNewTag(null)}
-                            className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-teal-600"
+                            className="flex items-center gap-3 py-3 px-3 cursor-pointer group text-accent-foreground"
                         >
-                            <div className="size-8 rounded-lg bg-teal-50 dark:bg-teal-900/20 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                            <div className="size-8 rounded-lg bg-primary/15 dark:bg-primary/20 text-accent-foreground flex items-center justify-center group-hover:bg-primary group-hover:text-primary-foreground transition-all shadow-sm">
                                 <PlusCircle className="size-4" />
                             </div>
                             <div className="flex flex-col">
@@ -3798,7 +3866,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     className="flex items-center gap-3 py-3 px-3 cursor-pointer group"
                                     onClick={() => { resetFilters(); loadConversations(); }}
                                 >
-                                    <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-slate-200 dark:group-hover:bg-slate-700 transition-colors shadow-sm">
+                                    <div className="size-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center group-hover:bg-muted dark:group-hover:bg-muted transition-colors shadow-sm">
                                         <Filter className="size-4" />
                                     </div>
                                     <div className="flex flex-col">
@@ -3833,7 +3901,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     type="button"
                                     onClick={() => setNavOpen(true)}
                                     title="Desplegar carpetas y etiquetas"
-                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
                                 >
                                     <PanelLeftOpen className="size-4" />
                                 </button>
@@ -3854,17 +3922,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             onClick={() => setFolder(item.key)}
                                             title={item.label}
                                             className={clsx(
-                                                "relative p-2 rounded-lg transition-colors",
+                                                "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
                                                 active
-                                                    ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
-                                                    : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                    ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                    : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
                                             )}
                                         >
                                             <Icon className="size-4" />
                                             {item.count > 0 && (
                                                 <span className={clsx(
                                                     "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
-                                                    active ? "bg-teal-600 text-white" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
                                                 )}>
                                                     {item.count > 99 ? '99+' : item.count}
                                                 </span>
@@ -3880,15 +3948,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onClick={() => setNavOpen(true)}
                                     title={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}
                                     className={clsx(
-                                        "relative p-2 rounded-lg transition-colors",
+                                        "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
                                         selectedTagIds.length > 0
-                                            ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
-                                            : "text-muted-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                            ? "bg-info/15 text-info ring-1 ring-info/25"
+                                            : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
                                     )}
                                 >
                                     <TagIcon className="size-4" />
                                     {selectedTagIds.length > 0 && (
-                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-teal-600 text-white">
+                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
                                             {selectedTagIds.length}
                                         </span>
                                     )}
@@ -3925,18 +3993,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             type="button"
                                             onClick={() => setFolder(item.key)}
                                             className={clsx(
-                                                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors group/nav",
+                                                "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 group/nav",
                                                 active
-                                                    ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
-                                                    : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                                    ? "bg-info/15 text-info font-semibold ring-1 ring-info/25"
+                                                    : "text-muted-foreground hover:bg-info/10 hover:text-info"
                                             )}
                                         >
-                                            <Icon className={clsx("size-4 shrink-0", active ? "text-teal-600 dark:text-teal-400" : "text-muted-foreground/60")} />
+                                            <Icon className={clsx("size-4 shrink-0", active ? "text-info" : "text-muted-foreground/60")} />
                                             <span className="flex-1 text-left truncate">{item.label}</span>
                                             {item.count > 0 && (
                                                 <span className={clsx(
                                                     "min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full text-[10px] font-bold leading-none",
-                                                    active ? "bg-teal-600 text-white" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
                                                 )}>
                                                     {item.count}
                                                 </span>
@@ -3967,11 +4035,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
                                                     active
-                                                        ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
-                                                        : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
+                                                        ? "bg-info/15 text-info font-semibold ring-1 ring-info/25"
+                                                        : "text-muted-foreground hover:bg-info/10 hover:text-info"
                                                 )}
                                             >
-                                                <span className={clsx("size-2 rounded-full shrink-0", inst.active === false ? "bg-slate-300 dark:bg-slate-600" : "bg-[#25d366]")} />
+                                                <span className={clsx("size-2 rounded-full shrink-0", inst.active === false ? "bg-muted" : "bg-[#25d366]")} />
                                                 <span className="flex-1 text-left truncate">{inst.name || 'Sin nombre'}</span>
                                             </button>
                                         );
@@ -3989,7 +4057,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 type="button"
                                                 onClick={() => setSelectedTagIds([])}
                                                 title="Quitar filtro de etiquetas"
-                                                className="text-[9px] font-bold uppercase tracking-wide text-teal-600 hover:text-teal-500"
+                                                className="text-[9px] font-bold uppercase tracking-wide text-accent-foreground hover:text-accent-foreground"
                                             >
                                                 Limpiar
                                             </button>
@@ -3998,7 +4066,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             type="button"
                                             onClick={() => handleNewTag(null)}
                                             title="Nueva etiqueta"
-                                            className="p-0.5 rounded-md text-muted-foreground/60 hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                            className="p-0.5 rounded-md text-muted-foreground/60 hover:text-accent-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                         >
                                             <PlusCircle className="size-3.5" />
                                         </button>
@@ -4016,21 +4084,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             className={clsx(
                                                 "group/tag w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-[13px] font-medium transition-colors cursor-pointer",
                                                 active
-                                                    ? "bg-teal-600/10 text-teal-700 dark:text-teal-300 font-semibold"
+                                                    ? "bg-primary/10 text-accent-foreground font-semibold"
                                                     : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground"
                                             )}
                                             onClick={() => toggleTag(tag.id)}
                                         >
                                             <span className="size-2.5 rounded-sm shrink-0" style={{ backgroundColor: tag.color }} />
                                             <span className="flex-1 text-left truncate">{tag.name}</span>
-                                            {active && <Check className="size-3.5 text-teal-600 shrink-0" />}
+                                            {active && <Check className="size-3.5 text-accent-foreground shrink-0" />}
                                             {/* Acciones de gestión (aparecen al hover) */}
                                             <span className="hidden group-hover/tag:flex items-center gap-0.5 shrink-0">
                                                 <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); openEditTag(tag); }}
                                                     title="Editar etiqueta"
-                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-teal-600"
+                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-accent-foreground"
                                                 >
                                                     <PencilIcon className="size-3" />
                                                 </button>
@@ -4038,7 +4106,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); deleteTag(tag); }}
                                                     title="Eliminar etiqueta"
-                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-rose-600"
+                                                    className="p-0.5 rounded text-muted-foreground/60 hover:text-destructive"
                                                 >
                                                     <Trash2 className="size-3" />
                                                 </button>
@@ -4088,7 +4156,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         type="button"
                                         onClick={openNewChat}
                                         title="Escribir a un número nuevo"
-                                        className="shrink-0 size-9 flex items-center justify-center rounded-lg bg-teal-600 text-white hover:bg-teal-500 shadow-sm shadow-teal-600/20 transition-colors"
+                                        className="shrink-0 size-9 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary shadow-sm shadow-primary/20 transition-colors"
                                     >
                                         <PenSquare className="size-4" />
                                     </button>
@@ -4098,7 +4166,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <button
                                         type="button"
                                         onClick={resetFilters}
-                                        className="mt-2 w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900/40 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors text-xs font-semibold"
+                                        className="mt-2 w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-primary/15 dark:bg-primary/30 border border-primary/30 dark:border-primary/40 text-accent-foreground hover:bg-primary/15 dark:hover:bg-primary/40 transition-colors text-xs font-semibold"
                                         title="Quitar todos los filtros y volver a la vista base"
                                     >
                                         <span className="flex items-center gap-1.5">
@@ -4117,7 +4185,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 <div className="flex items-center justify-between gap-2 mb-4">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <h3 className="text-sm font-bold text-foreground truncate">Conversaciones</h3>
-                                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-[#e9edef] dark:bg-[#2a3942] text-[10px] font-black uppercase tracking-wide text-teal-600 dark:text-teal-400">
+                                        <span className="shrink-0 px-2 py-0.5 rounded-md bg-[#e9edef] dark:bg-[#2a3942] text-[10px] font-black uppercase tracking-wide text-accent-foreground">
                                             {STATUS_LABELS[statusFilter]}
                                         </span>
                                     </div>
@@ -4131,7 +4199,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "size-7 flex items-center justify-center rounded-md transition-colors",
                                                     hasActiveFilters
-                                                        ? "bg-teal-600 text-white shadow-sm"
+                                                        ? "bg-primary text-primary-foreground shadow-sm"
                                                         : "text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
                                                 )}
                                             >
@@ -4193,7 +4261,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     type="button"
                                                                     onClick={() => removeDraftRow(i)}
                                                                     title="Quitar filtro"
-                                                                    className="shrink-0 size-7 flex items-center justify-center rounded-lg text-muted-foreground/60 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                                                                    className="shrink-0 size-7 flex items-center justify-center rounded-lg text-muted-foreground/60 hover:text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/30 transition-colors"
                                                                 >
                                                                     <Trash2 className="size-3.5" />
                                                                 </button>
@@ -4203,7 +4271,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <button
                                                         type="button"
                                                         onClick={addDraftRow}
-                                                        className="mt-3 flex items-center gap-1 text-xs font-bold text-teal-600 hover:underline"
+                                                        className="mt-3 flex items-center gap-1 text-xs font-bold text-accent-foreground hover:underline"
                                                     >
                                                         <Plus className="size-3.5" /> Añadir Filtro
                                                     </button>
@@ -4218,7 +4286,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         <button
                                                             type="button"
                                                             onClick={applyDraftFilters}
-                                                            className="text-xs font-black text-white bg-teal-600 px-3 py-1.5 rounded-lg hover:bg-teal-700 transition-colors"
+                                                            className="text-xs font-black text-primary-foreground bg-primary px-3 py-1.5 rounded-lg hover:bg-primary transition-colors"
                                                         >
                                                             Aplicar filtros
                                                         </button>
@@ -4248,7 +4316,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         className="flex items-center justify-between py-2 px-3 cursor-pointer"
                                                     >
                                                         <span className="text-xs font-bold">{o.label}</span>
-                                                        {sortBy === o.value && <Check className="size-3.5 text-teal-600" />}
+                                                        {sortBy === o.value && <Check className="size-3.5 text-accent-foreground" />}
                                                     </DropdownMenuItem>
                                                 ))}
                                             </DropdownMenuContent>
@@ -4272,7 +4340,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "relative flex items-center gap-1.5 pb-3 -mb-px text-[12px] whitespace-nowrap transition-colors border-b-2",
                                                     active
-                                                        ? "text-teal-600 dark:text-teal-400 font-bold border-teal-600 dark:border-teal-400"
+                                                        ? "text-accent-foreground font-bold border-primary/30 dark:border-primary/30"
                                                         : "text-muted-foreground hover:text-foreground font-semibold border-transparent"
                                                 )}
                                             >
@@ -4280,7 +4348,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <span className={clsx(
                                                     "shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none tabular-nums",
                                                     active
-                                                        ? "bg-teal-600/10 text-teal-600 dark:text-teal-400"
+                                                        ? "bg-primary/10 text-accent-foreground"
                                                         : "bg-muted/60 text-muted-foreground/70"
                                                 )}>
                                                     {tab.count}
@@ -4313,8 +4381,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 {hasMore && (
                                     <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
                                         {loadingMore && (
-                                            <div className="flex items-center gap-2 text-[10px] font-black text-teal-600/40 uppercase tracking-widest">
-                                                <div className="size-3 border-2 border-teal-600/20 border-t-teal-600 rounded-full animate-spin" />
+                                            <div className="flex items-center gap-2 text-[10px] font-black text-accent-foreground/40 uppercase tracking-widest">
+                                                <div className="size-3 border-2 border-primary/20 border-t-teal-600 rounded-full animate-spin" />
                                                 Cargando más...
                                             </div>
                                         )}
@@ -4354,9 +4422,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                             {/* Overlay al arrastrar un archivo sobre el chat */}
                             {isDraggingFile && selectedConversation && (
-                                <div className="absolute inset-0 z-30 flex items-center justify-center bg-teal-600/15 dark:bg-teal-500/15 backdrop-blur-sm pointer-events-none">
-                                    <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-teal-500 bg-white/90 dark:bg-[#202c33]/90 px-10 py-8 shadow-xl">
-                                        <Paperclip className="size-10 text-teal-600" />
+                                <div className="absolute inset-0 z-30 flex items-center justify-center bg-primary/15 dark:bg-primary/15 backdrop-blur-sm pointer-events-none">
+                                    <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/30 bg-white/90 dark:bg-[#202c33]/90 px-10 py-8 shadow-xl">
+                                        <Paperclip className="size-10 text-accent-foreground" />
                                         <p className="text-sm font-bold text-foreground">Suelta el archivo para enviarlo</p>
                                         <p className="text-[11px] text-muted-foreground">Imágenes hasta 5 MB · Documentos hasta 30 MB</p>
                                     </div>
@@ -4366,8 +4434,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             {!selectedConversation ? (
                                 <div className="flex-1 flex items-center justify-center relative z-10">
                                     <div className="text-center max-w-md p-10 bg-white/40 dark:bg-black/10 backdrop-blur-md rounded-[3rem] border border-white/20">
-                                        <div className="mx-auto size-24 rounded-full bg-teal-600/10 flex items-center justify-center mb-8">
-                                            <MessageSquare className="size-12 text-teal-600/40" />
+                                        <div className="mx-auto size-24 rounded-full bg-primary/10 flex items-center justify-center mb-8">
+                                            <MessageSquare className="size-12 text-accent-foreground/40" />
                                         </div>
                                         <h3 className="text-2xl font-black text-foreground mb-3">Integra Plus para WhatsApp</h3>
                                         <p className="text-sm text-muted-foreground leading-relaxed">Envía y recibe mensajes sin necesidad de mantener tu teléfono conectado. <br/>Centraliza toda tu operación en un solo lugar.</p>
@@ -4392,7 +4460,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 type="button"
                                                 onClick={() => setShowContactPanel(true)}
                                                 title="Ver información del contacto"
-                                                className="size-10 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm hover:ring-2 hover:ring-teal-400/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                                                className="size-10 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-sm overflow-hidden uppercase shrink-0 shadow-sm hover:ring-2 hover:ring-primary/60 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                                             >
                                                 {selectedConversation.initials}
                                             </button>
@@ -4403,10 +4471,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         title="Ver información del contacto"
                                                         className="text-sm font-bold text-foreground leading-tight truncate cursor-pointer hover:underline"
                                                     >
-                                                        {selectedConversation.contact?.name || selectedConversation.name}
+                                                        {contactFullName(selectedConversation.contact) || selectedConversation.name}
                                                     </h3>
                                                     {selectedConversation.status === 'closed' && (
-                                                        <span className="shrink-0 text-[9px] bg-slate-400/15 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
+                                                        <span className="shrink-0 text-[9px] bg-muted/15 text-muted-foreground px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2.5 mt-0.5 min-w-0">
@@ -4415,22 +4483,22 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
                                                             title="Contacto vinculado — clic para cambiar"
-                                                            className="inline-flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline min-w-0 max-w-[150px]"
+                                                            className="inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-0 max-w-[150px]"
                                                         >
-                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{selectedConversation.contact.name}</span>
+                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{contactFullName(selectedConversation.contact)}</span>
                                                         </button>
                                                     ) : (
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
                                                             title="Vincular este número a un contacto"
-                                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors shrink-0"
+                                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-foreground dark:hover:text-accent-foreground transition-colors shrink-0"
                                                         >
                                                             <UserPlus className="size-3" /> Vincular
                                                         </button>
                                                     )}
                                                     {selectedConversation.assigned_agent && (
-                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="inline-flex items-center gap-1 text-[11px] text-teal-600 dark:text-teal-400 min-w-0 max-w-[130px]">
-                                                            <span className="size-1.5 rounded-full bg-teal-500 shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
+                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="inline-flex items-center gap-1 text-[11px] text-accent-foreground min-w-0 max-w-[130px]">
+                                                            <span className="size-1.5 rounded-full bg-primary shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
                                                         </span>
                                                     )}
 
@@ -4438,11 +4506,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         manda el aviso, así que tiene prioridad sobre el
                                                         simple "está viendo". */}
                                                     {typingUsers.length > 0 ? (
-                                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 min-w-0">
+                                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-success min-w-0">
                                                             <span className="flex items-center gap-0.5 shrink-0" aria-hidden="true">
-                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.3s]" />
-                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.15s]" />
-                                                                <span className="size-1 rounded-full bg-emerald-500 animate-bounce" />
+                                                                <span className="size-1 rounded-full bg-success animate-bounce [animation-delay:-0.3s]" />
+                                                                <span className="size-1 rounded-full bg-success animate-bounce [animation-delay:-0.15s]" />
+                                                                <span className="size-1 rounded-full bg-success animate-bounce" />
                                                             </span>
                                                             <span className="truncate">
                                                                 {typingUsers.length === 1
@@ -4453,7 +4521,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     ) : viewers.length > 0 && (
                                                         <span
                                                             title={`${viewers.map(v => v.name).join(', ')} ${viewers.length === 1 ? 'tiene' : 'tienen'} este chat abierto`}
-                                                            className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400 min-w-0 max-w-[170px]"
+                                                            className="inline-flex items-center gap-1 text-[11px] text-warning min-w-0 max-w-[170px]"
                                                         >
                                                             <Eye className="size-3 shrink-0" />
                                                             <span className="truncate">
@@ -4474,7 +4542,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             className={clsx(
                                                                 "size-9 flex items-center justify-center rounded-lg transition-colors",
                                                                 selectedConversation.assigned_to
-                                                                    ? "text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20"
+                                                                    ? "text-accent-foreground bg-primary/10 hover:bg-primary/20"
                                                                     : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                             )}
                                                         >
@@ -4490,14 +4558,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             onClick={() => assignConversation(selectedConversation.id, null)}
                                                             className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
                                                         >
-                                                            <div className="size-8 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center group-hover:bg-red-50 group-hover:text-red-600 transition-colors shadow-sm">
+                                                            <div className="size-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center group-hover:bg-destructive/15 group-hover:text-destructive transition-colors shadow-sm">
                                                                 <XIcon className="size-4" />
                                                             </div>
                                                             <div className="flex flex-col">
                                                                 <span className="text-xs font-bold leading-none mb-1">Sin Asignar</span>
                                                                 <span className="text-[9px] font-medium text-muted-foreground leading-none">Remover responsable</span>
                                                             </div>
-                                                            {!selectedConversation.assigned_to && <Check className="size-4 text-teal-600 ml-auto" />}
+                                                            {!selectedConversation.assigned_to && <Check className="size-4 text-accent-foreground ml-auto" />}
                                                         </DropdownMenuItem>
                                                         
                                                         <DropdownMenuSeparator className="bg-border/5" />
@@ -4510,7 +4578,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 >
                                                                     <div className={clsx(
                                                                         "size-8 rounded-lg flex items-center justify-center transition-all shadow-sm",
-                                                                        Number(selectedConversation.assigned_to) === Number(u.id) ? "bg-teal-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 group-hover:bg-teal-50 group-hover:text-teal-600"
+                                                                        Number(selectedConversation.assigned_to) === Number(u.id) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-accent-foreground"
                                                                     )}>
                                                                         <User className="size-4" />
                                                                     </div>
@@ -4518,7 +4586,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                         <span className="text-xs font-bold leading-none mb-1">{u.name}</span>
                                                                         <span className="text-[9px] font-medium text-muted-foreground leading-none">{u.email}</span>
                                                                     </div>
-                                                                    {Number(selectedConversation.assigned_to) === Number(u.id) && <Check className="size-4 text-teal-600 ml-auto" />}
+                                                                    {Number(selectedConversation.assigned_to) === Number(u.id) && <Check className="size-4 text-accent-foreground ml-auto" />}
                                                                 </DropdownMenuItem>
                                                             ))}
                                                         </div>
@@ -4534,13 +4602,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         className={clsx(
                                                             "relative size-9 flex items-center justify-center rounded-lg transition-colors",
                                                             selectedConversation.tags?.length
-                                                                ? "text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20"
+                                                                ? "text-accent-foreground bg-primary/10 hover:bg-primary/20"
                                                                 : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                         )}
                                                     >
                                                         <TagIcon className="size-[18px]" />
                                                         {selectedConversation.tags?.length > 0 && (
-                                                            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-teal-600 text-white text-[9px] font-black leading-none ring-2 ring-[#f0f2f5] dark:ring-[#202c33]">
+                                                            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-black leading-none ring-2 ring-[#f0f2f5] dark:ring-[#202c33]">
                                                                 {selectedConversation.tags.length}
                                                             </span>
                                                         )}
@@ -4566,7 +4634,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 >
                                                                     <span className="size-3 rounded-full shrink-0 ring-1 ring-black/5" style={{ backgroundColor: tag.color }} />
                                                                     <span className="text-xs font-bold leading-none flex-1 truncate">{tag.name}</span>
-                                                                    {active && <Check className="size-4 text-teal-600 ml-auto shrink-0" />}
+                                                                    {active && <Check className="size-4 text-accent-foreground ml-auto shrink-0" />}
                                                                 </DropdownMenuItem>
                                                             );
                                                         })}
@@ -4578,7 +4646,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             setTaggingConversationId(selectedConversation.id);
                                                             setIsCreatingTag(true);
                                                         }}
-                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-teal-600"
+                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-accent-foreground"
                                                     >
                                                         <PlusCircle className="size-4" />
                                                         <span className="text-xs font-bold">Crear etiqueta</span>
@@ -4629,7 +4697,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
                                                     title="Reabrir conversación"
-                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-white bg-amber-500 hover:bg-amber-400 shadow-sm shadow-amber-500/25 transition-colors"
+                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-primary-foreground bg-warning hover:bg-warning shadow-sm shadow-warning/25 transition-colors"
                                                 >
                                                     <RotateCcw className="size-4" />
                                                     <span className="hidden md:inline">Reabrir</span>
@@ -4638,7 +4706,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={() => confirmCloseConversation(selectedConversation.id)}
                                                     title="Cerrar conversación"
-                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 shadow-sm shadow-emerald-600/25 transition-colors"
+                                                    className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-primary-foreground bg-success hover:bg-success shadow-sm shadow-success/25 transition-colors"
                                                 >
                                                     <CheckCircle2 className="size-4" />
                                                     <span className="hidden md:inline">Cerrar</span>
@@ -4648,8 +4716,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             {/* Separador entre la acción principal y las utilidades */}
                                             <span className="w-px h-5 bg-border/40 mx-0.5" />
 
-                                            <button onClick={() => setShowCallHistory(true)} title="Historial de llamadas" aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><PhoneCall className="size-[18px]" /></button>
-                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Search className="size-[18px]" /></button>
+                                            <button onClick={() => setShowCallHistory(true)} title="Historial de llamadas" aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
+                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button title="Más opciones" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="size-[18px]" /></button>
@@ -4662,7 +4730,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
                                                             className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
                                                         >
-                                                            <RotateCcw className="size-4 text-amber-600" />
+                                                            <RotateCcw className="size-4 text-warning" />
                                                             <span className="text-xs font-bold">Reabrir conversación</span>
                                                         </DropdownMenuItem>
                                                     ) : (
@@ -4670,7 +4738,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             onClick={() => confirmCloseConversation(selectedConversation.id)}
                                                             className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
                                                         >
-                                                            <CheckCircle2 className="size-4 text-emerald-600" />
+                                                            <CheckCircle2 className="size-4 text-success" />
                                                             <span className="text-xs font-bold">Cerrar conversación</span>
                                                         </DropdownMenuItem>
                                                     )}
@@ -4685,7 +4753,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <DropdownMenuSeparator className="bg-border/5" />
                                                     <DropdownMenuItem
                                                         onClick={() => confirmDeleteConversation(selectedConversation.id)}
-                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-rose-600 focus:text-rose-600"
+                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-destructive focus:text-destructive"
                                                     >
                                                         <Trash2 className="size-4" />
                                                         <span className="text-xs font-bold">Eliminar conversación</span>
@@ -4698,14 +4766,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {/* Banner: conversación sin asignar */}
                                     {!selectedConversation.assigned_to && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                                            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
                                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                                 <span className="flex-1 leading-snug">
                                                     Esta conversación no te está asignada. ¿Quieres asignarla a ti mismo?
                                                 </span>
                                                 <button
                                                     onClick={() => assignConversationToMe(selectedConversation.id)}
-                                                    className="shrink-0 text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:underline"
+                                                    className="shrink-0 text-[11px] font-bold text-warning hover:underline"
                                                 >
                                                     → Asignar a mí
                                                 </button>
@@ -4755,7 +4823,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                             // Acciones que aparecen al pasar el cursor por el mensaje:
                                             // reaccionar (emoji) y el menú con el resto de opciones.
-                                            const actionBtnBase = 'opacity-0 group-hover/msg:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100 transition-opacity size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/10';
+                                            const actionBtnBase = 'opacity-0 group-hover/msg:opacity-100 data-[state=open]:opacity-100 focus-visible:opacity-100 transition-opacity size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-accent-foreground hover:bg-black/5 dark:hover:bg-white/10';
                                             const messageActions = (
                                                 <div className="flex items-center gap-0.5 shrink-0">
                                                     {/* Acceso rápido a las reacciones. En móvil se oculta y queda
@@ -4853,25 +4921,25 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     
                                                     {msg.is_internal ? (
                                                         <div className="flex justify-center my-2 px-2 group/msg">
-                                                            <div className="w-full max-w-[90%] lg:max-w-[75%] bg-amber-50 dark:bg-amber-900/20 border border-amber-300/60 dark:border-amber-700/40 rounded-lg px-3 py-2 shadow-sm">
+                                                            <div className="w-full max-w-[90%] lg:max-w-[75%] bg-warning/15 border border-warning/60 dark:border-warning/40 rounded-lg px-3 py-2 shadow-sm">
                                                                 <div className="flex items-center gap-1.5 mb-1">
-                                                                    <StickyNote className="size-3.5 text-amber-600 dark:text-amber-400" />
-                                                                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                                                    <StickyNote className="size-3.5 text-warning" />
+                                                                    <span className="text-[10px] font-bold uppercase tracking-wide text-warning">
                                                                         Nota interna · {msg.sender?.name || 'Agente'}
                                                                     </span>
                                                                     {msg.metadata?.edited_at && (
-                                                                        <span className="text-[9px] font-semibold italic text-amber-700/60 dark:text-amber-300/50" title={`Editada el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}`}>
+                                                                        <span className="text-[9px] font-semibold italic text-warning/60 dark:text-warning/50" title={`Editada el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}`}>
                                                                             (editada)
                                                                         </span>
                                                                     )}
-                                                                    <span className="ml-auto text-[9px] font-semibold text-amber-700/60 dark:text-amber-300/50 uppercase">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                    <span className="ml-auto text-[9px] font-semibold text-warning/60 dark:text-warning/50 uppercase">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {/* Solo el autor puede corregir su nota. */}
                                                                     {msg.sent_by === auth.user.id && editingNote?.id !== msg.id && (
                                                                         <button
                                                                             type="button"
                                                                             title="Editar nota"
                                                                             onClick={() => setEditingNote({ id: msg.id, content: msg.content || '' })}
-                                                                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity p-1 -my-1 rounded-full text-amber-700 dark:text-amber-300 hover:bg-amber-500/20"
+                                                                            className="opacity-0 group-hover/msg:opacity-100 transition-opacity p-1 -my-1 rounded-full text-warning hover:bg-warning/20"
                                                                         >
                                                                             <PencilIcon className="size-3" />
                                                                         </button>
@@ -4889,13 +4957,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNoteEdit(); }
                                                                             }}
                                                                             maxLength={4096}
-                                                                            className="w-full rounded-md bg-white/70 dark:bg-black/20 border border-amber-400/50 px-2 py-1.5 text-[13px] leading-[18px] text-amber-950 dark:text-amber-100 outline-none focus:ring-2 focus:ring-amber-500/40 resize-y"
+                                                                            className="w-full rounded-md bg-white/70 dark:bg-black/20 border border-warning/50 px-2 py-1.5 text-[13px] leading-[18px] text-warning outline-none focus:ring-2 focus:ring-warning/40 resize-y"
                                                                         />
                                                                         <div className="flex items-center justify-end gap-1.5">
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => setEditingNote(null)}
-                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-500/15 transition-colors"
+                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold text-warning hover:bg-warning/15 transition-colors"
                                                                             >
                                                                                 Cancelar
                                                                             </button>
@@ -4903,7 +4971,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                                 type="button"
                                                                                 onClick={saveNoteEdit}
                                                                                 disabled={savingNote || !editingNote.content.trim()}
-                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                                                                                className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-warning hover:bg-warning text-primary-foreground disabled:opacity-50 transition-colors inline-flex items-center gap-1"
                                                                             >
                                                                                 {savingNote && <Loader2 className="size-3 animate-spin" />}
                                                                                 Guardar
@@ -4922,7 +4990,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                             />
                                                                         )}
                                                                         {msg.content && (
-                                                                            <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-amber-950 dark:text-amber-100">{msg.content}</p>
+                                                                            <p className="text-[13px] leading-[18px] whitespace-pre-wrap break-words text-warning">{msg.content}</p>
                                                                         )}
                                                                     </>
                                                                 )}
@@ -4947,8 +5015,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         /* Aviso de la plataforma (cambio de número, cambio de identidad):
                                                            pastilla centrada, no es una burbuja. */
                                                         <div className="flex justify-center my-2 px-2">
-                                                            <div className="max-w-[90%] lg:max-w-[70%] flex items-start gap-2 bg-[#fdf4d8] dark:bg-[#182229] border border-amber-200/70 dark:border-white/10 rounded-lg px-3 py-1.5 shadow-sm">
-                                                                <Info className="size-3.5 mt-[2px] shrink-0 text-amber-600 dark:text-white/50" />
+                                                            <div className="max-w-[90%] lg:max-w-[70%] flex items-start gap-2 bg-[#fdf4d8] dark:bg-[#182229] border border-warning/70 dark:border-white/10 rounded-lg px-3 py-1.5 shadow-sm">
+                                                                <Info className="size-3.5 mt-[2px] shrink-0 text-warning dark:text-white/50" />
                                                                 <p className="text-[11.5px] leading-[16px] text-center text-[#54656f] dark:text-white/60 break-words">
                                                                     {msg.content}
                                                                     <span className="ml-2 text-[9.5px] uppercase tracking-wide opacity-70">{formatMessageTimeOnly(msg.created_at)}</span>
@@ -4986,7 +5054,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     if (!tardio) return null;
                                                                     return (
                                                                         <span
-                                                                            className="mb-1 inline-flex items-center gap-1 self-start rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-700 dark:text-amber-300"
+                                                                            className="mb-1 inline-flex items-center gap-1 self-start rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-warning"
                                                                             title={tardio.detalle}
                                                                         >
                                                                             <Clock className="size-2.5 shrink-0" />
@@ -4998,19 +5066,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => scrollToMessage(quoted.id)}
-                                                                        className="mb-1 w-full text-left rounded-md border-l-4 border-teal-500 bg-black/10 dark:bg-white/10 px-2 py-1 hover:bg-black/15 dark:hover:bg-white/15 transition-colors overflow-hidden"
+                                                                        className="mb-1 w-full text-left rounded-md border-l-4 border-primary/30 bg-black/10 dark:bg-white/10 px-2 py-1 hover:bg-black/15 dark:hover:bg-white/15 transition-colors overflow-hidden"
                                                                     >
-                                                                        <p className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 truncate">{quotedAuthor(quoted)}</p>
+                                                                        <p className="text-[10.5px] font-bold text-accent-foreground truncate">{quotedAuthor(quoted)}</p>
                                                                         <p className="text-[11px] text-muted-foreground dark:text-white/50 truncate">{quotedSnippet(quoted) || 'Mensaje'}</p>
                                                                     </button>
                                                                 )}
                                                                 {msg.reply_to_wamid && !quoted && (
-                                                                    <div className="mb-1 w-full rounded-md border-l-4 border-teal-500/60 bg-black/10 dark:bg-white/10 px-2 py-1 overflow-hidden">
+                                                                    <div className="mb-1 w-full rounded-md border-l-4 border-primary/60 bg-black/10 dark:bg-white/10 px-2 py-1 overflow-hidden">
                                                                         <p className="text-[11px] italic text-muted-foreground dark:text-white/50 truncate">↩︎ Mensaje citado</p>
                                                                     </div>
                                                                 )}
                                                                 {isOut && msg.sender?.name && (
-                                                                    <span className="text-[10.5px] font-bold text-teal-700 dark:text-teal-300 mb-0.5 leading-tight">
+                                                                    <span className="text-[10.5px] font-bold text-accent-foreground mb-0.5 leading-tight">
                                                                         {msg.sender.name}
                                                                     </span>
                                                                 )}
@@ -5044,7 +5112,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSentEdit(); }
                                                                                 }}
                                                                                 maxLength={4096}
-                                                                                className="w-full rounded-md bg-white/80 dark:bg-black/25 border border-black/10 dark:border-white/15 px-2 py-1.5 text-[12.5px] leading-[17px] outline-none focus:ring-2 focus:ring-teal-500/40 resize-y"
+                                                                                className="w-full rounded-md bg-white/80 dark:bg-black/25 border border-black/10 dark:border-white/15 px-2 py-1.5 text-[12.5px] leading-[17px] outline-none focus:ring-2 focus:ring-primary/40 resize-y"
                                                                             />
                                                                             <p className="flex items-start gap-1 text-[10px] leading-[13px] opacity-70">
                                                                                 <AlertTriangle className="size-3 mt-px shrink-0" />
@@ -5062,7 +5130,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                                     type="button"
                                                                                     onClick={saveSentEdit}
                                                                                     disabled={savingSent || !editingSent.content.trim()}
-                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors inline-flex items-center gap-1"
+                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-primary hover:bg-primary text-primary-foreground disabled:opacity-50 transition-colors inline-flex items-center gap-1"
                                                                                 >
                                                                                     {savingSent && <Loader2 className="size-3 animate-spin" />}
                                                                                     Guardar
@@ -5279,10 +5347,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {/* Banner de error de envío (Meta) */}
                                     {sendError && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                                            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
                                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                                 <span className="flex-1 leading-snug">{sendError}</span>
-                                                <button onClick={() => setSendError(null)} className="shrink-0 hover:text-rose-900 dark:hover:text-rose-100">
+                                                <button onClick={() => setSendError(null)} className="shrink-0 hover:text-destructive dark:hover:text-destructive">
                                                     <XIcon className="size-3.5" />
                                                 </button>
                                             </div>
@@ -5292,14 +5360,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     {/* Ventana de 24h vencida: hay que reabrir con una plantilla aprobada */}
                                     {windowExpired && composerMode === 'reply' && !isRecording && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                                            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
                                                 <Clock className="size-4 mt-0.5 shrink-0" />
                                                 <span className="flex-1 leading-snug">
                                                     La ventana de 24h para responder libremente a este contacto ya expiró. Debes enviar primero una <b>plantilla aprobada</b>.
                                                 </span>
                                                 <button
                                                     onClick={() => setShowTemplates(true)}
-                                                    className="shrink-0 rounded-md bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold px-2.5 py-1 transition-colors"
+                                                    className="shrink-0 rounded-md bg-warning hover:bg-warning text-primary-foreground text-[11px] font-bold px-2.5 py-1 transition-colors"
                                                 >
                                                     Enviar plantilla
                                                 </button>
@@ -5315,7 +5383,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1",
                                                     composerMode === 'reply'
-                                                        ? "bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-200/80 dark:ring-teal-800/50"
+                                                        ? "bg-primary/15 dark:bg-primary/20 text-accent-foreground ring-1 ring-primary/80 dark:ring-primary/50"
                                                         : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                 )}
                                             >
@@ -5326,7 +5394,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 className={clsx(
                                                     "px-2 py-0.5 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1",
                                                     composerMode === 'note'
-                                                        ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200/80 dark:ring-amber-800/50"
+                                                        ? "bg-warning/15 text-warning ring-1 ring-warning/80 dark:ring-warning/50"
                                                         : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
                                                 )}
                                             >
@@ -5339,7 +5407,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <div className={clsx(
                                         "px-3 pt-2 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
                                         composerMode === 'note' && !isRecording
-                                            ? "bg-amber-50 dark:bg-amber-900/20"
+                                            ? "bg-warning/15"
                                             : "bg-[#f0f2f5] dark:bg-[#202c33]"
                                     )}>
                                         {recordedAudio ? (
@@ -5347,7 +5415,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={discardRecordedAudio}
                                                     disabled={sending}
-                                                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors shrink-0 disabled:opacity-40"
+                                                    className="p-2 text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/20 rounded-full transition-colors shrink-0 disabled:opacity-40"
                                                     title="Descartar grabación"
                                                 >
                                                     <Trash2 className="size-5" />
@@ -5356,7 +5424,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <button
                                                     onClick={sendRecordedAudio}
                                                     disabled={sending}
-                                                    className="p-2 bg-teal-600 text-white rounded-full hover:bg-teal-700 transition-colors shadow-sm shrink-0 disabled:opacity-50"
+                                                    className="p-2 bg-primary text-primary-foreground rounded-full hover:bg-primary transition-colors shadow-sm shrink-0 disabled:opacity-50"
                                                     title="Enviar audio"
                                                 >
                                                     <Send className={`size-5 ${sending ? 'animate-pulse' : ''}`} />
@@ -5366,9 +5434,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             <div className="flex-1 flex flex-col gap-2 min-w-0">
                                                 {/* Barra de cita: mensaje al que se está respondiendo */}
                                                 {replyingTo && (
-                                                    <div className="flex items-stretch gap-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-4 border-teal-500 pl-2 pr-1 py-1.5">
+                                                    <div className="flex items-stretch gap-2 rounded-lg bg-black/5 dark:bg-white/5 border-l-4 border-primary/30 pl-2 pr-1 py-1.5">
                                                         <div className="min-w-0 flex-1">
-                                                            <p className="text-[11px] font-bold text-teal-700 dark:text-teal-300 truncate">
+                                                            <p className="text-[11px] font-bold text-accent-foreground truncate">
                                                                 Respondiendo a {quotedAuthor(replyingTo)}
                                                             </p>
                                                             <p className="text-[11.5px] text-muted-foreground truncate">{quotedSnippet(replyingTo) || 'Mensaje'}</p>
@@ -5386,7 +5454,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 {/* Imagen adjunta a la nota: miniatura con opción a quitarla
                                                     antes de guardar. Solo existe en modo nota. */}
                                                 {composerMode === 'note' && noteImage && (
-                                                    <div className="flex items-center gap-2.5 rounded-lg bg-white dark:bg-[#2a3942] ring-1 ring-amber-300/70 dark:ring-amber-700/50 px-2 py-1.5">
+                                                    <div className="flex items-center gap-2.5 rounded-lg bg-white dark:bg-[#2a3942] ring-1 ring-warning/70 dark:ring-warning/50 px-2 py-1.5">
                                                         <img
                                                             src={noteImage.url}
                                                             alt="Adjunto de la nota"
@@ -5427,10 +5495,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                     onMouseDown={(e) => { e.preventDefault(); applyMention(u); }}
                                                                     className={clsx(
                                                                         "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
-                                                                        idx === mentionIndex ? "bg-amber-50 dark:bg-amber-900/20" : "hover:bg-muted"
+                                                                        idx === mentionIndex ? "bg-warning/15" : "hover:bg-muted"
                                                                     )}
                                                                 >
-                                                                    <AtSign className="size-3.5 text-amber-600" />
+                                                                    <AtSign className="size-3.5 text-warning" />
                                                                     <span className="text-sm font-semibold">{u.name}</span>
                                                                     <span className="text-[10px] text-muted-foreground ml-auto truncate">{u.email}</span>
                                                                 </button>
@@ -5450,7 +5518,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         className={clsx(
                                                             "block w-full border-none rounded-lg px-4 py-2.5 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
                                                             composerMode === 'note'
-                                                                ? "bg-white dark:bg-[#2a3942] ring-1 ring-amber-300/70 dark:ring-amber-700/50"
+                                                                ? "bg-white dark:bg-[#2a3942] ring-1 ring-warning/70 dark:ring-warning/50"
                                                                 : "bg-white dark:bg-[#2a3942]"
                                                         )}
                                                         style={{ maxHeight: '160px' }}
@@ -5462,14 +5530,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <div className="flex items-center gap-0.5">
                                                         {composerMode === 'reply' ? (
                                                             <>
-                                                                <button title="Insertar emoji" aria-label="Insertar emoji" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"><Smile className="size-[19px]" /></button>
-                                                                <label title="Adjuntar imagen o documento" aria-label="Adjuntar imagen o documento" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-500">
+                                                                <button title="Insertar emoji" aria-label="Insertar emoji" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Smile className="size-[19px]" /></button>
+                                                                <label title="Adjuntar imagen o documento" aria-label="Adjuntar imagen o documento" className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/30">
                                                                     <Paperclip className="size-[19px]" />
                                                                     <input type="file" onChange={handleFileUpload} accept={ATTACHMENT_ACCEPT} className="hidden" />
                                                                 </label>
                                                                 <button
                                                                     onClick={startRecording}
-                                                                    className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-teal-600 hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:text-accent-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                                                                     title="Grabar audio"
                                                                     aria-label="Grabar audio"
                                                                 >
@@ -5489,7 +5557,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 <label
                                                                     title="Adjuntar imagen a la nota"
                                                                     aria-label="Adjuntar imagen a la nota"
-                                                                    className="size-9 flex items-center justify-center rounded-lg text-amber-600 dark:text-amber-400 hover:bg-amber-500/15 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-amber-400"
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-warning hover:bg-warning/15 cursor-pointer transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-warning/30"
                                                                 >
                                                                     <Paperclip className="size-[19px]" />
                                                                     <input
@@ -5506,7 +5574,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 <button
                                                                     disabled
                                                                     title="Programar nota (próximamente)"
-                                                                    className="size-9 flex items-center justify-center rounded-lg text-amber-400/70 cursor-not-allowed"
+                                                                    className="size-9 flex items-center justify-center rounded-lg text-warning/70 cursor-not-allowed"
                                                                 >
                                                                     <Clock className="size-[19px]" />
                                                                 </button>
@@ -5524,8 +5592,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         className={clsx(
                                                             "flex items-center gap-2 h-9 px-4 rounded-lg text-[13px] font-bold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none",
                                                             composerMode === 'note'
-                                                                ? "bg-amber-500 hover:bg-amber-400 shadow-amber-500/25 focus-visible:ring-amber-400"
-                                                                : "bg-teal-600 hover:bg-teal-500 shadow-teal-600/25 focus-visible:ring-teal-500"
+                                                                ? "bg-warning hover:bg-warning shadow-warning/25 focus-visible:ring-warning/30"
+                                                                : "bg-primary hover:bg-primary shadow-primary/25 focus-visible:ring-primary/30"
                                                         )}
                                                     >
                                                         <span>{composerMode === 'note' ? 'Guardar nota' : 'Enviar'}</span>
@@ -5537,7 +5605,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             <div className="flex-1 flex items-center justify-between bg-white dark:bg-[#2a3942] rounded-lg px-4 py-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex items-center gap-2">
-                                                        <div className="size-2.5 bg-red-500 rounded-full animate-pulse" />
+                                                        <div className="size-2.5 bg-destructive rounded-full animate-pulse" />
                                                         <span className="text-sm font-bold tabular-nums">{formatDuration(recordingDuration)}</span>
                                                     </div>
                                                 </div>
@@ -5545,14 +5613,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <div className="flex items-center gap-2">
                                                     <button 
                                                         onClick={cancelRecording}
-                                                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
+                                                        className="p-2 text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/20 rounded-full transition-colors"
                                                         title="Cancelar grabación"
                                                     >
                                                         <Trash2 className="size-5" />
                                                     </button>
                                                     <button 
                                                         onClick={stopRecording}
-                                                        className="p-2 bg-teal-600 text-white rounded-full hover:bg-teal-700 transition-colors shadow-sm"
+                                                        className="p-2 bg-primary text-primary-foreground rounded-full hover:bg-primary transition-colors shadow-sm"
                                                         title="Enviar grabación"
                                                     >
                                                         <Send className="size-5" />
@@ -5610,7 +5678,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         >
                             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
                                 <div className="flex items-center gap-3 min-w-0">
-                                    <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                    <div className="size-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
                                         <MapPin className="size-4.5" />
                                     </div>
                                     <div className="min-w-0">
@@ -5647,7 +5715,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         >
                             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
                                 <div className="flex items-center gap-3 min-w-0">
-                                    <div className="size-9 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0">
+                                    <div className="size-9 rounded-full bg-destructive text-white flex items-center justify-center flex-shrink-0">
                                         <AlertTriangle className="size-4.5" />
                                     </div>
                                     <div className="min-w-0">
@@ -5709,7 +5777,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             >
                                 <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                        <div className="size-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
                                             <Info className="size-4.5" />
                                         </div>
                                         <div className="min-w-0">
@@ -5757,9 +5825,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     })}
 
                                     {messageInfo.status === 'failed' && (
-                                        <div className="flex items-start gap-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2">
-                                            <AlertTriangle className="size-4 mt-0.5 shrink-0 text-rose-600 dark:text-rose-400" />
-                                            <div className="min-w-0 text-[12.5px] text-rose-700 dark:text-rose-300">
+                                        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
+                                            <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
+                                            <div className="min-w-0 text-[12.5px] text-destructive">
                                                 <p className="font-semibold">No se pudo enviar{formatFullDateTime(messageInfo.failed_at) ? ` · ${formatFullDateTime(messageInfo.failed_at)}` : ''}</p>
                                                 <p className="leading-snug break-words">
                                                     {messageInfo.error_details || messageInfo.error_message || 'WhatsApp no reportó un motivo específico.'}
@@ -5799,7 +5867,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         >
                             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
                                 <div className="flex items-center gap-3 min-w-0">
-                                    <div className="size-9 rounded-full bg-teal-600 text-white flex items-center justify-center flex-shrink-0">
+                                    <div className="size-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
                                         <Forward className="size-4.5" />
                                     </div>
                                     <div className="min-w-0">
@@ -5817,7 +5885,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                             {forwardDone ? (
                                 <div className="px-4 py-8 flex flex-col items-center gap-2 text-center">
-                                    <CheckCircle2 className="size-10 text-teal-600" />
+                                    <CheckCircle2 className="size-10 text-accent-foreground" />
                                     <p className="text-sm font-semibold text-foreground">Reenviado a {forwardDone}</p>
                                 </div>
                             ) : (
@@ -5831,13 +5899,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 value={forwardQuery}
                                                 onChange={e => setForwardQuery(e.target.value)}
                                                 placeholder="Buscar chat por nombre o número"
-                                                className="w-full h-10 rounded-lg bg-black/5 dark:bg-white/5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                                                className="w-full h-10 rounded-lg bg-black/5 dark:bg-white/5 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                                             />
                                         </div>
                                     </div>
 
                                     {forwardError && (
-                                        <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                                        <div className="mx-4 mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
                                             <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                             <span className="leading-snug">{forwardError}</span>
                                         </div>
@@ -5857,7 +5925,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             forwardResults
                                                 .filter(c => c.id !== forwardSource.conversation_id)
                                                 .map(conv => {
-                                                    const name = conv.contact?.name || conv.name || conv.phone_number;
+                                                    const name = contactFullName(conv.contact) || conv.name || conv.phone_number;
                                                     return (
                                                         <button
                                                             key={conv.id}
@@ -5866,7 +5934,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             onClick={() => confirmForward(conv)}
                                                             className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left disabled:opacity-50"
                                                         >
-                                                            <div className="size-9 rounded-full bg-teal-600/15 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 text-[13px] font-bold uppercase">
+                                                            <div className="size-9 rounded-full bg-primary/15 text-accent-foreground flex items-center justify-center shrink-0 text-[13px] font-bold uppercase">
                                                                 {(name || '?').charAt(0)}
                                                             </div>
                                                             <div className="min-w-0 flex-1">
@@ -5923,13 +5991,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); confirmSendImage(); } }}
                                     placeholder="Añade un pie de foto (opcional)"
                                     maxLength={1024}
-                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/50"
+                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/50"
                                 />
                                 <button
                                     onClick={confirmSendImage}
                                     disabled={sending}
                                     title="Enviar imagen"
-                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors"
+                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-primary hover:bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
                                 >
                                     <Send className="size-5" />
                                 </button>
@@ -5960,7 +6028,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             </div>
 
                             <div className="flex items-center gap-3 bg-black/40 p-6">
-                                <div className="size-12 shrink-0 flex items-center justify-center rounded-lg bg-teal-600/20 text-teal-300">
+                                <div className="size-12 shrink-0 flex items-center justify-center rounded-lg bg-primary/20 text-accent-foreground">
                                     <FileText className="size-6" />
                                 </div>
                                 <div className="min-w-0">
@@ -5982,13 +6050,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); confirmSendDocument(); } }}
                                     placeholder="Añade una descripción (opcional)"
                                     maxLength={1024}
-                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-teal-500/50"
+                                    className="flex-1 h-10 rounded-lg bg-[#2a3942] text-white placeholder:text-white/40 px-4 text-sm outline-none focus:ring-2 focus:ring-primary/50"
                                 />
                                 <button
                                     onClick={confirmSendDocument}
                                     disabled={sending}
                                     title="Enviar documento"
-                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 transition-colors"
+                                    className="size-10 shrink-0 flex items-center justify-center rounded-full bg-primary hover:bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
                                 >
                                     <Send className="size-5" />
                                 </button>
@@ -6002,11 +6070,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     <LinkContactModal
                         conversationId={selectedConversation.id}
                         defaultPhone={selectedConversation.phone_number}
+                        defaultUsername={contactUsername(selectedConversation)}
+                        defaultIdentity={contactIdentity(selectedConversation)}
                         defaultName={selectedConversation.name}
                         currentContact={selectedConversation.contact}
                         onClose={() => setShowLinkContact(false)}
                         onLinked={(contact) => {
-                            const linkedName = contact?.name;
+                            const linkedName = contactFullName(contact);
                             setSelectedConversation(prev => prev ? { ...prev, contact, name: linkedName || prev.name } : prev);
                             setConversations(prev => prev.map(c => c.id === selectedConversation.id ? { ...c, contact, name: linkedName || c.name } : c));
                             setShowLinkContact(false);
@@ -6020,21 +6090,21 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         <SheetContent side="right" className="w-full sm:max-w-md p-0 gap-0">
                             <div className="flex flex-col h-full overflow-y-auto">
                                 {/* Encabezado del panel */}
-                                <div className="flex flex-col items-center text-center gap-3 px-6 pt-10 pb-6 bg-gradient-to-b from-teal-500/10 to-transparent border-b border-border/40">
-                                    <div className="size-20 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white font-bold text-2xl uppercase shadow-md">
+                                <div className="flex flex-col items-center text-center gap-3 px-6 pt-10 pb-6 bg-gradient-to-b from-primary/10 to-transparent border-b border-border/40">
+                                    <div className="size-20 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-2xl uppercase shadow-md">
                                         {selectedConversation.initials}
                                     </div>
                                     <div className="min-w-0 w-full">
-                                        <h2 className="text-lg font-bold text-foreground truncate">{selectedConversation.contact?.name || selectedConversation.name}</h2>
+                                        <h2 className="text-lg font-bold text-foreground truncate">{contactFullName(selectedConversation.contact) || selectedConversation.name}</h2>
                                         <p className="text-sm text-muted-foreground">{contactIdentity(selectedConversation)}</p>
                                     </div>
                                     <span className={clsx(
                                         "inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full",
                                         selectedConversation.status === 'closed'
-                                            ? "bg-slate-400/15 text-slate-500 dark:text-slate-400"
-                                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                            ? "bg-muted/15 text-muted-foreground"
+                                            : "bg-success/15 text-success"
                                     )}>
-                                        <span className={clsx("size-1.5 rounded-full", selectedConversation.status === 'closed' ? "bg-slate-400" : "bg-emerald-500")} />
+                                        <span className={clsx("size-1.5 rounded-full", selectedConversation.status === 'closed' ? "bg-muted" : "bg-success")} />
                                         {selectedConversation.status === 'closed' ? 'Cerrada' : 'Abierta'}
                                     </span>
 
@@ -6056,31 +6126,69 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <div className="flex flex-col gap-4 px-6 py-6">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Editar contacto</p>
 
-                                        <div className="space-y-1.5">
-                                            <label className="text-sm font-medium text-foreground">Nombre</label>
-                                            <input
-                                                type="text"
-                                                value={contactForm.name}
-                                                onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                                                placeholder="Nombre del contacto"
-                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
-                                            />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-medium text-foreground">Nombre</label>
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.name}
+                                                    onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                                                    placeholder="Nombre"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-sm font-medium text-foreground">Apellido</label>
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.last_name}
+                                                    onChange={e => setContactForm(f => ({ ...f, last_name: e.target.value }))}
+                                                    placeholder="Apellido"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
                                         </div>
 
                                         <div className="space-y-1.5">
-                                            <label className="text-sm font-medium text-foreground">
-                                                {hasPhone(selectedConversation) ? 'Teléfono' : 'Identificador'}
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={contactIdentity(selectedConversation)}
-                                                disabled
-                                                className="flex h-9 w-full rounded-md border border-input bg-muted/40 px-3 py-1 text-sm text-muted-foreground cursor-not-allowed"
-                                            />
+                                            <label className="text-sm font-medium text-foreground">Nombre de usuario</label>
+                                            <div className="relative">
+                                                <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+                                                <input
+                                                    type="text"
+                                                    value={contactForm.username}
+                                                    onChange={e => setContactForm(f => ({ ...f, username: e.target.value }))}
+                                                    placeholder="usuario_de_whatsapp"
+                                                    autoCapitalize="off"
+                                                    spellCheck={false}
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-sm font-medium text-foreground">Teléfono</label>
+                                            <div className="flex gap-2">
+                                                <select
+                                                    value={contactForm.country}
+                                                    onChange={e => setContactForm(f => ({ ...f, country: e.target.value }))}
+                                                    className="h-9 w-28 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                >
+                                                    {COUNTRIES.map(c => (
+                                                        <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>
+                                                    ))}
+                                                </select>
+                                                <input
+                                                    type="tel"
+                                                    value={contactForm.phone}
+                                                    onChange={e => setContactForm(f => ({ ...f, phone: e.target.value }))}
+                                                    placeholder="3052583254"
+                                                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                                                />
+                                            </div>
                                             <p className="text-[11px] text-muted-foreground">
                                                 {hasPhone(selectedConversation)
-                                                    ? 'El número de WhatsApp no se puede cambiar.'
-                                                    : 'Este cliente oculta su número tras un nombre de usuario de WhatsApp.'}
+                                                    ? 'El número con el que escribe por WhatsApp.'
+                                                    : 'Este cliente oculta su número tras un nombre de usuario. Si te lo da, anótalo aquí: es lo que permite llamarlo y cruzarlo con Integra. Se le sigue respondiendo por el mismo chat.'}
                                             </p>
                                         </div>
 
@@ -6091,7 +6199,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 value={contactForm.email}
                                                 onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
                                                 placeholder="correo@ejemplo.com"
-                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                                             />
                                         </div>
 
@@ -6103,18 +6211,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))}
                                                     rows={3}
                                                     placeholder="Notas internas sobre el contacto"
-                                                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/50"
+                                                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                                                 />
                                             </div>
                                         )}
 
-                                        {contactError && <p className="text-xs text-rose-600">{contactError}</p>}
+                                        {contactError && <p className="text-xs text-destructive">{contactError}</p>}
 
                                         <div className="flex gap-2 pt-1">
                                             <button
                                                 onClick={saveContact}
                                                 disabled={savingContact}
-                                                className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-teal-600 hover:bg-teal-500 disabled:opacity-60 transition-colors"
+                                                className="flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-primary-foreground bg-primary hover:bg-primary disabled:opacity-60 transition-colors"
                                             >
                                                 {savingContact ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                                                 Guardar
@@ -6138,17 +6246,27 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Datos de contacto</p>
                                                     <button
                                                         onClick={openContactEdit}
-                                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+                                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-accent-foreground hover:underline"
                                                     >
                                                         <PencilIcon className="size-3" /> Editar
                                                     </button>
                                                 </div>
                                                 <div className="flex items-center gap-3 text-sm">
-                                                    {hasPhone(selectedConversation)
+                                                    {hasPhone(selectedConversation) || selectedConversation.contact?.phone_number
                                                         ? <Phone className="size-4 text-muted-foreground shrink-0" />
                                                         : <AtSign className="size-4 text-muted-foreground shrink-0" />}
                                                     <span className="text-foreground truncate">{contactIdentity(selectedConversation)}</span>
+                                                    {!hasPhone(selectedConversation) && selectedConversation.contact?.phone_number && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70 shrink-0">Anotado</span>
+                                                    )}
                                                 </div>
+                                                {/* El nombre de usuario, cuando arriba ya se está pintando el número. */}
+                                                {contactUsername(selectedConversation) && contactIdentity(selectedConversation) !== '@' + contactUsername(selectedConversation) && (
+                                                    <div className="flex items-center gap-3 text-sm">
+                                                        <AtSign className="size-4 text-muted-foreground shrink-0" />
+                                                        <span className="text-foreground truncate">@{contactUsername(selectedConversation)}</span>
+                                                    </div>
+                                                )}
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <Mail className="size-4 text-muted-foreground shrink-0" />
                                                     {selectedConversation.contact?.email ? (
@@ -6160,7 +6278,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <Contact className="size-4 text-muted-foreground shrink-0" />
                                                     {selectedConversation.contact ? (
-                                                        <span className="text-foreground truncate">{selectedConversation.contact.name}</span>
+                                                        <span className="text-foreground truncate">{contactFullName(selectedConversation.contact)}</span>
                                                     ) : (
                                                         <span className="text-muted-foreground italic">Sin contacto vinculado</span>
                                                     )}
@@ -6215,7 +6333,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <div className="mt-auto border-t border-border/40 px-6 py-4 flex flex-col gap-2">
                                             <button
                                                 onClick={openContactEdit}
-                                                className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-teal-600 hover:bg-teal-500 transition-colors"
+                                                className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-primary-foreground bg-primary hover:bg-primary transition-colors"
                                             >
                                                 <PencilIcon className="size-4" /> Editar contacto
                                             </button>
@@ -6229,7 +6347,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             {selectedConversation.status === 'closed' ? (
                                                 <button
                                                     onClick={() => { setConversationStatus(selectedConversation.id, 'reopen'); setShowContactPanel(false); }}
-                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-amber-500 hover:bg-amber-400 transition-colors"
+                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-primary-foreground bg-warning hover:bg-warning transition-colors"
                                                 >
                                                     <RotateCcw className="size-4" /> Reabrir conversación
                                                 </button>
@@ -6239,7 +6357,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         await confirmCloseConversation(selectedConversation.id);
                                                         setShowContactPanel(false);
                                                     }}
-                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
+                                                    className="flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-bold text-primary-foreground bg-success hover:bg-success transition-colors"
                                                 >
                                                     <CheckCircle2 className="size-4" /> Cerrar conversación
                                                 </button>
@@ -6258,7 +6376,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                         conversationId={selectedConversation.id}
                         instanceId={selectedInstanceId}
                         windowClosedHint={windowExpired}
-                        contactName={selectedConversation.contact?.name || selectedConversation.name}
+                        contactName={contactFullName(selectedConversation.contact) || selectedConversation.name}
                         onClose={() => setShowTemplates(false)}
                         onSent={(message, preview) => {
                             if (message) setMessages(prev => [...prev, message]);
@@ -6281,12 +6399,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                 {incomingCall && (
                     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[130] w-[min(92vw,380px)] animate-in slide-in-from-top duration-300">
-                        <div className="rounded-2xl bg-card border border-teal-500/40 shadow-2xl shadow-teal-500/10 p-4 flex items-center gap-3">
-                            <div className="size-11 rounded-full bg-teal-500/15 flex items-center justify-center shrink-0">
-                                <PhoneIncoming className="size-5 text-teal-600 dark:text-teal-400 animate-pulse" />
+                        <div className="rounded-2xl bg-card border border-primary/40 shadow-2xl shadow-primary/10 p-4 flex items-center gap-3">
+                            <div className="size-11 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                                <PhoneIncoming className="size-5 text-accent-foreground animate-pulse" />
                             </div>
                             <div className="min-w-0 flex-1">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-teal-600 dark:text-teal-400">Llamada entrante</p>
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-accent-foreground">Llamada entrante</p>
                                 <p className="text-sm font-semibold text-foreground truncate">{incomingCall.from || 'Número desconocido'}</p>
                             </div>
                             <button
@@ -6306,7 +6424,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                     <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={closeNewChat}>
                         <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                             {/* Header */}
-                            <div className="relative bg-gradient-to-br from-teal-600 to-emerald-600 px-6 py-5 text-white">
+                            <div className="relative bg-gradient-to-br from-primary to-success px-6 py-5 text-primary-foreground">
                                 <button onClick={closeNewChat} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                                     <XIcon className="size-4" />
                                 </button>
@@ -6336,7 +6454,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             placeholder="Ej: 57 300 123 4567"
                                             autoFocus
                                             inputMode="tel"
-                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                         />
                                         <p className="mt-1.5 text-[11px] text-muted-foreground">Incluye el código de país (Colombia = 57), sin signos ni espacios obligatorios.</p>
                                     </div>
@@ -6349,12 +6467,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             onChange={e => setNewChatName(e.target.value)}
                                             onKeyDown={e => { if (e.key === 'Enter' && !newChatLoading) startNewChat(); }}
                                             placeholder="Nombre del contacto"
-                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500/50"
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                         />
                                     </div>
 
                                     {newChatError && (
-                                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                             <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                             <span>{newChatError}</span>
                                         </div>
@@ -6364,7 +6482,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <button type="button" onClick={closeNewChat} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                             Cancelar
                                         </button>
-                                        <button type="button" onClick={startNewChat} disabled={newChatLoading} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
+                                        <button type="button" onClick={startNewChat} disabled={newChatLoading} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                                             {newChatLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                                             Continuar
                                         </button>
@@ -6372,7 +6490,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 </div>
                             ) : (
                                 <div className="px-6 py-5 space-y-4">
-                                    <div className="rounded-xl border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2.5 text-[12px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                                    <div className="rounded-xl border border-warning/50 bg-warning/15 px-3 py-2.5 text-[12px] text-warning flex items-start gap-2">
                                         <Clock className="size-4 mt-0.5 shrink-0" />
                                         <span>Este número no tiene una conversación abierta (ventana de 24h). Para iniciar debes enviar una <b>plantilla aprobada</b>.</span>
                                     </div>
@@ -6401,13 +6519,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 onClick={() => pickTemplate(t)}
                                                                 className={clsx(
                                                                     "w-full text-left px-3 py-2.5 transition-colors",
-                                                                    active ? "bg-teal-600/10" : "hover:bg-muted/40"
+                                                                    active ? "bg-primary/10" : "hover:bg-muted/40"
                                                                 )}
                                                             >
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-[13px] font-semibold text-foreground truncate">{t.name}</span>
                                                                     <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5 shrink-0">{t.language}</span>
-                                                                    {active && <Check className="size-3.5 text-teal-600 ml-auto shrink-0" />}
+                                                                    {active && <Check className="size-3.5 text-accent-foreground ml-auto shrink-0" />}
                                                                 </div>
                                                                 {body?.text && <p className="text-[11px] text-muted-foreground truncate mt-0.5">{body.text}</p>}
                                                             </button>
@@ -6428,7 +6546,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 accept={HEADER_MEDIA_ACCEPT[templateHeader.format]}
                                                                 disabled={templateHeader.uploading}
                                                                 onChange={e => uploadTemplateHeaderFile(e.target.files?.[0])}
-                                                                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-teal-600/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-teal-600 hover:file:bg-teal-600/20 disabled:opacity-60"
+                                                                className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent-foreground hover:file:bg-primary/20 disabled:opacity-60"
                                                             />
                                                             {templateHeader.uploading && (
                                                                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -6436,11 +6554,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 </p>
                                                             )}
                                                             {!templateHeader.uploading && templateHeader.mediaId && (
-                                                                <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                                                                <p className="flex items-center gap-1.5 text-xs text-success">
                                                                     <Check className="size-3.5" /> Archivo listo{templateHeader.filename ? `: ${templateHeader.filename}` : ''}
                                                                 </p>
                                                             )}
-                                                            {templateHeader.error && <p className="text-xs text-rose-600 dark:text-rose-400">{templateHeader.error}</p>}
+                                                            {templateHeader.error && <p className="text-xs text-destructive">{templateHeader.error}</p>}
                                                         </>
                                                     ) : (
                                                         <div className="grid grid-cols-2 gap-2">
@@ -6448,25 +6566,25 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                 value={templateHeader.lat}
                                                                 onChange={e => setTemplateHeader(h => ({ ...h, lat: e.target.value }))}
                                                                 placeholder="Latitud"
-                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                             />
                                                             <input
                                                                 value={templateHeader.lng}
                                                                 onChange={e => setTemplateHeader(h => ({ ...h, lng: e.target.value }))}
                                                                 placeholder="Longitud"
-                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                             />
                                                             <input
                                                                 value={templateHeader.name}
                                                                 onChange={e => setTemplateHeader(h => ({ ...h, name: e.target.value }))}
                                                                 placeholder="Nombre (opcional)"
-                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                             />
                                                             <input
                                                                 value={templateHeader.address}
                                                                 onChange={e => setTemplateHeader(h => ({ ...h, address: e.target.value }))}
                                                                 placeholder="Dirección (opcional)"
-                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                                className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                             />
                                                         </div>
                                                     )}
@@ -6482,7 +6600,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                             value={v}
                                                             onChange={e => setTemplateVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
                                                             placeholder={`Variable {{${i + 1}}}`}
-                                                            className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                            className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                         />
                                                     ))}
                                                 </div>
@@ -6497,7 +6615,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     )}
 
                                     {newChatError && (
-                                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                             <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                             <span>{newChatError}</span>
                                         </div>
@@ -6507,7 +6625,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <button type="button" onClick={closeNewChat} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                             Cerrar
                                         </button>
-                                        <button type="button" onClick={sendNewChatTemplate} disabled={newChatLoading || !selectedTemplate || templateHeader?.uploading} className="flex-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                                        <button type="button" onClick={sendNewChatTemplate} disabled={newChatLoading || !selectedTemplate || templateHeader?.uploading} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
                                             {newChatLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                                             Enviar y abrir
                                         </button>
@@ -6537,7 +6655,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         value={newTagName}
                                         onChange={e => setNewTagName(e.target.value)}
                                         placeholder="Ej: Cliente VIP, Cobro..."
-                                        className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-teal-600/20 outline-none"
+                                        className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
                                     />
                                 </div>
                                 
@@ -6550,7 +6668,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 onClick={() => setNewTagColor(color)}
                                                 className={clsx(
                                                     "size-8 rounded-full border-2 transition-all shadow-sm",
-                                                    newTagColor === color ? "border-white dark:border-[#1c272e] ring-2 ring-teal-600 scale-110" : "border-transparent opacity-80 hover:opacity-100"
+                                                    newTagColor === color ? "border-white dark:border-[#1c272e] ring-2 ring-primary/30 scale-110" : "border-transparent opacity-80 hover:opacity-100"
                                                 )}
                                                 style={{ backgroundColor: color }}
                                             />
@@ -6563,7 +6681,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         <button
                                             onClick={() => deleteTag(editingTag)}
                                             title="Eliminar etiqueta"
-                                            className="py-3 px-4 text-sm font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-2xl transition-colors flex items-center justify-center"
+                                            className="py-3 px-4 text-sm font-bold text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/30 rounded-2xl transition-colors flex items-center justify-center"
                                         >
                                             <Trash2 className="size-4" />
                                         </button>
@@ -6578,7 +6696,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     <button
                                         onClick={editingTag ? updateTag : createTag}
                                         disabled={!newTagName.trim()}
-                                        className="flex-1 py-3 bg-teal-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-teal-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all"
+                                        className="flex-1 py-3 bg-primary text-primary-foreground text-sm font-black rounded-2xl shadow-lg shadow-primary/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all"
                                     >
                                         {editingTag ? 'Guardar Cambios' : 'Crear Etiqueta'}
                                     </button>
@@ -6608,7 +6726,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
     );
 }
 
-function LinkContactModal({ conversationId, defaultPhone, defaultName, currentContact, onClose, onLinked }) {
+function LinkContactModal({ conversationId, defaultPhone, defaultUsername, defaultIdentity, defaultName, currentContact, onClose, onLinked }) {
     const [tab, setTab] = useState('existing');
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
@@ -6618,7 +6736,10 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
 
     // New-contact form
     const [name, setName] = useState(defaultName ?? '');
-    const [phone, setPhone] = useState(defaultPhone ?? '');
+    const [lastName, setLastName] = useState('');
+    const [username, setUsername] = useState(defaultUsername ?? '');
+    const [country, setCountry] = useState(() => splitPhoneNumber(defaultPhone).country);
+    const [phone, setPhone] = useState(() => splitPhoneNumber(defaultPhone).national);
     const [email, setEmail] = useState('');
 
     useEffect(() => {
@@ -6653,7 +6774,7 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                <div className="relative bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-5 text-white">
+                <div className="relative bg-gradient-to-br from-primary to-violet-600 px-6 py-5 text-primary-foreground">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -6664,7 +6785,7 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                         <div>
                             <h3 className="font-bold text-lg leading-tight">Vincular contacto</h3>
                             <p className="text-xs text-white/80">
-                                {currentContact ? `Vinculado a ${currentContact.name}` : `Asocia ${defaultPhone} a un contacto`}
+                                {currentContact ? `Vinculado a ${contactFullName(currentContact)}` : `Asocia ${defaultIdentity || defaultPhone || 'esta conversación'} a un contacto`}
                             </p>
                         </div>
                     </div>
@@ -6673,20 +6794,20 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                 <div className="flex items-center gap-1 px-4 pt-4">
                     <button
                         onClick={() => setTab('existing')}
-                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'existing' ? "bg-indigo-600 text-white" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'existing' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
                     >
                         Existente
                     </button>
                     <button
                         onClick={() => setTab('new')}
-                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'new' ? "bg-indigo-600 text-white" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                        className={clsx("flex-1 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors", tab === 'new' ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
                     >
                         Nuevo
                     </button>
                 </div>
 
                 <div className="p-4">
-                    {error && <p className="mb-3 text-xs font-medium text-rose-600">{error}</p>}
+                    {error && <p className="mb-3 text-xs font-medium text-destructive">{error}</p>}
 
                     {tab === 'existing' ? (
                         <>
@@ -6698,7 +6819,7 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                                     onChange={e => setQuery(e.target.value)}
                                     placeholder="Buscar contacto por nombre o teléfono..."
                                     autoFocus
-                                    className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl pl-9 pr-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none"
+                                    className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl pl-9 pr-3 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
                                 />
                             </div>
                             <div className="max-h-64 overflow-y-auto custom-scrollbar -mx-1 px-1">
@@ -6713,16 +6834,16 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                                                 key={c.id}
                                                 disabled={submitting}
                                                 onClick={() => attach({ contact_id: c.id })}
-                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors disabled:opacity-50"
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-primary/15 dark:hover:bg-primary/30 transition-colors disabled:opacity-50"
                                             >
-                                                <div className="size-9 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold uppercase shrink-0">
-                                                    {(c.name ?? '?').slice(0, 2)}
+                                                <div className="size-9 rounded-full bg-primary/10 text-accent-foreground flex items-center justify-center font-bold uppercase shrink-0">
+                                                    {(contactFullName(c) || '?').slice(0, 2)}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
-                                                    <p className="text-xs text-muted-foreground truncate">{c.phone_number}</p>
+                                                    <p className="text-sm font-semibold text-foreground truncate">{contactFullName(c)}</p>
+                                                    <p className="text-xs text-muted-foreground truncate">{c.phone_number || (c.username ? '@' + c.username : '')}</p>
                                                 </div>
-                                                {currentContact?.id === c.id && <Check className="size-4 text-indigo-600 ml-auto shrink-0" />}
+                                                {currentContact?.id === c.id && <Check className="size-4 text-accent-foreground ml-auto shrink-0" />}
                                             </button>
                                         ))}
                                     </div>
@@ -6730,20 +6851,36 @@ function LinkContactModal({ conversationId, defaultPhone, defaultName, currentCo
                             </div>
                         </>
                     ) : (
-                        <form onSubmit={(e) => { e.preventDefault(); attach({ name: name.trim(), phone_number: phone.trim(), email: email.trim() || null }); }} className="space-y-3">
+                        <form onSubmit={(e) => { e.preventDefault(); attach({ name: name.trim(), last_name: lastName.trim() || null, phone_number: joinPhoneNumber(country, phone) || null, username: cleanUsername(username) || null, email: email.trim() || null }); }} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre</label>
+                                    <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Nombre" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Apellido</label>
+                                    <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Apellido" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                            </div>
                             <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Nombre del contacto" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Nombre de usuario</label>
+                                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="usuario_de_whatsapp" autoCapitalize="off" spellCheck={false} className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Teléfono</label>
-                                <input type="text" value={phone} onChange={e => setPhone(e.target.value)} required className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                                <div className="flex gap-2">
+                                    <select value={country} onChange={e => setCountry(e.target.value)} className="w-28 shrink-0 bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none">
+                                        {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>)}
+                                    </select>
+                                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3052583254" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-primary/20 outline-none" />
+                                </div>
+                                <p className="mt-1.5 text-[11px] text-muted-foreground">Teléfono o nombre de usuario: hace falta al menos uno.</p>
                             </div>
                             <div>
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1.5 block">Correo (opcional)</label>
-                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-600/20 outline-none" />
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.com" className="w-full bg-[#f0f2f5] dark:bg-[#2a3942] border-none rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
                             </div>
-                            <button type="submit" disabled={submitting} className="w-full py-3 bg-indigo-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
+                            <button type="submit" disabled={submitting} className="w-full py-3 bg-primary text-primary-foreground text-sm font-black rounded-2xl shadow-lg shadow-primary/20 disabled:opacity-50 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2">
                                 {submitting ? <Loader2 className="size-4 animate-spin" /> : <UserPlus className="size-4" />} Crear y vincular
                             </button>
                         </form>
@@ -6795,7 +6932,7 @@ function CallHistoryModal({ conversationId, contactName, onClose }) {
             <div className="w-full max-w-md max-h-[80vh] flex flex-col rounded-2xl bg-card border border-border/40 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-border/30">
                     <div className="flex items-center gap-2 min-w-0">
-                        <PhoneCall className="size-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <PhoneCall className="size-4 text-accent-foreground shrink-0" />
                         <div className="min-w-0">
                             <p className="text-sm font-bold text-foreground truncate">Historial de llamadas</p>
                             <p className="text-[11px] text-muted-foreground truncate">{contactName}</p>
@@ -6808,7 +6945,7 @@ function CallHistoryModal({ conversationId, contactName, onClose }) {
                     {loading ? (
                         <div className="flex items-center justify-center py-10 text-muted-foreground"><Loader2 className="size-5 animate-spin" /></div>
                     ) : error ? (
-                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300 m-2">{error}</div>
+                        <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive m-2">{error}</div>
                     ) : !calls?.length ? (
                         <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
                             <PhoneCall className="size-8 mb-2 opacity-30" />
@@ -6820,7 +6957,7 @@ function CallHistoryModal({ conversationId, contactName, onClose }) {
                                 const isInbound = call.direction === 'inbound';
                                 const isMissed = ['missed', 'rejected', 'failed', 'canceled'].includes(call.status);
                                 const Icon = isMissed ? PhoneMissed : (isInbound ? PhoneIncoming : PhoneOutgoing);
-                                const color = isMissed ? 'text-rose-500' : (isInbound ? 'text-emerald-500' : 'text-sky-500');
+                                const color = isMissed ? 'text-destructive' : (isInbound ? 'text-success' : 'text-sky-500');
                                 const duration = formatCallDuration(call.duration_seconds);
                                 return (
                                     <div key={call.id} className="flex items-center gap-3 rounded-xl border border-border/40 bg-card/50 px-3 py-2.5">
@@ -7044,7 +7181,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     return (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
             <div className="w-full max-w-md rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                <div className="relative bg-gradient-to-br from-emerald-600 to-teal-600 px-6 py-5 text-white shrink-0">
+                <div className="relative bg-gradient-to-br from-success to-primary px-6 py-5 text-primary-foreground shrink-0">
                     <button onClick={onClose} className="absolute top-4 right-4 p-1.5 hover:bg-white/15 rounded-full transition-colors">
                         <XIcon className="size-4" />
                     </button>
@@ -7063,7 +7200,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
 
                 {windowClosedHint && (
                     <div className="px-4 pt-3 shrink-0">
-                        <div className="flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 dark:bg-amber-900/15 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+                        <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
                             <Clock className="size-4 mt-0.5 shrink-0" />
                             <span>La ventana de 24h de este contacto ya expiró. Envía una plantilla aprobada para reabrir la conversación.</span>
                         </div>
@@ -7074,7 +7211,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                     si no existe, o avisa que está pendiente de aprobación de Meta. */}
                 {windowClosedHint && !selected && !loading && !hasWorkingResumeTemplate && resumeTemplateStatus === null && (
                     <div className="px-4 pt-3 shrink-0">
-                        <div className="rounded-xl border border-teal-300/50 bg-teal-50 dark:bg-teal-900/15 px-3 py-3 text-[12px] text-teal-800 dark:text-teal-200 space-y-2">
+                        <div className="rounded-xl border border-primary/50 bg-primary/15 dark:bg-primary/15 px-3 py-3 text-[12px] text-accent-foreground space-y-2">
                             <div className="flex items-start gap-2">
                                 <Wand2 className="size-4 mt-0.5 shrink-0" />
                                 <span className="flex-1 leading-snug">
@@ -7082,13 +7219,13 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                 </span>
                             </div>
                             {resumeCreateError && (
-                                <p className="text-[11px] text-rose-600 dark:text-rose-400">{resumeCreateError}</p>
+                                <p className="text-[11px] text-destructive">{resumeCreateError}</p>
                             )}
                             <button
                                 type="button"
                                 onClick={createResumeTemplate}
                                 disabled={creatingResume}
-                                className="w-full rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-[12px] font-bold py-2 flex items-center justify-center gap-2 transition-colors"
+                                className="w-full rounded-lg bg-primary hover:bg-primary disabled:opacity-60 text-primary-foreground text-[12px] font-bold py-2 flex items-center justify-center gap-2 transition-colors"
                             >
                                 {creatingResume ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
                                 {creatingResume ? 'Creando plantilla…' : 'Crear plantilla de reanudación'}
@@ -7117,7 +7254,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
 
                 {windowClosedHint && !selected && !loading && !hasWorkingResumeTemplate && resumeTemplateStatus === 'REJECTED' && (
                     <div className="px-4 pt-3 shrink-0">
-                        <div className="flex items-start gap-2 rounded-xl border border-rose-300/50 bg-rose-50 dark:bg-rose-900/15 px-3 py-2.5 text-[12px] text-rose-800 dark:text-rose-200">
+                        <div className="flex items-start gap-2 rounded-xl border border-destructive/50 bg-destructive/15 px-3 py-2.5 text-[12px] text-destructive">
                             <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                             <span>WhatsApp rechazó la plantilla de reanudación. Pide a un administrador que la revise en Plantillas.</span>
                         </div>
@@ -7169,7 +7306,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                                     <span className="text-[13px] font-semibold text-foreground truncate">{t.name}</span>
                                                     <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5 shrink-0">{t.language}</span>
                                                     {needsFill(t) && (
-                                                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-amber-600 bg-amber-500/10 rounded px-1.5 py-0.5 shrink-0">Requiere datos</span>
+                                                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wide text-warning bg-warning/10 rounded px-1.5 py-0.5 shrink-0">Requiere datos</span>
                                                     )}
                                                 </div>
                                                 {body?.text && <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{body.text}</p>}
@@ -7180,7 +7317,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                             )}
 
                             {error && (
-                                <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                                <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                     <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                     <span>{error}</span>
                                 </div>
@@ -7223,7 +7360,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                             accept={HEADER_MEDIA_ACCEPT[header.format]}
                                             disabled={header.uploading}
                                             onChange={e => uploadHeader(e.target.files?.[0])}
-                                            className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-teal-600/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-teal-600 hover:file:bg-teal-600/20 disabled:opacity-60"
+                                            className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-accent-foreground hover:file:bg-primary/20 disabled:opacity-60"
                                         />
                                         {header.uploading && (
                                             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -7231,18 +7368,18 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                             </p>
                                         )}
                                         {!header.uploading && header.mediaId && (
-                                            <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                                            <p className="flex items-center gap-1.5 text-xs text-success">
                                                 <Check className="size-3.5" /> Archivo listo{header.filename ? `: ${header.filename}` : ''}
                                             </p>
                                         )}
-                                        {header.error && <p className="text-xs text-rose-600 dark:text-rose-400">{header.error}</p>}
+                                        {header.error && <p className="text-xs text-destructive">{header.error}</p>}
                                     </>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-2">
-                                        <input value={header.lat} onChange={e => setHeader(h => ({ ...h, lat: e.target.value }))} placeholder="Latitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
-                                        <input value={header.lng} onChange={e => setHeader(h => ({ ...h, lng: e.target.value }))} placeholder="Longitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
-                                        <input value={header.name} onChange={e => setHeader(h => ({ ...h, name: e.target.value }))} placeholder="Nombre (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
-                                        <input value={header.address} onChange={e => setHeader(h => ({ ...h, address: e.target.value }))} placeholder="Dirección (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30" />
+                                        <input value={header.lat} onChange={e => setHeader(h => ({ ...h, lat: e.target.value }))} placeholder="Latitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input value={header.lng} onChange={e => setHeader(h => ({ ...h, lng: e.target.value }))} placeholder="Longitud" className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input value={header.name} onChange={e => setHeader(h => ({ ...h, name: e.target.value }))} placeholder="Nombre (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
+                                        <input value={header.address} onChange={e => setHeader(h => ({ ...h, address: e.target.value }))} placeholder="Dirección (opcional)" className="col-span-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30" />
                                     </div>
                                 )}
                             </div>
@@ -7263,7 +7400,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                                         ? (i === 0 ? 'Nombre del cliente' : 'Motivo de la conversación')
                                                         : `Variable {{${i + 1}}}`
                                                 }
-                                                className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/30"
+                                                className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                             />
                                             {isResumeReason && (
                                                 <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -7290,7 +7427,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                         </div>
 
                         {error && (
-                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive flex items-start gap-2">
                                 <AlertTriangle className="size-4 mt-0.5 shrink-0" />
                                 <span>{error}</span>
                             </div>
@@ -7301,7 +7438,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                         <button type="button" onClick={() => { setSelected(null); setError(null); }} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                             Cancelar
                         </button>
-                        <button type="button" onClick={confirmSend} disabled={sending || header?.uploading} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                        <button type="button" onClick={confirmSend} disabled={sending || header?.uploading} className="flex-1 rounded-xl bg-success hover:bg-success text-primary-foreground py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
                             {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                             Enviar plantilla
                         </button>

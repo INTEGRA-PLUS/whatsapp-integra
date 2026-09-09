@@ -43,6 +43,21 @@ class CompanyIntegration extends Model
     public const KEY_AI_CHAT = 'ai_chat';
 
     /**
+     * Quién es la IA de esta empresa: nombre, tono, conocimiento y límites.
+     *
+     * Fila aparte y no una columna de `ai_menus` porque la identidad la
+     * comparten los dos flujos: si viviera en la fila de menús, una empresa que
+     * sólo tiene el chat encendido guardaría su identidad en la fila de una
+     * función que no usa, y apagar los menús le cambiaría el nombre al
+     * asistente. Aquí no tiene interruptor —`enabled` no se lee— porque un
+     * perfil no se enciende: se aplica siempre que alguna IA responda.
+     *
+     * De esta fila sólo se usa `settings`. Ver App\Support\AiAssistantProfile,
+     * que es quien la lee, la sanea y la deja lista para el flujo de n8n.
+     */
+    public const KEY_AI_ASSISTANT = 'ai_assistant';
+
+    /**
      * Qué puede hacer la IA contra Integra, por empresa.
      *
      * Se guardan en `abilities` —la misma columna donde las filas de Integra
@@ -80,6 +95,7 @@ class CompanyIntegration extends Model
         'token_expires_at',
         'account',
         'abilities',
+        'settings',
         'enabled',
         'trigger_type',
         'trigger_command',
@@ -93,6 +109,7 @@ class CompanyIntegration extends Model
     protected $casts = [
         'account'          => 'array',
         'abilities'        => 'array',
+        'settings'         => 'array',
         'enabled'          => 'boolean',
         'emit_electronic_invoice' => 'boolean',
         'access_token'     => 'encrypted',

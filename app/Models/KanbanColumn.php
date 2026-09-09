@@ -15,7 +15,13 @@ class KanbanColumn extends Model
         'color',
         'icon',
         'subtitle',
+        'grupo',
+        'es_bandeja',
         'position',
+    ];
+
+    protected $casts = [
+        'es_bandeja' => 'boolean',
     ];
 
     public function tag()

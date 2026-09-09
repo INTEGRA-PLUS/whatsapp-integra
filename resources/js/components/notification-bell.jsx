@@ -181,7 +181,7 @@ export default function NotificationBell() {
             >
                 <Bell className="size-5" />
                 {unread > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center">
                         {unread > 9 ? '9+' : unread}
                     </span>
                 )}
@@ -195,7 +195,7 @@ export default function NotificationBell() {
                         <div className="flex items-center gap-2 px-4 pt-3">
                             <span className="text-sm font-bold">Notificaciones</span>
                             {unread > 0 && (
-                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center">
                                     {unread > 99 ? '99+' : unread}
                                 </span>
                             )}
@@ -205,7 +205,7 @@ export default function NotificationBell() {
                                 {unread > 0 ? (
                                     <button
                                         onClick={markAllRead}
-                                        className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 hover:bg-teal-600/10 rounded-md px-2 py-1 flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                                        className="text-[11px] font-semibold text-accent-foreground hover:text-accent-foreground hover:bg-primary/10 rounded-md px-2 py-1 flex items-center gap-1.5 whitespace-nowrap transition-colors"
                                     >
                                         <CheckCheck className="size-3.5 shrink-0" /> Marcar leídas
                                     </button>
@@ -221,7 +221,7 @@ export default function NotificationBell() {
                     </div>
 
                     {error && (
-                        <div className="mx-3 mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-700 dark:text-rose-300">
+                        <div className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
                             {error}
                         </div>
                     )}
@@ -248,26 +248,26 @@ export default function NotificationBell() {
                                         n.read_at
                                             ? "opacity-60 hover:bg-muted"
                                             : isSystem
-                                                ? "bg-sky-50/60 dark:bg-sky-900/10 hover:bg-sky-50 dark:hover:bg-sky-900/20"
+                                                ? "bg-info/60 hover:bg-info/15 dark:hover:bg-info/20"
                                                 : isRequest
-                                                ? "bg-rose-50/70 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                ? "bg-destructive/70 hover:bg-destructive/15 dark:hover:bg-destructive/20"
                                                 : isClosed || isResolved
-                                                    ? "bg-slate-100/70 dark:bg-slate-800/30 hover:bg-slate-100 dark:hover:bg-slate-800/50"
-                                                    : "bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                                    ? "bg-muted/70 hover:bg-muted dark:hover:bg-muted/50"
+                                                    : "bg-warning/50 hover:bg-warning/15 dark:hover:bg-warning/20"
                                     )}
                                 >
                                     {isSystem ? (
-                                        <Megaphone className="size-4 text-sky-600 shrink-0 mt-0.5" />
+                                        <Megaphone className="size-4 text-info shrink-0 mt-0.5" />
                                     ) : isRequest ? (
-                                        <Trash2 className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                                        <Trash2 className="size-4 text-destructive shrink-0 mt-0.5" />
                                     ) : isResolved ? (
                                         n.data?.approved
-                                            ? <Trash2 className="size-4 text-slate-500 shrink-0 mt-0.5" />
-                                            : <ShieldCheck className="size-4 text-emerald-600 shrink-0 mt-0.5" />
+                                            ? <Trash2 className="size-4 text-muted-foreground shrink-0 mt-0.5" />
+                                            : <ShieldCheck className="size-4 text-success shrink-0 mt-0.5" />
                                     ) : isClosed ? (
-                                        <Archive className="size-4 text-slate-500 shrink-0 mt-0.5" />
+                                        <Archive className="size-4 text-muted-foreground shrink-0 mt-0.5" />
                                     ) : (
-                                        <AtSign className="size-4 text-amber-600 shrink-0 mt-0.5" />
+                                        <AtSign className="size-4 text-warning shrink-0 mt-0.5" />
                                     )}
                                     <div className="min-w-0 flex-1">
                                         {isRequest ? (
@@ -295,7 +295,7 @@ export default function NotificationBell() {
                                                     <button
                                                         onClick={(e) => resolveDeletion(n, 'approve', e)}
                                                         disabled={resolving === n.id}
-                                                        className="h-7 px-2.5 rounded-md text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-60 inline-flex items-center gap-1.5 transition-colors"
+                                                        className="h-7 px-2.5 rounded-md text-[11px] font-bold text-white bg-destructive hover:bg-destructive disabled:opacity-60 inline-flex items-center gap-1.5 transition-colors"
                                                     >
                                                         {resolving === n.id
                                                             ? <Loader2 className="size-3 animate-spin" />

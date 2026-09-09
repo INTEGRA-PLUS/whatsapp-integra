@@ -286,7 +286,7 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
                             <button
                                 type="button"
                                 onClick={() => llevarAlError(errors)}
-                                className="flex items-start gap-2 text-left text-sm text-rose-600 dark:text-rose-400 max-w-xl"
+                                className="flex items-start gap-2 text-left text-sm text-destructive max-w-xl"
                             >
                                 <AlertTriangle className="size-4 shrink-0 mt-0.5" />
                                 <span>{Object.values(errors)[0]}</span>
@@ -482,7 +482,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                     })}
                 </div>
 
-                {errors.template && <p className="text-sm text-rose-600">{errors.template}</p>}
+                {errors.template && <p className="text-sm text-destructive">{errors.template}</p>}
             </Card>
 
             {form.template && form.headerMedia && (
@@ -496,12 +496,12 @@ function PasoPlantilla({ form, update, errors, fields }) {
                     title="Los datos que cambian en cada mensaje"
                     badge={
                         pendientes > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-2.5 py-0.5 text-xs font-medium">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning dark:bg-warning/40 dark:text-warning px-2.5 py-0.5 text-xs font-medium">
                                 <AlertTriangle className="size-3" />
                                 {pendientes === 1 ? 'Falta 1 por rellenar' : `Faltan ${pendientes} por rellenar`}
                             </span>
                         ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 px-2.5 py-0.5 text-xs font-medium">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-success/15 text-success dark:bg-success/40 dark:text-success px-2.5 py-0.5 text-xs font-medium">
                                 <Check className="size-3" /> Completo
                             </span>
                         )
@@ -528,7 +528,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                             onChange={s => update(f => ({ bodyVars: f.bodyVars.map((x, j) => j === i ? s : x) }))}
                         />
                     ))}
-                    {errors.vars && <p className="text-sm text-rose-600">{errors.vars}</p>}
+                    {errors.vars && <p className="text-sm text-destructive">{errors.vars}</p>}
                 </Card>
             )}
         </div>
@@ -537,10 +537,10 @@ function PasoPlantilla({ form, update, errors, fields }) {
 
 function SlotVariable({ etiqueta, slot, fields, onChange, pendiente }) {
     return (
-        <div className={`rounded-xl border p-3 space-y-2 ${pendiente ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
+        <div className={`rounded-xl border p-3 space-y-2 ${pendiente ? 'border-warning/30 bg-warning/50' : ''}`}>
             <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <span>{etiqueta}</span>
-                {pendiente && <span className="text-amber-700 dark:text-amber-300">· sin rellenar</span>}
+                {pendiente && <span className="text-warning">· sin rellenar</span>}
             </div>
             <div className="flex flex-wrap gap-2">
                 <label className="flex items-center gap-1.5 text-sm">
@@ -564,7 +564,7 @@ function SlotVariable({ etiqueta, slot, fields, onChange, pendiente }) {
             {slot.source === 'fixed' ? (
                 <input
                     data-pendiente={pendiente ? '1' : undefined}
-                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-amber-400' : ''}`}
+                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-warning/30' : ''}`}
                     value={slot.value}
                     onChange={e => onChange({ ...slot, value: e.target.value })}
                     placeholder="Escribe el texto que verán todos"
@@ -572,7 +572,7 @@ function SlotVariable({ etiqueta, slot, fields, onChange, pendiente }) {
             ) : (
                 <select
                     data-pendiente={pendiente ? '1' : undefined}
-                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-amber-400' : ''}`}
+                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm ${pendiente ? 'border-warning/30' : ''}`}
                     value={slot.field}
                     onChange={e => onChange({ ...slot, field: e.target.value })}
                 >
@@ -627,7 +627,7 @@ function SubidaEncabezado({ form, update, error }) {
             resaltada={!!error}
             title={`Encabezado · ${HEADER_MEDIA_LABEL[fmt]}`}
             badge={!form.headerMedia.mediaId && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-2.5 py-0.5 text-xs font-medium">
+                <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning dark:bg-warning/40 dark:text-warning px-2.5 py-0.5 text-xs font-medium">
                     <AlertTriangle className="size-3" /> Falta el archivo
                 </span>
             )}
@@ -655,11 +655,11 @@ function SubidaEncabezado({ form, update, error }) {
             </label>
 
             {form.headerMedia.mediaId && (
-                <p className="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                <p className="text-sm text-success flex items-center gap-1.5">
                     <Check className="size-4" /> {form.headerMedia.filename} · listo
                 </p>
             )}
-            {(fallo || error) && <p className="text-sm text-rose-600">{fallo || error}</p>}
+            {(fallo || error) && <p className="text-sm text-destructive">{fallo || error}</p>}
         </Card>
     );
 }
@@ -927,7 +927,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                         </button>
                     </>
                 )}
-                {errors.recipients && <p className="text-sm text-rose-600">{errors.recipients}</p>}
+                {errors.recipients && <p className="text-sm text-destructive">{errors.recipients}</p>}
             </Card>
         </div>
     );
@@ -1019,9 +1019,9 @@ function PegarNumeros({ form, update }) {
 
             {resumen && (
                 <div className="text-sm space-y-1">
-                    <p className="text-emerald-600 dark:text-emerald-400">Se añadieron {resumen.agregados} destinatarios.</p>
+                    <p className="text-success">Se añadieron {resumen.agregados} destinatarios.</p>
                     {resumen.invalidos.length > 0 && (
-                        <div className="text-amber-600 dark:text-amber-400">
+                        <div className="text-warning">
                             <p>{resumen.invalidos.length} líneas no tenían un teléfono válido y se descartaron:</p>
                             <ul className="list-disc list-inside text-xs opacity-80 max-h-24 overflow-y-auto">
                                 {resumen.invalidos.slice(0, 20).map((l, i) => <li key={i}>{l}</li>)}
@@ -1136,7 +1136,7 @@ function PasoRevision({ form, update, errors, instance }) {
                             value={form.schedule_time}
                             onChange={e => update({ schedule_time: e.target.value })}
                         />
-                        {errors.schedule_days && <p className="text-sm text-rose-600">{errors.schedule_days}</p>}
+                        {errors.schedule_days && <p className="text-sm text-destructive">{errors.schedule_days}</p>}
                     </div>
                 )}
 
@@ -1203,7 +1203,7 @@ function Card({ title, description, children, id, badge, resaltada }) {
         <section
             id={id}
             className={`rounded-2xl border bg-card p-5 space-y-4 transition-colors ${
-                resaltada ? 'border-rose-400 ring-1 ring-rose-400/40' : ''
+                resaltada ? 'border-destructive/30 ring-1 ring-destructive/40' : ''
             }`}
         >
             {(title || description) && (
@@ -1228,7 +1228,7 @@ function Campo({ label, hint, error, children }) {
             <label className="text-sm font-medium text-foreground">{label}</label>
             {children}
             {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-            {error && <p className="text-sm text-rose-600">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
     );
 }
@@ -1257,8 +1257,8 @@ function Nota({ children }) {
 
 function Aviso({ tono = 'amber', children }) {
     const clases = {
-        amber: 'border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200',
-        rose: 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-900/20 dark:border-rose-800 dark:text-rose-200',
+        amber: 'border-warning/30 bg-warning/15 text-warning dark:bg-warning/20 dark:border-warning/30 dark:text-warning',
+        rose: 'border-destructive/30 bg-destructive/15 text-destructive dark:bg-destructive/20 dark:border-destructive/30 dark:text-destructive',
     }[tono];
 
     return (

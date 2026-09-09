@@ -7,8 +7,9 @@ import {
     Plus,
     User,
     Clock,
-    DollarSign,
     CheckCircle2,
+    Layers,
+    Inbox,
     AlertCircle,
     GripVertical,
     Calendar,
@@ -61,36 +62,36 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
     <div
         {...props}
         className={clsx(
-            'group relative bg-white dark:bg-slate-900 p-4 rounded-[1.5rem] border select-none',
+            'group relative bg-white dark:bg-muted p-4 rounded-[1.5rem] border select-none',
             isOverlay
-                ? 'border-teal-500 shadow-2xl z-50 cursor-grabbing ring-2 ring-teal-500/10 scale-[1.02] rotate-1 transition-transform duration-200'
+                ? 'border-primary/30 shadow-2xl z-50 cursor-grabbing ring-2 ring-primary/10 scale-[1.02] rotate-1 transition-transform duration-200'
                 : isDragging
                     ? 'opacity-0'
-                    : 'border-slate-200/50 dark:border-slate-800/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
+                    : 'border-border/50 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all duration-200'
         )}
     >
         {/* Placeholder dashed border when dragging (visible only if we don't use opacity-0 above) */}
         <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-            <GripVertical className="size-4 text-slate-300 dark:text-slate-600 group-hover:text-teal-500 transition-colors" />
+            <GripVertical className="size-4 text-muted-foreground group-hover:text-accent-foreground transition-colors" />
         </div>
 
         <div className="flex items-start mb-4">
             <div className="flex items-center gap-3.5">
                 <div className="relative">
-                    <div className="size-11 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 text-slate-700 dark:text-slate-200 flex items-center justify-center font-black text-[13px] uppercase border border-slate-200/50 dark:border-slate-700/50 shadow-inner">
+                    <div className="size-11 rounded-2xl bg-gradient-to-br from-background to-muted dark:from-card dark:to-background text-foreground dark:text-muted-foreground flex items-center justify-center font-black text-[13px] uppercase border border-border/50 shadow-inner">
                         {conv.initials}
                     </div>
                     {conv.unread_count > 0 && (
-                        <div className="absolute -top-1.5 -right-1.5 size-5 bg-teal-500 text-white text-[10px] font-black rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center shadow-lg shadow-teal-500/30">
+                        <div className="absolute -top-1.5 -right-1.5 size-5 bg-primary text-primary-foreground text-[10px] font-black rounded-full border-2 border-white dark:border-border flex items-center justify-center shadow-lg shadow-primary/30">
                             {conv.unread_count}
                         </div>
                     )}
                 </div>
                 <div className="min-w-0 pr-6">
-                    <h3 className="text-[14px] font-black text-slate-900 dark:text-slate-50 truncate tracking-tight leading-none mb-1">
+                    <h3 className="text-[14px] font-black text-foreground dark:text-muted-foreground truncate tracking-tight leading-none mb-1">
                         {conv.name || conv.phone_number}
                     </h3>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-wider opacity-80">
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-bold uppercase tracking-wider opacity-80">
                         <Clock className="size-3" />
                         {conv.last_message_at
                             ? new Date(conv.last_message_at).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
@@ -101,20 +102,20 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
         </div>
 
         <div className="relative mb-5">
-            <p className="text-[12px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-medium">
+            <p className="text-[12px] text-muted-foreground line-clamp-2 leading-relaxed font-medium">
                 {conv.last_message || 'No hay mensajes previos...'}
             </p>
         </div>
 
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
+        <div className="pt-4 border-t border-border flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className="flex -space-x-2.5">
-                    <div className="size-7 rounded-full border-2 border-white dark:border-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[9px] font-black text-slate-400 shadow-sm">
+                    <div className="size-7 rounded-full border-2 border-white dark:border-border bg-muted flex items-center justify-center text-[9px] font-black text-muted-foreground shadow-sm">
                         <Users className="size-3.5" />
                     </div>
                     {conv.assigned_agent && (
                         <div
-                            className="size-7 rounded-full border-2 border-white dark:border-slate-900 bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-[9px] font-black text-white shadow-md"
+                            className="size-7 rounded-full border-2 border-white dark:border-border bg-gradient-to-br from-primary to-success flex items-center justify-center text-[9px] font-black text-primary-foreground shadow-md"
                             title={conv.assigned_agent.name}
                         >
                             {conv.assigned_agent.name.substring(0, 2).toUpperCase()}
@@ -122,17 +123,17 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => (
                     )}
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">
+                    <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-0.5">
                         {conv.assigned_agent ? 'Asignado a' : 'Sin Agente'}
                     </span>
                     {conv.assigned_agent && (
-                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 leading-none">
+                        <span className="text-[10px] font-bold text-muted-foreground leading-none">
                             {conv.assigned_agent.name}
                         </span>
                     )}
                 </div>
             </div>
-            <div className="bg-emerald-500/10 dark:bg-emerald-500/20 px-2.5 py-1 rounded-full text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter flex items-center gap-1 border border-emerald-500/10">
+            <div className="bg-success/10 px-2.5 py-1 rounded-full text-[9px] font-black text-success uppercase tracking-tighter flex items-center gap-1 border border-success/10">
                 <Zap className="size-2.5 fill-current" />
                 Lead
             </div>
@@ -162,17 +163,71 @@ const SortableKanbanCard = memo(({ conv, index }) => {
     );
 });
 
+// ─── ColumnaBorrador ─────────────────────────────────────────────────────────
+//
+// La etapa que todavía no existe: ocupa el sitio de la columna, con el cursor
+// dentro. Enter la crea, Escape o dejarla vacía la descarta.
+
+const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error }) => (
+    <div className="flex-1 min-w-[300px] max-w-[400px] flex flex-col">
+        <form
+            onSubmit={e => { e.preventDefault(); onCrear(valor); }}
+            className="mb-6 px-3"
+        >
+            <label className="block text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-2">
+                Nombre de la etapa
+            </label>
+            <input
+                autoFocus
+                value={valor}
+                disabled={creando}
+                onChange={e => onCambio(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') onCancelar(); }}
+                placeholder="Ej. Cotización enviada"
+                className="w-full px-4 py-2.5 bg-white dark:bg-muted border border-border rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/40 transition-all shadow-sm placeholder:text-muted-foreground disabled:opacity-60"
+            />
+            {error && <p className="text-[10px] text-destructive mt-2 font-bold">{error}</p>}
+            <div className="flex items-center gap-2 mt-3">
+                <button
+                    type="submit"
+                    disabled={creando || !valor.trim()}
+                    className="px-4 py-2 bg-foreground text-background rounded-2xl text-[11px] font-black disabled:opacity-40 transition-all"
+                >
+                    {creando ? 'Creando…' : 'Crear etapa'}
+                </button>
+                <button
+                    type="button"
+                    onClick={onCancelar}
+                    className="px-3 py-2 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                    Cancelar
+                </button>
+            </div>
+        </form>
+        <div className="flex-1 rounded-[1.75rem] border-2 border-dashed border-border/60" />
+    </div>
+);
+
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard }) => {
+const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
+    const [editandoGrupo, setEditandoGrupo] = useState(false);
+    const [grupo, setGrupo]         = useState(col.grupo ?? '');
     const Icon = getIcon(col.icon);
 
     const handleRenameSubmit = (e) => {
         e?.preventDefault();
         if (title.trim() && title.trim() !== col.name) onRename(col.id, title.trim());
         setIsEditing(false);
+    };
+
+    const guardarGrupo = (e) => {
+        e?.preventDefault();
+        const limpio = grupo.trim();
+        if (limpio !== (col.grupo ?? '')) onCambiarGrupo(col.id, limpio || null);
+        setEditandoGrupo(false);
     };
 
     return (
@@ -191,30 +246,65 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                                     value={title}
                                     onChange={e => setTitle(e.target.value)}
                                     onBlur={handleRenameSubmit}
-                                    className="bg-transparent border-none p-0 font-black text-[12px] text-slate-800 dark:text-slate-100 uppercase tracking-[0.1em] focus:ring-0 w-32"
+                                    className="bg-transparent border-none p-0 font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.1em] focus:ring-0 w-32"
                                 />
                             </form>
                         ) : (
                             <h2
                                 onClick={() => setIsEditing(true)}
-                                className="font-black text-[12px] text-slate-800 dark:text-slate-100 uppercase tracking-[0.1em] mb-0.5 cursor-text"
+                                className="font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.1em] mb-0.5 cursor-text"
                             >
                                 {col.name}
                             </h2>
                         )}
+                        {editandoGrupo ? (
+                            <form onSubmit={guardarGrupo}>
+                                <input
+                                    autoFocus
+                                    value={grupo}
+                                    onChange={e => setGrupo(e.target.value)}
+                                    onBlur={guardarGrupo}
+                                    onKeyDown={e => { if (e.key === 'Escape') { setGrupo(col.grupo ?? ''); setEditandoGrupo(false); } }}
+                                    placeholder="Grupo (Estado, Zona…)"
+                                    className="bg-transparent border-b border-border p-0 text-[10px] text-muted-foreground focus:ring-0 focus:border-primary/40 w-36"
+                                />
+                            </form>
+                        ) : null}
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-400/70">{col.subtitle || 'Procesos'}</span>
-                            <span className="size-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-                            <span className="text-[10px] font-black text-teal-600 dark:text-teal-400">{totalCount ?? items.length}</span>
+                            {col.es_bandeja && (
+                                <span className="text-[9px] font-black text-accent-foreground uppercase tracking-widest" title="Recoge lo que no está clasificado en este grupo">
+                                    Bandeja
+                                </span>
+                            )}
+                            <span className="text-[10px] font-bold text-muted-foreground/70">{col.subtitle || 'Procesos'}</span>
+                            <span className="size-1 rounded-full bg-muted" />
+                            <span className="text-[10px] font-black text-accent-foreground">{totalCount ?? items.length}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover/column:opacity-100 transition-all">
-                    <button onClick={() => onDelete(col.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 rounded-lg transition-colors" title="Eliminar etapa">
+                    <button
+                        onClick={() => onCambiarBandeja(col.id, !col.es_bandeja)}
+                        className={clsx(
+                            'p-1.5 rounded-lg transition-colors',
+                            col.es_bandeja
+                                ? 'bg-primary/15 text-accent-foreground'
+                                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                        )}
+                        title={col.es_bandeja
+                            ? 'Recoge lo que no está clasificado en este grupo'
+                            : 'Hacer que recoja lo que no está clasificado en este grupo'}
+                    >
+                        <Inbox className="size-3.5" />
+                    </button>
+                    <button onClick={() => setEditandoGrupo(true)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors" title="Grupo de la etapa">
+                        <Layers className="size-3.5" />
+                    </button>
+                    <button onClick={() => onDelete(col.id)} className="p-1.5 hover:bg-destructive/15 dark:hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-lg transition-colors" title="Eliminar etapa">
                         <AlertCircle className="size-3.5" />
                     </button>
-                    <button onClick={() => onAddCard(col.id)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 rounded-lg transition-colors" title="Agregar tarjeta">
+                    <button onClick={() => onAddCard(col.id)} className="p-1.5 hover:bg-muted dark:hover:bg-muted text-muted-foreground hover:text-muted-foreground rounded-lg transition-colors" title="Agregar tarjeta">
                         <Plus className="size-3.5" />
                     </button>
                 </div>
@@ -228,7 +318,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         {...provided.droppableProps}
                         className={clsx(
                             "flex-1 overflow-y-auto space-y-4 custom-scrollbar px-2 pb-24 min-h-[250px] transition-all duration-300 rounded-3xl",
-                            snapshot.isDraggingOver ? 'bg-teal-500/[0.03] ring-2 ring-teal-500/10' : ''
+                            snapshot.isDraggingOver ? 'bg-primary/[0.03] ring-2 ring-primary/10' : ''
                         )}
                     >
                         {items.map((conv, index) => (
@@ -240,17 +330,17 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         {loading && items.length === 0 && (
                             <div className="space-y-3">
                                 {[1, 2, 3].map(n => (
-                                    <div key={n} className="bg-white dark:bg-slate-900/60 rounded-[1.5rem] border border-slate-200/50 dark:border-slate-800/50 p-4 animate-pulse">
+                                    <div key={n} className="bg-white dark:bg-muted/60 rounded-[1.5rem] border border-border/50 p-4 animate-pulse">
                                         <div className="flex items-center gap-3 mb-4">
-                                            <div className="size-11 rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                                            <div className="size-11 rounded-2xl bg-muted" />
                                             <div className="flex-1 space-y-2">
-                                                <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full w-3/4" />
-                                                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-1/2" />
+                                                <div className="h-3 bg-muted rounded-full w-3/4" />
+                                                <div className="h-2 bg-muted rounded-full w-1/2" />
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full" />
-                                            <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full w-5/6" />
+                                            <div className="h-2 bg-muted rounded-full" />
+                                            <div className="h-2 bg-muted rounded-full w-5/6" />
                                         </div>
                                     </div>
                                 ))}
@@ -259,13 +349,13 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
 
                         {/* Error state */}
                         {error && (
-                            <div className="border-2 border-dashed border-red-200 dark:border-red-900/40 rounded-[2rem] py-10 px-4 flex flex-col items-center justify-center gap-2 text-center">
-                                <AlertCircle className="size-6 text-red-400" />
-                                <p className="text-[11px] font-bold text-red-400">Error al cargar tarjetas</p>
-                                <p className="text-[10px] text-slate-400">{error}</p>
+                            <div className="border-2 border-dashed border-destructive/30 rounded-[2rem] py-10 px-4 flex flex-col items-center justify-center gap-2 text-center">
+                                <AlertCircle className="size-6 text-destructive" />
+                                <p className="text-[11px] font-bold text-destructive">Error al cargar tarjetas</p>
+                                <p className="text-[10px] text-muted-foreground">{error}</p>
                                 <button
                                     onClick={() => onLoadMore(col.id)}
-                                    className="mt-1 text-[10px] font-black text-teal-600 uppercase tracking-widest hover:underline"
+                                    className="mt-1 text-[10px] font-black text-accent-foreground uppercase tracking-widest hover:underline"
                                 >
                                     Reintentar
                                 </button>
@@ -274,11 +364,11 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
 
                         {/* Empty state */}
                         {!loading && !error && items.length === 0 && (
-                            <div className="border-2 border-dashed border-slate-200 dark:border-slate-800/60 rounded-[2.5rem] py-16 flex flex-col items-center justify-center transition-all hover:bg-slate-50 dark:hover:bg-slate-900/30 hover:border-teal-500/20">
-                                <div className="p-4 bg-white dark:bg-slate-800 shadow-lg rounded-full mb-3">
-                                    <LayoutDashboard className="size-6 text-slate-200 dark:text-slate-700" />
+                            <div className="border-2 border-dashed border-border rounded-[2.5rem] py-16 flex flex-col items-center justify-center transition-all hover:bg-muted dark:hover:bg-muted/30 hover:border-primary/20">
+                                <div className="p-4 bg-white dark:bg-muted shadow-lg rounded-full mb-3">
+                                    <LayoutDashboard className="size-6 text-muted-foreground dark:text-foreground" />
                                 </div>
-                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 dark:text-slate-700">Arrastra aquí</p>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground dark:text-foreground">Arrastra aquí</p>
                             </div>
                         )}
 
@@ -286,7 +376,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         {hasMore && !loading && !error && items.length > 0 && (
                             <button
                                 onClick={() => onLoadMore(col.id)}
-                                className="w-full py-3 flex items-center justify-center gap-2 text-[11px] font-black text-slate-400 hover:text-teal-600 uppercase tracking-widest border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:border-teal-500/30 transition-all"
+                                className="w-full py-3 flex items-center justify-center gap-2 text-[11px] font-black text-muted-foreground hover:text-accent-foreground uppercase tracking-widest border-2 border-dashed border-border rounded-2xl hover:border-primary/30 transition-all"
                             >
                                 <ChevronDown className="size-3.5" /> Cargar más
                             </button>
@@ -295,7 +385,7 @@ const BoardColumn = memo(({ col, items, totalCount, loading, hasMore, error, onL
                         {/* Loading more spinner */}
                         {loading && items.length > 0 && (
                             <div className="flex justify-center py-4">
-                                <Loader2 className="size-5 text-teal-500 animate-spin" />
+                                <Loader2 className="size-5 text-accent-foreground animate-spin" />
                             </div>
                         )}
                     </div>
@@ -328,54 +418,54 @@ const NewCardModal = ({ instances, defaultColumnId, onClose, onCreated }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="bg-white dark:bg-muted rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6">
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="font-black text-slate-900 dark:text-white text-lg">Nueva Tarjeta</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
-                        <X className="size-4 text-slate-500" />
+                    <h2 className="font-black text-foreground dark:text-white text-lg">Nueva Tarjeta</h2>
+                    <button onClick={onClose} className="p-2 hover:bg-muted dark:hover:bg-muted rounded-xl transition-colors">
+                        <X className="size-4 text-muted-foreground" />
                     </button>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Nombre (opcional)</label>
+                        <label className="block text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-1">Nombre (opcional)</label>
                         <input
                             type="text"
                             value={form.name}
                             onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                             placeholder="Ej: Juan García"
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/40 transition-all"
+                            className="w-full px-4 py-2.5 bg-muted border border-border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
                         />
                     </div>
                     <div>
-                        <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Número de teléfono *</label>
+                        <label className="block text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-1">Número de teléfono *</label>
                         <input
                             type="text"
                             required
                             value={form.phone_number}
                             onChange={e => setForm(p => ({ ...p, phone_number: e.target.value }))}
                             placeholder="Ej: 573001234567"
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/40 transition-all"
+                            className="w-full px-4 py-2.5 bg-muted border border-border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
                         />
                     </div>
                     {instances.length > 1 && (
                         <div>
-                            <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Instancia WhatsApp *</label>
+                            <label className="block text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-1">Instancia WhatsApp *</label>
                             <select
                                 value={form.instance_id}
                                 onChange={e => setForm(p => ({ ...p, instance_id: e.target.value }))}
-                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/40 transition-all"
+                                className="w-full px-4 py-2.5 bg-muted border border-border rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
                             >
                                 {instances.map(inst => <option key={inst.id} value={inst.id}>{inst.name}</option>)}
                             </select>
                         </div>
                     )}
-                    {error && <p className="text-[12px] text-red-500 font-medium">{error}</p>}
+                    {error && <p className="text-[12px] text-destructive font-medium">{error}</p>}
                     <div className="flex gap-3 pt-2">
-                        <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-2xl text-sm font-bold text-muted-foreground hover:bg-muted dark:hover:bg-muted transition-colors">
                             Cancelar
                         </button>
-                        <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-sm font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2">
+                        <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-foreground dark:bg-foreground text-background dark:text-background rounded-2xl text-sm font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2">
                             {saving && <Loader2 className="size-4 animate-spin" />}
                             {saving ? 'Creando...' : 'Crear Tarjeta'}
                         </button>
@@ -388,10 +478,26 @@ const NewCardModal = ({ instances, defaultColumnId, onClose, onCreated }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Kanban({ columns: initialColumns, total_conversations, instances: initialInstances }) {
+export default function Kanban({ columns: initialColumns, total_conversations, en_tablero = 0, estancadas = 0, instances: initialInstances }) {
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
+    // ── Grupos ─────────────────────────────────────────────────────────────
+    //
+    // Cada columna pertenece a un grupo: Estado, Zona, Área… El tablero pinta
+    // las columnas de UN grupo y las de los demás se vuelven filtros arriba.
+    //
+    // Es lo que permite que una conversación esté a la vez en «Pendiente
+    // cliente», en «MONTERIA» y en «FACTURACION». Antes había que elegir una
+    // sola, y arrastrar la tarjeta borraba las otras dos.
+    //
+    // `grupo` nulo es el grupo «sin agrupar», donde están todas las columnas
+    // que ya existían.
+    const [grupoActivo, setGrupoActivo]     = useState(() => (initialColumns ?? [])[0]?.grupo ?? null);
+    const [filtros, setFiltros]             = useState([]);   // ids de columnas de otros grupos
+    const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
+    const [creandoEtapa, setCreandoEtapa]   = useState(false);
+    const [errorEtapa, setErrorEtapa]       = useState(null);
     const [newCardColumn, setNewCardColumn] = useState(null);
 
     // boardData[colId] = Card[]
@@ -407,6 +513,36 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     // Real card counts per column from the server (not just loaded cards).
     const [colCounts, setColCounts]         = useState({});
 
+    const grupos = useMemo(() => {
+        const vistos = [];
+        for (const c of columns) {
+            const g = c.grupo ?? null;
+            if (!vistos.includes(g)) vistos.push(g);
+        }
+        return vistos;
+    }, [columns]);
+
+    const columnasVisibles = useMemo(
+        () => columns.filter(c => (c.grupo ?? null) === grupoActivo),
+        [columns, grupoActivo]
+    );
+
+    const otrosGrupos = useMemo(
+        () => grupos
+            .filter(g => g !== grupoActivo)
+            .map(g => ({ grupo: g, columnas: columns.filter(c => (c.grupo ?? null) === g) })),
+        [grupos, grupoActivo, columns]
+    );
+
+    // Para las dependencias de los efectos: un array nuevo en cada render los
+    // dispararía en bucle.
+    const filtrosKey = filtros.join(',');
+
+    // loadCounts se llama también desde el canal de tiempo real, sin
+    // argumentos, así que lee la vista actual de aquí en vez de recrearse.
+    const vistaRef = useRef({ grupo: grupoActivo, filtros });
+    useEffect(() => { vistaRef.current = { grupo: grupoActivo, filtros }; }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // We keep a ref to the latest boardData so handleDragEnd can read the
     // current state synchronously without relying on stale closures.
     const boardDataRef = useRef(boardData);
@@ -417,7 +553,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
     // ── Data fetching ──────────────────────────────────────────────────────
 
-    const loadColumnCards = useCallback(async (colId, page, search, reset = false) => {
+    const loadColumnCards = useCallback(async (colId, page, search, reset = false, filtrosActivos = []) => {
         // Cancel any in-flight request for this column
         if (abortControllersRef.current[colId]) {
             abortControllersRef.current[colId].abort();
@@ -429,6 +565,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         try {
             const params = new URLSearchParams({ page, per_page: PER_PAGE });
             if (search) params.set('search', search);
+            filtrosActivos.forEach(id => params.append('filtros[]', id));
 
             const res = await fetch(`/api/kanban/columns/${colId}/cards?${params}`, {
                 headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
@@ -464,19 +601,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
     // Fetch real card counts per column
     const loadCounts = useCallback(async () => {
+        const { grupo, filtros: activos } = vistaRef.current;
         try {
-            const data = await apiRequest('GET', '/api/kanban/counts');
+            const params = new URLSearchParams();
+            if (grupo) params.set('grupo', grupo);
+            activos.forEach(id => params.append('filtros[]', id));
+
+            const data = await apiRequest('GET', `/api/kanban/counts?${params}`);
             setColCounts(data);
         } catch (err) {
             console.error('Error cargando conteos:', err);
         }
     }, []);
 
-    // Initial load
+    // Carga inicial, y recarga al cambiar de grupo o de filtros.
     useEffect(() => {
         loadCounts();
-        columns.forEach(col => loadColumnCards(col.id, 1, '', true));
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
+    }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Tiempo real ────────────────────────────────────────────────────────
     //
@@ -490,7 +632,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
         // Las conversaciones sin columna asignada viven en la primera columna
         // (mismo criterio que usa el backend en columnCards).
-        const firstColumnId = columns[0]?.id;
+        const firstColumnId = columnasVisibles[0]?.id;
 
         // Recontar es una petición aparte: se agrupan las ráfagas (una tanda de
         // mensajes entrantes) en una sola llamada.
@@ -576,7 +718,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
     // Re-fetch all columns when search changes
     useEffect(() => {
         if (debouncedSearch !== undefined) {
-            columns.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true));
+            columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
         }
     }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -584,19 +726,92 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         const meta = colMeta[colId];
         if (!meta || meta.loading) return;
         if (!meta.error && !meta.hasMore) return;
-        loadColumnCards(colId, meta.page + 1, debouncedSearch, false);
+        loadColumnCards(colId, meta.page + 1, debouncedSearch, false, filtros);
     };
 
     // ── Column CRUD ────────────────────────────────────────────────────────
 
-    const addColumn = async () => {
+    /**
+     * Una etapa no se crea hasta que tiene nombre.
+     *
+     * Antes este botón creaba de golpe una columna llamada literalmente «Nueva
+     * Etapa» —y con ella una etiqueta real, porque cada columna es una
+     * etiqueta— y aparecía al final del tablero, fuera de la vista, esperando a
+     * que alguien cayera en que hay que hacer clic en el título para
+     * renombrarla. El 9-sep-2026 había **14 columnas «Nueva Etapa»** en la
+     * flota, cuatro de las siete de INCO INTEGRATEC y dos de las diez de CMNET.
+     *
+     * Ahora aparece un borrador con el cursor dentro: se escribe el nombre y se
+     * crea, o se deja vacío y no se crea nada.
+     */
+    const addColumn = () => {
+        setErrorEtapa(null);
+        setBorradorEtapa('');
+    };
+
+    const crearEtapa = async (nombre) => {
+        const limpio = nombre.trim();
+        if (!limpio) { setBorradorEtapa(null); return; }
+
+        setCreandoEtapa(true);
         try {
-            const col = await apiRequest('POST', '/api/kanban/columns', { name: 'Nueva Etapa', color: 'bg-slate-500', icon: 'Zap', subtitle: 'Personalizado' });
+            const col = await apiRequest('POST', '/api/kanban/columns', {
+                name: limpio, color: 'bg-muted', icon: 'Zap', subtitle: 'Personalizado',
+                grupo: grupoActivo,   // nace donde se está mirando, no suelta al final
+            });
             setColumns(prev => [...prev, col]);
             setBoardData(prev => ({ ...prev, [col.id]: [] }));
             setColMeta(prev => ({ ...prev, [col.id]: { page: 1, hasMore: false, loading: false } }));
+            setBorradorEtapa(null);
+            setErrorEtapa(null);
         } catch (err) {
-            console.error('Error al crear columna:', err);
+            // El nombre repetido es el caso normal aquí, y hay que poder
+            // corregirlo sin perder lo escrito: el borrador se queda abierto.
+            setErrorEtapa(err.message);
+        } finally {
+            setCreandoEtapa(false);
+        }
+    };
+
+    /**
+     * Mover una etapa a otro grupo.
+     *
+     * Es lo que separa las dimensiones que hoy están revueltas: en Star NET,
+     * mandar los quince municipios a un grupo «Zona» y los estados del ticket a
+     * otro «Estado» convierte 43 columnas ilegibles en seis columnas con un
+     * filtro de zona encima.
+     */
+    const cambiarGrupo = async (id, nuevoGrupo) => {
+        try {
+            const updated = await apiRequest('PUT', `/api/kanban/columns/${id}`, { grupo: nuevoGrupo });
+            setColumns(prev => prev.map(c => c.id === id ? { ...c, grupo: updated.grupo } : c));
+            setFiltros([]);
+        } catch (err) {
+            console.error('Error al cambiar el grupo:', err);
+        }
+    };
+
+    /**
+     * Marcar qué columna recoge lo que no está clasificado.
+     *
+     * En «Estado» quieres que sea «Nuevo». En «Zona» no quieres ninguna: una
+     * conversación sin municipio no es de Cereté por ser Cereté la primera
+     * columna, y ahí la suma de las columnas debe ser menor que el total.
+     */
+    const cambiarBandeja = async (id, valor) => {
+        const col = columns.find(c => c.id === id);
+        try {
+            await apiRequest('PUT', `/api/kanban/columns/${id}`, { es_bandeja: valor });
+            // El servidor desmarca la anterior del mismo grupo; aquí lo mismo.
+            setColumns(prev => prev.map(c => {
+                if (c.id === id) return { ...c, es_bandeja: valor };
+                if (valor && (c.grupo ?? null) === (col?.grupo ?? null)) return { ...c, es_bandeja: false };
+                return c;
+            }));
+            loadCounts();
+            columnasVisibles.forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
+        } catch (err) {
+            console.error('Error al cambiar la bandeja:', err);
         }
     };
 
@@ -686,13 +901,29 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
         }
     };
 
-    // Stats memoized to avoid re-renders
+    /**
+     * Sólo se muestra lo que se puede calcular.
+     *
+     * Aquí había dos cifras inventadas: un «Pipeline Total» que era el número
+     * de conversaciones multiplicado por 150.000 pesos, y una «Conversión» fija
+     * del 94% escrita a mano, idéntica para todas las empresas. Parecían datos
+     * de negocio y no lo eran, en una pantalla que se enseña a clientes.
+     *
+     * Cuando las tarjetas tengan importe y fecha de entrada en cada etapa, el
+     * valor del embudo y la conversión real podrán calcularse de verdad. Hasta
+     * entonces, esto: cuántas conversaciones hay, cuántas están puestas en el
+     * tablero y cuántas llevan una semana sin moverse.
+     */
     const stats = useMemo(() => [
-        { label: 'Proyectos',      value: total_conversations,                              icon: User,          color: 'text-blue-500',   bg: 'bg-blue-500/5' },
-        { label: 'Etapas',         value: columns.length,                                   icon: LayoutDashboard, color: 'text-emerald-500', bg: 'bg-emerald-500/5' },
-        { label: 'Pipeline Total', value: `$ ${(total_conversations * 150000).toLocaleString()}`, icon: DollarSign, color: 'text-amber-500', bg: 'bg-amber-500/5' },
-        { label: 'Conversión',     value: '94%',                                            icon: CheckCircle2,  color: 'text-purple-500', bg: 'bg-purple-500/5' },
-    ], [total_conversations, columns.length]);
+        { label: 'Conversaciones', value: total_conversations.toLocaleString('es-CO'), icon: User,            color: 'text-info',              bg: 'bg-info/5',
+          hint: 'Todas las de la empresa' },
+        { label: 'En el tablero',  value: en_tablero.toLocaleString('es-CO'),          icon: LayoutDashboard, color: 'text-accent-foreground', bg: 'bg-primary/5',
+          hint: 'Colocadas en alguna etapa' },
+        { label: 'Sin mover +7d',  value: estancadas.toLocaleString('es-CO'),          icon: Clock,           color: estancadas > 0 ? 'text-warning' : 'text-muted-foreground', bg: 'bg-warning/5',
+          hint: 'Una semana sin actividad' },
+        { label: 'Etapas',         value: columns.length,                       icon: Layers,          color: 'text-success',           bg: 'bg-success/5',
+          hint: 'Columnas del tablero' },
+    ], [total_conversations, en_tablero, estancadas, columns.length]);
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -715,13 +946,13 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                         <div>
                             <div className="flex items-center gap-4 mb-1">
-                                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">CRM Comercial</h1>
-                                <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-600 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] border border-emerald-500/10">
-                                    <span className="size-1 rounded-full bg-emerald-500" />
+                                <h1 className="text-3xl font-black text-foreground dark:text-white tracking-tighter">CRM Comercial</h1>
+                                <div className="flex items-center gap-1.5 bg-success/10 text-success px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] border border-success/10">
+                                    <span className="size-1 rounded-full bg-success" />
                                     Board Dinámico
                                 </div>
                             </div>
-                            <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 opacity-80">
+                            <p className="text-muted-foreground text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 opacity-80">
                                 Personalización Total <ArrowRight className="size-2.5" /> WhatsApp API
                             </p>
                         </div>
@@ -729,17 +960,17 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                         <div className="flex items-center gap-3">
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                                    <Search className="size-3.5 text-slate-300" />
+                                    <Search className="size-3.5 text-muted-foreground" />
                                 </div>
                                 <input
                                     type="text"
                                     placeholder="Buscar..."
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-teal-500/5 focus:border-teal-500/40 transition-all w-[240px] lg:w-[300px] shadow-sm placeholder:text-slate-300"
+                                    className="pl-10 pr-4 py-2.5 bg-white dark:bg-muted border border-border rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/40 transition-all w-[240px] lg:w-[300px] shadow-sm placeholder:text-muted-foreground"
                                 />
                             </div>
-                            <button onClick={addColumn} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-xs font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
+                            <button onClick={addColumn} className="flex items-center gap-2 px-5 py-2.5 bg-foreground dark:bg-foreground text-background dark:text-background rounded-2xl text-xs font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
                                 <LayoutDashboard className="size-4" /> Nueva Etapa
                             </button>
                         </div>
@@ -747,14 +978,15 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
                         {stats.map((stat, i) => (
-                            <div key={i} className="bg-white dark:bg-slate-900 p-4 lg:p-5 rounded-3xl border border-slate-50 dark:border-slate-800 shadow-sm">
+                            <div key={i} className="bg-white dark:bg-muted p-4 lg:p-5 rounded-3xl border border-border shadow-sm">
                                 <div className="flex items-center gap-4">
                                     <div className={clsx('p-3 rounded-2xl shadow-inner', stat.bg, stat.color)}>
                                         <stat.icon className="size-5" />
                                     </div>
-                                    <div>
-                                        <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">{stat.label}</p>
-                                        <p className="text-lg font-black text-slate-900 dark:text-white tracking-tighter leading-none">{stat.value}</p>
+                                    <div className="min-w-0">
+                                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">{stat.label}</p>
+                                        <p className="text-lg font-black text-foreground dark:text-white tracking-tighter leading-none">{stat.value}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-1 truncate">{stat.hint}</p>
                                     </div>
                                 </div>
                             </div>
@@ -762,10 +994,70 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                     </div>
                 </div>
 
+                {(grupos.length > 1 || otrosGrupos.length > 0) && (
+                    <div className="px-6 lg:px-10 pt-6 flex flex-wrap items-center gap-x-6 gap-y-3 relative z-10">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Ver por</span>
+                            <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-2xl">
+                                {grupos.map(g => (
+                                    <button
+                                        key={g ?? '__sin__'}
+                                        onClick={() => { setGrupoActivo(g); setFiltros([]); }}
+                                        className={clsx(
+                                            'px-3 py-1.5 rounded-xl text-[11px] font-black transition-all',
+                                            g === grupoActivo
+                                                ? 'bg-white dark:bg-background text-foreground shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        )}
+                                    >
+                                        {g ?? 'Sin agrupar'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {otrosGrupos.map(({ grupo, columnas }) => (
+                            <div key={grupo ?? '__sin__'} className="flex items-center gap-2">
+                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
+                                    {grupo ?? 'Sin agrupar'}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {columnas.map(c => {
+                                        const activo = filtros.includes(c.id);
+                                        return (
+                                            <button
+                                                key={c.id}
+                                                onClick={() => setFiltros(prev => activo ? prev.filter(id => id !== c.id) : [...prev, c.id])}
+                                                className={clsx(
+                                                    'px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all',
+                                                    activo
+                                                        ? 'bg-primary/15 border-primary/40 text-accent-foreground'
+                                                        : 'bg-transparent border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                                                )}
+                                            >
+                                                {c.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+
+                        {filtros.length > 0 && (
+                            <button
+                                onClick={() => setFiltros([])}
+                                className="text-[10px] font-black text-muted-foreground hover:text-foreground underline underline-offset-4"
+                            >
+                                Quitar filtros
+                            </button>
+                        )}
+                    </div>
+                )}
+
                 {/* Board */}
                 <div className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
                     <DragDropContext onDragEnd={handleDragEnd}>
-                        {columns.map(col => (
+                        {columnasVisibles.map(col => (
                             <BoardColumn
                                 key={col.id}
                                 col={col}
@@ -776,17 +1068,30 @@ export default function Kanban({ columns: initialColumns, total_conversations, i
                                 error={colMeta[col.id]?.error ?? null}
                                 onLoadMore={handleLoadMore}
                                 onRename={renameColumn}
+                                onCambiarGrupo={cambiarGrupo}
+                                onCambiarBandeja={cambiarBandeja}
                                 onDelete={deleteColumn}
                                 onAddCard={setNewCardColumn}
                             />
                         ))}
 
-                        <div className="flex-shrink-0 w-[100px] flex flex-col items-center justify-start pt-12">
-                            <button onClick={addColumn} className="size-12 rounded-full border-2 border-dashed border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-300 hover:text-teal-500 hover:border-teal-500 hover:bg-teal-500/5 transition-all group">
-                                <Plus className="size-6 group-hover:rotate-90 transition-transform duration-300" />
-                            </button>
-                            <p className="text-[10px] font-black text-slate-300 mt-4 uppercase tracking-widest">Añadir</p>
-                        </div>
+                        {borradorEtapa !== null ? (
+                            <ColumnaBorrador
+                                valor={borradorEtapa}
+                                onCambio={setBorradorEtapa}
+                                onCrear={crearEtapa}
+                                onCancelar={() => { setBorradorEtapa(null); setErrorEtapa(null); }}
+                                creando={creandoEtapa}
+                                error={errorEtapa}
+                            />
+                        ) : (
+                            <div className="flex-shrink-0 w-[100px] flex flex-col items-center justify-start pt-12">
+                                <button onClick={addColumn} className="size-12 rounded-full border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:text-accent-foreground hover:border-primary/30 hover:bg-primary/5 transition-all group">
+                                    <Plus className="size-6 group-hover:rotate-90 transition-transform duration-300" />
+                                </button>
+                                <p className="text-[10px] font-black text-muted-foreground mt-4 uppercase tracking-widest">Añadir</p>
+                            </div>
+                        )}
 
                         <div className="flex-shrink-0 w-2 lg:w-4" />
                     </DragDropContext>

@@ -68,29 +68,29 @@ export default function CoexistenceSyncCard({ instanceId, initial }) {
 
     return (
         <div className={`rounded-lg border px-3 py-3 text-xs ${
-            fallo ? 'border-red-500/30 bg-red-500/10'
-                : rechazada ? 'border-amber-500/30 bg-amber-500/10'
-                : lista ? 'border-green-500/30 bg-green-500/10'
-                : 'border-blue-500/30 bg-blue-500/10'
+            fallo ? 'border-destructive/30 bg-destructive/10'
+                : rechazada ? 'border-warning/30 bg-warning/10'
+                : lista ? 'border-success/30 bg-success/10'
+                : 'border-info/30 bg-info/10'
         }`}>
             <div className="flex items-start gap-2">
-                {fallo ? <TriangleAlert className="size-4 shrink-0 text-red-600 dark:text-red-400 mt-px" />
-                    : rechazada ? <Info className="size-4 shrink-0 text-amber-600 dark:text-amber-400 mt-px" />
-                    : lista ? <CheckCircle2 className="size-4 shrink-0 text-green-600 dark:text-green-400 mt-px" />
-                    : <CloudDownload className="size-4 shrink-0 text-blue-600 dark:text-blue-400 mt-px animate-pulse" />}
+                {fallo ? <TriangleAlert className="size-4 shrink-0 text-destructive mt-px" />
+                    : rechazada ? <Info className="size-4 shrink-0 text-warning mt-px" />
+                    : lista ? <CheckCircle2 className="size-4 shrink-0 text-success mt-px" />
+                    : <CloudDownload className="size-4 shrink-0 text-info mt-px animate-pulse" />}
 
                 <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3">
                         <p className={`font-medium ${
-                            fallo ? 'text-red-700 dark:text-red-400'
-                                : rechazada ? 'text-amber-700 dark:text-amber-400'
-                                : lista ? 'text-green-700 dark:text-green-400'
-                                : 'text-blue-700 dark:text-blue-400'
+                            fallo ? 'text-destructive'
+                                : rechazada ? 'text-warning'
+                                : lista ? 'text-success'
+                                : 'text-info'
                         }`}>
                             {lista ? 'Historial importado' : sync.etapa}
                         </p>
                         {!lista && !fallo && !rechazada && (
-                            <span className="font-mono tabular-nums text-blue-700 dark:text-blue-400">
+                            <span className="font-mono tabular-nums text-info">
                                 {sync.porcentaje}%
                             </span>
                         )}
@@ -98,9 +98,9 @@ export default function CoexistenceSyncCard({ instanceId, initial }) {
 
                     {!lista && !fallo && !rechazada && (
                         <>
-                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-500/20">
+                            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-info/20">
                                 <div
-                                    className="h-full rounded-full bg-blue-600 transition-[width] duration-700 ease-out dark:bg-blue-400"
+                                    className="h-full rounded-full bg-info transition-[width] duration-700 ease-out dark:bg-info"
                                     style={{ width: `${sync.porcentaje}%` }}
                                 />
                             </div>
@@ -111,7 +111,7 @@ export default function CoexistenceSyncCard({ instanceId, initial }) {
                     )}
 
                     {sync.error && (
-                        <p className={`mt-1 ${rechazada ? 'text-amber-700/90 dark:text-amber-400/90' : 'text-red-700/90 dark:text-red-400/90'}`}>
+                        <p className={`mt-1 ${rechazada ? 'text-warning/90 dark:text-warning/90' : 'text-destructive/90 dark:text-destructive/90'}`}>
                             {sync.error}
                         </p>
                     )}

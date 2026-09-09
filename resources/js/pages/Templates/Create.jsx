@@ -917,8 +917,8 @@ function StepContent({
                             </p>
                         )}
                         {!comps.header.uploading && comps.header.handle && (
-                            <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                                <span className="inline-block size-1.5 rounded-full bg-emerald-500" />
+                            <p className="flex items-center gap-1.5 text-xs text-success">
+                                <span className="inline-block size-1.5 rounded-full bg-success" />
                                 Archivo listo{comps.header.fileName ? `: ${comps.header.fileName}` : ''}
                             </p>
                         )}
@@ -1250,7 +1250,7 @@ function CreatedScreen({ created }) {
             <div className="w-full max-w-md rounded-xl border bg-card shadow-sm">
                 <div className="px-6 py-5 space-y-4">
                     <div className="flex items-start gap-3">
-                        <div className="size-10 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <div className="size-10 rounded-xl bg-success/15 text-success flex items-center justify-center shrink-0">
                             <CheckCircle2 className="size-5" />
                         </div>
                         <div>
@@ -1278,7 +1278,7 @@ function CreatedScreen({ created }) {
                         )}
                         <div className="flex justify-between gap-3">
                             <span className="text-muted-foreground">Verificada en Meta</span>
-                            <span className={created.verified_in_meta ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-amber-600 dark:text-amber-400 font-medium'}>
+                            <span className={created.verified_in_meta ? 'text-success font-medium' : 'text-warning font-medium'}>
                                 {created.verified_in_meta ? 'Sí' : 'No respondió aún'}
                             </span>
                         </div>

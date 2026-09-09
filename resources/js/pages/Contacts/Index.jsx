@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { COUNTRIES, splitPhoneNumber, joinPhoneNumber, cleanUsername } from '@/lib/countries';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
+import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, AtSign, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
 export default function ContactsIndex({ contacts: pagina, unregistered: initialUnregistered, optOutRequests: initialOptOutRequests = [], filters = {} }) {
     const { auth } = usePage().props;
@@ -164,10 +165,10 @@ export default function ContactsIndex({ contacts: pagina, unregistered: initialU
                 </div>
 
                 {optOutRequests.length > 0 && can('contacts.update') && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3">
+                    <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 p-4 space-y-3">
                         <div className="flex items-start gap-2">
-                            <BellOff className="size-4 mt-0.5 text-amber-700 dark:text-amber-400 shrink-0" />
-                            <div className="text-sm text-amber-900 dark:text-amber-100">
+                            <BellOff className="size-4 mt-0.5 text-warning shrink-0" />
+                            <div className="text-sm text-warning">
                                 <p className="font-medium">
                                     {optOutRequests.length === 1
                                         ? 'Un cliente pidió no recibir campañas'
@@ -220,7 +221,7 @@ export default function ContactsIndex({ contacts: pagina, unregistered: initialU
                         className={tabClass(tab === 'unregistered')}
                     >
                         Sin registrar
-                        <span className={`ml-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${unregistered.length > 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-muted text-muted-foreground'}`}>{unregistered.length}</span>
+                        <span className={`ml-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ${unregistered.length > 0 ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>{unregistered.length}</span>
                     </button>
                 </div>
 
@@ -366,11 +367,11 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                         <tr key={contact.id} className="border-t hover:bg-muted/30 transition-colors">
                             <td className="px-4 py-3 align-top font-medium text-foreground">
                                 <div className="flex items-center gap-2">
-                                    <span>{contact.name}</span>
+                                    <span>{[contact.name, contact.last_name].filter(Boolean).join(' ')}</span>
                                     {contact.opted_out_at && (
                                         <span
                                             title="Pidió no recibir campañas. Se le puede seguir respondiendo en el chat."
-                                            className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                                            className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning"
                                         >
                                             <BellOff className="size-3" /> Sin campañas
                                         </span>
@@ -378,7 +379,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                                     {contact.metadata?.integra_contactos && (
                                         <span
                                             title={`Visto en Contactos como "${contact.metadata.integra_contactos.nombre_api}"`}
-                                            className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 px-1.5 py-0.5 text-[11px] font-medium text-teal-700 dark:text-teal-400"
+                                            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-accent-foreground"
                                         >
                                             <Link2 className="size-3" /> Contactos
                                         </span>
@@ -387,7 +388,12 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                             </td>
                             <td className="px-4 py-3 align-top text-muted-foreground">
                                 <div className="flex flex-col gap-1">
-                                    <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 text-muted-foreground/60" /> {contact.phone_number}</span>
+                                    {contact.phone_number
+                                        ? <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5 text-muted-foreground/60" /> {contact.phone_number}</span>
+                                        : <span className="inline-flex items-center gap-1.5 text-muted-foreground/60 italic">Sin número</span>}
+                                    {contact.username && (
+                                        <span className="inline-flex items-center gap-1.5"><AtSign className="size-3.5 text-muted-foreground/60" /> {contact.username}</span>
+                                    )}
                                     {contact.phone_numbers?.length > 0 && (
                                         <div className="flex flex-wrap gap-1 pl-5">
                                             {contact.phone_numbers.map((n, i) => (
@@ -414,7 +420,7 @@ function RegisteredTab({ contacts, filtered, search, can, onCreate, onEdit, onDe
                                             variant="ghost"
                                             size="icon"
                                             title={contact.opted_out_at ? 'Volver a incluirlo en las campañas' : 'Excluirlo de las campañas'}
-                                            className={contact.opted_out_at ? 'text-amber-600' : ''}
+                                            className={contact.opted_out_at ? 'text-warning' : ''}
                                             onClick={() => onOptOut(contact)}
                                         >
                                             {contact.opted_out_at ? <BellOff className="size-4" /> : <Bell className="size-4" />}
@@ -445,7 +451,7 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
     if (unregistered.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-                <Check className="size-12 text-emerald-500/50 mb-4" />
+                <Check className="size-12 text-success/50 mb-4" />
                 <p className="text-lg font-medium text-foreground">¡Todo registrado!</p>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm">
                     Todos los números que han escrito en el chat ya están asociados a un contacto.
@@ -458,8 +464,8 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
     }
     return (
         <>
-            <div className="flex items-start gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-xs text-muted-foreground max-w-3xl">
-                <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl text-xs text-muted-foreground max-w-3xl">
+                <Info className="size-4 text-warning shrink-0 mt-0.5" />
                 <p>Estos números han escrito en el chat pero aún no están guardados como contacto. Regístralos para identificarlos en futuras conversaciones.</p>
             </div>
             <div className="rounded-xl border bg-card overflow-hidden">
@@ -514,7 +520,10 @@ function UnregisteredTab({ unregistered, filtered, search, can, onRegister, onQu
 
 function ContactFormModal({ title, description, submitLabel, initial, onClose, onSaved }) {
     const [name, setName] = useState(initial?.name ?? '');
-    const [phone, setPhone] = useState(initial?.phone_number ?? '');
+    const [lastName, setLastName] = useState(initial?.last_name ?? '');
+    const [username, setUsername] = useState(initial?.username ?? '');
+    const [country, setCountry] = useState(() => splitPhoneNumber(initial?.phone_number).country);
+    const [phone, setPhone] = useState(() => splitPhoneNumber(initial?.phone_number).national);
     const [extraNumbers, setExtraNumbers] = useState(initial?.phone_numbers ?? []);
     const [email, setEmail] = useState(initial?.email ?? '');
     const [notes, setNotes] = useState(initial?.notes ?? '');
@@ -528,7 +537,9 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
     function validate() {
         const next = {};
         if (!name.trim()) next.name = 'El nombre es obligatorio.';
-        if (!phone.trim()) next.phone_number = 'El teléfono es obligatorio.';
+        // Quien oculta su número en WhatsApp sólo deja el nombre de usuario: la
+        // ficha se puede crear con uno de los dos, pero no sin ninguno.
+        if (!phone.trim() && !cleanUsername(username)) next.phone_number = 'Pon el teléfono o el nombre de usuario de WhatsApp.';
         if (email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) next.email = 'Correo inválido.';
         return next;
     }
@@ -545,7 +556,9 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
         try {
             const payload = {
                 name: name.trim(),
-                phone_number: phone.trim(),
+                last_name: lastName.trim() || null,
+                username: cleanUsername(username) || null,
+                phone_number: joinPhoneNumber(country, phone) || null,
                 phone_numbers: extraNumbers.map(n => n.trim()).filter(Boolean),
                 email: email.trim() || null,
                 notes: notes.trim() || null,
@@ -560,6 +573,7 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
                 setErrors({
                     name: apiErrors.name?.[0],
                     phone_number: apiErrors.phone_number?.[0],
+                    username: apiErrors.username?.[0],
                     email: apiErrors.email?.[0],
                 });
             } else {
@@ -578,15 +592,36 @@ function ContactFormModal({ title, description, submitLabel, initial, onClose, o
                     {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">Nombre</label>
+                            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Juan" autoFocus className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                            {errors.name && <p className="text-xs text-destructive font-medium">{errors.name}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">Apellido <span className="text-muted-foreground font-normal">(opcional)</span></label>
+                            <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Pérez" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                    </div>
                     <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-foreground">Nombre</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Juan Pérez" autoFocus className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
-                        {errors.name && <p className="text-xs text-destructive font-medium">{errors.name}</p>}
+                        <label className="text-sm font-medium text-foreground">Nombre de usuario de WhatsApp</label>
+                        <div className="relative">
+                            <AtSign className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60" />
+                            <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="usuario_de_whatsapp" autoCapitalize="off" spellCheck={false} className="flex h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 py-1 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                        {errors.username && <p className="text-xs text-destructive font-medium">{errors.username}</p>}
                     </div>
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium text-foreground">Teléfono principal</label>
-                        <input type="text" value={phone} onChange={e => setPhone(e.target.value)} placeholder="573001234567" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
-                        {errors.phone_number && <p className="text-xs text-destructive font-medium">{errors.phone_number}</p>}
+                        <div className="flex gap-2">
+                            <select value={country} onChange={e => setCountry(e.target.value)} className="h-9 w-32 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                                {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.code} +{c.dial}</option>)}
+                            </select>
+                            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="3001234567" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+                        </div>
+                        {errors.phone_number
+                            ? <p className="text-xs text-destructive font-medium">{errors.phone_number}</p>
+                            : <p className="text-xs text-muted-foreground">Quien oculta su número en WhatsApp se guarda sólo con el nombre de usuario.</p>}
                     </div>
                     <div className="space-y-1.5">
                         <div className="flex items-center justify-between">

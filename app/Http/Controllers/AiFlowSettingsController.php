@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CompanyIntegration;
 use App\Services\WhatsAppChatAiClient;
+use App\Support\AiAssistantProfile;
 use App\Support\DefaultAiMenusIntegration;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -103,6 +104,17 @@ class AiFlowSettingsController extends Controller
             'chat_enabled' => 'sometimes|boolean',
             'permissions' => 'sometimes|array',
             'permissions.*' => ['string', Rule::in(CompanyIntegration::AI_PERMISSIONS)],
+            // El perfil del asistente. Se valida aquí para que el admin vea el
+            // error en su formulario; AiAssistantProfile lo vuelve a sanear al
+            // guardar y al enviarlo, porque estas filas también se escriben
+            // desde tinker y el texto acaba dentro de un prompt.
+            'assistant' => 'sometimes|array',
+            'assistant.nombre_asistente' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_NAME,
+            'assistant.tratamiento' => ['sometimes', Rule::in(AiAssistantProfile::TREATMENTS)],
+            'assistant.tono' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_TONE,
+            'assistant.conocimiento' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_KNOWLEDGE,
+            'assistant.limites' => 'sometimes|array|max:' . AiAssistantProfile::MAX_LIMITS,
+            'assistant.limites.*' => 'string|max:' . AiAssistantProfile::MAX_LIMIT,
         ]);
 
         // Encender algo que la plataforma no tiene configurado dejaría al admin
@@ -129,6 +141,16 @@ class AiFlowSettingsController extends Controller
                     ? array_values(array_intersect(CompanyIntegration::AI_PERMISSIONS, $data['permissions']))
                     : null,
             ], fn ($v) => $v !== null));
+        }
+
+        // Se fusiona con lo que ya había en vez de reemplazarlo: el panel manda
+        // sólo el campo que el admin acaba de tocar, y guardar el patch a secas
+        // le borraría el conocimiento por cambiar el tratamiento.
+        if (array_key_exists('assistant', $data)) {
+            AiAssistantProfile::save(
+                $company->id,
+                array_replace(AiAssistantProfile::settings($company->id), $data['assistant'])
+            );
         }
 
         if (array_key_exists('chat_enabled', $data)) {
@@ -202,6 +224,21 @@ class AiFlowSettingsController extends Controller
             ],
             'chat' => [
                 'enabled' => (bool) ($chat->enabled ?? false),
+            ],
+            'assistant' => AiAssistantProfile::settings($company->id) + [
+                'empresa' => (string) ($company->name ?? ''),
+                // Cómo va a presentarse con lo que hay guardado, para que el
+                // admin no tenga que escribirle a su propio WhatsApp para
+                // saberlo.
+                'presentacion' => AiAssistantProfile::presentation($company->id),
+                'treatments' => AiAssistantProfile::TREATMENTS,
+                'limits' => [
+                    'nombre_asistente' => AiAssistantProfile::MAX_NAME,
+                    'tono' => AiAssistantProfile::MAX_TONE,
+                    'conocimiento' => AiAssistantProfile::MAX_KNOWLEDGE,
+                    'limites' => AiAssistantProfile::MAX_LIMITS,
+                    'limite' => AiAssistantProfile::MAX_LIMIT,
+                ],
             ],
         ];
     }

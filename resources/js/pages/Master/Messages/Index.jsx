@@ -70,11 +70,11 @@ const SEVERITY_LABELS = {
 };
 
 const TONES = {
-    rose: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
-    amber: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-    sky: 'bg-sky-500/10 text-sky-600 border-sky-500/20',
-    indigo: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
-    emerald: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+    rose: 'bg-destructive/10 text-destructive border-destructive/20',
+    amber: 'bg-warning/10 text-warning border-warning/20',
+    sky: 'bg-info/10 text-info border-info/20',
+    indigo: 'bg-primary/10 text-accent-foreground border-primary/20',
+    emerald: 'bg-success/10 text-success border-success/20',
     slate: 'bg-muted text-muted-foreground border-border/40',
 };
 
@@ -181,7 +181,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                 <div className="bg-card/40 backdrop-blur-3xl px-8 py-8 sticky top-0 z-40 border-b border-border/20 shadow-sm">
                     <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-6 flex-wrap">
                         <div className="flex items-center gap-6">
-                            <div className="size-14 rounded-2xl bg-rose-600 flex items-center justify-center text-white shadow-2xl shadow-rose-600/20">
+                            <div className="size-14 rounded-2xl bg-destructive flex items-center justify-center text-white shadow-2xl shadow-destructive/20">
                                 <MessageSquareX className="size-7" />
                             </div>
                             <div>
@@ -189,7 +189,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     Mensajes no entregados
                                     {/* La insignia solo tiene sentido en la vista global, que es la del Master. */}
                                     {!company_locked && (
-                                        <span className="text-[10px] font-black bg-indigo-500/10 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-500/20 tracking-widest hidden sm:inline-block">TODAS LAS EMPRESAS</span>
+                                        <span className="text-[10px] font-black bg-primary/10 text-accent-foreground px-2 py-0.5 rounded-full border border-primary/20 tracking-widest hidden sm:inline-block">TODAS LAS EMPRESAS</span>
                                     )}
                                 </h1>
                                 <p className="text-sm font-medium text-muted-foreground mt-1">
@@ -224,7 +224,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                     {error_breakdown.length > 0 && (
                         <div className="bg-card border border-border/40 rounded-[2.5rem] p-8 shadow-sm">
                             <div className="flex items-center gap-3 mb-6">
-                                <Info className="size-4 text-indigo-600" />
+                                <Info className="size-4 text-accent-foreground" />
                                 <h2 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Por qué no llegaron · toca para filtrar</h2>
                             </div>
                             <div className="flex flex-wrap gap-3">
@@ -235,10 +235,10 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                             key={item.title}
                                             type="button"
                                             onClick={() => applyFilters({ reason: active ? '' : item.title })}
-                                            className={`text-left rounded-2xl border px-5 py-4 transition-all max-w-md ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-muted/20 border-border/40 hover:border-indigo-500/40'}`}
+                                            className={`text-left rounded-2xl border px-5 py-4 transition-all max-w-md ${active ? 'bg-primary text-primary-foreground border-primary/30 shadow-lg shadow-primary/20' : 'bg-muted/20 border-border/40 hover:border-primary/40'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <span className={`text-xl font-black ${active ? 'text-white' : 'text-rose-600'}`}>{item.total}</span>
+                                                <span className={`text-xl font-black ${active ? 'text-white' : 'text-destructive'}`}>{item.total}</span>
                                                 <div className="min-w-0">
                                                     <p className="text-[12.5px] font-semibold" title={item.raw ?? ''}>{item.title}</p>
                                                     <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${active ? 'text-white/60' : 'text-muted-foreground/70'}`}>
@@ -263,7 +263,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     onClick={() => applyFilters({ bucket: bucket.key })}
                                     className={`h-11 px-5 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center gap-2 ${
                                         filters.bucket === bucket.key
-                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                                            ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
                                             : 'bg-muted/30 text-muted-foreground hover:bg-muted/60'
                                     }`}
                                 >
@@ -283,7 +283,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     value={search}
                                     onChange={e => handleSearch(e.target.value)}
                                     placeholder="Buscar por texto del mensaje, teléfono o nombre del cliente…"
-                                    className="w-full h-12 pl-11 pr-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-indigo-500/60 transition-colors"
+                                    className="w-full h-12 pl-11 pr-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-primary/60 transition-colors"
                                 />
                             </div>
 
@@ -292,7 +292,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     <span className="flex items-center gap-1.5 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-2">
                                         <Building2 className="size-3.5" /> Empresa
                                     </span>
-                                    <div className="h-12 px-4 rounded-2xl bg-indigo-500/[0.06] border border-indigo-500/20 flex items-center text-sm font-bold text-indigo-600 truncate">
+                                    <div className="h-12 px-4 rounded-2xl bg-primary/[0.06] border border-primary/20 flex items-center text-sm font-bold text-accent-foreground truncate">
                                         {companies[0]?.name ?? 'Esta empresa'}
                                     </div>
                                 </div>
@@ -367,7 +367,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                     {rows.length === 0 && (
                                         <tr>
                                             <td colSpan={6} className="px-10 py-20 text-center">
-                                                <CheckCircle2 className="size-10 mx-auto text-emerald-500/60 mb-4" />
+                                                <CheckCircle2 className="size-10 mx-auto text-success/60 mb-4" />
                                                 <p className="text-sm font-bold text-foreground">Ningún mensaje sin entregar en este recorte</p>
                                                 <p className="text-xs text-muted-foreground mt-1 italic">Prueba a ampliar el rango de fechas o quitar filtros.</p>
                                             </td>
@@ -379,7 +379,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                         const hasAttachment = ['image', 'document', 'audio', 'video'].includes(row.type);
 
                                         return (
-                                            <tr key={row.id} className="hover:bg-rose-500/[0.02] transition-colors group align-top">
+                                            <tr key={row.id} className="hover:bg-destructive/[0.02] transition-colors group align-top">
                                                 <td className="px-8 py-6">
                                                     <div className="flex items-start gap-4">
                                                         <div className={`size-12 rounded-2xl border flex items-center justify-center flex-shrink-0 ${TONES[meta.color]}`}>
@@ -445,7 +445,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                     <p className="text-[12px] font-bold text-foreground font-mono">{row.failure_moment ?? '—'}</p>
                                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">{relativeFrom(row.failure_moment)}</p>
                                                     {row.last_retried_at && (
-                                                        <p className="text-[10px] text-emerald-600 font-semibold mt-1.5">
+                                                        <p className="text-[10px] text-success font-semibold mt-1.5">
                                                             Reenviado {relativeFrom(row.last_retried_at)}
                                                             {row.last_retried_by && ` por ${row.last_retried_by}`}
                                                         </p>
@@ -458,7 +458,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                             variant="ghost"
                                                             size="sm"
                                                             onClick={() => setDetailId(row.id)}
-                                                            className="rounded-xl h-10 px-4 gap-2 font-black uppercase tracking-widest text-[10px] hover:bg-indigo-600 hover:text-white transition-all"
+                                                            className="rounded-xl h-10 px-4 gap-2 font-black uppercase tracking-widest text-[10px] hover:bg-primary hover:text-primary-foreground transition-all"
                                                         >
                                                             <Eye className="size-4" /> Detalle
                                                         </Button>
@@ -468,7 +468,7 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                                             disabled={!row.retryable || retrying === row.id}
                                                             onClick={() => handleRetry(row.id)}
                                                             title={row.retryable ? 'Volver a enviar este mensaje al cliente' : (row.retry_blocked ?? 'Este mensaje no se puede volver a enviar')}
-                                                            className="rounded-xl h-10 px-4 gap-2 font-black uppercase tracking-widest text-[10px] text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all disabled:opacity-40"
+                                                            className="rounded-xl h-10 px-4 gap-2 font-black uppercase tracking-widest text-[10px] text-success hover:bg-success hover:text-primary-foreground transition-all disabled:opacity-40"
                                                         >
                                                             {retrying === row.id
                                                                 ? <Loader2 className="size-4 animate-spin" />
@@ -498,9 +498,9 @@ export default function MasterMessages({ messages, stats, error_breakdown, compa
                                             preserveScroll
                                             className={`min-w-10 h-10 px-3 rounded-xl flex items-center justify-center text-[11px] font-black transition-all ${
                                                 link.active
-                                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                                                    ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
                                                     : link.url
-                                                        ? 'bg-card border border-border/40 hover:border-indigo-500/40 text-foreground'
+                                                        ? 'bg-card border border-border/40 hover:border-primary/40 text-foreground'
                                                         : 'text-muted-foreground/40 pointer-events-none'
                                             }`}
                                             dangerouslySetInnerHTML={{ __html: link.label }}
@@ -574,12 +574,12 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
 
                     {!detail && !error && (
                         <div className="p-20 flex items-center justify-center">
-                            <Loader2 className="size-8 animate-spin text-indigo-600" />
+                            <Loader2 className="size-8 animate-spin text-accent-foreground" />
                         </div>
                     )}
 
                     {error && (
-                        <div className="p-10 text-center text-sm font-semibold text-rose-600">{error}</div>
+                        <div className="p-10 text-center text-sm font-semibold text-destructive">{error}</div>
                     )}
 
                     {detail && (
@@ -601,12 +601,12 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                             <Section title="Qué puedes hacer" icon={<Info className="size-4" />}>
                                 <ul className="space-y-2.5">
                                     <li className="flex items-start gap-3 text-[13.5px] font-semibold text-foreground">
-                                        <ChevronRight className="size-4 mt-0.5 text-indigo-600 flex-shrink-0" />
+                                        <ChevronRight className="size-4 mt-0.5 text-accent-foreground flex-shrink-0" />
                                         <span>{detail.advice}</span>
                                     </li>
                                     {detail.diagnosis?.map((hint, index) => (
                                         <li key={index} className="flex items-start gap-3 text-[13px] font-medium text-muted-foreground">
-                                            <ChevronRight className="size-4 mt-0.5 text-indigo-600/60 flex-shrink-0" />
+                                            <ChevronRight className="size-4 mt-0.5 text-accent-foreground/60 flex-shrink-0" />
                                             <span>{hint}</span>
                                         </li>
                                     ))}
@@ -653,7 +653,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                             <div className="flex items-center gap-3">
                                                 <Button
                                                     onClick={() => setAttachmentOpen(true)}
-                                                    className="rounded-2xl h-11 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-[10px] gap-2"
+                                                    className="rounded-2xl h-11 px-5 bg-primary hover:bg-primary text-primary-foreground font-black uppercase tracking-widest text-[10px] gap-2"
                                                 >
                                                     <Eye className="size-4" /> Ver adjunto
                                                 </Button>
@@ -703,7 +703,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                                     <div className="min-w-0">
                                                         <p className="text-[12.5px] font-bold">Reenviado el {retry.created_at}</p>
                                                         {retry.reason && (
-                                                            <p className="text-[11.5px] text-rose-600 mt-1">{retry.reason}</p>
+                                                            <p className="text-[11.5px] text-destructive mt-1">{retry.reason}</p>
                                                         )}
                                                     </div>
                                                     <Badge tone={delivered ? 'emerald' : (STATUS_META[retry.status]?.color ?? 'slate')}>
@@ -755,7 +755,7 @@ function DetailModal({ messageId, version, onClose, onRetry, retrying }) {
                                 <Button
                                     disabled={!detail.retryable || retrying === detail.id}
                                     onClick={() => onRetry(detail.id)}
-                                    className="h-14 px-7 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-[10px] gap-2 disabled:opacity-40"
+                                    className="h-14 px-7 rounded-2xl bg-success hover:bg-success text-primary-foreground font-black uppercase tracking-widest text-[10px] gap-2 disabled:opacity-40"
                                 >
                                     {retrying === detail.id
                                         ? <Loader2 className="size-4 animate-spin" />
@@ -807,7 +807,7 @@ function AttachmentModal({ message, onClose }) {
             <div className="w-full max-w-5xl rounded-[2.5rem] bg-card border border-border/40 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between gap-6 px-8 py-6 border-b border-border/30">
                     <div className="flex items-center gap-4 min-w-0">
-                        <div className="size-11 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                        <div className="size-11 rounded-2xl bg-primary/10 border border-primary/20 text-accent-foreground flex items-center justify-center flex-shrink-0">
                             <Paperclip className="size-5" />
                         </div>
                         <div className="min-w-0">
@@ -841,7 +841,7 @@ function AttachmentModal({ message, onClose }) {
                             <FileText className="size-12 mx-auto text-muted-foreground/50 mb-4" />
                             <p className="text-sm font-bold text-foreground">Este formato no se puede previsualizar</p>
                             <p className="text-xs text-muted-foreground mt-1 mb-6 italic">Descárgalo para abrirlo con la aplicación correspondiente.</p>
-                            <a href={inlineUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] font-black uppercase tracking-widest text-indigo-600 hover:underline">
+                            <a href={inlineUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] font-black uppercase tracking-widest text-accent-foreground hover:underline">
                                 Abrir en una pestaña nueva
                             </a>
                         </div>
@@ -899,7 +899,7 @@ function AttachmentDownload({ messageId, filename }) {
                 {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                 {downloading ? 'Descargando' : 'Descargar'}
             </Button>
-            {error && <p className="text-[10.5px] font-semibold text-rose-600 mt-1 max-w-xs text-right">{error}</p>}
+            {error && <p className="text-[10.5px] font-semibold text-destructive mt-1 max-w-xs text-right">{error}</p>}
         </div>
     );
 }
@@ -944,7 +944,7 @@ function FilterSelect({ label, value, onChange, options, icon }) {
             <select
                 value={value}
                 onChange={e => onChange(e.target.value)}
-                className="w-full h-12 px-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-indigo-500/60 transition-colors"
+                className="w-full h-12 px-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-primary/60 transition-colors"
             >
                 {options.map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
@@ -962,7 +962,7 @@ function DateInput({ label, value, onChange }) {
                 type="date"
                 value={value ?? ''}
                 onChange={e => onChange(e.target.value)}
-                className="w-full h-12 px-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-indigo-500/60 transition-colors"
+                className="w-full h-12 px-4 rounded-2xl bg-muted/30 border border-border/40 text-sm font-medium focus:outline-none focus:border-primary/60 transition-colors"
             />
         </label>
     );
@@ -971,7 +971,7 @@ function DateInput({ label, value, onChange }) {
 function Section({ title, icon, children }) {
     return (
         <section>
-            <div className="flex items-center gap-2.5 mb-4 text-indigo-600">
+            <div className="flex items-center gap-2.5 mb-4 text-accent-foreground">
                 {icon}
                 <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">{title}</h3>
             </div>

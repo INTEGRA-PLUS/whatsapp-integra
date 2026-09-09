@@ -105,9 +105,16 @@ x-app-env: &app-env
   AI_MENUS_DEBOUNCE: ${AI_MENUS_DEBOUNCE:-6}
   AI_CHAT_TIMEOUT: ${AI_CHAT_TIMEOUT:-180}
 
+  # Correo. Lo usa la recuperación de contraseña ("¿Olvidaste tu contraseña?"):
+  # con `MAIL_MAILER=log` el enlace no sale del servidor, se escribe en el log,
+  # y el usuario ve un error en pantalla en vez de recibir nada. Para que
+  # funcione de verdad hace falta un SMTP con credenciales en `.env.docker`.
   MAIL_MAILER: ${MAIL_MAILER:-log}
   MAIL_HOST: ${MAIL_HOST:-127.0.0.1}
   MAIL_PORT: ${MAIL_PORT:-2525}
+  # Laravel 12 decide el cifrado con MAIL_SCHEME (`smtp` para STARTTLS en el
+  # 587, `smtps` para TLS directo en el 465), no con el viejo MAIL_ENCRYPTION.
+  MAIL_SCHEME: ${MAIL_SCHEME:-smtp}
   MAIL_USERNAME: ${MAIL_USERNAME:-}
   MAIL_PASSWORD: ${MAIL_PASSWORD:-}
   MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@example.com}

@@ -1,200 +1,290 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { useMemo, useState } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { 
-    Save, 
-    ArrowLeft, 
-    Shield, 
-    ShieldCheck, 
-    Check,
-    X,
-    TrendingUp,
-    Info,
-    ChevronRight
-} from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, Save, Sparkles } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import EditorAccesos from '@/components/roles/EditorAccesos';
+import ResumenAccesos from '@/components/roles/ResumenAccesos';
+import { PLANTILLAS, idsDePlantilla } from '@/components/roles/permisos';
 
-export default function Create({ availablePermissions }) {
+const PASOS = [
+    { titulo: 'Nombre', ayuda: 'Cómo se llama y para qué sirve' },
+    { titulo: 'Accesos', ayuda: 'A qué módulos puede entrar' },
+    { titulo: 'Resumen', ayuda: 'Revisar y guardar' },
+];
+
+export default function Create({ grupos, niveles }) {
+    const [paso, setPaso] = useState(0);
+    const [plantillaUsada, setPlantillaUsada] = useState(null);
+
     const { data, setData, post, processing, errors } = useForm({
         name: '',
+        description: '',
         permissions: [],
     });
 
-    const togglePermission = (id) => {
-        const newPermissions = data.permissions.includes(id)
-            ? data.permissions.filter(p => p !== id)
-            : [...data.permissions, id];
-        setData('permissions', newPermissions);
+    const nombreValido = data.name.trim().length > 0;
+
+    const totalPermisos = useMemo(
+        () => grupos.reduce((n, g) => n + g.modulos.reduce((m, mod) => m + mod.permisos.length, 0), 0),
+        [grupos],
+    );
+
+    const aplicarPlantilla = (plantilla) => {
+        setPlantillaUsada(plantilla.clave);
+        setData('permissions', idsDePlantilla(plantilla, grupos));
     };
 
-    const toggleModule = (moduleName, permissionIds) => {
-        const allInModule = permissionIds.every(id => data.permissions.includes(id));
-        if (allInModule) {
-            setData('permissions', data.permissions.filter(id => !permissionIds.includes(id)));
-        } else {
-            setData('permissions', [...new Set([...data.permissions, ...permissionIds])]);
-        }
+    const siguiente = () => {
+        if (paso === 0 && !nombreValido) return;
+        setPaso((p) => Math.min(p + 1, PASOS.length - 1));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        post(route('roles.store'));
+    const anterior = () => {
+        setPaso((p) => Math.max(p - 1, 0));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
+    // El formulario NUNCA guarda por sí solo. Guardar es una acción explícita
+    // del botón del último paso.
+    //
+    // Con `onSubmit` haciendo el post, cualquier evento de submit del navegador
+    // —un Enter en el campo de nombre, o el submit que dispara el botón de
+    // «Continuar» justo después de que el paso ya cambió— creaba el rol sin que
+    // nadie llegara a ver el resumen. Lo comprobé: pasaba de verdad.
+    const bloquearSubmit = (e) => e.preventDefault();
+
+    const guardar = () => post(route('roles.store'));
 
     return (
         <>
-            <Head title="Nuevo Rol" />
-            <div className="max-w-6xl mx-auto p-6 lg:p-10">
-                <div className="flex items-center justify-between mb-10">
-                    <div className="flex items-center gap-4">
-                        <Button asChild variant="outline" size="icon" className="rounded-full shadow-sm">
-                            <Link href={route('roles.index')}>
-                                <ArrowLeft className="size-4" />
-                            </Link>
-                        </Button>
-                        <div>
-                            <h1 className="text-3xl font-black tracking-tight text-foreground">Configurar Nuevo Rol</h1>
-                            <p className="text-muted-foreground mt-1">Crea un nuevo nivel de acceso y define su módulo base.</p>
-                        </div>
+            <Head title="Nuevo rol" />
+
+            <div className="mx-auto max-w-4xl p-6 lg:p-10">
+                <div className="mb-8 flex items-center gap-4">
+                    <Button asChild variant="outline" size="icon" className="rounded-full">
+                        <Link href={route('roles.index')} aria-label="Volver a roles">
+                            <ArrowLeft className="size-4" />
+                        </Link>
+                    </Button>
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                            Crear un rol
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            Un rol es un paquete de accesos que después le asignas a varias personas.
+                        </p>
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="grid lg:grid-cols-12 gap-8">
-                    {/* Main Content */}
-                    <div className="lg:col-span-8 space-y-8">
-                        {/* Basic Info */}
-                        <section className="bg-card border rounded-[2.5rem] p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                                    <Shield className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">General</h2>
-                            </div>
-                            
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Nombre del Rol / Módulo</label>
-                                    <input
-                                        type="text"
-                                        value={data.name}
-                                        onChange={e => setData('name', e.target.value)}
-                                        className="w-full h-14 bg-zinc-50 dark:bg-zinc-900 border-transparent rounded-2xl px-6 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-lg font-bold"
-                                        placeholder="Ej: Ventas, Soporte, Logística..."
-                                        required
-                                    />
-                                    {errors.name && <p className="text-xs text-red-500 font-medium ml-1">{errors.name}</p>}
-                                </div>
-                                
-                                <div className="flex items-start gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                    <Info className="size-5 text-primary shrink-0 mt-0.5" />
-                                    <p className="text-xs text-muted-foreground leading-relaxed">
-                                        Al crear el rol <span className="font-bold text-foreground">"{data.name || 'Nombre'}"</span>, el sistema creará automáticamente el módulo <span className="font-bold text-foreground">"{data.name.toLowerCase() || 'nombre'}"</span> con sus 4 permisos base (Ver, Crear, Editar, Eliminar).
-                                    </p>
-                                </div>
-                            </div>
-                        </section>
+                {/* Pasos */}
+                <ol className="mb-10 flex items-center gap-2">
+                    {PASOS.map((p, i) => {
+                        const hecho = i < paso;
+                        const actual = i === paso;
+                        return (
+                            <li key={p.titulo} className="flex flex-1 items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => (i < paso || (i === 1 && nombreValido)) && setPaso(i)}
+                                    disabled={i > paso && !(i === 1 && nombreValido)}
+                                    className={cn(
+                                        'flex min-w-0 flex-1 items-center gap-3 rounded-xl border p-3 text-left transition-colors',
+                                        actual && 'border-primary bg-primary/5',
+                                        hecho && 'border-border hover:bg-muted',
+                                        !actual && !hecho && 'border-dashed opacity-60',
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                                            actual && 'bg-primary text-primary-foreground',
+                                            hecho && 'bg-primary/15 text-primary',
+                                            !actual && !hecho && 'bg-muted text-muted-foreground',
+                                        )}
+                                    >
+                                        {hecho ? <Check className="size-4" /> : i + 1}
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-sm font-semibold text-foreground">
+                                            {p.titulo}
+                                        </span>
+                                        <span className="hidden truncate text-xs text-muted-foreground sm:block">
+                                            {p.ayuda}
+                                        </span>
+                                    </span>
+                                </button>
+                            </li>
+                        );
+                    })}
+                </ol>
 
-                        {/* Permissions Matrix */}
-                        <section className="bg-card border rounded-[2.5rem] p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-purple-100 text-purple-600 dark:bg-purple-900/20 flex items-center justify-center">
-                                    <TrendingUp className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Matriz de Permisos Cruzados</h2>
-                            </div>
-
-                            <div className="space-y-6">
-                                {Object.entries(availablePermissions).map(([module, permissions]) => (
-                                    <div key={module} className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800 rounded-3xl overflow-hidden">
-                                        <div className="px-6 py-4 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-between">
-                                            <h3 className="font-black text-sm uppercase tracking-widest text-zinc-500">{module}</h3>
-                                            <Button 
-                                                type="button" 
-                                                variant="ghost" 
-                                                size="sm" 
-                                                className="text-[10px] font-black uppercase tracking-tighter"
-                                                onClick={() => toggleModule(module, permissions.map(p => p.id))}
-                                            >
-                                                {permissions.every(p => data.permissions.includes(p.id)) ? 'Desmarcar Todo' : 'Marcar Todo'}
-                                            </Button>
-                                        </div>
-                                        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {permissions.map(perm => (
-                                                <div 
-                                                    key={perm.id}
-                                                    onClick={() => togglePermission(perm.id)}
-                                                    className={`cursor-pointer flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${data.permissions.includes(perm.id) ? 'border-primary bg-primary/5 shadow-sm' : 'border-transparent bg-white dark:bg-zinc-950 hover:border-zinc-200 dark:hover:border-zinc-800'}`}
-                                                >
-                                                    <div className={`size-6 rounded-lg flex items-center justify-center transition-colors ${data.permissions.includes(perm.id) ? 'bg-primary text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-transparent'}`}>
-                                                        <Check className="size-4" />
-                                                    </div>
-                                                    <span className={`text-sm font-bold capitalize ${data.permissions.includes(perm.id) ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                                        {perm.name.split('.')[1]}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-
-                                {Object.keys(availablePermissions).length === 0 && (
-                                    <div className="text-center py-10 text-muted-foreground italic text-sm">
-                                        Aún no existen otros módulos en el sistema.
-                                    </div>
+                <form onSubmit={bloquearSubmit}>
+                    {/* ── Paso 1 ── */}
+                    {paso === 0 && (
+                        <div className="space-y-6">
+                            <div className="rounded-2xl border bg-card p-6">
+                                <label
+                                    htmlFor="rol-nombre"
+                                    className="block text-sm font-semibold text-foreground"
+                                >
+                                    Nombre del rol
+                                </label>
+                                <p className="mb-3 text-sm text-muted-foreground">
+                                    Como se conoce el cargo dentro de la empresa.
+                                </p>
+                                <input
+                                    id="rol-nombre"
+                                    type="text"
+                                    value={data.name}
+                                    onChange={(e) => setData('name', e.target.value)}
+                                    className="h-12 w-full rounded-xl border bg-background px-4 text-base transition-colors focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10"
+                                    placeholder="Agente de soporte"
+                                    autoFocus
+                                    required
+                                />
+                                {errors.name && (
+                                    <p className="mt-2 text-sm text-destructive">{errors.name}</p>
                                 )}
                             </div>
-                        </section>
-                    </div>
 
-                    {/* Sidebar Actions */}
-                    <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-black rounded-[2.5rem] p-8 text-white shadow-xl sticky top-10">
-                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                                <ShieldCheck className="size-5 text-primary" /> Resumen de Acceso
-                            </h3>
-                            
-                            <div className="space-y-6">
-                                <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <span className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Permisos Base</span>
-                                        <span className="text-primary text-xs font-black uppercase">Automático</span>
-                                    </div>
-                                    <ul className="space-y-2">
-                                        {['view', 'create', 'update', 'delete'].map(action => (
-                                            <li key={action} className="flex items-center gap-2 text-[10px] font-bold text-zinc-300 capitalize">
-                                                <div className="size-1.5 rounded-full bg-primary" />
-                                                {action} {data.name.toLowerCase() || 'módulo'}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-
-                                <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <span className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Permisos Extra</span>
-                                        <span className="text-zinc-500 text-xs font-black uppercase">{data.permissions.length}</span>
-                                    </div>
-                                    {data.permissions.length > 0 ? (
-                                        <p className="text-[10px] text-zinc-400 leading-relaxed">
-                                            Has seleccionado permisos adicionales de otros módulos que se añadirán a este rol.
-                                        </p>
-                                    ) : (
-                                        <p className="text-[10px] text-zinc-500 italic leading-relaxed">
-                                            No has seleccionado permisos de otros módulos aún.
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="space-y-3 pt-4">
-                                    <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
-                                        <Save className="size-5 mr-2" /> GUARDAR ROL
-                                    </Button>
-                                    <Button asChild variant="ghost" className="w-full text-zinc-400 hover:text-white hover:bg-white/5 font-bold">
-                                        <Link href={route('roles.index')}>Descartar cambios</Link>
-                                    </Button>
-                                </div>
+                            <div className="rounded-2xl border bg-card p-6">
+                                <label
+                                    htmlFor="rol-descripcion"
+                                    className="block text-sm font-semibold text-foreground"
+                                >
+                                    ¿Para qué sirve? <span className="font-normal text-muted-foreground">(opcional)</span>
+                                </label>
+                                <p className="mb-3 text-sm text-muted-foreground">
+                                    Una frase para que dentro de seis meses se sepa por qué existe este rol.
+                                </p>
+                                <input
+                                    id="rol-descripcion"
+                                    type="text"
+                                    value={data.description}
+                                    onChange={(e) => setData('description', e.target.value)}
+                                    className="h-12 w-full rounded-xl border bg-background px-4 transition-colors focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10"
+                                    placeholder="Atiende chats y actualiza contactos, sin tocar campañas"
+                                    maxLength={255}
+                                />
+                                {errors.description && (
+                                    <p className="mt-2 text-sm text-destructive">{errors.description}</p>
+                                )}
                             </div>
                         </div>
+                    )}
+
+                    {/* ── Paso 2 ── */}
+                    {paso === 1 && (
+                        <div className="space-y-8">
+                            <div className="rounded-2xl border bg-card p-6">
+                                <div className="mb-1 flex items-center gap-2">
+                                    <Sparkles className="size-4 text-primary" />
+                                    <h2 className="font-semibold text-foreground">
+                                        Empieza por un punto de partida
+                                    </h2>
+                                </div>
+                                <p className="mb-4 text-sm text-muted-foreground">
+                                    Elige el que más se parezca y ajústalo abajo. Puedes cambiar lo
+                                    que quieras después.
+                                </p>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {PLANTILLAS.map((plantilla) => (
+                                        <button
+                                            key={plantilla.clave}
+                                            type="button"
+                                            onClick={() => aplicarPlantilla(plantilla)}
+                                            className={cn(
+                                                'rounded-xl border p-4 text-left transition-colors',
+                                                plantillaUsada === plantilla.clave
+                                                    ? 'border-primary bg-primary/5'
+                                                    : 'border-border hover:border-primary/40',
+                                            )}
+                                        >
+                                            <span className="block text-sm font-semibold text-foreground">
+                                                {plantilla.nombre}
+                                            </span>
+                                            <span className="mt-1 block text-xs leading-snug text-muted-foreground">
+                                                {plantilla.ayuda}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-foreground">
+                                            ¿A qué puede entrar este rol?
+                                        </h2>
+                                        <p className="text-sm text-muted-foreground">
+                                            Los módulos están agrupados igual que el menú lateral.
+                                        </p>
+                                    </div>
+                                    <span className="rounded-lg bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                                        {data.permissions.length} de {totalPermisos} permisos
+                                    </span>
+                                </div>
+
+                                <EditorAccesos
+                                    grupos={grupos}
+                                    seleccionados={data.permissions}
+                                    onCambiar={(ids) => {
+                                        setPlantillaUsada(null);
+                                        setData('permissions', ids);
+                                    }}
+                                    niveles={niveles}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Paso 3 ── */}
+                    {paso === 2 && (
+                        <div className="space-y-6">
+                            <div>
+                                <h2 className="text-lg font-bold text-foreground">
+                                    Esto es lo que vas a guardar
+                                </h2>
+                                <p className="text-sm text-muted-foreground">
+                                    {data.description || 'Sin descripción.'}
+                                </p>
+                            </div>
+
+                            <ResumenAccesos
+                                grupos={grupos}
+                                seleccionados={data.permissions}
+                                niveles={niveles}
+                                nombre={data.name}
+                            />
+                        </div>
+                    )}
+
+                    {/* ── Navegación ── */}
+                    <div className="mt-10 flex items-center justify-between gap-4 border-t pt-6">
+                        {paso > 0 ? (
+                            <Button type="button" variant="ghost" onClick={anterior}>
+                                <ArrowLeft className="mr-2 size-4" /> Atrás
+                            </Button>
+                        ) : (
+                            <Button asChild variant="ghost">
+                                <Link href={route('roles.index')}>Cancelar</Link>
+                            </Button>
+                        )}
+
+                        {paso < PASOS.length - 1 ? (
+                            <Button type="button" onClick={siguiente} disabled={paso === 0 && !nombreValido}>
+                                Continuar <ArrowRight className="ml-2 size-4" />
+                            </Button>
+                        ) : (
+                            <Button type="button" onClick={guardar} disabled={processing}>
+                                <Save className="mr-2 size-4" />
+                                {processing ? 'Guardando…' : 'Crear rol'}
+                            </Button>
+                        )}
                     </div>
                 </form>
             </div>
@@ -202,4 +292,4 @@ export default function Create({ availablePermissions }) {
     );
 }
 
-Create.layout = page => <AppLayout breadcrumb={['Roles', 'Nuevo']}>{page}</AppLayout>;
+Create.layout = (page) => <AppLayout breadcrumb={['Roles', 'Nuevo']}>{page}</AppLayout>;

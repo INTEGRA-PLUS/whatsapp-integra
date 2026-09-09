@@ -188,13 +188,13 @@ function CreateTab({ limits, menus }) {
                     </div>
 
                     {pending.length > 0 && (
-                        <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
-                            <p className="text-[12px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-1.5">
+                        <div className="rounded-md bg-warning/15 px-3 py-2.5">
+                            <p className="text-[12px] font-semibold uppercase tracking-wider text-warning mb-1.5">
                                 Te falta completar {pending.length === 1 ? 'una cosa' : `${pending.length} cosas`}
                             </p>
                             <ul className="space-y-1">
                                 {pending.map(item => (
-                                    <li key={item} className="flex gap-2 text-[13px] text-amber-700 dark:text-amber-400">
+                                    <li key={item} className="flex gap-2 text-[13px] text-warning">
                                         <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
                                         <span>{item}</span>
                                     </li>
@@ -204,7 +204,7 @@ function CreateTab({ limits, menus }) {
                     )}
 
                     {pending.length === 0 && (
-                        <p className="flex items-start gap-2 rounded-md bg-teal-50 dark:bg-teal-900/20 px-3 py-2.5 text-[13px] text-teal-700 dark:text-teal-400">
+                        <p className="flex items-start gap-2 rounded-md bg-primary/15 dark:bg-primary/20 px-3 py-2.5 text-[13px] text-accent-foreground">
                             <CheckCheck className="size-4 shrink-0 mt-0.5" />
                             <span>No le falta nada por configurar. Revísalo y {root.active ? 'listo' : 'enciéndelo'}.</span>
                         </p>
@@ -575,8 +575,8 @@ function Field({ children }) {
 }
 
 const NOTE_TONES = {
-    amber: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400',
-    teal: 'bg-teal-50 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400',
+    amber: 'bg-warning/15 text-warning',
+    teal: 'bg-primary/15 dark:bg-primary/20 text-accent-foreground',
 };
 
 function Note({ tone = 'amber', icon: Icon, className = '', children }) {

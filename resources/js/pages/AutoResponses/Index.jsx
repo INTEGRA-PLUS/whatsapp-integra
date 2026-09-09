@@ -121,9 +121,9 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
                             <div key={item.id} className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="flex size-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
+                                        <div className="flex size-10 items-center justify-center rounded-lg bg-success/15">
                                             {item.active
-                                                ? <Power className="size-5 text-green-600 dark:text-green-400" />
+                                                ? <Power className="size-5 text-success" />
                                                 : <PowerOff className="size-5 text-muted-foreground" />
                                             }
                                         </div>
@@ -134,7 +134,7 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
                                             </p>
                                         </div>
                                     </div>
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-muted text-muted-foreground'}`}>
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
                                         {item.active ? 'Activa' : 'Inactiva'}
                                     </span>
                                 </div>
@@ -253,7 +253,7 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                                     checked={isSelected}
                                     disabled={disabled}
                                     onChange={() => toggleType(opt.value)}
-                                    className="rounded border-input size-4 accent-green-600"
+                                    className="rounded border-input size-4 accent-success"
                                 />
                                 <span className="text-foreground">{opt.label}</span>
                                 {disabled && <span className="text-[10px] text-muted-foreground">(ya usado en esta instancia)</span>}
@@ -265,17 +265,17 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                 {noTypeSelected && <p className="text-xs text-destructive mt-1">Selecciona al menos un tipo de coincidencia.</p>}
 
                 {selectedTypes.includes('welcome') && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                    <p className="text-[11px] text-warning mt-2 leading-relaxed">
                         Bienvenida: se enviará solo al primer mensaje de un contacto nuevo en esta instancia.
                     </p>
                 )}
                 {showReopen && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                    <p className="text-[11px] text-warning mt-2 leading-relaxed">
                         Reabrir: se reenviará el saludo cuando el cliente vuelva a escribir después del tiempo de inactividad definido abajo.
                     </p>
                 )}
                 {selectedTypes.includes('always') && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                    <p className="text-[11px] text-warning mt-2 leading-relaxed">
                         Siempre: se enviará con cualquier mensaje del usuario. Si no hay respuesta dentro de la primera hora, se reenviará una única vez como recordatorio.
                     </p>
                 )}
@@ -360,7 +360,7 @@ function FormFields({ form, setForm, instances, autoResponses, editingId = null,
                     type="checkbox"
                     checked={form.active}
                     onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
-                    className="rounded border-input size-4 accent-green-600"
+                    className="rounded border-input size-4 accent-success"
                 />
                 <span className="text-sm text-foreground">Activa</span>
             </label>

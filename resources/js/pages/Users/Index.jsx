@@ -52,12 +52,12 @@ export default function UsersIndex({ users, stats }) {
         const role = roles?.[0]?.name || 'Sin Rol';
         switch (role.toLowerCase()) {
             case 'admin':
-                return <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-purple-200 dark:border-purple-800"><Shield className="size-3" /> Administrador</span>;
+                return <span className="inline-flex items-center gap-1 bg-primary/15 text-accent-foreground dark:bg-primary/30 dark:text-accent-foreground px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-primary/30 dark:border-primary/30"><Shield className="size-3" /> Administrador</span>;
             case 'agent':
             case 'agente':
-                return <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-blue-200 dark:border-blue-800"><UserIcon className="size-3" /> Agente</span>;
+                return <span className="inline-flex items-center gap-1 bg-info/15 text-info dark:bg-info/30 dark:text-info px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-info/30"><UserIcon className="size-3" /> Agente</span>;
             default:
-                return <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-gray-200 dark:border-gray-800">{role}</span>;
+                return <span className="inline-flex items-center gap-1 bg-muted text-foreground dark:bg-muted/30 dark:text-muted-foreground px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border border-border">{role}</span>;
         }
     };
 
@@ -91,25 +91,25 @@ export default function UsersIndex({ users, stats }) {
                                 title="Total Equipo" 
                                 value={stats.total} 
                                 icon={Users} 
-                                color="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400" 
+                                color="bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground" 
                             />
                             <StatCard 
                                 title="Miembros Activos" 
                                 value={stats.active} 
                                 icon={UserCheck} 
-                                color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" 
+                                color="bg-success/15 text-success dark:bg-success/30 dark:text-success" 
                             />
                             <StatCard 
                                 title="Administradores" 
                                 value={stats.admins} 
                                 icon={Shield} 
-                                color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400" 
+                                color="bg-primary/15 text-accent-foreground dark:bg-primary/30 dark:text-accent-foreground" 
                             />
                             <StatCard 
                                 title="Agentes" 
                                 value={stats.agents} 
                                 icon={Activity} 
-                                color="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400" 
+                                color="bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground" 
                             />
                         </div>
                     </div>
@@ -160,23 +160,23 @@ export default function UsersIndex({ users, stats }) {
                                         className={`group relative flex flex-col rounded-3xl border bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:border-primary/30 overflow-hidden ${!user.active ? 'opacity-70 saturate-50' : ''}`}
                                     >
                                         {!user.active && (
-                                            <div className="absolute top-0 right-0 bg-red-500 text-white text-[9px] px-4 py-1 font-black rounded-bl-2xl shadow-sm z-10">
+                                            <div className="absolute top-0 right-0 bg-destructive text-white text-[9px] px-4 py-1 font-black rounded-bl-2xl shadow-sm z-10">
                                                 ACCESO RESTRINGIDO
                                             </div>
                                         )}
                                         
                                         <div className="flex items-center gap-4 mb-8">
-                                            <div className={`relative size-16 flex items-center justify-center rounded-2xl shadow-inner transition-transform group-hover:scale-110 ${(user.roles?.[0]?.name || '').toLowerCase() === 'admin' ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/20' : 'bg-blue-50 text-blue-600 dark:bg-blue-900/20'}`}>
+                                            <div className={`relative size-16 flex items-center justify-center rounded-2xl shadow-inner transition-transform group-hover:scale-110 ${(user.roles?.[0]?.name || '').toLowerCase() === 'admin' ? 'bg-primary/15 text-accent-foreground dark:bg-primary/20' : 'bg-info/15 text-info dark:bg-info/20'}`}>
                                                 {(user.roles?.[0]?.name || '').toLowerCase() === 'admin' ? <Shield className="size-8" /> : <UserIcon className="size-8" />}
                                                 {user.active && (
-                                                    <div className="absolute -top-1 -right-1 size-4 bg-green-500 border-2 border-card rounded-full shadow-sm" />
+                                                    <div className="absolute -top-1 -right-1 size-4 bg-success border-2 border-card rounded-full shadow-sm" />
                                                 )}
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 overflow-hidden">
                                                     <h3 className="font-bold text-foreground truncate">{user.name}</h3>
                                                     {user.id === currentUser.id && (
-                                                        <span className="bg-green-100 text-green-700 dark:bg-green-900/40 text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase shrink-0">Tú</span>
+                                                        <span className="bg-success/15 text-success dark:bg-success/40 text-[7px] font-black px-1.5 py-0.5 rounded-md uppercase shrink-0">Tú</span>
                                                     )}
                                                 </div>
                                                 <p className="text-xs text-muted-foreground truncate">{user.email}</p>
@@ -184,7 +184,7 @@ export default function UsersIndex({ users, stats }) {
                                         </div>
 
                                         <div className="space-y-4 mt-auto">
-                                            <div className="flex items-center justify-between border-y border-slate-100 dark:border-slate-800 py-3">
+                                            <div className="flex items-center justify-between border-y border-border py-3">
                                                 <span className="text-[10px] font-bold text-muted-foreground uppercase">Rol</span>
                                                 {getRoleBadge(user.roles)}
                                             </div>
@@ -196,11 +196,11 @@ export default function UsersIndex({ users, stats }) {
                                                     </Link>
                                                 </Button>
                                                 {user.id !== currentUser.id ? (
-                                                    <Button variant="ghost" size="sm" className="h-10 gap-2 text-destructive hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl font-bold transition-all" onClick={() => handleDelete(user)}>
+                                                    <Button variant="ghost" size="sm" className="h-10 gap-2 text-destructive hover:bg-destructive/15 dark:hover:bg-destructive/30 rounded-xl font-bold transition-all" onClick={() => handleDelete(user)}>
                                                         <Trash2 className="size-3.5" /> Borrar
                                                     </Button>
                                                 ) : (
-                                                    <div className="h-10 flex items-center justify-center bg-slate-50 dark:bg-slate-900 rounded-xl">
+                                                    <div className="h-10 flex items-center justify-center bg-muted rounded-xl">
                                                         <span className="text-[9px] text-muted-foreground font-bold italic">Cuenta Principal</span>
                                                     </div>
                                                 )}

@@ -49,7 +49,7 @@ export default function CampaignsIndex({ campaigns = [], instances = [] }) {
                 </div>
 
                 {!puedeCrear && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                    <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning">
                         Para crear campañas necesitas una línea activa con WhatsApp Business conectado.
                     </div>
                 )}
@@ -100,7 +100,7 @@ export default function CampaignsIndex({ campaigns = [], instances = [] }) {
                                                         : 'Texto libre · hay que rehacerla con una plantilla'}
                                                 </div>
                                                 {c.schedule_type === 'recurring' && (
-                                                    <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                                                    <div className="mt-0.5 inline-flex items-center gap-1 text-xs text-info">
                                                         <CalendarClock className="size-3.5" />
                                                         {(c.schedule_days ?? []).map(d => DAY_LABEL[d] ?? d).join(', ')} · {(c.schedule_time ?? '').slice(0, 5)}
                                                     </div>
@@ -121,17 +121,17 @@ export default function CampaignsIndex({ campaigns = [], instances = [] }) {
                                                 <div className="flex items-center gap-2 text-xs">
                                                     <span>{enviados}/{c.total_recipients} enviados</span>
                                                     {entregados > 0 && (
-                                                        <span className="inline-flex items-center gap-0.5 text-teal-600 dark:text-teal-400">
+                                                        <span className="inline-flex items-center gap-0.5 text-accent-foreground">
                                                             <CheckCheck className="size-3.5" /> {entregados}
                                                         </span>
                                                     )}
                                                     {c.counts.failed > 0 && (
-                                                        <span className="text-red-600 dark:text-red-400">{c.counts.failed} fallidos</span>
+                                                        <span className="text-destructive">{c.counts.failed} fallidos</span>
                                                     )}
                                                 </div>
                                                 <div className="mt-1 h-1.5 w-32 rounded-full bg-muted overflow-hidden">
                                                     <div
-                                                        className="h-full bg-green-500"
+                                                        className="h-full bg-success"
                                                         style={{ width: `${c.total_recipients > 0 ? (enviados / c.total_recipients) * 100 : 0}%` }}
                                                     />
                                                 </div>

@@ -15,9 +15,9 @@ function ImpersonatingBadge() {
         <form onSubmit={(e) => { e.preventDefault(); router.post(route('stop-impersonating')); }}>
             <button
                 type="submit"
-                className="flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+                className="flex items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-medium text-warning hover:bg-warning/15 dark:text-warning"
             >
-                <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span className="size-1.5 rounded-full bg-warning animate-pulse" />
                 Suplantando — click para salir
             </button>
         </form>
@@ -62,12 +62,12 @@ export default function AppLayout({ children, breadcrumb }) {
                 {(flash?.success || flash?.error) && (
                     <div className="px-6 pt-4">
                         {flash.success && (
-                            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800/30 dark:bg-green-950/30 dark:text-green-400">
+                            <div className="rounded-lg border border-success/30 bg-success/15 px-4 py-3 text-sm text-success dark:border-success/30 dark:bg-success/30 dark:text-success">
                                 {flash.success}
                             </div>
                         )}
                         {flash.error && (
-                            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800/30 dark:bg-red-950/30 dark:text-red-400">
+                            <div className="rounded-lg border border-destructive/30 bg-destructive/15 px-4 py-3 text-sm text-destructive dark:border-destructive/30 dark:bg-destructive/30 dark:text-destructive">
                                 {flash.error}
                             </div>
                         )}

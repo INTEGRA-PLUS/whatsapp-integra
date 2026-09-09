@@ -6,7 +6,12 @@
  * era el de la marca. Ahora usa el isotipo real, recortado del logo oficial.
  *
  * El recorte va sobre su propio fondo azul noche, así que el contenedor lleva
- * ese mismo color: sobre blanco, el cuadrado del PNG se notaría.
+ * ese mismo color: sobre blanco, el cuadrado del PNG se notaría. Ese hexadecimal
+ * es del archivo, no del tema, y por eso no es un token.
+ *
+ * El texto sí lo es. Iba en `text-foreground` fijo y en tema oscuro quedaba negro
+ * sobre el navy: el nombre de la marca desaparecía de la barra lateral
+ * (9-sep-2026).
  */
 export default function AppLogo() {
     return (
@@ -19,8 +24,8 @@ export default function AppLogo() {
                 />
             </div>
             <div className="grid flex-1 text-left text-sm">
-                <span className="truncate leading-tight font-bold text-gray-900">Integra CRM</span>
-                <span className="truncate text-[10px] uppercase tracking-tighter text-gray-400 font-semibold">Integra Colombia</span>
+                <span className="truncate leading-tight font-bold text-sidebar-foreground">Integra CRM</span>
+                <span className="truncate text-[10px] uppercase tracking-tighter text-muted-foreground font-semibold">Integra Colombia</span>
             </div>
         </div>
     );

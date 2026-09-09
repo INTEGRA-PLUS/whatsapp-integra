@@ -156,9 +156,9 @@ function Webhooks() {
                 la dirección definitiva.
             </Row>
 
-            <div className="flex gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-                <div className="text-xs text-amber-800 dark:text-amber-300">
+            <div className="flex gap-2.5 rounded-xl border border-warning/30 bg-warning/10 p-4">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                <div className="text-xs text-warning">
                     <p className="font-medium">El error más común: poner la web en vez de la ruta.</p>
                     <p className="mt-1">
                         Si pones <code className="font-mono">https://miempresa.com/software</code>, que es
@@ -228,9 +228,9 @@ function FromIntegra() {
                 soporte y clientes.
             </p>
 
-            <div className="flex gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-                <div className="text-xs text-amber-800 dark:text-amber-300">
+            <div className="flex gap-2.5 rounded-xl border border-warning/30 bg-warning/10 p-4">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                <div className="text-xs text-warning">
                     <p className="font-medium">Para webhooks, hoy Integra no tiene dónde recibirlos.</p>
                     <p className="mt-1">
                         Su API pública (v1) es de lectura: sirve para que nosotros le preguntemos, no para
@@ -268,7 +268,7 @@ function Health() {
             </p>
             <ul className="space-y-2 text-xs text-muted-foreground">
                 <li className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
                     <span>
                         Cada webhook muestra cuántas entregas lleva, cuántas salieron bien y qué dijo la
                         última. <strong className="text-foreground">«Activo» sólo significa que está
@@ -276,7 +276,7 @@ function Health() {
                     </span>
                 </li>
                 <li className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
                     <span>
                         El complemento muestra si el token sigue vivo y qué permisos tiene. Un token puede
                         estar conectado y no poder leer contratos: entonces esas opciones del menú no
@@ -284,7 +284,7 @@ function Health() {
                     </span>
                 </li>
                 <li className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
                     <span>
                         El historial de cada webhook guarda lo que respondió tu servidor, que suele ser
                         donde está la pista.

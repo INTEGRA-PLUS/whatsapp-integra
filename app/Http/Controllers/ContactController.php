@@ -13,6 +13,16 @@ use Inertia\Inertia;
 class ContactController extends Controller
 {
     /**
+     * Los choques de teléfono y usuario los ve el agente en el formulario, así
+     * que se cuentan en castellano y no con el texto por defecto de Laravel.
+     */
+    private const MENSAJES_IDENTIDAD = [
+        'phone_number.required_without' => 'Pon el teléfono o el nombre de usuario de WhatsApp.',
+        'phone_number.unique' => 'Ya hay otro contacto con ese teléfono.',
+        'username.unique' => 'Ya hay otro contacto con ese nombre de usuario.',
+    ];
+
+    /**
      * El maestro de contactos, por páginas.
      *
      * Antes traía la tabla entera en el HTML inicial de Inertia, con un
@@ -109,7 +119,7 @@ class ContactController extends Controller
                 ->when($request->search, fn ($q, $search) => $q->search($search))
                 ->orderBy('name')
                 ->limit(50)
-                ->get(['id', 'name', 'phone_number', 'email'])
+                ->get(['id', 'name', 'last_name', 'phone_number', 'username', 'email'])
                 ->toArray()
         ));
     }
@@ -117,23 +127,32 @@ class ContactController extends Controller
     public function store(Request $request)
     {
         $companyId = auth()->user()->company_id;
+        $this->normalizeIdentity($request);
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'last_name' => 'nullable|string|max:255',
             'phone_number' => [
-                'required',
+                'nullable',
+                'required_without:username',
                 'string',
                 'max:50',
+                Rule::unique('contacts')->where(fn ($q) => $q->where('company_id', $companyId)),
+            ],
+            'username' => [
+                'nullable',
+                'string',
+                'max:100',
                 Rule::unique('contacts')->where(fn ($q) => $q->where('company_id', $companyId)),
             ],
             'phone_numbers' => 'nullable|array',
             'phone_numbers.*' => 'string|max:50',
             'email' => 'nullable|email|max:255',
             'notes' => 'nullable|string|max:5000',
-        ]);
+        ], self::MENSAJES_IDENTIDAD);
 
         $validated['company_id'] = $companyId;
-        $validated['phone_numbers'] = $this->cleanExtraNumbers($validated['phone_numbers'] ?? [], $validated['phone_number']);
+        $validated['phone_numbers'] = $this->cleanExtraNumbers($validated['phone_numbers'] ?? [], $validated['phone_number'] ?? null);
 
         $contact = Contact::create($validated);
         $contact->loadCount('conversations');
@@ -146,13 +165,25 @@ class ContactController extends Controller
         $this->authorizeOwnership($contact);
         $companyId = auth()->user()->company_id;
 
+        $this->normalizeIdentity($request);
+
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
+            'last_name' => 'nullable|string|max:255',
             'phone_number' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'string',
                 'max:50',
+                Rule::unique('contacts')
+                    ->where(fn ($q) => $q->where('company_id', $companyId))
+                    ->ignore($contact->id),
+            ],
+            'username' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:100',
                 Rule::unique('contacts')
                     ->where(fn ($q) => $q->where('company_id', $companyId))
                     ->ignore($contact->id),
@@ -161,17 +192,71 @@ class ContactController extends Controller
             'phone_numbers.*' => 'string|max:50',
             'email' => 'nullable|email|max:255',
             'notes' => 'nullable|string|max:5000',
-        ]);
+        ], self::MENSAJES_IDENTIDAD);
 
         if (array_key_exists('phone_numbers', $validated)) {
             $primary = $validated['phone_number'] ?? $contact->phone_number;
             $validated['phone_numbers'] = $this->cleanExtraNumbers($validated['phone_numbers'] ?? [], $primary);
         }
 
+        // Una ficha sin teléfono y sin usuario no se puede volver a encontrar ni
+        // casar con ningún abonado de Integra: al menos uno de los dos.
+        $quedaTelefono = array_key_exists('phone_number', $validated) ? $validated['phone_number'] : $contact->phone_number;
+        $quedaUsuario = array_key_exists('username', $validated) ? $validated['username'] : $contact->username;
+
+        if (!$quedaTelefono && !$quedaUsuario) {
+            return response()->json([
+                'message' => 'Pon el teléfono o el nombre de usuario de WhatsApp.',
+            ], 422);
+        }
+
         $contact->update($validated);
         $contact->loadCount('conversations');
 
         return response()->json($this->sanitizeUtf8($contact->toArray()));
+    }
+
+    /**
+     * Deja teléfono y usuario en su forma canónica antes de validar.
+     *
+     * El teléfono se guarda en dígitos —es como lo manda Meta y como lo busca
+     * Integra—, y el usuario sin la arroba y en minúsculas: el agente lo copia
+     * de la app tal cual lo ve ("@Luis_Sanchez"), y sin limpiarlo el mismo
+     * cliente entraría dos veces en la agenda.
+     */
+    private function normalizeIdentity(Request $request): void
+    {
+        if ($request->has('phone_number')) {
+            $phone = preg_replace('/\D+/', '', (string) $request->input('phone_number'));
+            $request->merge(['phone_number' => $phone !== '' ? $phone : null]);
+        }
+
+        if ($request->has('username')) {
+            $request->merge(['username' => self::cleanUsername($request->input('username'))]);
+        }
+    }
+
+    /** ¿Este nombre de usuario está libre en la empresa? (único por índice). */
+    private function usernameLibre(int $companyId, ?string $username, ?int $exceptoId = null): bool
+    {
+        if (!$username) {
+            return false;
+        }
+
+        return !Contact::where('company_id', $companyId)
+            ->where('username', $username)
+            ->when($exceptoId, fn ($q) => $q->whereKeyNot($exceptoId))
+            ->exists();
+    }
+
+    /** Un nombre de usuario de WhatsApp sin arroba, sin espacios y en minúsculas. */
+    public static function cleanUsername($value): ?string
+    {
+        $username = strtolower(trim((string) $value));
+        $username = ltrim($username, '@');
+        $username = preg_replace('/\s+/', '', $username);
+
+        return $username !== '' ? $username : null;
     }
 
     /**
@@ -251,7 +336,9 @@ class ContactController extends Controller
         if ($aplicar) {
             $phone = WhatsAppConversation::normalizeRecipient((string) $conversation->phone_number);
 
-            $contact = Contact::firstOrNew([
+            // Un hilo ya vinculado usa su ficha: por el camino del teléfono, el
+            // cliente que oculta el suyo abriría una ficha vacía en paralelo.
+            $contact = $conversation->contact ?: Contact::firstOrNew([
                 'company_id' => $user->company_id,
                 'phone_number' => $phone,
             ]);
@@ -320,10 +407,14 @@ class ContactController extends Controller
             abort(403, 'No autorizado');
         }
 
+        $this->normalizeIdentity($request);
+
         $validated = $request->validate([
             'contact_id' => 'nullable|exists:contacts,id',
             'name' => 'required_without:contact_id|string|max:255',
+            'last_name' => 'nullable|string|max:255',
             'phone_number' => 'nullable|string|max:50',
+            'username' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:255',
         ]);
 
@@ -339,28 +430,45 @@ class ContactController extends Controller
                 $contact->addNumber($conversation->phone_number);
             }
         } else {
-            $phone = $validated['phone_number'] ?: ($conversation->hasPhone() ? $conversation->phone_number : null);
+            $phone = ($validated['phone_number'] ?? null) ?: ($conversation->hasPhone() ? $conversation->phone_number : null);
+            $username = ($validated['username'] ?? null) ?: self::cleanUsername($conversation->metadata['username'] ?? null);
 
-            // La agenda se indexa por número —unique(company_id, phone_number)—
-            // así que una ficha sin él chocaría con la del siguiente cliente que
-            // oculte el suyo, y no casaría con ningún abonado de Integra.
-            if (! $phone) {
+            // Quien oculta su número sólo deja el nombre de usuario: sirve de
+            // clave de la ficha, pero alguna de las dos tiene que llegar o el
+            // contacto no se podría volver a encontrar.
+            if (!$phone && !$username) {
                 return response()->json([
-                    'message' => 'Este cliente oculta su número de WhatsApp. Vincúlalo a un contacto existente en vez de crear uno nuevo.',
+                    'message' => 'Este cliente oculta su número de WhatsApp: pon el número que te haya dado o su nombre de usuario para poder crear la ficha.',
                 ], 422);
             }
 
-            $contact = Contact::firstOrCreate(
-                ['company_id' => $user->company_id, 'phone_number' => $phone],
-                [
-                    'name' => $validated['name'],
-                    'email' => $validated['email'] ?? null,
-                ]
-            );
+            // El usuario es único por empresa: si ya lo lleva otra ficha, la
+            // nueva se crea igual con su número y sin él, en vez de reventar
+            // contra el índice.
+            if ($username && !$this->usernameLibre($user->company_id, $username)) {
+                $username = null;
+            }
+
+            $clave = $phone
+                ? ['company_id' => $user->company_id, 'phone_number' => $phone]
+                : ['company_id' => $user->company_id, 'username' => $username];
+
+            $contact = Contact::firstOrCreate($clave, [
+                'name' => $validated['name'],
+                'last_name' => $validated['last_name'] ?? null,
+                'email' => $validated['email'] ?? null,
+                'username' => $username,
+                'phone_number' => $phone,
+            ]);
 
             // If it already existed but came in without a name, fill it in.
-            if (! $contact->wasRecentlyCreated && empty($contact->name)) {
-                $contact->update(['name' => $validated['name']]);
+            if (!$contact->wasRecentlyCreated) {
+                $contact->fill(array_filter([
+                    'name' => empty($contact->name) ? $validated['name'] : null,
+                    'last_name' => empty($contact->last_name) ? ($validated['last_name'] ?? null) : null,
+                    'username' => empty($contact->username) && $username && $this->usernameLibre($user->company_id, $username, $contact->id) ? $username : null,
+                    'phone_number' => empty($contact->phone_number) ? $phone : null,
+                ]))->save();
             }
         }
 
@@ -369,7 +477,7 @@ class ContactController extends Controller
         // contacto inmediatamente y tras refrescos/polling.
         $conversation->update([
             'contact_id' => $contact->id,
-            'name' => $contact->name ?: $conversation->name,
+            'name' => $contact->full_name ?: $conversation->name,
         ]);
         $contact->loadCount('conversations');
 

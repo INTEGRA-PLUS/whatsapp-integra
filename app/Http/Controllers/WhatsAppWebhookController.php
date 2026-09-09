@@ -112,6 +112,8 @@ class WhatsAppWebhookController extends Controller
                         $this->processChange($change['value'] ?? []);
                     } elseif ($field === 'calls') {
                         $this->processCallChange($change['value'] ?? []);
+                    } elseif ($field === 'account_update') {
+                        $this->procesarAccountUpdate($entry['id'] ?? null, $change['value'] ?? []);
                     } elseif (in_array($field, self::CAMPOS_COEXISTENCIA, true)) {
                         $this->encolarCoexistencia($field, $change['value'] ?? []);
                     }
@@ -589,7 +591,7 @@ class WhatsAppWebhookController extends Controller
         // el BSUID en la agenda como si fuera un teléfono.
         try {
             if (!$isBsuid) {
-                $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName);
+                $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName, $username);
             }
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
@@ -1176,7 +1178,7 @@ class WhatsAppWebhookController extends Controller
      * usando el nombre del perfil de WhatsApp. Así ningún contacto que escriba
      * queda "sin registrar".
      */
-    private function ensureContactRegistered(WhatsAppConversation $conversation, Instance $instance, string $phone, string $contactName): void
+    private function ensureContactRegistered(WhatsAppConversation $conversation, Instance $instance, string $phone, string $contactName, ?string $username = null): void
     {
         // Si la conversación ya está vinculada a un contacto, no hay nada que hacer
         if ($conversation->contact_id) {
@@ -1191,10 +1193,18 @@ class WhatsAppWebhookController extends Controller
             })
             ->first();
 
+        // El usuario es único por empresa: si ya lo lleva otra ficha no se copia
+        // aquí, o la inserción reventaría contra el índice y el mensaje entrante
+        // se quedaría sin registrar.
+        $usernameLibre = $username && !Contact::where('company_id', $instance->company_id)
+            ->where('username', $username)
+            ->exists();
+
         if (!$contact) {
             $contact = Contact::create([
                 'company_id' => $instance->company_id,
                 'phone_number' => $phone,
+                'username' => $usernameLibre ? $username : null,
                 'name' => $contactName,
             ]);
 
@@ -1203,15 +1213,28 @@ class WhatsAppWebhookController extends Controller
                 'company_id' => $instance->company_id,
                 'phone' => $phone,
             ]);
-        } elseif ((empty($contact->name) || $contact->name === 'Desconocido')
-            && $contactName && $contactName !== 'Desconocido') {
-            // El contacto existía sin nombre: lo completamos con el del perfil
-            $contact->update(['name' => $contactName]);
+        } else {
+            $completar = [];
+
+            if ((empty($contact->name) || $contact->name === 'Desconocido')
+                && $contactName && $contactName !== 'Desconocido') {
+                // El contacto existía sin nombre: lo completamos con el del perfil
+                $completar['name'] = $contactName;
+            }
+
+            // La ficha se creó antes de que el cliente tuviera nombre de usuario.
+            if (empty($contact->username) && $usernameLibre) {
+                $completar['username'] = $username;
+            }
+
+            if ($completar) {
+                $contact->update($completar);
+            }
         }
 
         $conversation->update([
             'contact_id' => $contact->id,
-            'name' => $contact->name ?: $conversation->name,
+            'name' => $contact->full_name ?: $conversation->name,
         ]);
     }
 
@@ -1313,5 +1336,106 @@ class WhatsAppWebhookController extends Controller
 
         $recipient->update($update);
         $recipient->campaign?->refreshCounters();
+    }
+
+    /**
+     * Avisos de Meta sobre la cuenta: desconexiones y reconexiones.
+     *
+     * Esto es lo único que avisa **en el momento** de que un número deja de
+     * estar conectado. Sin escucharlo, la desconexión sólo se descubre cuando
+     * alguien se pregunta por qué un cliente lleva semanas sin escribir: el
+     * 9-sep-2026 había **doce instancias caídas** —Redes Tevesat con 5.318
+     * conversaciones entre ellas—, algunas desde marzo, y el único rastro era
+     * una tarea horaria fallando en el log.
+     *
+     * En coexistencia se desconecta con sólo cambiar de teléfono o reinstalar
+     * la app, así que no es un caso raro: es parte del funcionamiento normal.
+     */
+    private function procesarAccountUpdate(?string $wabaId, array $value): void
+    {
+        $evento = $value['event'] ?? null;
+
+        Log::channel('whatsapp')->info('🔔 account_update de Meta', [
+            'waba_id' => $wabaId,
+            'event' => $evento,
+            'motivo' => $value['disconnection_info']['reason'] ?? null,
+        ]);
+
+        if (! $wabaId || ! $evento) {
+            return;
+        }
+
+        // Se marcan todas las instancias de esa WABA: una cuenta puede tener
+        // más de un número y el aviso llega a nivel de cuenta.
+        $instancias = Instance::with('company')->where('waba_id', $wabaId)->get();
+
+        if ($instancias->isEmpty()) {
+            return;
+        }
+
+        $caidas = ['ACCOUNT_OFFBOARDED', 'PARTNER_REMOVED', 'ACCOUNT_DELETED', 'ACCOUNT_RESTRICTION'];
+        $recuperadas = ['ACCOUNT_RECONNECTED', 'PARTNER_ADDED'];
+
+        foreach ($instancias as $instancia) {
+            if (in_array($evento, $caidas, true)) {
+                $motivo = $value['disconnection_info']['reason'] ?? null;
+                $anterior = $instancia->health_status;
+
+                $instancia->update([
+                    'health_status' => 'unreachable',
+                    'health_checked_at' => now(),
+                    'health_error' => 'Meta avisó de una desconexión ('.$evento.')'
+                        .($motivo ? ': '.$motivo : '.'),
+                ]);
+
+                // Sólo se avisa en el cambio de estado: repetirlo con cada
+                // reintento de Meta convertiría la alerta en ruido.
+                if ($anterior !== 'unreachable') {
+                    $this->avisarDesconexion($instancia, $evento);
+                }
+            } elseif (in_array($evento, $recuperadas, true)) {
+                $instancia->update([
+                    'health_status' => 'ok',
+                    'health_checked_at' => now(),
+                    'health_error' => null,
+                ]);
+
+                Log::channel('whatsapp')->info('✅ Instancia reconectada según Meta', [
+                    'instance_id' => $instancia->id,
+                    'company' => $instancia->company->name ?? null,
+                    'event' => $evento,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * El mismo aviso que da el chequeo diario de salud, pero en el momento en
+     * que Meta lo dice.
+     */
+    private function avisarDesconexion(Instance $instancia, string $evento): void
+    {
+        Log::channel('whatsapp')->error('❌ Meta desconectó una instancia', [
+            'instance_id' => $instancia->id,
+            'company' => $instancia->company->name ?? null,
+            'phone_number_id' => $instancia->phone_number_id,
+            'event' => $evento,
+        ]);
+
+        $admins = \App\Models\User::where('company_id', $instancia->company_id)
+            ->where('role', 'admin')
+            ->where('active', true)
+            ->get();
+
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        \Illuminate\Support\Facades\Notification::send($admins, new \App\Notifications\SystemNotification(
+            'WhatsApp desconectado',
+            "Meta desconectó «{$instancia->name}» ({$instancia->display_phone_number}). "
+                .'No se están recibiendo ni enviando mensajes. Vuelve a conectar la cuenta desde Instancias.',
+            'Sistema'
+        ));
     }
 }

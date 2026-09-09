@@ -1,11 +1,38 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AiFlowSettingsController;
+use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
+use App\Http\Controllers\AutoResponseController;
+use App\Http\Controllers\BusinessHourController;
+use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\ContactController;
+use App\Http\Controllers\EmbeddedSignupController;
 use App\Http\Controllers\InstanceController;
-use App\Http\Controllers\UserController;
+use App\Http\Controllers\IntegrationController;
+use App\Http\Controllers\KanbanController;
+use App\Http\Controllers\MacroController;
+use App\Http\Controllers\Master\LogsController;
+use App\Http\Controllers\Master\MessagesController;
+use App\Http\Controllers\MasterController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\QuickReplyController;
+use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SystemNotificationController;
+use App\Http\Controllers\TagController;
+use App\Http\Controllers\TemplateController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\WebhookEndpointController;
+use App\Http\Controllers\WhatsAppCampaignController;
+use App\Http\Controllers\WhatsAppMenuController;
+use App\Http\Controllers\WhatsAppSettingsController;
 use App\Http\Controllers\WhatsAppWebhookController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 // Webhooks públicos
@@ -15,12 +42,12 @@ Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook'])
 // Utilidad para servidor compartido (cPanel) - Estructura personalizada + Permisos
 Route::get('/run-storage-link', function () {
     $targetFolder = storage_path('app/public');
-    $linkFolder = $_SERVER['DOCUMENT_ROOT'] . '/storage';
+    $linkFolder = $_SERVER['DOCUMENT_ROOT'].'/storage';
 
     $output = [];
 
     // 1. Crear directorios si no existen con permisos amplios
-    if (!file_exists($targetFolder)) {
+    if (! file_exists($targetFolder)) {
         mkdir($targetFolder, 0755, true);
         $output[] = "Directorio creado: $targetFolder";
     }
@@ -28,44 +55,46 @@ Route::get('/run-storage-link', function () {
     // 2. Revisar/Crear Symlink
     if (file_exists($linkFolder)) {
         if (is_link($linkFolder)) {
-            $output[] = "El link ya existe.";
+            $output[] = 'El link ya existe.';
         } else {
             return "ERROR: Ya existe una carpeta 'storage' que NO es un link.";
         }
     } else {
         try {
             symlink($targetFolder, $linkFolder);
-            $output[] = "✅ Link creado exitosamente.";
-        } catch (\Exception $e) {
-            return "❌ Error creando link: " . $e->getMessage();
+            $output[] = '✅ Link creado exitosamente.';
+        } catch (Exception $e) {
+            return '❌ Error creando link: '.$e->getMessage();
         }
     }
 
     // 3. INTENTO DE CORREGIR PERMISOS (Fix 403 Forbidden)
     try {
         // Asegurar que la carpeta fisica tenga permisos de ejecución/lectura
-        chmod($targetFolder, 0755); 
-        $output[] = "Permisos carpeta root public: 0755 verificado.";
+        chmod($targetFolder, 0755);
+        $output[] = 'Permisos carpeta root public: 0755 verificado.';
 
         // Recorrer subcarpetas (whatsapp, media, etc)
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($targetFolder));
-        
+
         foreach ($iterator as $item) {
-            if ($item->getBasename() == '..') continue; // Saltar padre
-            
+            if ($item->getBasename() == '..') {
+                continue;
+            } // Saltar padre
+
             if ($item->isDir()) {
                 chmod($item->getPathname(), 0755);
             } else {
                 chmod($item->getPathname(), 0644);
             }
         }
-        $output[] = "✅ Permisos corregidos recursivamente (Dir: 755, Files: 644).";
-        
-    } catch (\Exception $e) {
-        $output[] = "⚠️ No se pudieron cambiar todos los permisos: " . $e->getMessage();
+        $output[] = '✅ Permisos corregidos recursivamente (Dir: 755, Files: 644).';
+
+    } catch (Exception $e) {
+        $output[] = '⚠️ No se pudieron cambiar todos los permisos: '.$e->getMessage();
     }
 
-    return implode("<br>", $output);
+    return implode('<br>', $output);
 });
 
 // Debug para verificar rutas y permisos de escritura en cPanel
@@ -74,53 +103,53 @@ Route::get('/debug-path-test', function () {
     $info['document_root'] = $_SERVER['DOCUMENT_ROOT'] ?? 'N/A';
     $info['public_path'] = public_path();
     $info['disk_config'] = config('filesystems.disks.public_uploads');
-    
+
     // Intentar escribir un archivo de prueba
     try {
         // Clear config cache to ensure new filesystem config is loaded
         Artisan::call('optimize:clear');
-        $info['cache_cleared'] = "Cache limpiada (optimize:clear)";
+        $info['cache_cleared'] = 'Cache limpiada (optimize:clear)';
 
         $testFile = 'whatsapp/media/test_debug.txt';
-        $content = "Prueba de escritura: " . now();
-        
+        $content = 'Prueba de escritura: '.now();
+
         $success = Storage::disk('public_uploads')->put($testFile, $content);
-        
+
         if ($success) {
             // Check explicit path
             $correctPath = '/home/intesoga/whatsapp.integracolombia.online/whatsapp/media/test_debug.txt';
-            $info['write_status'] = "✅ Éxito al escribir archivo";
+            $info['write_status'] = '✅ Éxito al escribir archivo';
             $info['file_check_correct_path'] = file_exists($correctPath) ? "✅ EXITOSO: Archivo encontrado en: $correctPath" : "❌ FALLÓ: Archivo NO encontrado en: $correctPath";
-            
+
             // Check wrong path just in case
             $wrongPath = public_path($testFile);
-            $info['file_check_wrong_path'] = file_exists($wrongPath) ? "⚠️ ADVERTENCIA: Archivo encontrado en la ruta interna (incorrecta): $wrongPath" : "✅ Correcto: Archivo NO está en la ruta interna";
-            
+            $info['file_check_wrong_path'] = file_exists($wrongPath) ? "⚠️ ADVERTENCIA: Archivo encontrado en la ruta interna (incorrecta): $wrongPath" : '✅ Correcto: Archivo NO está en la ruta interna';
+
             $info['url_generated'] = Storage::disk('public_uploads')->url($testFile);
         } else {
-            $info['write_status'] = "❌ Falló la escritura (Storage::put retornó false)";
+            $info['write_status'] = '❌ Falló la escritura (Storage::put retornó false)';
         }
-        
-    } catch (\Exception $e) {
+
+    } catch (Exception $e) {
         $info['write_error'] = $e->getMessage();
     }
-    
+
     return $info;
 });
 
 // Debug para diagnosticar columnas de base de datos directamente desde Laravel
 Route::get('/debug-db-columns', function () {
     try {
-        $columns = Illuminate\Support\Facades\Schema::getColumnListing('whatsapp_messages');
-        $dbName = Illuminate\Support\Facades\DB::connection()->getDatabaseName();
-        
+        $columns = Schema::getColumnListing('whatsapp_messages');
+        $dbName = DB::connection()->getDatabaseName();
+
         return response()->json([
             'database_name' => $dbName,
-            'table_exists' => Illuminate\Support\Facades\Schema::hasTable('whatsapp_messages'),
+            'table_exists' => Schema::hasTable('whatsapp_messages'),
             'columns_laravel_sees' => $columns,
-            'has_incoming_invoice_id' => in_array('incoming_invoice_id', $columns)
+            'has_incoming_invoice_id' => in_array('incoming_invoice_id', $columns),
         ]);
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         return response()->json(['error' => $e->getMessage()]);
     }
 });
@@ -135,15 +164,15 @@ Route::get('/login', function () {
     return Inertia::render('Auth/Login');
 })->name('login')->middleware('guest');
 
-Route::post('/login', function (Illuminate\Http\Request $request) {
+Route::post('/login', function (Request $request) {
     $credentials = $request->validate([
         'email' => 'required|email',
-        'password' => 'required'
+        'password' => 'required',
     ]);
 
     if (auth()->attempt($credentials, $request->boolean('remember'))) {
         $request->session()->regenerate();
-        
+
         $user = auth()->user();
         session(['company_id' => $user->company_id]);
 
@@ -159,16 +188,41 @@ Route::post('/login', function (Illuminate\Http\Request $request) {
     ])->onlyInput('email');
 });
 
-Route::post('/logout', function (Illuminate\Http\Request $request) {
+// Recuperar la contraseña sin recordarla. El throttle es del formulario, además
+// del que ya trae el broker por correo (config/auth.php): sin él, esta pantalla
+// es un grifo para mandar correos a cualquier dirección de la plataforma.
+Route::middleware('guest')->group(function () {
+    Route::get('/forgot-password', [ContrasenaOlvidadaController::class, 'solicitar'])
+        ->name('password.request');
+
+    Route::post('/forgot-password', [ContrasenaOlvidadaController::class, 'enviarEnlace'])
+        ->middleware('throttle:6,1')
+        ->name('password.email');
+
+    Route::get('/reset-password/{token}', [ContrasenaOlvidadaController::class, 'formulario'])
+        ->name('password.reset');
+
+    Route::post('/reset-password', [ContrasenaOlvidadaController::class, 'restablecer'])
+        ->middleware('throttle:6,1')
+        ->name('password.update');
+});
+
+Route::post('/logout', function (Request $request) {
     auth()->logout();
     $request->session()->invalidate();
     $request->session()->regenerateToken();
+
     return redirect('/login');
 })->name('logout');
 
 // Rutas protegidas
 Route::middleware('auth')->group(function () {
     Route::redirect('/', '/chat');
+
+    // El sistema de diseño, dentro del producto: pinta con los mismos tokens
+    // que la aplicación, así que no puede documentar unos colores que ya no son.
+    Route::get('/sistema-diseno', fn () => Inertia::render('SistemaDiseno'))
+        ->name('sistema-diseno');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
 
@@ -188,139 +242,151 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:instances.update')
         ->name('instances.api-token');
 
+    // Apagar una instancia en vez de borrarla, que es lo que casi siempre se
+    // quiere: el número deja de enviar y de recibir y el historial se queda.
+    Route::post('/instances/{instance}/desconectar', [InstanceController::class, 'desconectar'])
+        ->middleware('permission:instances.update')->name('instances.desconectar');
+    Route::post('/instances/{instance}/reconectar', [InstanceController::class, 'reconectar'])
+        ->middleware('permission:instances.update')->name('instances.reconectar');
+
+    // Lo que se perdería al borrarla, para poder decirlo en el diálogo con
+    // números en vez de con un "¿estás seguro?".
+    Route::get('/instances/{instance}/resumen-borrado', [InstanceController::class, 'resumenBorrado'])
+        ->middleware('permission:instances.delete')->name('instances.resumen-borrado');
+
     // Registro insertado de Meta: conectar el WhatsApp del cliente sin pegar
     // tokens a mano. El GET sólo devuelve identificadores públicos; el POST es
     // el que crea la instancia, y por eso pide el mismo permiso que crearla.
-    Route::get('/api/embedded-signup/config', [App\Http\Controllers\EmbeddedSignupController::class, 'config']);
-    Route::post('/api/embedded-signup', [App\Http\Controllers\EmbeddedSignupController::class, 'store'])
+    Route::get('/api/embedded-signup/config', [EmbeddedSignupController::class, 'config']);
+    Route::post('/api/embedded-signup', [EmbeddedSignupController::class, 'store'])
         ->middleware('permission:instances.create');
-    Route::get('/reports', [App\Http\Controllers\ReportsController::class, 'index'])
+    Route::get('/reports', [ReportsController::class, 'index'])
         ->middleware('permission:reports.view')->name('reports.index');
 
     Route::prefix('campaigns')->name('campaigns.')->group(function () {
         // Las rutas fijas van antes que /{campaign}: si no, "create" se toma por
         // el id de una campaña y la página del asistente devuelve un 404.
-        Route::get('/contacts/search', [App\Http\Controllers\WhatsAppCampaignController::class, 'searchContacts'])
+        Route::get('/contacts/search', [WhatsAppCampaignController::class, 'searchContacts'])
             ->middleware('permission:campaigns.view')->name('contacts.search');
-        Route::get('/contacts/resolve', [App\Http\Controllers\WhatsAppCampaignController::class, 'resolveSelection'])
+        Route::get('/contacts/resolve', [WhatsAppCampaignController::class, 'resolveSelection'])
             ->middleware('permission:campaigns.view')->name('contacts.resolve');
-        Route::get('/capacity', [App\Http\Controllers\WhatsAppCampaignController::class, 'capacity'])
+        Route::get('/capacity', [WhatsAppCampaignController::class, 'capacity'])
             ->middleware('permission:campaigns.view')->name('capacity');
-        Route::get('/templates', [App\Http\Controllers\WhatsAppCampaignController::class, 'templates'])
+        Route::get('/templates', [WhatsAppCampaignController::class, 'templates'])
             ->middleware('permission:campaigns.view')->name('templates');
-        Route::post('/template-media', [App\Http\Controllers\WhatsAppCampaignController::class, 'uploadTemplateMedia'])
+        Route::post('/template-media', [WhatsAppCampaignController::class, 'uploadTemplateMedia'])
             ->middleware('permission:campaigns.create')->name('template-media');
-        Route::post('/segments', [App\Http\Controllers\WhatsAppCampaignController::class, 'storeSegment'])
+        Route::post('/segments', [WhatsAppCampaignController::class, 'storeSegment'])
             ->middleware('permission:campaigns.create')->name('segments.store');
-        Route::delete('/segments/{segment}', [App\Http\Controllers\WhatsAppCampaignController::class, 'destroySegment'])
+        Route::delete('/segments/{segment}', [WhatsAppCampaignController::class, 'destroySegment'])
             ->middleware('permission:campaigns.create')->name('segments.destroy');
-        Route::get('/create', [App\Http\Controllers\WhatsAppCampaignController::class, 'create'])
+        Route::get('/create', [WhatsAppCampaignController::class, 'create'])
             ->middleware('permission:campaigns.create')->name('create');
-        Route::get('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'index'])
+        Route::get('/', [WhatsAppCampaignController::class, 'index'])
             ->middleware('permission:campaigns.view')->name('index');
-        Route::get('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'show'])
+        Route::get('/{campaign}', [WhatsAppCampaignController::class, 'show'])
             ->where('campaign', '[0-9]+')
             ->middleware('permission:campaigns.view')->name('show');
-        Route::get('/{campaign}/progress', [App\Http\Controllers\WhatsAppCampaignController::class, 'progress'])
+        Route::get('/{campaign}/progress', [WhatsAppCampaignController::class, 'progress'])
             ->middleware('permission:campaigns.view')->name('progress');
-        Route::get('/{campaign}/export', [App\Http\Controllers\WhatsAppCampaignController::class, 'export'])
+        Route::get('/{campaign}/export', [WhatsAppCampaignController::class, 'export'])
             ->middleware('permission:campaigns.view')->name('export');
-        Route::post('/', [App\Http\Controllers\WhatsAppCampaignController::class, 'store'])
+        Route::post('/', [WhatsAppCampaignController::class, 'store'])
             ->middleware('permission:campaigns.create')->name('store');
-        Route::post('/{campaign}/send', [App\Http\Controllers\WhatsAppCampaignController::class, 'send'])
+        Route::post('/{campaign}/send', [WhatsAppCampaignController::class, 'send'])
             ->middleware('permission:campaigns.update')->name('send');
-        Route::post('/{campaign}/pause', [App\Http\Controllers\WhatsAppCampaignController::class, 'pause'])
+        Route::post('/{campaign}/pause', [WhatsAppCampaignController::class, 'pause'])
             ->middleware('permission:campaigns.update')->name('pause');
-        Route::post('/{campaign}/resume', [App\Http\Controllers\WhatsAppCampaignController::class, 'resume'])
+        Route::post('/{campaign}/resume', [WhatsAppCampaignController::class, 'resume'])
             ->middleware('permission:campaigns.update')->name('resume');
-        Route::post('/{campaign}/cancel', [App\Http\Controllers\WhatsAppCampaignController::class, 'cancel'])
+        Route::post('/{campaign}/cancel', [WhatsAppCampaignController::class, 'cancel'])
             ->middleware('permission:campaigns.update')->name('cancel');
-        Route::post('/{campaign}/retry-failed', [App\Http\Controllers\WhatsAppCampaignController::class, 'retryFailed'])
+        Route::post('/{campaign}/retry-failed', [WhatsAppCampaignController::class, 'retryFailed'])
             ->middleware('permission:campaigns.update')->name('retry-failed');
-        Route::delete('/{campaign}', [App\Http\Controllers\WhatsAppCampaignController::class, 'destroy'])
+        Route::delete('/{campaign}', [WhatsAppCampaignController::class, 'destroy'])
             ->middleware('permission:campaigns.delete')->name('destroy');
     });
 
     Route::prefix('templates')->name('templates.')->group(function () {
-        Route::get('/', [App\Http\Controllers\TemplateController::class, 'index'])
+        Route::get('/', [TemplateController::class, 'index'])
             ->middleware('permission:templates.view')->name('index');
-        Route::get('/analytics', [App\Http\Controllers\TemplateController::class, 'analyticsIndex'])
+        Route::get('/analytics', [TemplateController::class, 'analyticsIndex'])
             ->middleware('permission:templates.view')->name('analytics');
-        Route::get('/create', [App\Http\Controllers\TemplateController::class, 'create'])
+        Route::get('/create', [TemplateController::class, 'create'])
             ->middleware('permission:templates.create')->name('create');
-        Route::get('/defaults', [App\Http\Controllers\TemplateController::class, 'defaultsIndex'])
+        Route::get('/defaults', [TemplateController::class, 'defaultsIndex'])
             ->middleware('permission:templates.view')->name('defaults');
     });
 
     Route::prefix('api/templates')->group(function () {
-        Route::get('/', [App\Http\Controllers\TemplateController::class, 'list'])
+        Route::get('/', [TemplateController::class, 'list'])
             ->middleware('permission:templates.view');
-        Route::get('/analytics', [App\Http\Controllers\TemplateController::class, 'analytics'])
+        Route::get('/analytics', [TemplateController::class, 'analytics'])
             ->middleware('permission:templates.view');
-        Route::get('/analytics/conversations', [App\Http\Controllers\TemplateController::class, 'conversationAnalytics'])
+        Route::get('/analytics/conversations', [TemplateController::class, 'conversationAnalytics'])
             ->middleware('permission:templates.view');
-        Route::post('/analytics/enable', [App\Http\Controllers\TemplateController::class, 'enableInsights'])
+        Route::post('/analytics/enable', [TemplateController::class, 'enableInsights'])
             ->middleware('permission:templates.view');
-        Route::get('/defaults', [App\Http\Controllers\TemplateController::class, 'defaults'])
+        Route::get('/defaults', [TemplateController::class, 'defaults'])
             ->middleware('permission:templates.view');
-        Route::post('/defaults/{key}/sync', [App\Http\Controllers\TemplateController::class, 'syncDefault'])
+        Route::post('/defaults/{key}/sync', [TemplateController::class, 'syncDefault'])
             ->where('key', '[a-z0-9_]+')
             ->middleware('permission:templates.create');
-        Route::get('/family/{name}', [App\Http\Controllers\TemplateController::class, 'family'])
+        Route::get('/family/{name}', [TemplateController::class, 'family'])
             ->where('name', '[A-Za-z0-9_\-\.]+')
             ->middleware('permission:templates.view');
-        Route::get('/{templateId}', [App\Http\Controllers\TemplateController::class, 'show'])
+        Route::get('/{templateId}', [TemplateController::class, 'show'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.view');
-        Route::post('/upload-media', [App\Http\Controllers\TemplateController::class, 'uploadMedia'])
+        Route::post('/upload-media', [TemplateController::class, 'uploadMedia'])
             ->middleware('permission:templates.create');
-        Route::post('/', [App\Http\Controllers\TemplateController::class, 'store'])
+        Route::post('/', [TemplateController::class, 'store'])
             ->middleware('permission:templates.create');
     });
 
     Route::prefix('auto-responses')->name('auto-responses.')->group(function () {
-        Route::get('/', [App\Http\Controllers\AutoResponseController::class, 'index'])
+        Route::get('/', [AutoResponseController::class, 'index'])
             ->middleware('permission:auto_responses.view')->name('index');
-        Route::post('/', [App\Http\Controllers\AutoResponseController::class, 'store'])
+        Route::post('/', [AutoResponseController::class, 'store'])
             ->middleware('permission:auto_responses.create')->name('store');
-        Route::put('/{auto_response}', [App\Http\Controllers\AutoResponseController::class, 'update'])
+        Route::put('/{auto_response}', [AutoResponseController::class, 'update'])
             ->middleware('permission:auto_responses.update')->name('update');
-        Route::delete('/{auto_response}', [App\Http\Controllers\AutoResponseController::class, 'destroy'])
+        Route::delete('/{auto_response}', [AutoResponseController::class, 'destroy'])
             ->middleware('permission:auto_responses.delete')->name('destroy');
     });
     // Menús interactivos de WhatsApp (botones y listas)
     Route::prefix('whatsapp-menus')->name('whatsapp-menus.')->group(function () {
-        Route::get('/', [App\Http\Controllers\WhatsAppMenuController::class, 'index'])
+        Route::get('/', [WhatsAppMenuController::class, 'index'])
             ->middleware('permission:whatsapp_menus.view')->name('index');
-        Route::post('/', [App\Http\Controllers\WhatsAppMenuController::class, 'store'])
+        Route::post('/', [WhatsAppMenuController::class, 'store'])
             ->middleware('permission:whatsapp_menus.create')->name('store');
-        Route::put('/{menu}', [App\Http\Controllers\WhatsAppMenuController::class, 'update'])
+        Route::put('/{menu}', [WhatsAppMenuController::class, 'update'])
             ->middleware('permission:whatsapp_menus.update')->name('update');
-        Route::delete('/{menu}', [App\Http\Controllers\WhatsAppMenuController::class, 'destroy'])
+        Route::delete('/{menu}', [WhatsAppMenuController::class, 'destroy'])
             ->middleware('permission:whatsapp_menus.delete')->name('destroy');
         // El interruptor de la IA de los menús.
-        Route::post('/ai', [App\Http\Controllers\WhatsAppMenuController::class, 'toggleAi'])
+        Route::post('/ai', [WhatsAppMenuController::class, 'toggleAi'])
             ->middleware('permission:whatsapp_menus.update')->name('ai');
         // Hasta dónde llega la IA de esta empresa. Aparte del interruptor
         // porque son decisiones distintas: encenderla no puede significar
         // autorizarle radicados y cobros de una vez.
-        Route::post('/ai/permisos', [App\Http\Controllers\WhatsAppMenuController::class, 'updateAiPermissions'])
+        Route::post('/ai/permisos', [WhatsAppMenuController::class, 'updateAiPermissions'])
             ->middleware('permission:whatsapp_menus.update')->name('ai.permissions');
         // Catálogos de Integra (tipos de falla, prioridades, técnicos) para el
         // formulario. Va aparte de index porque es una llamada HTTP a otro
         // servidor: si Integra tarda, no debe retrasar la carga de la página.
-        Route::get('/integra-catalogs', [App\Http\Controllers\WhatsAppMenuController::class, 'integraCatalogs'])
+        Route::get('/integra-catalogs', [WhatsAppMenuController::class, 'integraCatalogs'])
             ->middleware('permission:whatsapp_menus.view')->name('integra-catalogs');
         // Qué le va a fallar al menú antes de que lo toque un cliente. Aparte de
         // index() por lo mismo: comprueba los permisos reales del token contra
         // el servidor de Integra.
-        Route::get('/revision', [App\Http\Controllers\WhatsAppMenuController::class, 'review'])
+        Route::get('/revision', [WhatsAppMenuController::class, 'review'])
             ->middleware('permission:whatsapp_menus.view')->name('revision');
         // Sube la imagen de una opción y devuelve su URL pública. Se sube al
         // elegir el archivo y no al guardar el menú: Meta descarga la imagen
         // desde esa URL al enviar, así que el admin tiene que poder verla antes
         // de encender el menú.
-        Route::post('/imagen', [App\Http\Controllers\WhatsAppMenuController::class, 'uploadImage'])
+        Route::post('/imagen', [WhatsAppMenuController::class, 'uploadImage'])
             ->middleware('permission:whatsapp_menus.update')->name('imagen');
     });
 
@@ -329,122 +395,128 @@ Route::middleware('auth')->group(function () {
     Route::get('/kanban', [ChatController::class, 'kanban'])->name('chat.kanban');
 
     // Quick Replies (Respuestas Rápidas) — admin page
-    Route::get('/quick-replies', [App\Http\Controllers\QuickReplyController::class, 'index'])
+    Route::get('/quick-replies', [QuickReplyController::class, 'index'])
         ->middleware('permission:quick_replies.view')
         ->name('quick-replies.index');
 
     // Macros — admin page
-    Route::get('/macros', [App\Http\Controllers\MacroController::class, 'index'])
+    Route::get('/macros', [MacroController::class, 'index'])
         ->middleware('permission:macros.view')
         ->name('macros.index');
 
     // Contactos — admin page
-    Route::get('/contactos', [App\Http\Controllers\ContactController::class, 'index'])
+    Route::get('/contactos', [ContactController::class, 'index'])
         ->middleware('permission:contacts.view')
         ->name('contacts.index');
 
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {
-        Route::get('/', [App\Http\Controllers\MasterController::class, 'index'])->name('index');
-        Route::post('/companies', [App\Http\Controllers\MasterController::class, 'store'])->name('companies.store');
-        Route::put('/companies/{company}', [App\Http\Controllers\MasterController::class, 'update'])->name('companies.update');
-        Route::post('/impersonate/{company}', [App\Http\Controllers\MasterController::class, 'impersonate'])->name('impersonate');
+        Route::get('/', [MasterController::class, 'index'])->name('index');
+        Route::post('/companies', [MasterController::class, 'store'])->name('companies.store');
+        Route::put('/companies/{company}', [MasterController::class, 'update'])->name('companies.update');
+        Route::post('/impersonate/{company}', [MasterController::class, 'impersonate'])->name('impersonate');
+
+        // Restablecer la contraseña de cualquier usuario de cualquier empresa,
+        // para cuando quien se ha quedado fuera es el propio admin del cliente
+        // y no hay a quién pedírselo.
+        Route::post('/users/{user}/password', [MasterController::class, 'resetUserPassword'])
+            ->name('users.password');
 
         // Mensajes no entregados de todas las empresas (auditoría + reintento)
         Route::prefix('messages')->name('messages.')->group(function () {
-            Route::get('/', [App\Http\Controllers\Master\MessagesController::class, 'index'])->name('index');
-            Route::get('/{message}', [App\Http\Controllers\Master\MessagesController::class, 'show'])
+            Route::get('/', [MessagesController::class, 'index'])->name('index');
+            Route::get('/{message}', [MessagesController::class, 'show'])
                 ->whereNumber('message')->name('show');
-            Route::get('/{message}/media', [App\Http\Controllers\Master\MessagesController::class, 'media'])
+            Route::get('/{message}/media', [MessagesController::class, 'media'])
                 ->whereNumber('message')->name('media');
-            Route::post('/{message}/retry', [App\Http\Controllers\Master\MessagesController::class, 'retry'])
+            Route::post('/{message}/retry', [MessagesController::class, 'retry'])
                 ->whereNumber('message')->name('retry');
         });
 
         Route::prefix('logs')->name('logs.')->group(function () {
-            Route::get('/', [App\Http\Controllers\Master\LogsController::class, 'index'])->name('index');
-            Route::get('/{file}', [App\Http\Controllers\Master\LogsController::class, 'show'])
+            Route::get('/', [LogsController::class, 'index'])->name('index');
+            Route::get('/{file}', [LogsController::class, 'show'])
                 ->where('file', '[A-Za-z0-9_.\-]+')->name('show');
-            Route::delete('/{file}', [App\Http\Controllers\Master\LogsController::class, 'destroy'])
+            Route::delete('/{file}', [LogsController::class, 'destroy'])
                 ->where('file', '[A-Za-z0-9_.\-]+')->name('destroy');
-            Route::post('/{file}/clear', [App\Http\Controllers\Master\LogsController::class, 'clear'])
+            Route::post('/{file}/clear', [LogsController::class, 'clear'])
                 ->where('file', '[A-Za-z0-9_.\-]+')->name('clear');
         });
     });
-    
-    Route::post('/stop-impersonating', [App\Http\Controllers\MasterController::class, 'stopImpersonating'])->name('stop-impersonating');
+
+    Route::post('/stop-impersonating', [MasterController::class, 'stopImpersonating'])->name('stop-impersonating');
 
     // Settings routes
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/', [App\Http\Controllers\SettingsController::class, 'index'])->name('index');
-        Route::put('/profile', [App\Http\Controllers\SettingsController::class, 'updateProfile'])->name('profile');
-        Route::put('/password', [App\Http\Controllers\SettingsController::class, 'updatePassword'])->name('password');
-        Route::delete('/sessions', [App\Http\Controllers\SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
+        Route::get('/', [SettingsController::class, 'index'])->name('index');
+        Route::put('/profile', [SettingsController::class, 'updateProfile'])->name('profile');
+        Route::put('/password', [SettingsController::class, 'updatePassword'])->name('password');
+        Route::delete('/sessions', [SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
     });
 
     // Flujo IA: el apartado va detrás de un secreto, así que el desbloqueo se
     // limita —el secreto es corto y se puede probar a ciegas—. El resto sólo
     // exige el permiso de siempre.
     Route::prefix('api/settings/ai-flow')->group(function () {
-        Route::get('/', [App\Http\Controllers\AiFlowSettingsController::class, 'show'])
+        Route::get('/', [AiFlowSettingsController::class, 'show'])
             ->middleware('permission:whatsapp_menus.update');
-        Route::post('/unlock', [App\Http\Controllers\AiFlowSettingsController::class, 'unlock'])
+        Route::post('/unlock', [AiFlowSettingsController::class, 'unlock'])
             ->middleware(['permission:whatsapp_menus.update', 'throttle:5,1']);
-        Route::delete('/unlock', [App\Http\Controllers\AiFlowSettingsController::class, 'lock'])
+        Route::delete('/unlock', [AiFlowSettingsController::class, 'lock'])
             ->middleware('permission:whatsapp_menus.update');
-        Route::put('/', [App\Http\Controllers\AiFlowSettingsController::class, 'update'])
+        Route::put('/', [AiFlowSettingsController::class, 'update'])
             ->middleware('permission:whatsapp_menus.update');
     });
 
     Route::prefix('api/business-hours')->group(function () {
-        Route::get('/', [App\Http\Controllers\BusinessHourController::class, 'index'])
+        Route::get('/', [BusinessHourController::class, 'index'])
             ->middleware('permission:business_hours.view');
-        Route::post('/', [App\Http\Controllers\BusinessHourController::class, 'store'])
+        Route::post('/', [BusinessHourController::class, 'store'])
             ->middleware('permission:business_hours.create');
-        Route::put('/{id}', [App\Http\Controllers\BusinessHourController::class, 'update'])
+        Route::put('/{id}', [BusinessHourController::class, 'update'])
             ->middleware('permission:business_hours.update');
-        Route::delete('/{id}', [App\Http\Controllers\BusinessHourController::class, 'destroy'])
+        Route::delete('/{id}', [BusinessHourController::class, 'destroy'])
             ->middleware('permission:business_hours.delete');
     });
 
     // WhatsApp settings API (readiness checklist + activations + profile)
     Route::prefix('api/settings/whatsapp')->group(function () {
-        Route::get('/instances', [App\Http\Controllers\WhatsAppSettingsController::class, 'instances']);
-        Route::get('/readiness', [App\Http\Controllers\WhatsAppSettingsController::class, 'readiness']);
-        Route::get('/phone-numbers', [App\Http\Controllers\WhatsAppSettingsController::class, 'phoneNumbers']);
-        Route::get('/profile', [App\Http\Controllers\WhatsAppSettingsController::class, 'getProfile']);
-        Route::post('/subscribe-webhook', [App\Http\Controllers\WhatsAppSettingsController::class, 'subscribeWebhook'])
+        Route::get('/instances', [WhatsAppSettingsController::class, 'instances']);
+        Route::get('/readiness', [WhatsAppSettingsController::class, 'readiness']);
+        Route::get('/phone-numbers', [WhatsAppSettingsController::class, 'phoneNumbers']);
+        Route::get('/profile', [WhatsAppSettingsController::class, 'getProfile']);
+        Route::post('/subscribe-webhook', [WhatsAppSettingsController::class, 'subscribeWebhook'])
             ->middleware('permission:instances.update');
-        Route::post('/register-number', [App\Http\Controllers\WhatsAppSettingsController::class, 'registerNumber'])
+        Route::post('/register-number', [WhatsAppSettingsController::class, 'registerNumber'])
             ->middleware('permission:instances.update');
-        Route::post('/request-code', [App\Http\Controllers\WhatsAppSettingsController::class, 'requestCode'])
+        Route::post('/request-code', [WhatsAppSettingsController::class, 'requestCode'])
             ->middleware('permission:instances.update');
-        Route::post('/verify-code', [App\Http\Controllers\WhatsAppSettingsController::class, 'verifyCode'])
+        Route::post('/verify-code', [WhatsAppSettingsController::class, 'verifyCode'])
             ->middleware('permission:instances.update');
-        Route::post('/enable-insights', [App\Http\Controllers\WhatsAppSettingsController::class, 'enableInsights'])
+        Route::post('/enable-insights', [WhatsAppSettingsController::class, 'enableInsights'])
             ->middleware('permission:instances.update');
-        Route::post('/profile', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfile'])
+        Route::post('/profile', [WhatsAppSettingsController::class, 'updateProfile'])
             ->middleware('permission:instances.update');
-        Route::post('/profile/photo', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateProfilePhoto'])
+        Route::post('/profile/photo', [WhatsAppSettingsController::class, 'updateProfilePhoto'])
             ->middleware('permission:instances.update');
 
         // Configuración de llamadas: estado, habilitar función y toggle de salientes
-        Route::get('/calling', [App\Http\Controllers\WhatsAppSettingsController::class, 'callingSettings']);
-        Route::post('/calling/enable', [App\Http\Controllers\WhatsAppSettingsController::class, 'enableCalling'])
+        Route::get('/calling', [WhatsAppSettingsController::class, 'callingSettings']);
+        Route::post('/calling/enable', [WhatsAppSettingsController::class, 'enableCalling'])
             ->middleware('permission:instances.update');
-        Route::post('/calling', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateCallingSettings'])
+        Route::post('/calling', [WhatsAppSettingsController::class, 'updateCallingSettings'])
             ->middleware('permission:instances.update');
 
         // Plantilla de reinicio de conversación (reabrir chats fuera de la ventana de 24h)
-        Route::get('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'resumeTemplateSettings']);
-        Route::post('/resume-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateResumeTemplate'])
+        Route::get('/resume-template', [WhatsAppSettingsController::class, 'resumeTemplateSettings']);
+        Route::post('/resume-template', [WhatsAppSettingsController::class, 'updateResumeTemplate'])
             ->middleware('permission:instances.update');
 
         // Plantilla de respaldo de los avisos automáticos fuera de la ventana de 24h
-        Route::get('/fallback-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'fallbackTemplateSettings']);
-        Route::post('/fallback-template', [App\Http\Controllers\WhatsAppSettingsController::class, 'updateFallbackTemplate'])
+        Route::get('/fallback-template', [WhatsAppSettingsController::class, 'fallbackTemplateSettings']);
+        Route::post('/fallback-template', [WhatsAppSettingsController::class, 'updateFallbackTemplate'])
             ->middleware('permission:instances.update');
-        Route::post('/fallback-template/provision', [App\Http\Controllers\WhatsAppSettingsController::class, 'provisionFallbackTemplate'])
+        Route::post('/fallback-template/provision', [WhatsAppSettingsController::class, 'provisionFallbackTemplate'])
             ->middleware('permission:instances.update');
     });
 
@@ -487,129 +559,129 @@ Route::middleware('auth')->group(function () {
         Route::post('/deletion-requests/{requestId}/resolve', [ChatController::class, 'resolveDeletionRequest']);
         Route::post('/conversations/{conversationId}/assign', [ChatController::class, 'assign'])->middleware('permission:chat.update');
         Route::post('/conversations/{conversationId}/assign-me', [ChatController::class, 'assignToMe']);
-        Route::post('/conversations/{conversationId}/attach-contact', [App\Http\Controllers\ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
+        Route::post('/conversations/{conversationId}/attach-contact', [ContactController::class, 'attachConversation'])->middleware('permission:contacts.view');
         Route::get('/users', [UserController::class, 'getCompanyUsers']);
 
         // Llamadas WhatsApp (Fase 2: permiso para salientes)
-        Route::post('/conversations/{conversationId}/call-permission', [App\Http\Controllers\CallController::class, 'requestPermission']);
-        Route::get('/conversations/{conversationId}/call-permission', [App\Http\Controllers\CallController::class, 'permissionStatus']);
+        Route::post('/conversations/{conversationId}/call-permission', [CallController::class, 'requestPermission']);
+        Route::get('/conversations/{conversationId}/call-permission', [CallController::class, 'permissionStatus']);
 
         // Historial de llamadas
-        Route::get('/calls', [App\Http\Controllers\CallController::class, 'history']);
-        Route::get('/conversations/{conversationId}/calls', [App\Http\Controllers\CallController::class, 'conversationHistory']);
+        Route::get('/calls', [CallController::class, 'history']);
+        Route::get('/conversations/{conversationId}/calls', [CallController::class, 'conversationHistory']);
     });
 
     // Contacts API routes
     Route::prefix('api/contacts')->group(function () {
-        Route::get('/list', [App\Http\Controllers\ContactController::class, 'list'])->middleware('permission:contacts.view');
-        Route::post('/', [App\Http\Controllers\ContactController::class, 'store'])->middleware('permission:contacts.create');
-        Route::put('/{contact}', [App\Http\Controllers\ContactController::class, 'update'])->middleware('permission:contacts.update');
-        Route::delete('/{contact}', [App\Http\Controllers\ContactController::class, 'destroy'])->middleware('permission:contacts.delete');
-        Route::post('/{contact}/opt-out', [App\Http\Controllers\ContactController::class, 'toggleOptOut'])
+        Route::get('/list', [ContactController::class, 'list'])->middleware('permission:contacts.view');
+        Route::post('/', [ContactController::class, 'store'])->middleware('permission:contacts.create');
+        Route::put('/{contact}', [ContactController::class, 'update'])->middleware('permission:contacts.update');
+        Route::delete('/{contact}', [ContactController::class, 'destroy'])->middleware('permission:contacts.delete');
+        Route::post('/{contact}/opt-out', [ContactController::class, 'toggleOptOut'])
             ->middleware('permission:contacts.update')->name('contacts.opt-out');
-        Route::post('/opt-out-requests/{conversation}', [App\Http\Controllers\ContactController::class, 'resolveOptOutRequest'])
+        Route::post('/opt-out-requests/{conversation}', [ContactController::class, 'resolveOptOutRequest'])
             ->middleware('permission:contacts.update')->name('contacts.opt-out-request');
     });
 
     // Kanban API routes
     Route::prefix('api/kanban')->group(function () {
-        Route::get('/columns', [App\Http\Controllers\KanbanController::class, 'columns']);
-        Route::get('/counts', [App\Http\Controllers\KanbanController::class, 'columnCounts']);
-        Route::post('/columns', [App\Http\Controllers\KanbanController::class, 'storeColumn']);
-        Route::put('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'updateColumn']);
-        Route::delete('/columns/{id}', [App\Http\Controllers\KanbanController::class, 'deleteColumn']);
-        Route::get('/columns/{id}/cards', [App\Http\Controllers\KanbanController::class, 'columnCards']);
-        Route::post('/conversations/{id}/move', [App\Http\Controllers\KanbanController::class, 'moveCard']);
-        Route::post('/cards', [App\Http\Controllers\KanbanController::class, 'storeCard']);
+        Route::get('/columns', [KanbanController::class, 'columns']);
+        Route::get('/counts', [KanbanController::class, 'columnCounts']);
+        Route::post('/columns', [KanbanController::class, 'storeColumn']);
+        Route::put('/columns/{id}', [KanbanController::class, 'updateColumn']);
+        Route::delete('/columns/{id}', [KanbanController::class, 'deleteColumn']);
+        Route::get('/columns/{id}/cards', [KanbanController::class, 'columnCards']);
+        Route::post('/conversations/{id}/move', [KanbanController::class, 'moveCard']);
+        Route::post('/cards', [KanbanController::class, 'storeCard']);
     });
 
     // Quick Replies API routes
     Route::prefix('api/quick-replies')->group(function () {
-        Route::get('/', [App\Http\Controllers\QuickReplyController::class, 'list']);
-        Route::post('/', [App\Http\Controllers\QuickReplyController::class, 'store'])->middleware('permission:quick_replies.create');
-        Route::put('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'update'])->middleware('permission:quick_replies.update');
-        Route::delete('/{quickReply}', [App\Http\Controllers\QuickReplyController::class, 'destroy'])->middleware('permission:quick_replies.delete');
+        Route::get('/', [QuickReplyController::class, 'list']);
+        Route::post('/', [QuickReplyController::class, 'store'])->middleware('permission:quick_replies.create');
+        Route::put('/{quickReply}', [QuickReplyController::class, 'update'])->middleware('permission:quick_replies.update');
+        Route::delete('/{quickReply}', [QuickReplyController::class, 'destroy'])->middleware('permission:quick_replies.delete');
     });
 
     // Macros API routes
     Route::prefix('api/macros')->group(function () {
-        Route::get('/', [App\Http\Controllers\MacroController::class, 'list']);
-        Route::post('/', [App\Http\Controllers\MacroController::class, 'store'])->middleware('permission:macros.create');
-        Route::put('/{macro}', [App\Http\Controllers\MacroController::class, 'update'])->middleware('permission:macros.update');
-        Route::delete('/{macro}', [App\Http\Controllers\MacroController::class, 'destroy'])->middleware('permission:macros.delete');
-        Route::post('/{macro}/run/{conversationId}', [App\Http\Controllers\MacroController::class, 'run'])->middleware('permission:macros.run');
+        Route::get('/', [MacroController::class, 'list']);
+        Route::post('/', [MacroController::class, 'store'])->middleware('permission:macros.create');
+        Route::put('/{macro}', [MacroController::class, 'update'])->middleware('permission:macros.update');
+        Route::delete('/{macro}', [MacroController::class, 'destroy'])->middleware('permission:macros.delete');
+        Route::post('/{macro}/run/{conversationId}', [MacroController::class, 'run'])->middleware('permission:macros.run');
     });
 
     // Tag API routes
     Route::prefix('api/tags')->group(function () {
-        Route::get('/', [App\Http\Controllers\TagController::class, 'index']);
-        Route::post('/', [App\Http\Controllers\TagController::class, 'store']);
-        Route::put('/{tag}', [App\Http\Controllers\TagController::class, 'update']);
-        Route::delete('/{tag}', [App\Http\Controllers\TagController::class, 'destroy']);
-        Route::post('/conversations/{id}/attach', [App\Http\Controllers\TagController::class, 'attachToConversation']);
-        Route::post('/conversations/{id}/detach', [App\Http\Controllers\TagController::class, 'detachFromConversation']);
+        Route::get('/', [TagController::class, 'index']);
+        Route::post('/', [TagController::class, 'store']);
+        Route::put('/{tag}', [TagController::class, 'update']);
+        Route::delete('/{tag}', [TagController::class, 'destroy']);
+        Route::post('/conversations/{id}/attach', [TagController::class, 'attachToConversation']);
+        Route::post('/conversations/{id}/detach', [TagController::class, 'detachFromConversation']);
     });
 
     // In-app notifications (mentions + system announcements bell)
     Route::prefix('api/notifications')->group(function () {
-        Route::get('/', [App\Http\Controllers\NotificationController::class, 'index']);
-        Route::post('/{id}/read', [App\Http\Controllers\NotificationController::class, 'markRead']);
-        Route::post('/read-all', [App\Http\Controllers\NotificationController::class, 'markAllRead']);
-        Route::delete('/{id}', [App\Http\Controllers\NotificationController::class, 'destroy']);
-        Route::delete('/', [App\Http\Controllers\NotificationController::class, 'destroyAll']);
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::post('/{id}/read', [NotificationController::class, 'markRead']);
+        Route::post('/read-all', [NotificationController::class, 'markAllRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+        Route::delete('/', [NotificationController::class, 'destroyAll']);
     });
 
     // System announcements (admin-emitted notifications)
-    Route::get('/announcements', [App\Http\Controllers\SystemNotificationController::class, 'index'])
+    Route::get('/announcements', [SystemNotificationController::class, 'index'])
         ->middleware('permission:notifications.send')->name('announcements.index');
     Route::prefix('api/announcements')->middleware('permission:notifications.send')->group(function () {
-        Route::get('/', [App\Http\Controllers\SystemNotificationController::class, 'history']);
-        Route::post('/', [App\Http\Controllers\SystemNotificationController::class, 'store']);
+        Route::get('/', [SystemNotificationController::class, 'history']);
+        Route::post('/', [SystemNotificationController::class, 'store']);
     });
 
     // Integraciones — Webhooks salientes (parametrizables por empresa)
-    Route::get('/integrations', [App\Http\Controllers\WebhookEndpointController::class, 'index'])
+    Route::get('/integrations', [WebhookEndpointController::class, 'index'])
         ->middleware('permission:integrations.view')->name('integrations.index');
     Route::prefix('api/webhooks')->group(function () {
-        Route::get('/', [App\Http\Controllers\WebhookEndpointController::class, 'list'])
+        Route::get('/', [WebhookEndpointController::class, 'list'])
             ->middleware('permission:integrations.view');
-        Route::post('/', [App\Http\Controllers\WebhookEndpointController::class, 'store'])
+        Route::post('/', [WebhookEndpointController::class, 'store'])
             ->middleware('permission:integrations.create');
         // Prueba una dirección antes de guardarla, para no crear un webhook
         // que nunca va a entregar.
-        Route::post('/probe', [App\Http\Controllers\WebhookEndpointController::class, 'probe'])
+        Route::post('/probe', [WebhookEndpointController::class, 'probe'])
             ->middleware('permission:integrations.create');
-        Route::put('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'update'])
+        Route::put('/{webhook}', [WebhookEndpointController::class, 'update'])
             ->middleware('permission:integrations.update');
-        Route::delete('/{webhook}', [App\Http\Controllers\WebhookEndpointController::class, 'destroy'])
+        Route::delete('/{webhook}', [WebhookEndpointController::class, 'destroy'])
             ->middleware('permission:integrations.delete');
-        Route::post('/{webhook}/test', [App\Http\Controllers\WebhookEndpointController::class, 'test'])
+        Route::post('/{webhook}/test', [WebhookEndpointController::class, 'test'])
             ->middleware('permission:integrations.update');
-        Route::get('/{webhook}/deliveries', [App\Http\Controllers\WebhookEndpointController::class, 'deliveries'])
+        Route::get('/{webhook}/deliveries', [WebhookEndpointController::class, 'deliveries'])
             ->middleware('permission:integrations.view');
     });
 
     // Integraciones — Pagos a facturas (software Integra, API V1 con token maestro)
     Route::prefix('api/integrations')->group(function () {
-        Route::get('/', [App\Http\Controllers\IntegrationController::class, 'index'])
+        Route::get('/', [IntegrationController::class, 'index'])
             ->middleware('permission:integrations.view');
-        Route::post('/{key}/connect', [App\Http\Controllers\IntegrationController::class, 'connect'])
+        Route::post('/{key}/connect', [IntegrationController::class, 'connect'])
             ->middleware('permission:integrations.update');
-        Route::get('/{key}/status', [App\Http\Controllers\IntegrationController::class, 'status'])
+        Route::get('/{key}/status', [IntegrationController::class, 'status'])
             ->middleware('permission:integrations.view');
-        Route::post('/{key}/activate', [App\Http\Controllers\IntegrationController::class, 'activate'])
+        Route::post('/{key}/activate', [IntegrationController::class, 'activate'])
             ->middleware('permission:integrations.update');
-        Route::post('/{key}/disconnect', [App\Http\Controllers\IntegrationController::class, 'disconnect'])
+        Route::post('/{key}/disconnect', [IntegrationController::class, 'disconnect'])
             ->middleware('permission:integrations.update');
-        Route::post('/{key}/sync', [App\Http\Controllers\IntegrationController::class, 'syncContacts'])
+        Route::post('/{key}/sync', [IntegrationController::class, 'syncContacts'])
             ->middleware('permission:integrations.update');
-        Route::get('/{key}/sync-status', [App\Http\Controllers\IntegrationController::class, 'syncStatus'])
+        Route::get('/{key}/sync-status', [IntegrationController::class, 'syncStatus'])
             ->middleware('permission:integrations.view');
 
         // Acciones usadas desde el chat por los agentes (solo requieren sesión).
-        Route::get('/invoice-payments/clients', [App\Http\Controllers\IntegrationController::class, 'searchClients']);
-        Route::get('/invoice-payments/invoices', [App\Http\Controllers\IntegrationController::class, 'invoices']);
-        Route::get('/invoice-payments/catalogs', [App\Http\Controllers\IntegrationController::class, 'catalogs']);
-        Route::post('/invoice-payments/pay', [App\Http\Controllers\IntegrationController::class, 'pay']);
+        Route::get('/invoice-payments/clients', [IntegrationController::class, 'searchClients']);
+        Route::get('/invoice-payments/invoices', [IntegrationController::class, 'invoices']);
+        Route::get('/invoice-payments/catalogs', [IntegrationController::class, 'catalogs']);
+        Route::post('/invoice-payments/pay', [IntegrationController::class, 'pay']);
     });
 });

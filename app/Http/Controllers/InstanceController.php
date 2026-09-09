@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Contact;
 use App\Models\Instance;
+use App\Models\WhatsAppCampaign;
+use App\Models\WhatsAppConversation;
+use App\Models\WhatsAppMessage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -153,7 +157,77 @@ class InstanceController extends Controller
             ->with('success', 'Instancia actualizada exitosamente');
     }
 
-    public function destroy($id)
+    /**
+     * Qué se perdería al borrar la instancia.
+     *
+     * Se pide al abrir el diálogo, no en cada visita a la pantalla: contar los
+     * mensajes de todas las instancias de la empresa para pintar una lista que
+     * casi nadie mira es pagar un barrido de `whatsapp_messages` por gusto.
+     */
+    public function resumenBorrado(Instance $instance)
+    {
+        $this->autorizarInstancia($instance);
+
+        return response()->json($this->contarLoQueSePierde($instance));
+    }
+
+    /**
+     * Apagar la instancia sin borrar nada.
+     *
+     * Es lo que casi siempre se quiere cuando alguien va a la papelera: dejar
+     * de usar el número, no destruir el historial del cliente. La instancia
+     * deja de recibir (el webhook sólo mira las activas) y de enviar, y todo
+     * queda donde está para poder volver.
+     */
+    public function desconectar(Instance $instance)
+    {
+        $this->autorizarInstancia($instance);
+
+        $instance->update(['active' => false]);
+
+        return back()->with('success', 'Instancia desconectada. Sus conversaciones y mensajes siguen guardados.');
+    }
+
+    /**
+     * Y volver a encenderla.
+     *
+     * Pasa por la misma comprobación que un alta: si otra instancia activa ya
+     * tiene ese `phone_number_id`, encender esta dejaría dos peleándose por los
+     * mismos mensajes entrantes y la segunda no recibiría ninguno.
+     */
+    public function reconectar(Request $request, Instance $instance)
+    {
+        $this->autorizarInstancia($instance);
+
+        $request->merge([
+            'phone_number_id' => $instance->phone_number_id,
+            'company_id' => $instance->company_id,
+        ]);
+
+        $this->assertPhoneNumberIdIsFree($request, $instance->id);
+
+        $instance->update(['active' => true]);
+
+        return back()->with('success', 'Instancia reconectada.');
+    }
+
+    /**
+     * El borrado de verdad, que es irreversible.
+     *
+     * Exige escribir el nombre de la instancia. No es burocracia: no hay
+     * `SoftDeletes` en el proyecto y las claves foráneas están en cascada, así
+     * que este botón se lleva por delante las conversaciones y todos sus
+     * mensajes. El 8-sep-2026 se llevó 11 chats y 53 mensajes de un número
+     * recién sincronizado por coexistencia, con un `confirm()` del navegador
+     * como única defensa, y el historial de coexistencia **no se puede volver a
+     * importar**: Meta sólo permite una sincronización por número, así que
+     * recuperarlo obliga a desconectar el número desde la app del cliente y
+     * rehacer el registro entero.
+     *
+     * Borrar una sola conversación pasa por `ConversationDeletionRequest` y su
+     * aprobación; esto se lleva todas a la vez. Que al menos haya que leer.
+     */
+    public function destroy(Request $request, $id)
     {
         $user = auth()->user();
 
@@ -161,10 +235,57 @@ class InstanceController extends Controller
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
+        $confirmacion = trim((string) $request->input('confirmacion'));
+
+        if (mb_strtolower($confirmacion) !== mb_strtolower(trim((string) $instance->name))) {
+            throw ValidationException::withMessages([
+                'confirmacion' => 'Escribe el nombre de la instancia tal como aparece para confirmar que quieres borrarla.',
+            ]);
+        }
+
+        // Se deja constancia de lo que había antes de que desaparezca: es la
+        // única forma de responder a "¿cuántos mensajes teníamos?" cuando
+        // alguien pregunte mañana.
+        $perdido = $this->contarLoQueSePierde($instance);
+
+        Log::channel('whatsapp')->warning('🗑️ Instancia eliminada con sus conversaciones', [
+            'instance_id' => $instance->id,
+            'company_id' => $instance->company_id,
+            'phone_number_id' => $instance->phone_number_id,
+            'usuario' => $user->email,
+        ] + $perdido);
+
         $instance->delete();
 
         return redirect()->route('instances.index')
-            ->with('success', 'Instancia eliminada');
+            ->with('success', "Instancia eliminada, junto con {$perdido['conversaciones']} conversaciones y {$perdido['mensajes']} mensajes.");
+    }
+
+    private function autorizarInstancia(Instance $instance): void
+    {
+        abort_unless($instance->company_id === auth()->user()->company_id, 403);
+    }
+
+    /**
+     * Los contactos van aparte a propósito: cuelgan de la empresa, no de la
+     * instancia, así que sobreviven al borrado. Se devuelven para poder decirlo
+     * en el diálogo en vez de dejarlo a la sorpresa.
+     */
+    private function contarLoQueSePierde(Instance $instance): array
+    {
+        $conversaciones = WhatsAppConversation::where('instance_id', $instance->id);
+
+        return [
+            'nombre' => $instance->name,
+            'conversaciones' => $conversaciones->count(),
+            'mensajes' => WhatsAppMessage::whereIn(
+                'conversation_id',
+                WhatsAppConversation::where('instance_id', $instance->id)->select('id')
+            )->count(),
+            'campanas' => WhatsAppCampaign::where('instance_id', $instance->id)->count(),
+            'contactos_empresa' => Contact::where('company_id', $instance->company_id)->count(),
+            'historial_importado' => $instance->coexistenceSync !== null,
+        ];
     }
 
     /**

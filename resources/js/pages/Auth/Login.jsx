@@ -1,10 +1,13 @@
-import { useForm, Head } from '@inertiajs/react';
+import { useForm, Head, Link, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import AppLogo from '@/components/app-logo';
 import { Mail, Lock, LogIn, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Login() {
+    // El aviso que deja el restablecimiento de contraseña al volver aquí.
+    const { status } = usePage().props;
+
     const { data, setData, post, processing, errors } = useForm({
         email: '',
         password: '',
@@ -53,6 +56,13 @@ export default function Login() {
                     {/* Login Card */}
                     <div className="overflow-hidden rounded-3xl border border-slate-800 bg-[#0f172a]/80 p-[1px] shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all duration-300 hover:border-green-500/30">
                         <div className="rounded-[23px] bg-[#0f172a] p-8 sm:p-10 shadow-inner">
+                            {status && (
+                                <div className="mb-6 flex gap-3 rounded-xl border border-green-500/20 bg-green-500/5 p-4">
+                                    <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-green-500" />
+                                    <p className="text-sm leading-relaxed text-slate-300">{status}</p>
+                                </div>
+                            )}
+
                             <form className="space-y-6" onSubmit={handleSubmit}>
                                 {/* Email Field */}
                                 <div className="space-y-2">
@@ -87,9 +97,12 @@ export default function Login() {
                                         <label htmlFor="password" className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                                             Contraseña
                                         </label>
-                                        <a href="#" className="text-[10px] font-bold text-green-600 hover:text-green-400 transition-colors uppercase tracking-tighter">
+                                        <Link
+                                            href={route('password.request')}
+                                            className="text-[10px] font-bold text-green-600 hover:text-green-400 transition-colors uppercase tracking-tighter"
+                                        >
                                             ¿Olvidaste tu contraseña?
-                                        </a>
+                                        </Link>
                                     </div>
                                     <div className="relative group">
                                         <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none text-slate-500 group-focus-within:text-green-500 transition-colors duration-300">
@@ -145,7 +158,7 @@ export default function Login() {
                                 <Button
                                     type="submit"
                                     disabled={processing}
-                                    className="w-full h-14 rounded-xl bg-green-600 text-base font-black text-white uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-green-500 hover:shadow-[0_15px_25px_-10px_rgba(34,197,94,0.6)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
+                                    className="w-full h-14 rounded-xl bg-green-600 text-base font-black text-[#03122F] uppercase tracking-widest shadow-[0_10px_20px_-10px_rgba(34,197,94,0.5)] hover:bg-green-500 hover:shadow-[0_15px_25px_-10px_rgba(34,197,94,0.6)] active:scale-[0.97] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
                                 >
                                     {processing ? (
                                         <div className="flex items-center space-x-2">
