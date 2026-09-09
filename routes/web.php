@@ -232,6 +232,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/{instance}/coexistence-sync', [InstanceController::class, 'coexistenceSync'])
         ->name('instances.coexistence-sync');
 
+    // Apagar una instancia en vez de borrarla, que es lo que casi siempre se
+    // quiere: el número deja de enviar y de recibir y el historial se queda.
+    Route::post('/instances/{instance}/desconectar', [InstanceController::class, 'desconectar'])
+        ->middleware('permission:instances.update')->name('instances.desconectar');
+    Route::post('/instances/{instance}/reconectar', [InstanceController::class, 'reconectar'])
+        ->middleware('permission:instances.update')->name('instances.reconectar');
+
+    // Lo que se perdería al borrarla, para poder decirlo en el diálogo con
+    // números en vez de con un "¿estás seguro?".
+    Route::get('/instances/{instance}/resumen-borrado', [InstanceController::class, 'resumenBorrado'])
+        ->middleware('permission:instances.delete')->name('instances.resumen-borrado');
+
     // Registro insertado de Meta: conectar el WhatsApp del cliente sin pegar
     // tokens a mano. El GET sólo devuelve identificadores públicos; el POST es
     // el que crea la instancia, y por eso pide el mismo permiso que crearla.

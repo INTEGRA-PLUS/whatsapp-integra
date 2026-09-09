@@ -2,13 +2,20 @@ import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, WifiOff } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power } from 'lucide-react';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
 export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
+
+    // El diálogo de borrado: la instancia en cuestión, el resumen que pide al
+    // servidor y el nombre que hay que teclear para confirmar.
+    const [deletingInstance, setDeletingInstance] = useState(null);
+    const [deleteSummary, setDeleteSummary] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState('');
+    const [deleteError, setDeleteError] = useState(null);
 
     const [createForm, setCreateForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '' });
     const [editForm, setEditForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '', active: false });
@@ -27,9 +34,41 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
         });
     }
 
-    function handleDelete(instance) {
-        if (!confirm('¿Eliminar esta instancia?')) return;
-        router.delete(route('instances.destroy', instance.id));
+    /**
+     * Abrir el diálogo pide al servidor lo que se va a perder. Hasta que llega,
+     * el botón de borrar sigue deshabilitado: nadie debería poder confirmar un
+     * borrado irreversible antes de ver de qué tamaño es.
+     */
+    function openDelete(instance) {
+        setDeletingInstance(instance);
+        setDeleteSummary(null);
+        setDeleteConfirm('');
+        setDeleteError(null);
+
+        fetch(route('instances.resumen-borrado', instance.id), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(r => (r.ok ? r.json() : Promise.reject(r)))
+            .then(setDeleteSummary)
+            .catch(() => setDeleteError('No se pudo consultar qué contiene esta instancia. Recarga la página antes de borrar nada.'));
+    }
+
+    function handleDelete(e) {
+        e.preventDefault();
+        router.delete(route('instances.destroy', deletingInstance.id), {
+            data: { confirmacion: deleteConfirm },
+            onSuccess: () => setDeletingInstance(null),
+            onError: (errors) => setDeleteError(errors.confirmacion ?? 'No se pudo borrar la instancia.'),
+        });
+    }
+
+    function handleDesconectar(instance) {
+        router.post(route('instances.desconectar', instance.id), {}, { preserveScroll: true });
+    }
+
+    function handleReconectar(instance) {
+        router.post(route('instances.reconectar', instance.id), {}, { preserveScroll: true });
     }
 
     function openEdit(instance) {
@@ -128,7 +167,16 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(instance)}>
                                         <Pencil className="size-3.5" /> Editar
                                     </Button>
-                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => handleDelete(instance)}>
+                                    {instance.active ? (
+                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
+                                            <PowerOff className="size-3.5" /> Desconectar
+                                        </Button>
+                                    ) : (
+                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
+                                            <Power className="size-3.5" /> Reconectar
+                                        </Button>
+                                    )}
+                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
@@ -169,6 +217,96 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         <div className="flex gap-2 pt-2">
                             <Button type="submit" className="flex-1">Guardar Cambios</Button>
                             <Button type="button" variant="outline" onClick={() => setEditingInstance(null)}>Cancelar</Button>
+                        </div>
+                    </form>
+                </Modal>
+            )}
+
+            {deletingInstance && (
+                <Modal
+                    title="Eliminar instancia"
+                    description="Esta acción no se puede deshacer"
+                    onClose={() => setDeletingInstance(null)}
+                >
+                    <form onSubmit={handleDelete} className="space-y-4">
+                        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                            <div className="flex gap-2.5">
+                                <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
+                                <div className="space-y-2 text-sm">
+                                    <p className="font-medium text-foreground">
+                                        Se borrará «{deletingInstance.name}» y, con ella:
+                                    </p>
+                                    {deleteSummary ? (
+                                        <ul className="space-y-1 text-muted-foreground">
+                                            <li>· <strong className="text-foreground">{deleteSummary.conversaciones}</strong> conversaciones</li>
+                                            <li>· <strong className="text-foreground">{deleteSummary.mensajes}</strong> mensajes</li>
+                                            {deleteSummary.campanas > 0 && (
+                                                <li>· <strong className="text-foreground">{deleteSummary.campanas}</strong> campañas</li>
+                                            )}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-muted-foreground italic">Consultando qué contiene…</p>
+                                    )}
+                                    {deleteSummary && (
+                                        <p className="text-muted-foreground">
+                                            Los <strong className="text-foreground">{deleteSummary.contactos_empresa}</strong> contactos
+                                            de la empresa <strong className="text-foreground">no</strong> se borran: son de la empresa, no del número.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {deleteSummary?.historial_importado && (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+                                <p className="font-medium text-foreground">Este número importó su historial por coexistencia.</p>
+                                <p className="text-muted-foreground mt-1">
+                                    Meta solo permite una importación por número: el historial no se podrá volver a traer.
+                                    Recuperarlo exigiría que el cliente desconecte el número desde su app de WhatsApp Business
+                                    y repetir el registro completo.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="rounded-lg bg-muted/50 p-4 text-sm">
+                            <p className="text-muted-foreground">
+                                Borrar la instancia <strong className="text-foreground">no desconecta el número en Meta</strong>.
+                                Para eso, el cliente debe entrar en su app de WhatsApp Business →
+                                Configuración → Cuenta → Plataforma empresarial → Desconectar. Mientras no lo haga,
+                                sus mensajes seguirán llegando al servidor y se descartarán.
+                            </p>
+                        </div>
+
+                        <p className="text-sm text-muted-foreground">
+                            Si solo quieres dejar de usar el número, <strong className="text-foreground">desconéctala</strong> en
+                            lugar de borrarla: se conserva todo y puedes volver cuando quieras.
+                        </p>
+
+                        <Field
+                            label={`Escribe «${deletingInstance.name}» para confirmar`}
+                            value={deleteConfirm}
+                            onChange={setDeleteConfirm}
+                            placeholder={deletingInstance.name}
+                        />
+
+                        {deleteError && <p className="text-sm font-medium text-destructive">{deleteError}</p>}
+
+                        <div className="flex gap-2 pt-2">
+                            <Button
+                                type="submit"
+                                variant="destructive"
+                                className="flex-1"
+                                disabled={!deleteSummary || deleteConfirm.trim().toLowerCase() !== deletingInstance.name.trim().toLowerCase()}
+                            >
+                                Eliminar definitivamente
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => { handleDesconectar(deletingInstance); setDeletingInstance(null); }}
+                            >
+                                Mejor desconectar
+                            </Button>
                         </div>
                     </form>
                 </Modal>
