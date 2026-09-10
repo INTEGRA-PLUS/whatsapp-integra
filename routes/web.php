@@ -220,6 +220,32 @@ Route::post('/logout', function (Request $request) {
 })->name('logout');
 
 // Rutas protegidas
+/**
+ * La versión de los assets que está sirviendo el servidor ahora mismo.
+ *
+ * Es el mismo valor que Inertia compara en cada petición para decidir si el
+ * JavaScript del navegador se quedó viejo. Cuando no coincide, Inertia responde
+ * 409 y el navegador recarga de golpe —protección deliberada, pero al usuario
+ * que está escribiendo se le va la página sin avisar.
+ *
+ * Consultándolo aparte, con una petición normal que nunca provoca ese 409, la
+ * pantalla puede enterarse del despliegue y ofrecer recargar cuando al usuario
+ * le venga bien.
+ *
+ * Va fuera de `auth` a propósito: es un hash de un archivo público, no dice nada
+ * de nadie, y así el aviso también funciona en la pantalla de entrar.
+ */
+Route::get('/api/version', function (Request $request) {
+    return response()->json([
+        'version' => (new App\Http\Middleware\HandleInertiaRequests)->version($request),
+    ]);
+})
+    // Fuera del middleware de Inertia a propósito. Estando dentro, preguntar la
+    // versión con las cabeceras de Inertia devolvía 409 —la recarga forzada que
+    // todo esto existe para evitar—, y el aviso no habría salido nunca.
+    ->withoutMiddleware(App\Http\Middleware\HandleInertiaRequests::class)
+    ->name('version');
+
 Route::middleware('auth')->group(function () {
     // La portada. Antes redirigía al chat, que dejaba al cliente recién
     // conectado ante una lista vacía sin decirle qué le faltaba por configurar.

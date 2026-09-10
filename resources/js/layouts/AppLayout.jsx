@@ -3,6 +3,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import NotificationBell from '@/components/notification-bell';
+import AvisoNuevaVersion from '@/components/aviso-nueva-version';
 
 function getDefaultOpen() {
     if (typeof document === 'undefined') return true;
@@ -75,6 +76,7 @@ export default function AppLayout({ children, breadcrumb }) {
                 )}
 
                 {children}
+                <AvisoNuevaVersion />
             </SidebarInset>
         </SidebarProvider>
     );
