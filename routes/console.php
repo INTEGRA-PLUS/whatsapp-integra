@@ -25,6 +25,13 @@ Schedule::command('whatsapp:fallback-template')->hourly()->withoutOverlapping();
 // avisa cuando el estado CAMBIA, para que la alerta no se vuelva ruido.
 Schedule::command('whatsapp:health-check')->dailyAt('07:00')->withoutOverlapping();
 
+// Las credenciales de integración se cifran con la APP_KEY. Si el contenedor
+// arranca con otra, todas dejan de funcionar a la vez sin borrarse: la fila
+// sigue en «connected» y la pantalla pide conectar de nuevo, así que el cliente
+// lo vive como «se me borró la integración» y la crea otra vez. El 10-sep-2026
+// pasó tres veces con la misma empresa antes de que nadie mirara el log.
+Schedule::command('integraciones:credenciales')->dailyAt('07:05')->withoutOverlapping();
+
 // Ventana de importación de coexistencia. Se pide una vez, Meta la entrega por
 // webhooks y NO hay segundo intento: si se queda a medias, recuperarla obliga a
 // desconectar el número y rehacer el registro con el cliente delante. Cada hora

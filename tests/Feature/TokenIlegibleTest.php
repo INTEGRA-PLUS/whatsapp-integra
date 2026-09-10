@@ -121,6 +121,37 @@ class TokenIlegibleTest extends TestCase
     }
 
     /**
+     * Y alguien tiene que darse cuenta sin que lo reporte el cliente.
+     *
+     * Con la llave equivocada la fila sigue en «connected» y la pantalla pide
+     * conectar de nuevo, así que se vive como «se me borró la integración» y se
+     * vuelve a crear — hasta el siguiente despliegue. El 10-sep-2026 pasó tres
+     * veces con la misma empresa antes de que nadie mirara el log.
+     */
+    public function test_el_comando_avisa_cuando_una_credencial_no_se_puede_leer(): void
+    {
+        $this->conIntegracionRota();
+
+        $this->artisan('integraciones:credenciales')
+            ->expectsOutputToContain('no se pueden descifrar')
+            ->assertFailed();
+    }
+
+    /** Y calla cuando no hay nada que avisar: si no, se vuelve ruido. */
+    public function test_el_comando_pasa_cuando_todas_se_leen(): void
+    {
+        CompanyIntegration::create([
+            'company_id' => $this->usuario->company_id,
+            'key' => CompanyIntegration::KEY_INVOICE_PAYMENTS,
+            'base_url' => 'https://miempresa.integra.test',
+            'access_token' => 'itg_'.Str::random(20),
+            'status' => 'connected',
+        ]);
+
+        $this->artisan('integraciones:credenciales')->assertSuccessful();
+    }
+
+    /**
      * Se escribe el cifrado a pelo, saltándose el cast: es exactamente lo que
      * hay en la base de datos cuando la `APP_KEY` cambió debajo.
      */
