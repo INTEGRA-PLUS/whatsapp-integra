@@ -118,13 +118,21 @@
     --ring: oklch(0.75 0.1709 137);              /* el foco es verde, siempre */
     --radius: 0.625rem;
 
-    --sidebar: oklch(0.97 0.008 260);
-    --sidebar-foreground: oklch(0.19 0.063 260);
+    /* La barra lateral va en navy también en tema claro: es el fondo del logo
+       —#03122F, el mismo token que `foreground`— y le da a la pantalla el color
+       que le falta cuando todo lo demás es blanco. Además el logo, que ya trae
+       su propio navy, deja de recortarse contra un fondo casi blanco.
+
+       Es la única superficie clara que se invierte, así que sus colores no se
+       heredan del resto: van escritos aquí enteros. Comprobados sobre el navy:
+       texto 17:1, verde 8.8:1, y el texto del elemento activo 10.3:1. */
+    --sidebar: oklch(0.19 0.063 260);
+    --sidebar-foreground: oklch(0.97 0.005 260);
     --sidebar-primary: oklch(0.75 0.1709 137);
     --sidebar-primary-foreground: oklch(0.19 0.063 260);
-    --sidebar-accent: oklch(0.94 0.0491 137);
-    --sidebar-accent-foreground: oklch(0.19 0.063 260);
-    --sidebar-border: oklch(0.9 0.012 260);
+    --sidebar-accent: oklch(0.3 0.0421 137);
+    --sidebar-accent-foreground: oklch(0.9 0.1263 137);
+    --sidebar-border: oklch(0.3 0.03 265);
     --sidebar-ring: oklch(0.75 0.1709 137);
 
     --chart-1: oklch(0.55 0.1175 137);

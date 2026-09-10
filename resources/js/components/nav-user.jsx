@@ -69,7 +69,13 @@ export function NavUser() {
                                     <span className="text-[10px] bg-sidebar-primary/10 text-sidebar-primary px-1 rounded font-bold uppercase truncate">
                                         {user.roles?.[0] || 'Sin Rol'}
                                     </span>
-                                    <span className="text-muted-foreground truncate text-[10px] opacity-70">
+                                    {/* Con el color de la barra, no con el gris
+                                        general: éste va sobre el navy de la
+                                        barra en los dos temas. El de más abajo
+                                        sí se queda como está, porque cae dentro
+                                        del desplegable, que se pinta sobre
+                                        `popover`. */}
+                                    <span className="text-sidebar-foreground/60 truncate text-[10px]">
                                         {user.company_name}
                                     </span>
                                 </div>

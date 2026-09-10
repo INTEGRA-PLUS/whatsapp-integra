@@ -15,8 +15,26 @@ import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, Sideba
  * elementos se hayan filtrado por permisos no se pinta: la etiqueta sola sería
  * ruido.
  */
+/**
+ * La ruta de un enlace, sin dominio ni parámetros.
+ *
+ * `route()` devuelve la URL entera —"http://host/chat"— mientras que Inertia
+ * da la ruta a secas —"/chat"—, así que compararlas era comparar cosas
+ * distintas: ninguna coincidía nunca y **la barra no resaltaba jamás dónde
+ * estabas**. Se veía poco mientras el fondo era casi blanco; con la barra en
+ * navy, un menú sin marcar la página actual es difícil de leer de un vistazo.
+ */
+function soloLaRuta(href) {
+    try {
+        return new URL(href, window.location.origin).pathname;
+    } catch {
+        return String(href).split('?')[0];
+    }
+}
+
 export function NavMain({ groups = [] }) {
     const { url } = usePage();
+    const rutaActual = url.split('?')[0];
 
     return (
         <>
@@ -33,8 +51,10 @@ export function NavMain({ groups = [] }) {
                                         asChild
                                         // `exact` existe por la portada: su enlace es "/",
                                         // y con `startsWith` toda ruta empieza por "/", así
-                                        // que aparecía resaltada estuvieras donde estuvieras.
-                                        isActive={item.exact ? url === item.href : url.startsWith(item.href)}
+                                        // que aparecería resaltada estuvieras donde estuvieras.
+                                        isActive={item.exact
+                                            ? rutaActual === soloLaRuta(item.href)
+                                            : rutaActual.startsWith(soloLaRuta(item.href))}
                                         tooltip={{ children: item.title }}
                                     >
                                         <Link href={item.href}>
