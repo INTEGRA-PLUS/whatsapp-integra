@@ -332,6 +332,23 @@ class MessageApiController extends Controller
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
+        // En multipart no existen los arrays anidados, así que los componentes
+        // de la plantilla llegan como texto JSON. Sin esto la validación los
+        // rechaza con «The components field must be an array» y **la factura no
+        // sale**: pasó con las primeras facturas reales que entraron por aquí
+        // (9-sep-2026), y sin el aviso de más abajo no habría dejado rastro.
+        if (is_string($request->input('components'))) {
+            $decodificados = json_decode($request->input('components'), true);
+
+            // Si no se puede leer, se deja el texto tal cual: la regla `array`
+            // lo rechaza con un 422 que queda registrado. Ponerlo a null lo
+            // colaría como «sin componentes» y la plantilla saldría sin sus
+            // variables, que es peor que no salir.
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decodificados)) {
+                $request->merge(['components' => $decodificados]);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'to' => 'required|string',
             // El archivo o su URL: una de las dos, no las dos.

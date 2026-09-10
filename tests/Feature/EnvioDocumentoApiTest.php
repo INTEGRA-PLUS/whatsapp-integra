@@ -326,6 +326,71 @@ class EnvioDocumentoApiTest extends TestCase
         $this->assertSame('phone_number_id', $this->instance->fresh()->api_last_seen_via);
     }
 
+    /**
+     * En multipart los componentes llegan como texto JSON.
+     *
+     * No hay otra forma de mandar un array anidado junto a un archivo. Sin
+     * decodificarlos, la validación los rechaza con «The components field must
+     * be an array» y **la factura no sale**: es lo que pasó con las primeras
+     * facturas reales que entraron por aquí.
+     */
+    public function test_acepta_los_componentes_como_texto_json(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->withHeader('X-Instance-Token', $this->token)
+            ->post('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'file' => UploadedFile::fake()->create('Factura_1.pdf', 20, 'application/pdf'),
+                'template_name' => 'facturacion',
+                'components' => json_encode([[
+                    'type' => 'body',
+                    'parameters' => [['type' => 'text', 'text' => 'Pedro']],
+                ]]),
+            ])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $enviado = null;
+        Http::assertSent(function ($peticion) use (&$enviado) {
+            if (! str_contains($peticion->url(), '/messages')) {
+                return false;
+            }
+            $enviado = $peticion->data();
+
+            return true;
+        });
+
+        $componentes = $enviado['template']['components'] ?? [];
+
+        $this->assertSame('header', $componentes[0]['type'] ?? null);
+        $this->assertSame('Pedro', $componentes[1]['parameters'][0]['text'] ?? null);
+    }
+
+    /**
+     * Unos componentes ilegibles se rechazan diciéndolo.
+     *
+     * Tratarlos como «sin componentes» dejaría salir la plantilla **sin sus
+     * variables** —«Estimado {{1}}, su factura por {{2}}»— que es peor que no
+     * salir: llega al cliente y no se puede recoger.
+     */
+    public function test_unos_componentes_ilegibles_se_rechazan(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->withHeader('X-Instance-Token', $this->token)
+            ->post('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'file' => UploadedFile::fake()->create('f.pdf', 10, 'application/pdf'),
+                'template_name' => 'facturacion',
+                'components' => '{esto no es json',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('components');
+
+        Http::assertNothingSent();
+    }
+
     /** Y sin token no entra nadie. */
     public function test_sin_token_no_envia(): void
     {
