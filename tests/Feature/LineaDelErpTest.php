@@ -205,6 +205,35 @@ class LineaDelErpTest extends TestCase
     }
 
     /**
+     * `hello_world` no cuenta, y por poco deja a Transinternet sin poder
+     * mudarse nunca.
+     *
+     * Meta la provisiona sola en algunas WABAs y no en otras, así que aparecía
+     * aprobada en la línea de siempre y ausente en la nueva. Como no se puede
+     * copiar —no es tuya— la guarda habría rechazado el cambio para siempre,
+     * por una plantilla de muestra que nadie envía (10-sep-2026).
+     */
+    public function test_la_plantilla_de_muestra_de_meta_no_bloquea_el_cambio(): void
+    {
+        [$empresa, , $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+
+        $this->fingirCatalogos(
+            enLaDeHoy: [
+                ['name' => 'facturacion', 'language' => 'es_CO', 'status' => 'APPROVED'],
+                ['name' => 'hello_world', 'language' => 'en_US', 'status' => 'APPROVED'],
+            ],
+            enLaNueva: [['name' => 'facturacion', 'language' => 'es_CO', 'status' => 'APPROVED']],
+        );
+
+        $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id])
+            ->assertOk();
+
+        $this->assertSame($segunda->id, $empresa->fresh()->instanciaDelErp()->id);
+    }
+
+    /**
      * Si Meta no contesta no se bloquea: no saber no es lo mismo que saber que
      * falta, y dejar a alguien sin poder cambiar de línea porque Meta tuvo un
      * mal minuto sería peor que el riesgo que se evita.

@@ -13,6 +13,17 @@ use Inertia\Inertia;
 
 class WebhookEndpointController extends Controller
 {
+    /**
+     * Las plantillas que Meta pone sola en cada WABA nueva.
+     *
+     * `hello_world` aparece aprobada en la línea de siempre y **no** en una
+     * WABA recién creada, así que la comparación la contaba como «te falta» y
+     * bloqueaba el cambio de línea para siempre: no se puede copiar —Meta la
+     * provisiona por su cuenta y sólo en algunas cuentas— y nadie la envía.
+     * Descubierto el 10-sep-2026 esperando a que Transinternet pudiera mudarse.
+     */
+    private const PLANTILLAS_DE_MUESTRA = ['hello_world'];
+
     public function index()
     {
         return Inertia::render('Integrations/Index', [
@@ -239,7 +250,9 @@ class WebhookEndpointController extends Controller
 
             return collect($res['data']['data'] ?? [])
                 ->where('status', 'APPROVED')
+                ->reject(fn ($p) => in_array($p['name'] ?? '', self::PLANTILLAS_DE_MUESTRA, true))
                 ->map(fn ($p) => ($p['name'] ?? '').' ('.($p['language'] ?? '').')')
+                ->values()
                 ->all();
         };
 
