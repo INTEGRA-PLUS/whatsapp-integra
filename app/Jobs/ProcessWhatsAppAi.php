@@ -144,8 +144,12 @@ class ProcessWhatsAppAi implements ShouldQueue
         $flow = $this->isFlowAnswer ? WhatsAppBotFlow::activeFor($conversation->id) : null;
 
         // La pregunta caducó entre el webhook y la cola. Contestar ahora sería
-        // retomar una conversación que el cliente ya dio por perdida.
+        // retomar una conversación que el cliente ya dio por perdida, pero
+        // callarse tampoco vale: el cliente acaba de escribir y el webhook ya
+        // dio por hecho que de esto se encargaba la IA.
         if ($this->isFlowAnswer && ! $flow) {
+            $this->fallBackToAutoResponse($instance, $conversation, null);
+
             return null;
         }
 
@@ -165,9 +169,10 @@ class ProcessWhatsAppAi implements ShouldQueue
 
         $decision = $ai->ask($instance, $conversation, $message, $flow);
 
-        // La IA no se hizo cargo (apagada, sin turnos, flujo caído). No se
-        // contesta nada: el mensaje ya quedó guardado y un agente lo verá en su
-        // bandeja, que es preferible a improvisar una respuesta aquí.
+        // La IA no se hizo cargo (apagada, sin turnos, flujo caído). Aquí no se
+        // improvisa una respuesta, pero el turno tiene que volver a alguien: el
+        // webhook ya se saltó la respuesta automática dando por hecho que de
+        // este mensaje se encargaba la IA.
         if ($decision === null) {
             Log::channel('whatsapp')->info('ℹ️ La IA no resolvió el mensaje', [
                 'conversation_id' => $conversation->id,
@@ -176,9 +181,10 @@ class ProcessWhatsAppAi implements ShouldQueue
             // El chat IA es otra funcionalidad, no un reintento de ésta: la de
             // menús resuelve peticiones concretas y dice "no me hago cargo"
             // cuando el cliente no está pidiendo ninguna. Justo ahí es donde
-            // conversar tiene sentido. Si tampoco está, el mensaje queda para
-            // un agente, como antes.
-            $this->handOverToChatAi($instance, $conversation, $message, $handledUpTo);
+            // conversar tiene sentido.
+            if (! $this->handOverToChatAi($instance, $conversation, $message, $handledUpTo)) {
+                $this->fallBackToAutoResponse($instance, $conversation, $handledUpTo);
+            }
 
             return $handledUpTo;
         }
@@ -320,15 +326,18 @@ class ProcessWhatsAppAi implements ShouldQueue
      * Necesita el wamid del último mensaje del cliente porque el flujo de chats
      * devuelve su respuesta por un callback que llega desnudo: ese id es lo
      * único que permite saber a qué conversación pertenece.
+     *
+     * @return bool true si el chat IA se queda el turno. En false lo tiene que
+     *              recoger quien llama: si no, nadie le contesta al cliente.
      */
     private function handOverToChatAi(
         Instance $instance,
         WhatsAppConversation $conversation,
         string $message,
         ?int $upTo
-    ): void {
+    ): bool {
         if (! WhatsAppChatAiClient::enabledFor($instance->company_id)) {
-            return;
+            return false;
         }
 
         $wamid = (string) ($upTo !== null
@@ -339,7 +348,7 @@ class ProcessWhatsAppAi implements ShouldQueue
                 ->value('wamid'));
 
         if ($wamid === '') {
-            return;
+            return false;
         }
 
         Log::channel('whatsapp')->info('💬 La IA de menús no se hizo cargo: pasa al chat IA', [
@@ -347,6 +356,61 @@ class ProcessWhatsAppAi implements ShouldQueue
         ]);
 
         ProcessWhatsAppChatAi::dispatch($instance->id, $conversation->id, $message, $wamid);
+
+        return true;
+    }
+
+    /**
+     * Devuelve el turno a la respuesta automática cuando ninguna IA contestó.
+     *
+     * Existe porque el webhook decide en caliente quién atiende el mensaje y,
+     * en cuanto la IA está encendida, la da por ganadora: `handleInbound`
+     * devuelve true y la respuesta automática ya no se dispara. Mientras la IA
+     * contesta eso está bien; cuando el flujo dice "no me hago cargo" —o está
+     * caído, que es lo que pasa cuando la plataforma lo despliega a medias— el
+     * cliente se quedaba sin absolutamente nada, y el interruptor de la IA
+     * acababa apagando la respuesta automática de toda la empresa.
+     *
+     * Llega tarde a propósito (el retardo de la cola más lo que tardó el
+     * modelo). Es el precio de saber si la IA iba a contestar antes de mandar
+     * otra cosa, y ProcessAutoResponse vuelve a comprobar por su cuenta lo que
+     * pudo cambiar mientras tanto: agente que tomó el chat, hilo cerrado,
+     * ventana de 24 h y cooldown de la regla.
+     *
+     * @param ?int $upTo El último mensaje del cliente que se atendió, cuando se
+     *                   sabe. Si no, se busca el último que entró.
+     */
+    private function fallBackToAutoResponse(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        ?int $upTo
+    ): void {
+        // El mensaje sale de la base y no del texto que trae el job: éste puede
+        // venir con varios mensajes pegados (los que el cliente escribió
+        // seguidos) y la respuesta automática necesita uno solo, con su wamid,
+        // para saber si es el primero del hilo y cuánto tiempo pasó.
+        $row = $upTo !== null
+            ? WhatsAppMessage::find($upTo)
+            : WhatsAppMessage::where('conversation_id', $conversation->id)
+                ->where('direction', 'inbound')
+                ->orderByDesc('id')
+                ->first();
+
+        if (! $row || blank($row->wamid) || trim((string) $row->content) === '') {
+            return;
+        }
+
+        Log::channel('whatsapp')->info('↩️ Ninguna IA se hizo cargo: vuelve a la respuesta automática', [
+            'conversation_id' => $conversation->id,
+            'message_id' => $row->id,
+        ]);
+
+        ProcessAutoResponse::dispatch(
+            $instance->id,
+            $conversation->id,
+            (string) $row->content,
+            (string) $row->wamid
+        );
     }
 
     private function lockKey(): string

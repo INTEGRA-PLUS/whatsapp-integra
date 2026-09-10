@@ -35,6 +35,13 @@ x-app-env: &app-env
   SESSION_DRIVER: ${SESSION_DRIVER:-redis}
   SESSION_LIFETIME: ${SESSION_LIFETIME:-120}
   QUEUE_CONNECTION: ${QUEUE_CONNECTION:-redis}
+  # Cuánto espera la cola antes de dar un job por muerto y ofrecérselo a otro
+  # worker. El valor bueno vive en config/queue.php (360, por encima del job
+  # más lento); estas dos líneas están para poder subirlo sin reconstruir la
+  # imagen el día que un job crezca. Sin ellas el .env del servidor no llega al
+  # contenedor y el número queda clavado en el de la imagen.
+  DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-360}
+  REDIS_QUEUE_RETRY_AFTER: ${REDIS_QUEUE_RETRY_AFTER:-360}
   # Por defecto `reverb`: el stack levanta su propio contenedor de websockets,
   # así que el tiempo real del chat funciona sin configurar nada más. Con `log`
   # el chat sigue funcionando, pero solo se refresca con el poll de respaldo.
