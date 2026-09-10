@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessAutoResponse;
 use App\Jobs\ProcessWhatsAppAi;
 use App\Jobs\ProcessWhatsAppChatAi;
 use App\Jobs\ProcessWhatsAppMenu;
@@ -303,6 +304,46 @@ class AiChatIntegrationTest extends TestCase
 
         $this->assertFalse($handled);
         Queue::assertNothingPushed();
+    }
+
+    /**
+     * El relevo cuando el gateway no contesta.
+     *
+     * El webhook ya se saltó la respuesta automática al darle el turno a la
+     * IA: si aquí no se devuelve, encender el interruptor deja muda a la
+     * empresa entera para todo mensaje que ningún menú reconozca.
+     *
+     * @test
+     */
+    public function si_el_gateway_no_se_hace_cargo_el_turno_vuelve_a_la_respuesta_automatica(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response('Authorization data is wrong!', 403)]);
+
+        (new ProcessWhatsAppChatAi(
+            $this->instance->id, $this->conversation->id, 'no me funciona', 'wamid.IN1'
+        ))->handle(new WhatsAppChatAiClient);
+
+        Queue::assertNotPushed(ProcessWhatsAppMenu::class);
+        Queue::assertPushed(ProcessAutoResponse::class, fn ($job) => $job->inboundWamid === 'wamid.IN1'
+            // El texto sale de la base y no del que trae el job: cuando el
+            // relevo viene de la IA de menús, ahí llegan varios mensajes
+            // pegados y las reglas se casan contra uno solo.
+            && $job->incomingText === 'no me funciona el internet');
+    }
+
+    /** @test */
+    public function cuando_la_ia_contesta_no_se_manda_ademas_la_respuesta_automatica(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response(['status' => 'done', 'answer' => 'Claro, te ayudo.'], 200)]);
+
+        (new ProcessWhatsAppChatAi(
+            $this->instance->id, $this->conversation->id, 'no me funciona', 'wamid.IN1'
+        ))->handle(new WhatsAppChatAiClient);
+
+        Queue::assertPushed(ProcessWhatsAppMenu::class);
+        Queue::assertNotPushed(ProcessAutoResponse::class);
     }
 
     /** @test */

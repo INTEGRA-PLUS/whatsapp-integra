@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
+use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppChatAiClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -76,7 +77,13 @@ class ProcessWhatsAppChatAi implements ShouldQueue
 
         $decision = $ai->ask($instance, $conversation, $this->message, $this->wamid);
 
+        // El gateway no se hizo cargo (rechazó, no respondió, vino vacío). El
+        // turno vuelve a la respuesta automática: el webhook se la saltó dando
+        // por hecho que de este mensaje contestaba la IA, así que callarse aquí
+        // deja al cliente sin nada.
         if ($decision === null) {
+            $this->fallBackToAutoResponse($instance, $conversation);
+
             return;
         }
 
@@ -89,5 +96,40 @@ class ProcessWhatsAppChatAi implements ShouldQueue
             null,
             $decision
         );
+    }
+
+    /**
+     * Devuelve el turno a la respuesta automática cuando el chat IA no contestó.
+     *
+     * Es el mismo relevo que hace ProcessWhatsAppAi y por el mismo motivo: en
+     * cuanto la IA está encendida, el webhook la da por ganadora y no dispara
+     * la respuesta automática. Si después resulta que el flujo no contestó, sin
+     * esto el interruptor de la IA acaba dejando muda a toda la empresa.
+     *
+     * ProcessAutoResponse revalida lo que pudo cambiar durante la espera del
+     * modelo (agente asignado, hilo cerrado, ventana de 24 h, cooldown), así
+     * que llegar tarde aquí no es un problema.
+     */
+    private function fallBackToAutoResponse(Instance $instance, WhatsAppConversation $conversation): void
+    {
+        // El texto sale de la base y no de `$this->message`: cuando el relevo
+        // viene de la IA de menús, ahí llegan varios mensajes pegados y la
+        // respuesta automática necesita uno solo para casar sus reglas.
+        $row = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('wamid', $this->wamid)
+            ->first();
+
+        $content = trim((string) ($row->content ?? ''));
+
+        if ($content === '') {
+            return;
+        }
+
+        Log::channel('whatsapp')->info('↩️ El chat IA no se hizo cargo: vuelve a la respuesta automática', [
+            'conversation_id' => $conversation->id,
+            'message_id' => $row->id,
+        ]);
+
+        ProcessAutoResponse::dispatch($instance->id, $conversation->id, $content, $this->wamid);
     }
 }

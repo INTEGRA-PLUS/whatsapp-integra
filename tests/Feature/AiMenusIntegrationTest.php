@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessAutoResponse;
 use App\Jobs\ProcessWhatsAppAi;
+use App\Jobs\ProcessWhatsAppChatAi;
 use App\Jobs\ProcessWhatsAppMenu;
 use App\Models\Company;
 use App\Models\CompanyIntegration;
@@ -440,12 +442,83 @@ class AiMenusIntegrationTest extends TestCase
         $this->turnAiOn();
 
         // El cliente contesta cuando la pregunta ya expiró: retomarla ahora
-        // sería revivir una conversación que él ya dio por perdida.
+        // sería revivir una conversación que él ya dio por perdida. Pero el
+        // webhook ya se saltó la respuesta automática dándole el turno a la
+        // IA, así que el turno vuelve ahí en vez de dejar al cliente sin nada.
         (new ProcessWhatsAppAi($this->instance->id, $this->conversation->id, '1094123456', true))
             ->handle(app(WhatsAppAiClient::class));
 
         Http::assertNothingSent();
-        Queue::assertNothingPushed();
+        Queue::assertNotPushed(ProcessWhatsAppMenu::class);
+        Queue::assertPushed(ProcessAutoResponse::class);
+    }
+
+    // ------------------------------------------------------------------
+    // El relevo a la respuesta automática
+    //
+    // El webhook decide en caliente quién atiende el mensaje y, en cuanto la
+    // IA está encendida, la da por ganadora: `handleInbound` devuelve true y la
+    // respuesta automática ya no se dispara. Mientras la IA contesta eso está
+    // bien; cuando el flujo dice "no me hago cargo" —o está caído, que es lo
+    // que pasa cuando la plataforma lo despliega a medias— sin este relevo el
+    // cliente se queda sin absolutamente nada, y el interruptor de la IA acaba
+    // apagando la respuesta automática de toda la empresa.
+    // ------------------------------------------------------------------
+
+    public function test_si_el_flujo_no_se_hace_cargo_el_turno_vuelve_a_la_respuesta_automatica(): void
+    {
+        Queue::fake();
+        Http::fake(['n8n.example.test/*' => Http::response(['handled' => false])]);
+        $this->turnAiOn();
+
+        (new ProcessWhatsAppAi($this->instance->id, $this->conversation->id, 'hola'))
+            ->handle(app(WhatsAppAiClient::class));
+
+        Queue::assertNotPushed(ProcessWhatsAppMenu::class);
+        Queue::assertPushed(ProcessAutoResponse::class, fn ($job) => $job->conversationId === $this->conversation->id
+            // Con su wamid: la respuesta automática lo necesita para saber si
+            // es el primer mensaje del hilo y cuánto tiempo llevaba callado.
+            && $job->inboundWamid === 'wamid.IN1'
+            && $job->incomingText === 'hola');
+    }
+
+    public function test_si_el_flujo_esta_caido_el_turno_vuelve_a_la_respuesta_automatica(): void
+    {
+        // El caso de producción: el flujo desplegado responde con error, no
+        // con un "no me hago cargo" ordenado.
+        Queue::fake();
+        Http::fake(['n8n.example.test/*' => Http::response('boom', 500)]);
+        $this->turnAiOn();
+
+        (new ProcessWhatsAppAi($this->instance->id, $this->conversation->id, 'hola'))
+            ->handle(app(WhatsAppAiClient::class));
+
+        Queue::assertPushed(ProcessAutoResponse::class);
+    }
+
+    public function test_si_el_chat_ia_recoge_el_turno_no_hay_respuesta_automatica(): void
+    {
+        // Con las dos encendidas manda el orden de siempre: la de menús puede
+        // resolver, la de chats conversa. Sólo si NINGUNA se hace cargo vuelve
+        // el turno a la respuesta automática.
+        Queue::fake();
+        Http::fake(['n8n.example.test/*' => Http::response(['handled' => false])]);
+        config([
+            'services.ai_chat.webhook_url' => 'https://n8n.example.test/webhook/chat',
+            'services.ai_chat.api_key' => 'n8n_llave',
+        ]);
+        CompanyIntegration::create([
+            'company_id' => $this->company->id,
+            'key' => CompanyIntegration::KEY_AI_CHAT,
+            'enabled' => true,
+        ]);
+        $this->turnAiOn();
+
+        (new ProcessWhatsAppAi($this->instance->id, $this->conversation->id, 'hola'))
+            ->handle(app(WhatsAppAiClient::class));
+
+        Queue::assertPushed(ProcessWhatsAppChatAi::class);
+        Queue::assertNotPushed(ProcessAutoResponse::class);
     }
 
     // ------------------------------------------------------------------
