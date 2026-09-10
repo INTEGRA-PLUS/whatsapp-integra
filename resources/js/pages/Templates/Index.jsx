@@ -26,6 +26,9 @@ import {
     Sparkles,
     FileSearch,
     Smartphone,
+    Copy,
+    ArrowRight,
+    AlertTriangle,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -86,6 +89,7 @@ export default function TemplatesIndex({ instances = [] }) {
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
     const [instanceId, setInstanceId] = useState(instances[0]?.id ?? null);
+    const [copiando, setCopiando] = useState(false);
     const [templates, setTemplates] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -224,6 +228,16 @@ export default function TemplatesIndex({ instances = [] }) {
                                     <Sparkles className="size-4" /> Plantillas por defecto
                                 </Button>
                             </Link>
+                            {can('templates.create') && instanceId && instances.length > 1 && (
+                                <Button
+                                    onClick={() => setCopiando(true)}
+                                    variant="outline"
+                                    className="gap-2 h-9 bg-card/80"
+                                    title="Llevar plantillas de esta línea a otra"
+                                >
+                                    <Copy className="size-4" /> Copiar a otra línea
+                                </Button>
+                            )}
                             {can('templates.create') && instanceId && (
                                 <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
                                     <Sparkles className="size-4" /> Nueva plantilla
@@ -232,6 +246,15 @@ export default function TemplatesIndex({ instances = [] }) {
                         </div>
                     </div>
                 </div>
+
+                {copiando && (
+                    <CopiarPlantillasModal
+                        instances={instances}
+                        origenId={instanceId}
+                        onClose={() => setCopiando(false)}
+                        onCopiado={load}
+                    />
+                )}
 
                 {instances.length === 0 && (
                     <div className="rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">
@@ -387,6 +410,152 @@ export default function TemplatesIndex({ instances = [] }) {
             )}
 
         </>
+    );
+}
+
+/**
+ * Copiar plantillas de una línea a otra de la misma empresa.
+ *
+ * Las plantillas no viven en el CRM: viven en Meta y son **por WABA**. Dos
+ * líneas con WhatsApp Business distinto tienen catálogos separados, y lo que
+ * hay en una no existe en la otra.
+ *
+ * Eso rompió la facturación de Transinternet el 10-sep-2026: al cambiar su
+ * línea de envíos, Meta devolvía «(#100) Invalid parameter» en cada factura
+ * porque en el WABA nuevo no existía `facturacion`. Antes de esto, mudarse de
+ * línea significaba rehacer el catálogo a mano y descubrirlo factura a factura.
+ */
+function CopiarPlantillasModal({ instances, origenId, onClose, onCopiado }) {
+    const origen = instances.find(i => i.id === origenId);
+    const destinos = instances.filter(i => i.id !== origenId);
+
+    const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? null);
+    const [enviando, setEnviando] = useState(false);
+    const [resultado, setResultado] = useState(null);
+    const [error, setError] = useState(null);
+
+    const copiar = async () => {
+        setEnviando(true);
+        setError(null);
+        setResultado(null);
+
+        try {
+            const { data } = await axios.post('/api/templates/duplicar', {
+                origen_instance_id: origenId,
+                destino_instance_id: destinoId,
+            });
+            setResultado(data);
+            onCopiado?.();
+        } catch (e) {
+            setError(e.response?.data?.message ?? 'No se pudieron copiar las plantillas.');
+        } finally {
+            setEnviando(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+            <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold text-foreground">Copiar plantillas a otra línea</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Cada línea tiene su propio catálogo en Meta. Esto lleva a la otra las que le falten.
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <X className="size-4" />
+                    </button>
+                </div>
+
+                {!resultado && (
+                    <>
+                        <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Desde</p>
+                                <p className="truncate text-sm font-semibold text-foreground">{origen?.name}</p>
+                                <p className="truncate text-xs text-muted-foreground">{origen?.display_phone_number}</p>
+                            </div>
+
+                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+
+                            <div className="min-w-0 flex-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Hacia</label>
+                                <select
+                                    value={destinoId ?? ''}
+                                    onChange={e => setDestinoId(Number(e.target.value))}
+                                    className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                >
+                                    {destinos.map(i => (
+                                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Que Meta apruebe por su cuenta no es un detalle: es la
+                            diferencia entre «ya puedo enviar» y «puedo enviar
+                            cuando Meta diga». */}
+                        <div className="mb-4 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                            {/* El texto va dentro de un span: suelto, cada nodo se
+                                convierte en un elemento flex y la frase se parte
+                                en columnas. */}
+                            <span>
+                                Las copias llegan como <strong>pendientes</strong>: cada WhatsApp Business las aprueba
+                                por separado, y hasta que Meta las apruebe no se pueden enviar por la línea nueva.
+                            </span>
+                        </div>
+
+                        {error && (
+                            <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+                            <Button onClick={copiar} disabled={enviando || !destinoId} className="gap-2">
+                                {enviando ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+                                {enviando ? 'Copiando…' : 'Copiar las que falten'}
+                            </Button>
+                        </div>
+                    </>
+                )}
+
+                {resultado && (
+                    <>
+                        <p className="mb-3 text-sm text-foreground">{resultado.mensaje}</p>
+
+                        {resultado.ya_estaban > 0 && (
+                            <p className="mb-3 text-xs text-muted-foreground">
+                                {resultado.ya_estaban} ya estaban en la otra línea y no se tocaron.
+                            </p>
+                        )}
+
+                        {resultado.resultados?.length > 0 && (
+                            <ul className="mb-4 max-h-56 space-y-1.5 overflow-y-auto">
+                                {resultado.resultados.map(r => (
+                                    <li key={r.plantilla} className="flex items-start gap-2 text-xs">
+                                        {r.ok
+                                            ? <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" />
+                                            : <XCircle className="mt-px size-3.5 shrink-0 text-destructive" />}
+                                        <span className="min-w-0">
+                                            <span className="font-semibold text-foreground">{r.plantilla}</span>
+                                            {r.ok
+                                                ? <span className="text-muted-foreground"> · {r.estado === 'APPROVED' ? 'aprobada' : 'pendiente de Meta'}</span>
+                                                : <span className="block text-destructive">{r.error}</span>}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        <div className="flex justify-end">
+                            <Button onClick={onClose}>Cerrar</Button>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
     );
 }
 
