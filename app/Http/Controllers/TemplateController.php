@@ -1047,8 +1047,12 @@ class TemplateController extends Controller
         // permite la misma plantilla en varios idiomas y son distintas.
         $yaEstan = $enDestino->map(fn ($p) => ($p['name'] ?? '').'|'.($p['language'] ?? ''))->all();
 
-        $aCopiar = $enOrigen
+        // Las candidatas son el catálogo entero, o sólo las pedidas por nombre.
+        $candidatas = $enOrigen
             ->when(! empty($datos['nombres']), fn ($c) => $c->whereIn('name', $datos['nombres']))
+            ->values();
+
+        $aCopiar = $candidatas
             ->reject(fn ($p) => in_array(($p['name'] ?? '').'|'.($p['language'] ?? ''), $yaEstan, true))
             ->values();
 
@@ -1063,7 +1067,10 @@ class TemplateController extends Controller
         return response()->json([
             'copiadas' => $copiadas,
             'total' => count($resultados),
-            'ya_estaban' => $enOrigen->count() - $aCopiar->count(),
+            // Contra las candidatas, no contra el catálogo entero: pidiendo
+            // una sola plantilla decía «10 ya estaban», que no es cierto ni
+            // ayuda a entender qué pasó.
+            'ya_estaban' => $candidatas->count() - $aCopiar->count(),
             'resultados' => $resultados,
             'mensaje' => $copiadas > 0
                 ? "Se enviaron {$copiadas} plantillas a la otra línea. Meta las revisa por su cuenta: aparecerán como pendientes hasta que las apruebe."

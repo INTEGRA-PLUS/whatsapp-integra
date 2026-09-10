@@ -107,7 +107,12 @@ class DuplicarPlantillasTest extends TestCase
             'origen_instance_id' => $this->origen->id,
             'destino_instance_id' => $this->destino->id,
             'nombres' => ['b'],
-        ])->assertOk()->assertJsonPath('copiadas', 1)->assertJsonPath('resultados.0.plantilla', 'b');
+        ])->assertOk()
+            ->assertJsonPath('copiadas', 1)
+            ->assertJsonPath('resultados.0.plantilla', 'b')
+            // «Ya estaban» se cuenta contra lo pedido, no contra el catálogo
+            // entero: pidiendo una sola decía «2 ya estaban», que no es cierto.
+            ->assertJsonPath('ya_estaban', 0);
     }
 
     /** Dos líneas del mismo WABA ya ven lo mismo: no hay nada que copiar. */
