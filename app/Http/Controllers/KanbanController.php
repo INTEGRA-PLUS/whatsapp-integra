@@ -42,6 +42,20 @@ class KanbanController extends Controller
                 ->whereColumn('whatsapp_conversation_id', 'whatsapp_conversations.id')
                 ->where('tag_id', $column->tag_id)
                 ->limit(1)])
+            // Qué se envió por último, para que la tarjeta pueda decir si fue
+            // un PDF, una imagen o un audio. El `last_message` de la
+            // conversación es sólo texto: en un recibo enseñaba el nombre del
+            // archivo suelto, sin decir que era un archivo ni poder abrirlo.
+            ->addSelect(['ultimo_tipo' => \Illuminate\Support\Facades\DB::table('whatsapp_messages')
+                ->select('type')
+                ->whereColumn('conversation_id', 'whatsapp_conversations.id')
+                ->orderByDesc('id')
+                ->limit(1)])
+            ->addSelect(['ultimo_archivo' => \Illuminate\Support\Facades\DB::table('whatsapp_messages')
+                ->select('filename')
+                ->whereColumn('conversation_id', 'whatsapp_conversations.id')
+                ->orderByDesc('id')
+                ->limit(1)])
             ->with(['assignedAgent:id,name', 'tags'])
             ->whereIn('instance_id', Instance::where('company_id', $user->company_id)->pluck('id'))
             ->when($request->search, fn ($q, $s) => $q->search($s))

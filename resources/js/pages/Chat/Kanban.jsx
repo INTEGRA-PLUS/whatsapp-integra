@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import {
+    Image as ImageIcon,
     Search,
     MessageSquare,
     Plus,
@@ -15,6 +16,10 @@ import {
     AlertCircle,
     Trash2,
     UserCircle,
+    FileText,
+    Mic,
+    MapPin,
+    Video,
     GripVertical,
     Calendar,
     ArrowRight,
@@ -36,12 +41,46 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAviso } from '@/components/ui/toast';
 import { SelectorMultiple, SelectorBuscador } from '@/components/ui/selector';
+import PanelConversacion from './PanelConversacion';
 
 const PER_PAGE = 30;
 
 // Icon map: backend string → React component
 const ICON_MAP = { Plus, MessageSquare, Calendar, CheckCircle2, Zap, LayoutDashboard, Users, User };
 const getIcon = (name) => ICON_MAP[name] ?? Zap;
+
+/**
+ * Qué se envió por último, cuando no fue texto.
+ *
+ * La tarjeta enseñaba `last_message`, que es sólo texto: en un recibo salía
+ * «Recibo_8309.pdf» como si fuera un mensaje escrito, sin decir que era un
+ * archivo. Aquí se ve el tipo, y el nombre cuando lo hay.
+ */
+const ADJUNTOS = {
+    document: { icono: FileText,  texto: 'Documento' },
+    image:    { icono: ImageIcon, texto: 'Imagen' },
+    sticker:  { icono: ImageIcon, texto: 'Sticker' },
+    audio:    { icono: Mic,       texto: 'Audio' },
+    voice:    { icono: Mic,       texto: 'Nota de voz' },
+    video:    { icono: Video,     texto: 'Video' },
+    location: { icono: MapPin,    texto: 'Ubicación' },
+};
+
+function Adjunto({ tipo, archivo }) {
+    const pinta = ADJUNTOS[tipo];
+    if (!pinta) return null;
+
+    const Icono = pinta.icono;
+
+    return (
+        <span className="mb-2 flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-muted px-2 py-1">
+            <Icono className="size-3 shrink-0 text-muted-foreground" />
+            <span className="truncate text-[11px] font-bold text-muted-foreground">
+                {archivo || pinta.texto}
+            </span>
+        </span>
+    );
+}
 
 /**
  * Tooltip del tablero, con el mismo aspecto que los del menú lateral.
@@ -106,13 +145,43 @@ const diasEnEtapa = (entroEnEtapa) => {
 
 const DIAS_PARA_AVISAR = 7;
 
-const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
+const KanbanCard = memo(({ conv, isOverlay, isDragging, onAbrir, ...props }) => {
     const dias = diasEnEtapa(conv.entro_en_etapa);
     const estancada = dias !== null && dias >= DIAS_PARA_AVISAR;
+
+    /**
+     * Un clic abre la conversación; un arrastre no.
+     *
+     * No se usa `onClick`: la misma pulsación es el asa de arrastre, y la
+     * librería decide si hubo movimiento suficiente *después*, cancelando el
+     * click a veces y otras no. Aquí se mide: si el puntero no se movió más de
+     * cinco píxeles, era un clic.
+     */
+    const pulsacion = useRef(null);
+
+    const alPulsar = e => {
+        // Sólo el botón principal, y no cuando se pulsa sobre un enlace.
+        if (e.button !== 0) return;
+        pulsacion.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const alSoltar = e => {
+        const inicio = pulsacion.current;
+        pulsacion.current = null;
+        if (!inicio) return;
+
+        const movido = Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y);
+        if (movido <= 5) onAbrir?.(conv);
+    };
 
     return (
         <div
             {...props}
+            onPointerDown={e => { props.onPointerDown?.(e); alPulsar(e); }}
+            onPointerUp={alSoltar}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAbrir?.(conv); } }}
             className={clsx(
                 'group relative bg-card px-3.5 py-3 rounded-2xl border select-none',
                 isOverlay
@@ -148,6 +217,8 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
 
                 <GripVertical className="size-4 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
             </div>
+
+            <Adjunto tipo={conv.ultimo_tipo} archivo={conv.ultimo_archivo} />
 
             <p className="text-[12px] text-muted-foreground line-clamp-2 leading-snug mb-2.5">
                 {conv.last_message || 'Sin mensajes todavía'}
@@ -190,7 +261,7 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
     );
 });
 
-const SortableKanbanCard = memo(({ conv, index }) => {
+const SortableKanbanCard = memo(({ conv, index, onAbrir }) => {
     return (
         <Draggable draggableId={String(conv.id)} index={index}>
             {(provided, snapshot) => (
@@ -201,10 +272,11 @@ const SortableKanbanCard = memo(({ conv, index }) => {
                     className="outline-none"
                     style={provided.draggableProps.style}
                 >
-                    <KanbanCard 
-                        conv={conv} 
+                    <KanbanCard
+                        conv={conv}
                         isOverlay={snapshot.isDragging}
-                        isDragging={snapshot.isDragging} 
+                        isDragging={snapshot.isDragging}
+                        onAbrir={onAbrir}
                     />
                 </div>
             )}
@@ -259,7 +331,7 @@ const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error 
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
+const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja, onAbrirTarjeta }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const [editandoGrupo, setEditandoGrupo] = useState(false);
@@ -397,7 +469,7 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
                         )}
                     >
                         {items.map((conv, index) => (
-                            <SortableKanbanCard key={conv.id} conv={conv} index={index} />
+                            <SortableKanbanCard key={conv.id} conv={conv} index={index} onAbrir={onAbrirTarjeta} />
                         ))}
                         {provided.placeholder}
 
@@ -574,6 +646,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     const [soloEstancadas, setSoloEstancadas] = useState(false);
     const [contacto, setContacto]           = useState(null); // { id, nombre }
     const [usuarios, setUsuarios]           = useState([]);
+    const [tarjetaAbierta, setTarjetaAbierta] = useState(null); // la conversación del panel
     const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
     const [creandoEtapa, setCreandoEtapa]   = useState(false);
     const [errorEtapa, setErrorEtapa]       = useState(null);
@@ -1153,6 +1226,20 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         <>
             <Head title="Tablero" />
 
+            {tarjetaAbierta && (
+                <PanelConversacion
+                    conversacionId={tarjetaAbierta.id}
+                    resumen={tarjetaAbierta}
+                    onCerrar={() => setTarjetaAbierta(null)}
+                    // Al enviar algo cambia el último mensaje y el «no leído»,
+                    // así que la tarjeta de detrás tiene que enterarse.
+                    onCambio={() => {
+                        loadCounts();
+                        columnasVisibles.forEach(c => loadColumnCards(c.id, 1, true));
+                    }}
+                />
+            )}
+
             <ConfirmDialog
                 open={etapaABorrar !== null}
                 title="¿Eliminar esta etapa?"
@@ -1375,6 +1462,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 onCambiarBandeja={cambiarBandeja}
                                 onDelete={deleteColumn}
                                 onAddCard={setNewCardColumn}
+                                onAbrirTarjeta={setTarjetaAbierta}
                             />
                         ))}
 

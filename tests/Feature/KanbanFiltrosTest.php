@@ -182,6 +182,37 @@ class KanbanFiltrosTest extends TestCase
         $this->assertSame('ISNARDO SALAZAR', $respuesta->json('0.nombre'));
     }
 
+    /**
+     * La tarjeta tiene que poder decir que lo último que llegó fue un PDF.
+     *
+     * `last_message` es sólo texto: con un recibo enseñaba «Recibo_8309.pdf»
+     * como si fuera un mensaje escrito, sin decir que era un archivo.
+     */
+    public function test_la_tarjeta_trae_el_tipo_y_el_nombre_del_ultimo_adjunto(): void
+    {
+        [$user, $instance] = $this->empresa();
+        $nuevo = $this->columna($user->company_id, 'Nuevo', 'Estado', bandeja: true);
+
+        $conv = $this->conversacion($instance, '573001110001');
+
+        \App\Models\WhatsAppMessage::create([
+            'conversation_id' => $conv->id, 'wamid' => 'wamid.texto', 'type' => 'text',
+            'content' => 'Buenos días', 'direction' => 'inbound', 'status' => 'delivered',
+        ]);
+        \App\Models\WhatsAppMessage::create([
+            'conversation_id' => $conv->id, 'wamid' => 'wamid.pdf', 'type' => 'document',
+            'content' => 'Adjunto el comprobante', 'filename' => 'Recibo_8309.pdf',
+            'direction' => 'inbound', 'status' => 'delivered',
+        ]);
+
+        $respuesta = $this->actingAs($user)
+            ->getJson("/api/kanban/columns/{$nuevo->id}/cards?grupo=Estado")
+            ->assertOk();
+
+        $this->assertSame('document', $respuesta->json('data.0.ultimo_tipo'));
+        $this->assertSame('Recibo_8309.pdf', $respuesta->json('data.0.ultimo_archivo'));
+    }
+
     private function columna(int $companyId, string $nombre, ?string $grupo, bool $bandeja = false): KanbanColumn
     {
         $tag = Tag::create(['company_id' => $companyId, 'name' => $nombre, 'color' => '#76C652']);
