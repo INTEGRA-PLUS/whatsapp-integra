@@ -1022,6 +1022,9 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
     const [error, setError] = useState(null);
     const [variables, setVariables] = useState([]);
     const [guardando, setGuardando] = useState(false);
+    // El insertador abierto, si hay alguno: uno solo a la vez.
+    const [insertando, setInsertando] = useState(null);
+    const campos = useRef([]);
 
     useEffect(() => {
         let vivo = true;
@@ -1056,14 +1059,40 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
     const texto = datos?.meta?.encontrada ? datos.meta.texto : (datos?.contenido ?? '');
     const catalogo = datos?.catalogo ?? [];
     const ejemplos = datos?.ejemplos ?? {};
-    const grupos = [...new Set(catalogo.map(c => c.grupo))];
 
-    // Así queda el mensaje. Es lo que convierte «{{2}} = [factura.porpagar]» en
-    // una frase que se puede leer y aprobar de un vistazo.
+    /**
+     * Un valor con los datos cambiados por su ejemplo.
+     *
+     * Una variable no es «un campo o un texto»: es un texto que puede llevar
+     * dentro los campos que haga falta, y así se usan de verdad —el `{{1}}` de
+     * la plantilla de facturación de Transinternet es
+     * `[contacto.nombre] [contacto.apellido1] [contacto.apellido2]`—. El helper
+     * del ERP hace exactamente esto: reemplaza cada `[x.y]` allí donde esté.
+     */
+    const conEjemplos = (valor) =>
+        String(valor ?? '').replace(/\[[a-z]+\.[a-z0-9_]+\]/gi, m => ejemplos[m] ?? m);
+
+    // Inserta el campo donde esté el cursor, no al final: si estás componiendo
+    // «Sr(a) [contacto.nombre]» quieres el dato donde lo estabas escribiendo.
+    const insertar = (i, clave) => {
+        const campo = campos.current[i];
+        const valor = variables[i] ?? '';
+        const desde = campo?.selectionStart ?? valor.length;
+        const hasta = campo?.selectionEnd ?? valor.length;
+        const nuevo = valor.slice(0, desde) + clave + valor.slice(hasta);
+
+        setVariables(prev => prev.map((x, j) => (j === i ? nuevo : x)));
+        setInsertando(null);
+
+        requestAnimationFrame(() => {
+            campo?.focus();
+            campo?.setSelectionRange(desde + clave.length, desde + clave.length);
+        });
+    };
+
     const muestra = texto.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => {
         const valor = variables[Number(n) - 1] ?? '';
-        if (!valor) return '⟨sin llenar⟩';
-        return ejemplos[valor] ?? valor;
+        return valor.trim() ? conEjemplos(valor) : '⟨sin llenar⟩';
     });
 
     const faltan = variables.some(v => !String(v).trim());
@@ -1126,11 +1155,21 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
                             </p>
                         )}
 
+                        {/* El texto con sus huecos resaltados: es el mapa de lo
+                            que se está llenando abajo. */}
                         <div className="rounded-lg border border-border bg-muted/40 p-3">
                             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 Texto de la plantilla
                             </p>
-                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{texto || '—'}</p>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                                {texto
+                                    ? texto.split(/(\{\{\s*\d+\s*\}\})/g).map((trozo, i) =>
+                                        /^\{\{\s*\d+\s*\}\}$/.test(trozo)
+                                            ? <span key={i} className="rounded bg-primary/15 px-1 font-mono text-[11px] text-primary">{trozo}</span>
+                                            : <span key={i}>{trozo}</span>,
+                                    )
+                                    : '—'}
+                            </p>
                         </div>
 
                         {variables.length === 0 ? (
@@ -1138,51 +1177,49 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
                                 Esta plantilla no tiene variables: se envía tal cual, no hay nada que parametrizar.
                             </p>
                         ) : (
-                            <div className="space-y-2">
-                                {variables.map((valor, i) => {
-                                    const esDelCatalogo = catalogo.some(c => c.clave === valor);
-                                    const fijo = valor !== '' && !esDelCatalogo;
+                            <div className="space-y-3">
+                                <p className="text-[11px] text-muted-foreground">
+                                    Cada variable puede llevar datos del cliente, texto tuyo, o las dos cosas mezcladas
+                                    —«Sr(a) [contacto.nombre]» es una sola variable—.
+                                </p>
 
-                                    return (
-                                        <div key={i} className="flex flex-wrap items-center gap-2">
-                                            <span className="w-14 shrink-0 rounded bg-primary/10 px-2 py-1 text-center font-mono text-[11px] text-primary">
+                                {variables.map((valor, i) => (
+                                    <div key={i} className="rounded-lg border border-border p-2.5">
+                                        <div className="flex items-center gap-2">
+                                            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-1 font-mono text-[11px] text-primary">
                                                 {`{{${i + 1}}}`}
                                             </span>
 
-                                            <select
-                                                value={fijo ? '__fijo__' : valor}
+                                            <input
+                                                ref={el => { campos.current[i] = el; }}
+                                                type="text"
+                                                value={valor}
                                                 disabled={!canManage}
-                                                onChange={e => {
-                                                    const v = e.target.value === '__fijo__' ? ' ' : e.target.value;
-                                                    setVariables(prev => prev.map((x, j) => (j === i ? v : x)));
-                                                }}
-                                                className="h-8 min-w-[220px] flex-1 rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                            >
-                                                <option value="">Sin llenar</option>
-                                                {grupos.map(g => (
-                                                    <optgroup key={g} label={g}>
-                                                        {catalogo.filter(c => c.grupo === g).map(c => (
-                                                            <option key={c.clave} value={c.clave}>{c.etiqueta}</option>
-                                                        ))}
-                                                    </optgroup>
-                                                ))}
-                                                <option value="__fijo__">Texto fijo…</option>
-                                            </select>
+                                                placeholder="Escribe, o inserta un dato del cliente →"
+                                                onChange={e => setVariables(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                                                className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-card px-2 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                            />
 
-                                            {fijo && (
-                                                <input
-                                                    type="text"
-                                                    value={valor.trim() === '' ? '' : valor}
-                                                    autoFocus
-                                                    disabled={!canManage}
-                                                    placeholder="Lo que quieras que diga siempre"
-                                                    onChange={e => setVariables(prev => prev.map((x, j) => (j === i ? (e.target.value || ' ') : x)))}
-                                                    className="h-8 min-w-[180px] flex-1 rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                                />
-                                            )}
+                                            <InsertarDato
+                                                abierto={insertando === i}
+                                                catalogo={catalogo}
+                                                disabled={!canManage}
+                                                onAbrir={() => setInsertando(insertando === i ? null : i)}
+                                                onElegir={clave => insertar(i, clave)}
+                                            />
                                         </div>
-                                    );
-                                })}
+
+                                        {/* Cómo queda esa variable sola. Es lo
+                                            que convierte «[factura.porpagar]»
+                                            en «75.000» sin tener que buscarlo
+                                            en el párrafo de abajo. */}
+                                        <p className="mt-1.5 pl-1 text-[11px] text-muted-foreground">
+                                            {valor.trim()
+                                                ? <>Queda: <span className="text-foreground">{conEjemplos(valor)}</span></>
+                                                : <span className="text-warning">Sin llenar: el mensaje saldría con ese hueco vacío.</span>}
+                                        </p>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
@@ -1208,12 +1245,93 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
 
                         {faltan && variables.length > 0 && (
                             <p className="text-right text-[11px] text-muted-foreground">
-                                Falta decir qué va en {variables.filter(v => !String(v).trim()).length} variable(s).
+                                Falta llenar {variables.filter(v => !String(v).trim()).length} variable(s).
                             </p>
                         )}
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+/**
+ * El insertador de datos del cliente.
+ *
+ * Era un `<select>` con veintidós opciones agrupadas: se desplegaba por encima
+ * del modal, tapaba lo que estabas llenando, y obligaba a elegir *o* un dato
+ * *o* texto tuyo cuando lo que se necesita casi siempre es mezclarlos. Aquí el
+ * campo es texto normal y esto sólo pega el dato donde tengas el cursor, con un
+ * buscador porque veintidós nombres no se recorren con la vista.
+ */
+function InsertarDato({ abierto, catalogo, disabled, onAbrir, onElegir }) {
+    const [busca, setBusca] = useState('');
+
+    const filtrados = catalogo.filter(c =>
+        !busca.trim() || (c.etiqueta + ' ' + c.clave + ' ' + c.grupo).toLowerCase().includes(busca.toLowerCase()),
+    );
+    const grupos = [...new Set(filtrados.map(c => c.grupo))];
+
+    return (
+        <div className="relative shrink-0">
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={onAbrir}
+                title="Insertar un dato del cliente o de la factura"
+                className={cn(
+                    'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
+                    disabled ? 'cursor-not-allowed text-muted-foreground/50' : 'text-foreground hover:bg-muted',
+                    abierto && 'bg-muted',
+                )}
+            >
+                <Plus className="size-3" /> Dato
+            </button>
+
+            {abierto && (
+                <>
+                    {/* Un clic fuera lo cierra sin tocar nada. */}
+                    <div className="fixed inset-0 z-10" onClick={onAbrir} />
+
+                    <div className="absolute right-0 z-20 mt-1 w-72 rounded-lg border border-border bg-card p-2 shadow-2xl">
+                        <input
+                            type="text"
+                            value={busca}
+                            autoFocus
+                            placeholder="Buscar: saldo, vencimiento, cédula…"
+                            onChange={e => setBusca(e.target.value)}
+                            className="mb-1.5 h-8 w-full rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        />
+
+                        <div className="max-h-56 overflow-y-auto">
+                            {grupos.length === 0 && (
+                                <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                                    Ningún dato se llama así.
+                                </p>
+                            )}
+
+                            {grupos.map(g => (
+                                <div key={g} className="mb-1">
+                                    <p className="px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        {g}
+                                    </p>
+                                    {filtrados.filter(c => c.grupo === g).map(c => (
+                                        <button
+                                            key={c.clave}
+                                            type="button"
+                                            onClick={() => onElegir(c.clave)}
+                                            className="block w-full rounded px-1.5 py-1 text-left text-xs text-foreground hover:bg-muted"
+                                        >
+                                            {c.etiqueta}
+                                            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{c.clave}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
