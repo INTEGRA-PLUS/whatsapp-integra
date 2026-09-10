@@ -970,25 +970,48 @@ function AjustesDeEnvio({ showToast, canManage }) {
     );
 }
 
-/** Un interruptor con lo que hace escrito al lado. */
+/**
+ * Un interruptor de encender y apagar, con lo que hace escrito al lado.
+ *
+ * Una casilla de verificación se lee como «marca esto y luego guarda»; aquí no
+ * hay guardar: se enciende y ya está enviándose, o se apaga y deja de enviarse.
+ * El interruptor dice eso, la casilla no.
+ */
 function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar }) {
+    const bloqueado = disabled || ocupado;
+
     return (
-        <label className={cn('flex items-start gap-3', disabled ? 'opacity-60' : 'cursor-pointer')}>
-            <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={!!activo}
-                disabled={disabled || ocupado}
-                onChange={e => onCambiar(e.target.checked)}
-            />
-            <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <div className={cn('flex items-start justify-between gap-4', bloqueado && 'opacity-60')}>
+            <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-foreground">
                     {titulo}
                     {ocupado && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
-                </span>
-                <span className="block text-[11px] text-muted-foreground">{descripcion}</span>
-            </span>
-        </label>
+                </p>
+                <p className="text-[11px] text-muted-foreground">{descripcion}</p>
+            </div>
+
+            <button
+                type="button"
+                role="switch"
+                aria-checked={!!activo}
+                aria-label={titulo}
+                disabled={bloqueado}
+                onClick={() => onCambiar(!activo)}
+                className={cn(
+                    'relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                    bloqueado ? 'cursor-not-allowed' : 'cursor-pointer',
+                    activo ? 'bg-primary' : 'bg-muted-foreground/30',
+                )}
+            >
+                <span
+                    className={cn(
+                        'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
+                        activo ? 'translate-x-[22px]' : 'translate-x-0.5',
+                    )}
+                />
+            </button>
+        </div>
     );
 }
 
@@ -1003,8 +1026,13 @@ function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar
  * un cliente (9-sep-2026).
  */
 function LineasDelErp() {
-    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
+    const { lineasDelErp = [], lineaElegida = false, errors = {} } = usePage().props;
     const [guardando, setGuardando] = useState(null);
+
+    // El rechazo del cambio llegaba en `errors.instance_id` y no se pintaba en
+    // ninguna parte: pulsabas «Usar esta» y no pasaba nada. Es exactamente el
+    // final ciego que este trabajo venía a quitar, repetido.
+    const rechazo = errors.instance_id;
 
     if (lineasDelErp.length === 0) return null;
 
@@ -1014,6 +1042,9 @@ function LineasDelErp() {
         setGuardando(id);
         router.post('/integrations/linea-erp', { instance_id: id }, {
             preserveScroll: true,
+            // preserveState:false para que `errors` llegue a esta pantalla; con
+            // el estado preservado el rechazo no se veía.
+            preserveState: false,
             onFinish: () => setGuardando(null),
         });
     };
@@ -1024,6 +1055,13 @@ function LineasDelErp() {
             Icon={Plug}
             does="La línea por la que tu software administrativo manda facturas y recibos."
         >
+            {rechazo && (
+                <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    {rechazo}
+                </p>
+            )}
+
             {lineasDelErp.length > 1 && !lineaElegida && (
                 <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="mt-px size-3.5 shrink-0" />
