@@ -56,6 +56,16 @@ class DeliverWhatsAppMessage implements ShouldQueue
         $to = $conversation->recipientId();
         $phoneNumberId = $instance->phone_number_id;
 
+        // Instagram sale por otro sitio: otro host, otro token y sin número de
+        // por medio. Se corta aquí y no dentro del `match` de abajo porque casi
+        // nada de lo que sigue —plantillas, guardas de parámetros, multimedia—
+        // existe en ese canal.
+        if ($instance->esInstagram()) {
+            $this->entregarPorInstagram($message, $instance, $conversation, $to);
+
+            return;
+        }
+
         // Sin el payload de la plantilla, Meta devuelve un "template.name is
         // required" que no dice nada. Se corta antes de gastar la llamada.
         $template = null;
@@ -170,6 +180,68 @@ class DeliverWhatsAppMessage implements ShouldQueue
         if ($message && $message->status === 'pending') {
             $this->markFailed($message, $e->getMessage());
         }
+    }
+
+    /**
+     * La entrega por Instagram Direct.
+     *
+     * Sólo texto de momento, y se dice claramente en vez de fallar con un error
+     * de Meta que no explica nada: los adjuntos por este canal necesitan subir
+     * el archivo antes y eso todavía no está hecho.
+     *
+     * Al terminar comparte el mismo final que WhatsApp —guardar el identificador,
+     * marcar enviado y emitir en tiempo real— porque para la bandeja un mensaje
+     * es un mensaje.
+     */
+    private function entregarPorInstagram(
+        WhatsAppMessage $message,
+        \App\Models\Instance $instance,
+        \App\Models\WhatsAppConversation $conversation,
+        string $to,
+    ): void {
+        if ($message->type !== 'text') {
+            $this->markFailed($message, "Por Instagram todavía solo se puede enviar texto, no {$message->type}.");
+
+            return;
+        }
+
+        // Sin el prefijo con el nombre del agente que sí lleva WhatsApp: en
+        // Instagram Direct el asesor escribe desde la cuenta de la empresa y
+        // repetir ahí un "*Nombre:*" en negrita se ve como spam.
+        $result = app(\App\Services\InstagramMensajeriaService::class)
+            ->enviarTexto($instance, $to, $message->content ?? '');
+
+        if (! ($result['success'] ?? false)) {
+            $error = $result['error']['error']['message']
+                ?? (is_string($result['error'] ?? null) ? $result['error'] : 'Error al enviar por Instagram');
+
+            $this->markFailed($message, $error, $result['error']['error']['code'] ?? null);
+
+            return;
+        }
+
+        $message->update([
+            'wamid' => $result['data']['messages'][0]['id'] ?? null,
+            'status' => 'sent',
+            'sent_at' => $message->sent_at ?: now(),
+        ]);
+
+        broadcast(new \App\Events\WhatsAppMessageEvent($message->load('sender'), $instance->id, 'new'));
+
+        WebhookDispatcher::emit(
+            $conversation->instance->company_id,
+            'message.sent',
+            WebhookDispatcher::conversationPayload($conversation, [
+                'message' => [
+                    'id' => $message->id,
+                    'wamid' => $message->wamid,
+                    'type' => $message->type,
+                    'content' => $message->content,
+                    'media_url' => $message->media_url,
+                    'sent_by' => $message->sent_by,
+                ],
+            ])
+        );
     }
 
     private function markFailed(WhatsAppMessage $message, string $error, $errorCode = null, ?string $errorDetails = null): void

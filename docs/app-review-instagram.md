@@ -13,14 +13,27 @@ Estado hoy: última solicitud **aprobada**, ninguna pendiente, `can_submit: true
 Meta exige **ver la función andando** antes de dar acceso avanzado. No se puede
 grabar lo que no existe, así que la solicitud no va primero: va cuarta.
 
-1. ~~**Configurar el producto Instagram** en el panel~~ — **hecho el 10-sep-2026**,
-   salvo el webhook, que no se puede: ver «El webhook no va aquí» más abajo
-2. **Construir la integración mínima** — recibir un DM y contestarlo desde el CRM
-3. **Suscribir el webhook**, ya con el endpoint contestando
+1. ~~**Configurar el producto Instagram** en el panel~~ — **hecho el 10-sep-2026**
+2. ~~**Suscribir el webhook**~~ — hecho, en cuanto el endpoint estuvo desplegado
+3. ~~**Construir la integración mínima**~~ — conectar la cuenta, recibir un DM y
+   contestarlo desde el CRM: **hecho el 11-sep-2026**
 4. **Probarla con nuestra propia cuenta profesional de Instagram**, que el
-   acceso estándar ya permite sin ninguna aprobación
+   acceso estándar ya permite sin ninguna aprobación ← *aquí estamos*
 5. **Grabar el screencast** con eso funcionando
 6. **Enviar la solicitud** de acceso avanzado
+
+### Lo que hace falta del lado de la cuenta
+
+- Una **cuenta profesional** (Empresa o Creador). Una personal no sirve, y
+  convertirla la vuelve pública: las profesionales no pueden ser privadas.
+- **Dos cuentas para el screencast**, no una: la profesional es la del negocio
+  dentro del CRM, y hace falta otra —vale una personal— haciendo de cliente
+  final que escribe el DM.
+- Meta pide además **al menos una llamada correcta a la API** antes de dejar
+  enviar la solicitud: *«to request Advanced Access to certain permissions, you
+  need to make at least 1 successful API call»*. Conectar la cuenta ya la hace.
+- Y puede pedir **credenciales para entrar a nuestro CRM**. Ahí sirve el usuario
+  de la empresa DEMO.
 
 El paso 3 es la clave y mucha gente no lo sabe: **acceso estándar sirve para
 cuentas propias añadidas en el panel**. O sea que se puede construir, probar y
@@ -252,6 +265,8 @@ Va en las descripciones, abriéndolas con esa frase.
 - [x] Webhook del tópico `instagram` verificado y guardado *(10-sep-2026)*; los
       campos llegan al conectar la primera cuenta
 - [ ] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
+- [x] El código: conectar la cuenta, recibir DM y responder desde el CRM
+      *(11-sep-2026)*
 - [ ] Nuestra cuenta profesional de Instagram conectada y funcionando en
       acceso estándar
 - [ ] Screencast con las cinco tomas, sin cortes
