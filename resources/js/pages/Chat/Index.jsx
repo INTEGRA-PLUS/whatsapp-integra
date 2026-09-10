@@ -1309,6 +1309,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
+    // Resultados que la búsqueda encuentra pero el filtro de estado esconde.
+    const [fueraDelFiltro, setFueraDelFiltro] = useState(0);
     const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
@@ -2866,6 +2868,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
             setConversations(prev => pageNum === 1 ? newItems : [...prev, ...newItems]);
             setHasMore(res.data.next_page_url !== null);
             setPage(pageNum);
+            // Cuántas encajan con lo buscado pero se quedan fuera por el filtro
+            // de estado. El servidor sólo lo calcula al buscar con filtro.
+            setFueraDelFiltro(pageNum === 1 ? (res.data.fuera_del_filtro ?? 0) : fueraDelFiltro);
         } catch (err) {
             console.error('Error cargando conversaciones:', err);
         } finally {
@@ -4236,8 +4241,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             >
                                                 <Filter className="size-[15px]" />
                                             </button>
+                                            {/* El panel se abre hacia la derecha, no hacia la
+                                                izquierda. Anclado a `right-0`, sus 340px se
+                                                extendían desde el botón hacia el borde de la
+                                                ventana y se salían: el título aparecía cortado por
+                                                la mitad y el primer desplegable a medias. A la
+                                                derecha del botón está el hilo del chat, que es
+                                                espacio de sobra. El ancho se acota al viewport
+                                                para el móvil, donde el panel ocupa la pantalla
+                                                entera. */}
                                             {filterOpen && (
-                                                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
+                                                <div className="absolute left-0 top-full mt-2 z-50 w-[340px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
                                                     <p className="text-sm font-bold text-foreground mb-3">Filtrar conversaciones</p>
                                                     <div className="space-y-2">
                                                         {draftFilters.map((row, i) => (
@@ -4432,6 +4446,30 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         : 'No se encontraron chats'}
                                         </p>
                                     </div>
+                                )}
+
+                                {/* Lo que la búsqueda encuentra pero el filtro esconde.
+                                    Una empresa puede tener 19 conversaciones abiertas y
+                                    3.171 cerradas: casi cualquier búsqueda cae fuera del
+                                    filtro, y "no se encontraron chats" hacía pensar que el
+                                    cliente no estaba en el sistema. */}
+                                {fueraDelFiltro > 0 && !loadingMore && debouncedSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setStatusFilter('all')}
+                                        className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3 py-2.5 text-left transition-colors hover:bg-info/15"
+                                    >
+                                        <Search className="mt-0.5 size-3.5 shrink-0 text-info" />
+                                        <span className="text-[11px] leading-snug text-muted-foreground">
+                                            <span className="font-bold text-foreground">
+                                                {fueraDelFiltro === 1
+                                                    ? 'Hay 1 chat más'
+                                                    : `Hay ${fueraDelFiltro} chats más`}
+                                            </span>{' '}
+                                            con «{debouncedSearch}» en {statusFilter === 'closed' ? 'los abiertos' : 'los cerrados'}.{' '}
+                                            <span className="font-semibold text-info">Ver todos</span>
+                                        </span>
+                                    </button>
                                 )}
                             </div>
                         </div>

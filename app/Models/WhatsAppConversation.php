@@ -4,11 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Log;
 
 class WhatsAppConversation extends Model
 {
     use HasFactory;
-    
+
     protected $table = 'whatsapp_conversations';
 
     protected $fillable = [
@@ -27,7 +30,7 @@ class WhatsAppConversation extends Model
         'closed_by',
         'closed_at',
         'unread_count',
-        'metadata'
+        'metadata',
     ];
 
     protected $casts = [
@@ -145,12 +148,12 @@ class WhatsAppConversation extends Model
 
         $digits = self::normalizePhone($phone);
 
-        if ($digits === '' && $phone !== null && $phone !== '' && !$bsuid) {
+        if ($digits === '' && $phone !== null && $phone !== '' && ! $bsuid) {
             // Nada que normalizar: se conserva el comportamiento antiguo para no
             // perder el mensaje, pero queda el rastro de quién manda basura.
-            \Illuminate\Support\Facades\Log::warning('Teléfono sin dígitos al resolver conversación', [
+            Log::warning('Teléfono sin dígitos al resolver conversación', [
                 'instance_id' => $instanceId,
-                'phone'       => $phone,
+                'phone' => $phone,
             ]);
             $digits = (string) $phone;
         }
@@ -191,9 +194,9 @@ class WhatsAppConversation extends Model
                     return $variant->absorbIdentity($bsuid, $digits);
                 }
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('No se pudo buscar variantes del número', [
+                Log::warning('No se pudo buscar variantes del número', [
                     'instance_id' => $instanceId,
-                    'error'       => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -207,12 +210,12 @@ class WhatsAppConversation extends Model
 
         try {
             return static::create(array_merge($defaults, [
-                'instance_id'  => $instanceId,
-                'wa_id'        => $waId,
-                'bsuid'        => $bsuid,
+                'instance_id' => $instanceId,
+                'wa_id' => $waId,
+                'bsuid' => $bsuid,
                 'phone_number' => $digits !== '' ? ($defaults['phone_number'] ?? $digits) : '',
             ]));
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+        } catch (UniqueConstraintViolationException $e) {
             // Un lote del webhook puede traer dos mensajes del mismo cliente nuevo
             // y competir por el índice único (instance_id, wa_id).
             return static::where('instance_id', $instanceId)
@@ -238,13 +241,13 @@ class WhatsAppConversation extends Model
     {
         $cambios = [];
 
-        if ($bsuid && !$this->bsuid) {
+        if ($bsuid && ! $this->bsuid) {
             $cambios['bsuid'] = $bsuid;
         }
 
         // La columna admite 20 caracteres: un teléfono real cabe de sobra, pero
         // no se arriesga el insert con un valor inesperado.
-        if ($digits !== '' && !$this->hasPhone() && strlen($digits) <= 20) {
+        if ($digits !== '' && ! $this->hasPhone() && strlen($digits) <= 20) {
             $cambios['phone_number'] = $digits;
         }
 
@@ -270,7 +273,7 @@ class WhatsAppConversation extends Model
         }
 
         $candidates = static::where('instance_id', $instanceId)
-            ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') LIKE ?", ['%' . substr($digits, -10)])
+            ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') LIKE ?", ['%'.substr($digits, -10)])
             ->orderByDesc('last_message_at')
             ->limit(5)
             ->get();
@@ -331,13 +334,13 @@ class WhatsAppConversation extends Model
 
     public function kanbanColumn()
     {
-        return $this->belongsTo(\App\Models\KanbanColumn::class, 'kanban_column_id');
+        return $this->belongsTo(KanbanColumn::class, 'kanban_column_id');
     }
 
     /**
      * The tags that belong to the conversation.
      */
-    public function tags(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    public function tags(): BelongsToMany
     {
         // withTimestamps es lo que da el «lleva 12 días en esta etapa»: cada
         // columna del tablero es una etiqueta, así que la fecha en que se
@@ -367,8 +370,9 @@ class WhatsAppConversation extends Model
         $name = $this->name ?? $this->phone_number ?? 'U';
         $words = explode(' ', $name);
         if (count($words) >= 2) {
-            return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+            return strtoupper(substr($words[0], 0, 1).substr($words[1], 0, 1));
         }
+
         return strtoupper(substr($name, 0, 2));
     }
 
@@ -446,12 +450,52 @@ class WhatsAppConversation extends Model
         return $query->where('instance_id', $instanceId);
     }
 
+    /**
+     * Buscar una conversación por lo que se ve de ella en pantalla.
+     *
+     * Buscaba sólo en los campos de la conversación, y el `name` de una
+     * conversación es el nombre de perfil de WhatsApp —"isnardo paredes31"—,
+     * mientras que la cabecera del chat enseña el del contacto de la agenda
+     * —"ISNARDO SALAZAR RAMIREZ"—. Así que el agente leía un nombre, lo
+     * escribía en el buscador y no salía nada: estaba buscando algo que no se
+     * miraba en ninguna columna (caso real en Megastore, 10-sep-2026).
+     *
+     * Ahora entra también el contacto: su nombre, su apellido, su usuario, su
+     * identificación y sus teléfonos. Los números se comparan además sin
+     * separadores, porque en la agenda se guardan de mil formas —"+57 302
+     * 335 0723", "302-3350723"— y nadie los teclea igual que están guardados.
+     */
     public function scopeSearch($query, $search)
     {
-        return $query->where(function ($q) use ($search) {
-            $q->where('name', 'like', "%{$search}%")
-              ->orWhere('phone_number', 'like', "%{$search}%")
-              ->orWhere('last_message', 'like', "%{$search}%");
+        $texto = trim((string) $search);
+
+        if ($texto === '') {
+            return $query;
+        }
+
+        $soloDigitos = preg_replace('/\D+/', '', $texto);
+
+        return $query->where(function ($q) use ($texto, $soloDigitos) {
+            $q->where('name', 'like', "%{$texto}%")
+                ->orWhere('phone_number', 'like', "%{$texto}%")
+                ->orWhere('last_message', 'like', "%{$texto}%");
+
+            if ($soloDigitos !== '') {
+                $q->orWhere('wa_id', 'like', "%{$soloDigitos}%")
+                    ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$soloDigitos}%"]);
+            }
+
+            $q->orWhereHas('contact', function ($c) use ($texto, $soloDigitos) {
+                $c->where('name', 'like', "%{$texto}%")
+                    ->orWhere('last_name', 'like', "%{$texto}%")
+                    ->orWhere('username', 'like', "%{$texto}%")
+                    ->orWhere('identificacion', 'like', "%{$texto}%")
+                    ->orWhere('phone_number', 'like', "%{$texto}%");
+
+                if ($soloDigitos !== '') {
+                    $c->orWhereRaw("REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$soloDigitos}%"]);
+                }
+            });
         });
     }
 }

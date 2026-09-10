@@ -73,7 +73,7 @@ class ChatController extends Controller
             return [];
         }
 
-        return \App\Models\CompanyIntegration::where('company_id', $companyId)
+        return CompanyIntegration::where('company_id', $companyId)
             ->where('enabled', true)
             ->where('status', 'connected')
             ->whereNotNull('trigger_command')
@@ -135,9 +135,9 @@ class ChatController extends Controller
         return Inertia::render('Chat/Kanban', [
             'columns' => $columns,
             'total_conversations' => $total,
-            'en_tablero'          => $enTablero,
-            'estancadas'          => $estancadas,
-            'instances'           => $instances,
+            'en_tablero' => $enTablero,
+            'estancadas' => $estancadas,
+            'instances' => $instances,
         ]);
     }
 
@@ -191,7 +191,22 @@ class ChatController extends Controller
             ->orderByDesc('last_message_at')
             ->paginate(50);
 
-        return response()->json($this->sanitizeUtf8($conversations->toArray()));
+        $carga = $this->sanitizeUtf8($conversations->toArray());
+
+        // Cuántas encaja la búsqueda si se ignora el estado.
+        //
+        // Buscar con el filtro en "Abiertas" y no encontrar nada no significa
+        // que la conversación no exista: en Megastore hay 19 abiertas y 3.171
+        // cerradas, así que casi cualquier búsqueda cae fuera del filtro. El
+        // agente veía "sin resultados" y concluía que no estaba en el sistema.
+        // Con este dato, la pantalla puede ofrecerle mirar en el resto.
+        if (filled($request->search) && filled($request->status)) {
+            $carga['fuera_del_filtro'] = WhatsAppConversation::forInstance($instanceId)
+                ->search($request->search)
+                ->count() - $conversations->total();
+        }
+
+        return response()->json($carga);
     }
 
     /**
