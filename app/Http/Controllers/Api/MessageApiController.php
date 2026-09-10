@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class MessageApiController extends Controller
@@ -577,7 +578,7 @@ class MessageApiController extends Controller
 
         return [
             'ok' => true,
-            'url' => \Illuminate\Support\Facades\Storage::disk('s3_media')->url($path),
+            'url' => Storage::disk('s3_media')->url($path),
             'filename' => $request->filename ?: ($file->getClientOriginalName() ?: 'documento.pdf'),
             'mime' => $file->getClientMimeType() ?: 'application/pdf',
         ];
@@ -870,7 +871,7 @@ class MessageApiController extends Controller
         $type = $request->type ?? 'text';
         $status = $request->status ?? 'sent';
         $direction = $request->direction ?? 'outbound';
-        $sentAt = $request->sent_at ? Carbon::parse($request->sent_at) : now();
+        $sentAt = $this->sentAtCreible($request->sent_at);
         $metadata = $request->metadata;
         $mediaUrl = $request->media_url;
         $filename = $request->filename;
@@ -941,6 +942,49 @@ class MessageApiController extends Controller
             'message_id' => $message->id,
             'wamid' => $message->wamid,
         ]);
+    }
+
+    /**
+     * La hora de envío que manda el sistema externo, si es que puede ser cierta.
+     *
+     * Un mensaje no puede haberse enviado después de que lo estamos registrando.
+     * El ERP viene mandando horas de dos a cuatro horas por delante —246 mensajes
+     * en dos días—, y como esa misma hora se copia a `last_message_at`, la lista
+     * de conversaciones enseñaba "12:36 a.m." en un chat cuyo último mensaje
+     * decía "09:01 p.m.": la misma burbuja con dos horas distintas.
+     *
+     * Se admite un minuto de margen porque dos relojes nunca van exactamente
+     * iguales, y ese desfase pequeño sí es hora legítima. Más allá, se descarta
+     * y se registra: el que hay que arreglar es el reloj del otro lado, y sin
+     * dejar rastro nadie se entera de que sigue mal.
+     */
+    private function sentAtCreible($valor): Carbon
+    {
+        if (! $valor) {
+            return now();
+        }
+
+        try {
+            $sentAt = Carbon::parse($valor);
+        } catch (\Throwable $e) {
+            Log::warning('sent_at no se pudo interpretar; se usa la hora del servidor', [
+                'sent_at' => $valor,
+            ]);
+
+            return now();
+        }
+
+        if ($sentAt->greaterThan(now()->addMinute())) {
+            Log::warning('sent_at venía en el futuro; se usa la hora del servidor', [
+                'sent_at' => $sentAt->toIso8601String(),
+                'ahora' => now()->toIso8601String(),
+                'adelanto_minutos' => round(now()->diffInMinutes($sentAt)),
+            ]);
+
+            return now();
+        }
+
+        return $sentAt;
     }
 
     public function getConversations(Request $request)

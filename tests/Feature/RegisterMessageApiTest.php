@@ -66,4 +66,62 @@ class RegisterMessageApiTest extends TestCase
         $this->assertSame('document', $message->type);
         $this->assertSame('Recibo_Caja_42601.pdf', $message->filename);
     }
+
+    /**
+     * Un mensaje no puede haberse enviado después de que lo registramos.
+     *
+     * El ERP mandaba `sent_at` con el reloj adelantado dos y hasta cuatro horas.
+     * Como esa hora se copia a `last_message_at`, la lista de conversaciones
+     * enseñaba "12:36 a. m." en un chat cuyo último mensaje decía "09:01 p. m.":
+     * la misma burbuja con dos horas distintas, y la conversación colada arriba
+     * del todo porque el orden también sale de ahí.
+     */
+    public function test_un_sent_at_en_el_futuro_se_reemplaza_por_la_hora_del_servidor(): void
+    {
+        $instance = $this->metaInstance();
+
+        $this->register($instance, [
+            'sent_at' => now()->addHours(4)->toIso8601String(),
+        ])->assertOk();
+
+        $message = WhatsAppMessage::latest('id')->first();
+
+        $this->assertTrue(
+            $message->sent_at->lessThanOrEqualTo(now()->addMinute()),
+            'sent_at quedó en el futuro: ' . $message->sent_at,
+        );
+        $this->assertTrue(
+            $message->conversation->last_message_at->lessThanOrEqualTo(now()->addMinute()),
+            'last_message_at quedó en el futuro',
+        );
+    }
+
+    /** Un desfase pequeño entre relojes sí es hora legítima y se respeta. */
+    public function test_un_sent_at_del_pasado_se_conserva(): void
+    {
+        $instance = $this->metaInstance();
+        $hace = now()->subMinutes(30);
+
+        $this->register($instance, ['sent_at' => $hace->toIso8601String()])->assertOk();
+
+        $message = WhatsAppMessage::latest('id')->first();
+
+        $this->assertSame(
+            $hace->format('Y-m-d H:i'),
+            $message->sent_at->format('Y-m-d H:i'),
+        );
+    }
+
+    /** Sin `sent_at`, la hora es la del servidor: no se queda vacía. */
+    public function test_sin_sent_at_se_usa_la_hora_del_servidor(): void
+    {
+        $instance = $this->metaInstance();
+
+        $this->register($instance, [])->assertOk();
+
+        $message = WhatsAppMessage::latest('id')->first();
+
+        $this->assertNotNull($message->sent_at);
+        $this->assertTrue($message->sent_at->diffInMinutes(now()) < 2);
+    }
 }

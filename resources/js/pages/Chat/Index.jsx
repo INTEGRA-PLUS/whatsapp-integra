@@ -5331,13 +5331,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                         el cliente conserva el texto que se le envió. */}
                                                                     {msg.metadata?.edited_at && !msg.is_internal && (
                                                                         <span
-                                                                            className="text-[9px] font-bold italic text-muted-foreground/60 dark:text-white/30 whitespace-nowrap"
+                                                                            className="text-[9px] font-bold italic text-muted-foreground/80 dark:text-white/65 whitespace-nowrap"
                                                                             title={`Corregido en el panel${msg.metadata.edited_by?.name ? ` por ${msg.metadata.edited_by.name}` : ''} el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}.\nEl cliente recibió: "${msg.metadata.delivered_content ?? ''}"`}
                                                                         >
                                                                             editado
                                                                         </span>
                                                                     )}
-                                                                    <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                    {/* La hora tiene que leerse. En oscuro iba en blanco al 30%,
+                                                                        que sobre el verde de una burbuja saliente queda por
+                                                                        debajo de 2:1 — a 9px, eso no es discreto, es invisible.
+                                                                        Sigue siendo lo más apagado de la burbuja, pero legible. */}
+                                                                    <span className="text-[9px] font-bold text-muted-foreground/80 dark:text-white/65 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && (
                                                                         <StatusIcons
                                                                             status={msg.status}
