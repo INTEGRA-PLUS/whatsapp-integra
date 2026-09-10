@@ -9,6 +9,9 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
+use App\Http\Controllers\InstagramConexionController;
+use App\Http\Controllers\InstagramPrivacidadController;
+use App\Http\Controllers\InstagramWebhookController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\KanbanController;
@@ -39,6 +42,21 @@ use Inertia\Inertia;
 // Webhooks públicos
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
 Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook']);
+
+// Instagram. Va en su propia URL y no colgando del webhook de WhatsApp porque
+// Meta admite un solo callback_url por app y por tópico: son dos suscripciones
+// independientes que conviven en la misma app.
+Route::get('/webhooks/instagram', [InstagramWebhookController::class, 'verificar']);
+Route::post('/webhooks/instagram', [InstagramWebhookController::class, 'recibir']);
+
+// Las tres URL que Meta exige registrar en Business Login. El revisor del App
+// Review las visita: si alguna no contesta 200, la solicitud se rechaza antes
+// de mirar el screencast.
+Route::get('/instagram/callback', [InstagramConexionController::class, 'callback']);
+Route::match(['get', 'post'], '/instagram/desautorizar', [InstagramPrivacidadController::class, 'desautorizar']);
+Route::match(['get', 'post'], '/instagram/eliminar-datos', [InstagramPrivacidadController::class, 'eliminarDatos']);
+Route::get('/instagram/eliminar-datos/{codigo}', [InstagramPrivacidadController::class, 'estadoDeBorrado'])
+    ->name('instagram.eliminar-datos.estado');
 
 // Utilidad para servidor compartido (cPanel) - Estructura personalizada + Permisos
 Route::get('/run-storage-link', function () {
