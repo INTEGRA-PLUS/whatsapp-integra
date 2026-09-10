@@ -85,23 +85,28 @@
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.19 0.063 260);
 
-    /* INTEGRA GREEN #59E01F. El texto encima va SIEMPRE en navy: blanco sobre
-       este verde da 1.73:1 y es ilegible; navy da 10.7:1. */
-    --primary: oklch(0.8 0.2436 139);
+    /* INTEGRA GREEN #76C652, el verde del logo. Sustituye al #59E01F, que era
+       un verde ácido de croma 0.24: bajarlo a 0.17 es lo que lo hace pasar de
+       chillón a fresco, y el tono es el mismo.
+
+       La regla no cambia con el tono nuevo, sólo el margen: el texto encima va
+       SIEMPRE en navy. Blanco sobre este verde da 2.11:1 y sigue siendo
+       ilegible; navy da 8.81:1. */
+    --primary: oklch(0.75 0.1709 137);
     --primary-foreground: oklch(0.19 0.063 260);
 
     --secondary: oklch(0.96 0.008 260);
     --secondary-foreground: oklch(0.19 0.063 260);
     --muted: oklch(0.96 0.008 260);
     --muted-foreground: oklch(0.5 0.02 260);    /* 5.97:1 sobre blanco */
-    --accent: oklch(0.94 0.07 139);
-    /* El verde de marca no vale como texto sobre claro (1.73:1). Este es el
-       mismo tono bajado hasta que pasa: 4.56:1. */
-    --accent-foreground: oklch(0.55 0.1675 139);
+    --accent: oklch(0.94 0.0491 137);
+    /* El verde de marca no vale como texto sobre claro (2.05:1). Este es el
+       mismo tono bajado hasta que pasa: 4.52:1. */
+    --accent-foreground: oklch(0.55 0.1175 137);
 
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.99 0 0);
-    --success: oklch(0.55 0.1675 139);
+    --success: oklch(0.55 0.1175 137);
     --success-foreground: oklch(0.99 0 0);
     --warning: oklch(0.75 0.16 70);
     --warning-foreground: oklch(0.25 0.05 70);
@@ -110,19 +115,19 @@
 
     --border: oklch(0.9 0.012 260);
     --input: oklch(0.9 0.012 260);
-    --ring: oklch(0.8 0.2436 139);              /* el foco es verde, siempre */
+    --ring: oklch(0.75 0.1709 137);              /* el foco es verde, siempre */
     --radius: 0.625rem;
 
     --sidebar: oklch(0.97 0.008 260);
     --sidebar-foreground: oklch(0.19 0.063 260);
-    --sidebar-primary: oklch(0.8 0.2436 139);
+    --sidebar-primary: oklch(0.75 0.1709 137);
     --sidebar-primary-foreground: oklch(0.19 0.063 260);
-    --sidebar-accent: oklch(0.94 0.07 139);
+    --sidebar-accent: oklch(0.94 0.0491 137);
     --sidebar-accent-foreground: oklch(0.19 0.063 260);
     --sidebar-border: oklch(0.9 0.012 260);
-    --sidebar-ring: oklch(0.8 0.2436 139);
+    --sidebar-ring: oklch(0.75 0.1709 137);
 
-    --chart-1: oklch(0.55 0.1675 139);
+    --chart-1: oklch(0.55 0.1175 137);
     --chart-2: oklch(0.45 0.1 260);
     --chart-3: oklch(0.6 0.12 210);
     --chart-4: oklch(0.7 0.15 70);
@@ -131,7 +136,7 @@
     /* Seis tonos para las etapas. Empiezan por el verde de la marca y se
        separan lo suficiente en tono para distinguirse de un vistazo; todos
        bajados de luminosidad para que el blanco encima se lea. */
-    --etapa-1: oklch(0.55 0.1675 139);   /* verde Integra */
+    --etapa-1: oklch(0.55 0.1175 137);   /* verde Integra */
     --etapa-2: oklch(0.55 0.13 245);     /* azul */
     --etapa-3: oklch(0.58 0.14 70);      /* ámbar */
     --etapa-4: oklch(0.55 0.15 300);     /* violeta */
@@ -156,19 +161,19 @@
     --popover: oklch(0.26 0.03 265);
     --popover-foreground: oklch(0.98 0.002 260);
 
-    --primary: oklch(0.8 0.2436 139);
+    --primary: oklch(0.75 0.1709 137);
     --primary-foreground: oklch(0.19 0.063 260);
 
     --secondary: oklch(0.3 0.03 265);
     --secondary-foreground: oklch(0.98 0.002 260);
     --muted: oklch(0.3 0.03 265);
     --muted-foreground: oklch(0.72 0.02 265);   /* 7.49:1 sobre el navy */
-    --accent: oklch(0.34 0.09 139);
-    --accent-foreground: oklch(0.9 0.18 139);
+    --accent: oklch(0.34 0.0631 137);
+    --accent-foreground: oklch(0.9 0.1263 137);
 
     --destructive: oklch(0.62 0.22 27);
     --destructive-foreground: oklch(0.98 0 0);
-    --success: oklch(0.8 0.2436 139);           /* aquí el verde sí es legible */
+    --success: oklch(0.75 0.1709 137);           /* aquí el verde sí es legible */
     --success-foreground: oklch(0.19 0.063 260);
     --warning: oklch(0.8 0.15 75);
     --warning-foreground: oklch(0.2 0.05 75);
@@ -177,20 +182,20 @@
 
     --border: oklch(0.34 0.03 265);
     --input: oklch(0.34 0.03 265);
-    --ring: oklch(0.8 0.2436 139);
+    --ring: oklch(0.75 0.1709 137);
 
     /* Más oscura que el fondo: la barra ancla la pantalla, como en el mockup
        del manual de marca. */
     --sidebar: oklch(0.16 0.055 260);
     --sidebar-foreground: oklch(0.98 0.002 260);
-    --sidebar-primary: oklch(0.8 0.2436 139);
+    --sidebar-primary: oklch(0.75 0.1709 137);
     --sidebar-primary-foreground: oklch(0.19 0.063 260);
-    --sidebar-accent: oklch(0.3 0.06 139);
-    --sidebar-accent-foreground: oklch(0.9 0.18 139);
+    --sidebar-accent: oklch(0.3 0.0421 137);
+    --sidebar-accent-foreground: oklch(0.9 0.1263 137);
     --sidebar-border: oklch(0.3 0.03 265);
-    --sidebar-ring: oklch(0.8 0.2436 139);
+    --sidebar-ring: oklch(0.75 0.1709 137);
 
-    --chart-1: oklch(0.8 0.2436 139);
+    --chart-1: oklch(0.75 0.1709 137);
     --chart-2: oklch(0.7 0.12 250);
     --chart-3: oklch(0.75 0.13 200);
     --chart-4: oklch(0.8 0.15 75);
@@ -198,7 +203,7 @@
 
     /* Sobre el navy hay que subir la luminosidad: los mismos tonos del tema
        claro se hunden en el fondo. */
-    --etapa-1: oklch(0.8 0.2436 139);
+    --etapa-1: oklch(0.75 0.1709 137);
     --etapa-2: oklch(0.72 0.13 250);
     --etapa-3: oklch(0.8 0.15 75);
     --etapa-4: oklch(0.72 0.16 305);

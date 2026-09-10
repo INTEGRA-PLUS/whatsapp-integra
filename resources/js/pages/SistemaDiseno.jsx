@@ -72,7 +72,7 @@ export default function SistemaDiseno() {
 
                 <Seccion
                     titulo="Marca y acción"
-                    nota="El verde de Integra lleva texto navy encima, siempre: en blanco daría 1.73:1 y sería ilegible. Con navy da 10.7:1."
+                    nota="El verde del logo, #76C652. Lleva texto navy encima, siempre: en blanco daría 2.11:1 y sería ilegible. Con navy da 8.81:1. Antes era un verde de croma 0.24 que chillaba; el tono es el mismo, la saturación no."
                 >
                     <Muestra token="primary" clase="bg-primary" texto="text-primary-foreground" />
                     <Muestra token="accent" clase="bg-accent" texto="text-accent-foreground" />
