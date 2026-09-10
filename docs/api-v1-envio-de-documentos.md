@@ -79,6 +79,27 @@ endpoint la usa; si no, responde `422` con `code: window_closed` explicándolo
 —siempre que el guardarraíl esté en `enforce` para esa empresa
 (`WHATSAPP_WINDOW_GUARD`); en `shadow` deja pasar el envío como hasta hoy.
 
+**La URL del encabezado la pone el CRM.** Quien llama no puede conocerla antes
+de subir el archivo, así que pedírsela sería pedirle que adivine: manda el PDF y
+el nombre de la plantilla en la misma llamada, y el endpoint construye el
+encabezado. El resto de componentes —el cuerpo con sus variables— llega intacto,
+y si venía un encabezado se sustituye, porque dos documentos en una plantilla no
+es algo que Meta acepte.
+
+Es el caso de la facturación mensual:
+
+```bash
+curl -X POST .../api/v1/messages/document \
+  -H "X-Instance-Token: $TOKEN" \
+  -F "to=573001112233" \
+  -F "file=@/tmp/Factura_100.pdf" \
+  -F "filename=Factura_100.pdf" \
+  -F "template_name=factura_mensual" \
+  -F "language_code=es" \
+  -F 'components=[{"type":"body","parameters":[{"type":"text","text":"Pedro"}]}]' \
+  -F "incoming_invoice_id=100"
+```
+
 ## Lo que queda por hacer
 
 Este endpoint es la mitad del CRM de la fase 1. La otra mitad es cambiar

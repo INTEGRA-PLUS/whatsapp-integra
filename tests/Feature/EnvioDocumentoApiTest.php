@@ -161,16 +161,94 @@ class EnvioDocumentoApiTest extends TestCase
                 'document_url' => 'https://s3images.integracolombia.online/public/r.pdf',
                 'template_name' => 'aviso_recibo',
                 'language_code' => 'es',
+            ])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+    }
+
+    /**
+     * La URL del PDF la pone el CRM, que es quien acaba de guardarlo.
+     *
+     * Es lo que permite mandar el archivo y la plantilla en una sola llamada:
+     * quien llama no puede conocer la URL antes de subir el archivo, así que
+     * pedírsela sería pedirle que adivine. Es el caso de la facturación
+     * mensual: plantilla aprobada con la factura en el encabezado.
+     */
+    public function test_pone_el_pdf_en_el_encabezado_de_la_plantilla(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->withHeader('X-Instance-Token', $this->token)
+            ->post('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'file' => UploadedFile::fake()->create('Factura_100.pdf', 30, 'application/pdf'),
+                'template_name' => 'factura_mensual',
+                'language_code' => 'es',
+                'components' => [[
+                    'type' => 'body',
+                    'parameters' => [['type' => 'text', 'text' => 'Pedro']],
+                ]],
+            ])->assertOk();
+
+        $enviado = null;
+        Http::assertSent(function ($peticion) use (&$enviado) {
+            if (! str_contains($peticion->url(), '/messages')) {
+                return false;
+            }
+            $enviado = $peticion->data();
+
+            return true;
+        });
+
+        $componentes = $enviado['template']['components'] ?? [];
+
+        $this->assertSame('header', $componentes[0]['type'] ?? null, 'El encabezado va primero');
+        $this->assertNotEmpty(
+            $componentes[0]['parameters'][0]['document']['link'] ?? null,
+            'El PDF tiene que ir por enlace, con la URL que guardó el CRM'
+        );
+        $this->assertSame('Factura_100.pdf', $componentes[0]['parameters'][0]['document']['filename']);
+        // Y el cuerpo del ERP llega intacto.
+        $this->assertSame('body', $componentes[1]['type'] ?? null);
+        $this->assertSame('Pedro', $componentes[1]['parameters'][0]['text']);
+    }
+
+    /** Si ya venía un encabezado, se sustituye: dos documentos serían un error. */
+    public function test_sustituye_el_encabezado_que_venga_en_la_llamada(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->withHeader('X-Instance-Token', $this->token)
+            ->post('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'file' => UploadedFile::fake()->create('Buena.pdf', 10, 'application/pdf'),
+                'template_name' => 'factura_mensual',
                 'components' => [[
                     'type' => 'header',
                     'parameters' => [[
                         'type' => 'document',
-                        'document' => ['link' => 'https://s3images.integracolombia.online/public/r.pdf', 'filename' => 'Recibo.pdf'],
+                        'document' => ['link' => 'https://otro-sitio/vieja.pdf', 'filename' => 'Vieja.pdf'],
                     ]],
                 ]],
-            ])
-            ->assertOk()
-            ->assertJson(['success' => true]);
+            ])->assertOk();
+
+        $enviado = null;
+        Http::assertSent(function ($peticion) use (&$enviado) {
+            if (! str_contains($peticion->url(), '/messages')) {
+                return false;
+            }
+            $enviado = $peticion->data();
+
+            return true;
+        });
+
+        $encabezados = array_filter(
+            $enviado['template']['components'] ?? [],
+            fn ($c) => ($c['type'] ?? '') === 'header'
+        );
+
+        $this->assertCount(1, $encabezados, 'Sólo puede quedar un encabezado');
+        $this->assertSame('Buena.pdf', array_values($encabezados)[0]['parameters'][0]['document']['filename']);
     }
 
     /**

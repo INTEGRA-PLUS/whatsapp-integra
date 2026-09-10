@@ -364,14 +364,33 @@ class MessageApiController extends Controller
 
         $windowClosed = ! $conversation->isWindowOpen();
 
-        // Fuera de la ventana, un documento suelto no se entrega: WhatsApp sólo
-        // acepta plantillas aprobadas. Si quien llama trae una, ése es el
-        // camino bueno —el PDF viaja en el encabezado de la plantilla—.
-        if ($windowClosed && $request->filled('template_name')) {
-            Log::channel('whatsapp')->info('🔁 Ventana de 24h cerrada: el documento sale como plantilla', [
+        $guardado = $this->guardarDocumento($request, $conversation);
+
+        if (! $guardado['ok']) {
+            return response()->json(['success' => false, 'error' => $guardado['error']], 500);
+        }
+
+        // Con plantilla, el documento viaja en su encabezado. Es el único camino
+        // que Meta acepta pasadas las 24h, y es el que usa la facturación
+        // mensual: plantilla aprobada con la factura en el encabezado.
+        //
+        // La URL la pone aquí el CRM, que es quien acaba de guardar el archivo:
+        // quien llama no puede conocerla antes de subirlo, así que pedírsela
+        // sería pedirle que adivine.
+        if ($request->filled('template_name')) {
+            $request->merge([
+                'components' => $this->conElDocumentoEnElEncabezado(
+                    $request->input('components', []),
+                    $guardado['url'],
+                    $guardado['filename']
+                ),
+            ]);
+
+            Log::channel('whatsapp')->info('📄 El documento sale como plantilla', [
                 'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
                 'template' => $request->template_name,
+                'ventana_cerrada' => $windowClosed,
             ]);
 
             return $this->sendTemplate($request);
@@ -397,12 +416,6 @@ class MessageApiController extends Controller
                 'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
             ]);
-        }
-
-        $guardado = $this->guardarDocumento($request, $conversation);
-
-        if (! $guardado['ok']) {
-            return response()->json(['success' => false, 'error' => $guardado['error']], 500);
         }
 
         $result = $this->metaService->sendDocument(
@@ -450,6 +463,34 @@ class MessageApiController extends Controller
             'wamid' => $message->wamid,
             'media_url' => $guardado['url'],
         ]);
+    }
+
+    /**
+     * Pone el documento recién guardado en el encabezado de la plantilla.
+     *
+     * Respeta el resto de componentes —el cuerpo con sus variables llega tal
+     * cual desde el ERP— y sustituye el encabezado si ya venía uno, para que
+     * mandar dos documentos distintos sea imposible.
+     *
+     * @param  array<int, array<string, mixed>>  $componentes
+     * @return array<int, array<string, mixed>>
+     */
+    private function conElDocumentoEnElEncabezado(array $componentes, string $url, string $filename): array
+    {
+        $encabezado = [
+            'type' => 'header',
+            'parameters' => [[
+                'type' => 'document',
+                'document' => ['link' => $url, 'filename' => $filename],
+            ]],
+        ];
+
+        $resto = array_values(array_filter(
+            $componentes,
+            fn ($componente) => strtolower($componente['type'] ?? '') !== 'header'
+        ));
+
+        return array_merge([$encabezado], $resto);
     }
 
     /**
