@@ -6,6 +6,7 @@ use App\Jobs\DeliverWebhook;
 use App\Models\WebhookEndpoint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use App\Models\Instance;
 use App\Support\IntegrationProvider;
 use Inertia\Inertia;
 
@@ -19,7 +20,40 @@ class WebhookEndpointController extends Controller
             // El catálogo de proveedores conectables. Viaja desde el backend
             // para que añadir uno nuevo no exija tocar también el frontend.
             'providers'     => IntegrationProvider::forDisplay(),
+            'lineasDelErp'  => $this->lineasDelErp(),
         ]);
+    }
+
+    /**
+     * Por qué líneas está enviando el ERP, y desde cuándo no lo hace.
+     *
+     * El CRM e Integra 2.0 son dos bases de datos distintas, cada una con su
+     * tabla `instances`, unidas por una sola cadena de texto: el
+     * `phone_number_id`. Hasta ahora no había **ninguna pantalla** donde ver si
+     * esa unión estaba viva: para saber si un ERP seguía enviando por una línea
+     * había que contar mensajes con `incoming_invoice_id` en la base de datos.
+     *
+     * Sale de una marca que deja cada llamada del API (`api_last_seen_at`), no
+     * de contar el millón de mensajes cada vez que alguien abre esta pantalla.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function lineasDelErp(): array
+    {
+        return Instance::where('company_id', auth()->user()->company_id)
+            ->where('active', true)
+            ->orderByDesc('api_last_seen_at')
+            ->get(['id', 'name', 'phone_number_id', 'display_phone_number', 'api_last_seen_at', 'api_last_seen_via'])
+            ->map(fn ($instancia) => [
+                'id' => $instancia->id,
+                'nombre' => $instancia->name,
+                'numero' => $instancia->display_phone_number,
+                'phone_number_id' => $instancia->phone_number_id,
+                'ultima_vez' => $instancia->api_last_seen_at?->toIso8601String(),
+                'credencial' => $instancia->api_last_seen_via,
+            ])
+            ->values()
+            ->all();
     }
 
     public function list()

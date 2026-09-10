@@ -793,6 +793,8 @@ function ProviderSection({ can, onBack }) {
                             <StepStatus integration={payments} onUpdated={() => load()} showToast={showToast} />
                         )}
 
+                        <LineasDelErp />
+
                         <Panel title="Pagos a facturas" Icon={Wallet}
                             does="Consultar la deuda de un cliente y registrar su pago sin salir del chat.">
                             {payments && <StepActivate integration={payments} onUpdated={upsert} showToast={showToast} />}
@@ -818,6 +820,92 @@ function ProviderSection({ can, onBack }) {
             </fieldset>
         </div>
     );
+}
+
+/**
+ * Por qué línea está enviando Integra, y desde cuándo no lo hace.
+ *
+ * El CRM e Integra 2.0 son dos sistemas con dos bases de datos, unidos por una
+ * sola cadena de texto: el `phone_number_id` de la línea. Hasta hoy no había
+ * ninguna pantalla donde comprobar si esa unión estaba viva —para saberlo había
+ * que contar mensajes con `incoming_invoice_id` en la base de datos—, así que
+ * la pregunta «¿está conectado de verdad?» no tenía respuesta que enseñarle a
+ * un cliente (9-sep-2026).
+ */
+function LineasDelErp() {
+    const { lineasDelErp = [] } = usePage().props;
+
+    if (lineasDelErp.length === 0) return null;
+
+    const activas = lineasDelErp.filter(l => l.ultima_vez);
+
+    return (
+        <Panel
+            title="Por dónde envía Integra"
+            Icon={Plug}
+            does="Las líneas por las que tu software administrativo manda facturas y recibos."
+        >
+            {activas.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                    Integra todavía no ha enviado nada por ninguna de tus líneas. En cuanto mande
+                    la primera factura o el primer recibo, aparecerá aquí con la fecha.
+                </p>
+            ) : (
+                <ul className="divide-y divide-border">
+                    {lineasDelErp.map(linea => (
+                        <li key={linea.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                    {linea.nombre}
+                                    {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
+                                </p>
+                                <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
+                            </div>
+
+                            {linea.ultima_vez ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">
+                                    <CheckCircle2 className="size-3" />
+                                    {formatearUltimaVez(linea.ultima_vez)}
+                                </span>
+                            ) : (
+                                <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                                    Sin envíos
+                                </span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {/* Con qué credencial entra dice si ese cliente ya se puede migrar
+                al token de verdad: el phone_number_id no es un secreto, se
+                enseña en la pantalla de Instancias y en el panel de Meta. */}
+            {activas.some(l => l.credencial === 'phone_number_id') && (
+                <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    Integra entra con el identificador del número, que no es un secreto: se ve en la
+                    pantalla de Instancias y en el panel de Meta. Cuando puedas, cámbialo por un token.
+                </p>
+            )}
+        </Panel>
+    );
+}
+
+/** «hace 5 minutos» dice más que una fecha con hora y segundos. */
+function formatearUltimaVez(iso) {
+    const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+
+    if (minutos < 2) return 'ahora mismo';
+    if (minutos < 60) return `hace ${minutos} min`;
+
+    const horas = Math.floor(minutos / 60);
+    if (horas < 24) return `hace ${horas} h`;
+
+    const dias = Math.floor(horas / 24);
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+
+    return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 /** Una función del proveedor, con lo que hace escrito arriba. */

@@ -58,7 +58,11 @@ class MessageApiController extends Controller
             // Sin tocar `updated_at`: esta columna es un dato de operación, no
             // un cambio de la instancia, y moverlo en cada petición ensuciaría
             // cualquier consulta que mire cuándo se editó por última vez.
-            Instance::whereKey($porToken->id)->update(['api_token_last_used_at' => now()]);
+            Instance::whereKey($porToken->id)->update([
+                'api_token_last_used_at' => now(),
+                'api_last_seen_at' => now(),
+                'api_last_seen_via' => 'token',
+            ]);
 
             return $porToken;
         }
@@ -99,6 +103,15 @@ class MessageApiController extends Controller
                 'company_id' => $instance->company_id,
                 'ruta' => $request->path(),
                 'tiene_token_nuevo' => $instance->tieneApiToken(),
+            ]);
+
+            // Y queda en la instancia, que es donde alguien puede verlo sin
+            // abrir un log: es la única señal de que el ERP sigue enviando por
+            // esta línea. Sin tocar `updated_at`: es un dato de operación, no
+            // un cambio de la instancia.
+            Instance::whereKey($instance->id)->update([
+                'api_last_seen_at' => now(),
+                'api_last_seen_via' => 'phone_number_id',
             ]);
         }
 

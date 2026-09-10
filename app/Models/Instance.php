@@ -42,6 +42,7 @@ class Instance extends Model
         'health_checked_at' => 'datetime',
         'api_token_created_at' => 'datetime',
         'api_token_last_used_at' => 'datetime',
+        'api_last_seen_at' => 'datetime',
         'meta' => 'array',
     ];
 

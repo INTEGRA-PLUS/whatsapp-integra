@@ -287,6 +287,45 @@ class EnvioDocumentoApiTest extends TestCase
         $this->assertSame(0, WhatsAppConversation::where('instance_id', $instanciaAjena->id)->count());
     }
 
+    /**
+     * Cada llamada del ERP deja marca en la instancia.
+     *
+     * Es lo que contesta «¿está conectado de verdad?» sin abrir un log ni contar
+     * mensajes: el CRM e Integra 2.0 son dos bases de datos unidas por una
+     * cadena de texto, y hasta ahora esa unión no se veía en ninguna pantalla.
+     */
+    public function test_deja_marca_de_cuando_hablo_el_erp(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->assertNull($this->instance->api_last_seen_at);
+
+        $this->withHeader('X-Instance-Token', $this->token)
+            ->postJson('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'document_url' => 'https://s3images.integracolombia.online/public/r.pdf',
+            ])->assertOk();
+
+        $this->instance->refresh();
+
+        $this->assertNotNull($this->instance->api_last_seen_at);
+        $this->assertSame('token', $this->instance->api_last_seen_via);
+    }
+
+    /** Y dice con qué credencial, que es lo que indica si ya se puede migrar. */
+    public function test_distingue_el_token_del_identificador_heredado(): void
+    {
+        $this->conversacionReciente('573001112233');
+
+        $this->withHeader('X-Instance-Token', $this->instance->phone_number_id)
+            ->postJson('/api/v1/messages/document', [
+                'to' => '573001112233',
+                'document_url' => 'https://s3images.integracolombia.online/public/r.pdf',
+            ])->assertOk();
+
+        $this->assertSame('phone_number_id', $this->instance->fresh()->api_last_seen_via);
+    }
+
     /** Y sin token no entra nadie. */
     public function test_sin_token_no_envia(): void
     {
