@@ -188,14 +188,19 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
                                     <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>
                                 </div>
-                                <div className="flex gap-2 pt-1">
-                                    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(instance)}>
+                                {/* `flex-wrap` y un ancho mínimo por botón: sin envolver,
+                                    los cuatro se salían de la tarjeta —el de eliminar
+                                    quedaba fuera del borde, flotando sobre la tarjeta de
+                                    al lado— porque el texto no parte y «Desconectar» y
+                                    «Rotar token» no caben en una columna estrecha. */}
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                    <Button variant="outline" size="sm" className="flex-1 min-w-[6rem] gap-1.5" onClick={() => openEdit(instance)}>
                                         <Pencil className="size-3.5" /> Editar
                                     </Button>
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        className="gap-1.5"
+                                        className="flex-1 min-w-[7.5rem] gap-1.5"
                                         disabled={generando === instance.id}
                                         title={instance.api_token_created_at
                                             ? 'Generar un token nuevo (el actual dejará de servir)'
@@ -206,15 +211,18 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                         {instance.api_token_created_at ? 'Rotar token' : 'Token API'}
                                     </Button>
                                     {instance.active ? (
-                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
+                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
                                             <PowerOff className="size-3.5" /> Desconectar
                                         </Button>
                                     ) : (
-                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
+                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
                                             <Power className="size-3.5" /> Reconectar
                                         </Button>
                                     )}
-                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
+                                    {/* El de eliminar no se estira ni se encoge: es el
+                                        único destructivo de la fila y conviene que tenga
+                                        siempre el mismo tamaño y el mismo sitio. */}
+                                    <Button variant="outline" size="sm" className="shrink-0 px-2.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
