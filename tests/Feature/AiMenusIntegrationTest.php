@@ -550,24 +550,34 @@ class AiMenusIntegrationTest extends TestCase
 
     public function test_ningun_job_dura_mas_que_el_retry_after_de_la_cola(): void
     {
-        // La regla que estaba rota: por debajo de esto la cola le entrega a un
-        // segundo worker un job que el primero sigue ejecutando.
-        $retryAfter = (int) config('queue.connections.database.retry_after');
-
         $jobs = [
             new ProcessWhatsAppAi($this->instance->id, $this->conversation->id, 'hola'),
+            new ProcessWhatsAppChatAi($this->instance->id, $this->conversation->id, 'hola', 'wamid.IN1'),
             new ProcessWhatsAppMenu($this->instance->id, $this->conversation->id, null, null, ''),
             new \App\Jobs\DeliverWhatsAppMessage(1),
             new \App\Jobs\SendCampaignMessage(1),
             new \App\Jobs\DeliverWebhook(1, 'x', []),
+            // Los dos más lentos de todos, y los que quedaban sin vigilar.
+            new \App\Jobs\ProcessWhatsAppCampaign(1),
+            new \App\Jobs\ProcesarWebhookCoexistencia(1, 'history', []),
         ];
 
-        foreach ($jobs as $job) {
-            $this->assertLessThan(
-                $retryAfter,
-                $job->timeout,
-                class_basename($job) . ' dura más que el retry_after de la cola: se ejecutaría dos veces.'
-            );
+        // Las dos conexiones que se usan de verdad, no sólo la de este entorno:
+        // el arreglo se hizo en `database` mientras producción corría con
+        // `redis` en 90, y este test miraba justo la que estaba bien.
+        foreach (['database', 'redis'] as $connection) {
+            // La regla que estaba rota: por debajo de esto la cola le entrega a
+            // un segundo worker un job que el primero sigue ejecutando.
+            $retryAfter = (int) config("queue.connections.{$connection}.retry_after");
+
+            foreach ($jobs as $job) {
+                $this->assertLessThan(
+                    $retryAfter,
+                    $job->timeout,
+                    class_basename($job) . " dura más que el retry_after de la cola {$connection}:"
+                        . ' se ejecutaría dos veces.'
+                );
+            }
         }
     }
 

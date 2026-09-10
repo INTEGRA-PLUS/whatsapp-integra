@@ -47,12 +47,18 @@ return [
          * IA espera hasta 210 s por el modelo. El cliente acababa recibiendo la
          * respuesta dos veces.
          *
-         * Los 360 salen del job más lento de esta conexión (300, la campaña)
-         * más margen. Es también lo que tarda como mucho en recuperarse un job
-         * cuyo worker murió de verdad, que es el precio de subirlo.
+         * Los 360 salen del job más lento (300, la campaña) más margen. Es
+         * también lo que tarda como mucho en recuperarse un job cuyo worker
+         * murió de verdad, que es el precio de subirlo.
          *
-         * Quien añada un job más lento que esto: o sube este número, o le pone
-         * al job un `$timeout` que quepa.
+         * **Va en las dos conexiones que se usan de verdad**: se subió sólo en
+         * `database` y producción corre con la de abajo —el docker-compose deja
+         * `QUEUE_CONNECTION=redis` por defecto—, así que el arreglo no llegaba
+         * a donde hacía falta. Lo vigila un test (AiMenusIntegrationTest), que
+         * antes miraba sólo `database` y por eso no lo vio.
+         *
+         * Quien añada un job más lento que esto: o sube estos números, o le
+         * pone al job un `$timeout` que quepa.
          */
         'database' => [
             'driver' => 'database',
@@ -87,7 +93,8 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            // Mismo presupuesto que `database`: ver el comentario de arriba.
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 360),
             'block_for' => null,
             'after_commit' => false,
         ],
