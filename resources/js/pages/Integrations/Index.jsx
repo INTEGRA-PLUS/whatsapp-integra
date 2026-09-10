@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import IntegrationsHelp from './IntegrationsHelp';
+import { cn } from '@/lib/utils';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
@@ -795,6 +796,8 @@ function ProviderSection({ can, onBack }) {
 
                         <LineasDelErp />
 
+                        <AjustesDeEnvio showToast={showToast} canManage={canManage} />
+
                         <Panel title="Pagos a facturas" Icon={Wallet}
                             does="Consultar la deuda de un cliente y registrar su pago sin salir del chat.">
                             {payments && <StepActivate integration={payments} onUpdated={upsert} showToast={showToast} />}
@@ -819,6 +822,173 @@ function ProviderSection({ can, onBack }) {
                 )}
             </fieldset>
         </div>
+    );
+}
+
+/**
+ * Los envíos automáticos del ERP y sus plantillas por defecto.
+ *
+ * Estaban en la configuración de Integra 2.0, mientras el WhatsApp lo lleva el
+ * CRM: el cliente tenía que saber que una cosa se toca en un sitio y la otra en
+ * el otro. Ahora se ven y se cambian aquí.
+ *
+ * **No se guardan aquí.** Se leen y se escriben en Integra en cada visita, para
+ * que no existan dos copias de la misma configuración: el problema con el que
+ * empezó todo este trabajo.
+ */
+function AjustesDeEnvio({ showToast, canManage }) {
+    const [estado, setEstado] = useState({ cargando: true });
+    const [guardando, setGuardando] = useState(null);
+
+    const cargar = async () => {
+        try {
+            const { data } = await axios.get('/integrations/ajustes-envio');
+            setEstado({ cargando: false, ...data });
+        } catch {
+            setEstado({ cargando: false, error: 'No se pudieron leer los ajustes de Integra.' });
+        }
+    };
+
+    useEffect(() => { cargar(); }, []);
+
+    const guardar = async (cambios, etiqueta) => {
+        setGuardando(etiqueta);
+        try {
+            const { data } = await axios.put('/integrations/ajustes-envio', cambios);
+            setEstado(e => ({ ...e, ...data }));
+            showToast('Guardado en Integra.');
+        } catch (e) {
+            showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
+            cargar();
+        } finally {
+            setGuardando(null);
+        }
+    };
+
+    if (estado.cargando) {
+        return (
+            <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" /> Leyendo los ajustes de Integra…
+                </p>
+            </Panel>
+        );
+    }
+
+    if (estado.conectado === false) return null;
+
+    if (estado.error) {
+        return (
+            <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+                <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" /> {estado.error}
+                </p>
+            </Panel>
+        );
+    }
+
+    const conDocumento = (estado.disponibles ?? []).filter(p => p.con_documento);
+
+    return (
+        <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+            <div className="space-y-4">
+                <Interruptor
+                    titulo="Factura del mes"
+                    descripcion="Al generarse la factura en cada ciclo, se le manda al cliente por WhatsApp."
+                    activo={estado.envio_automatico_facturas}
+                    ocupado={guardando === 'facturas'}
+                    disabled={!canManage}
+                    onCambiar={v => guardar({ envio_automatico_facturas: v }, 'facturas')}
+                />
+
+                <Interruptor
+                    titulo="Recibo de pago (tirilla)"
+                    descripcion="Al registrar un pago —manual o de una pasarela— se le manda la tirilla confirmando."
+                    activo={estado.envio_automatico_recibos}
+                    ocupado={guardando === 'recibos'}
+                    disabled={!canManage}
+                    onCambiar={v => guardar({ envio_automatico_recibos: v }, 'recibos')}
+                />
+
+                <div className="space-y-3 border-t border-border pt-4">
+                    <p className="text-xs font-semibold text-foreground">Plantilla que se usa en cada caso</p>
+
+                    {/* Sólo las que llevan encabezado de documento pueden
+                        adjuntar la factura o la tirilla: ofrecer las demás es
+                        invitar a un envío que llega sin el PDF. */}
+                    {conDocumento.length === 0 && (
+                        <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                            Ninguna de tus plantillas lleva encabezado de documento, así que no pueden adjuntar
+                            el PDF. Crea una en Plantillas con encabezado de tipo DOCUMENTO.
+                        </p>
+                    )}
+
+                    {[
+                        ['factura', 'Facturas', 'plantilla_factura_id'],
+                        ['tirilla', 'Recibos de pago', 'plantilla_tirilla_id'],
+                        ['contrato', 'Contratos', 'plantilla_contrato_id'],
+                    ].map(([clave, etiqueta, campo]) => {
+                        const actual = estado.plantillas?.[clave];
+
+                        if (actual?.disponible === false) {
+                            return (
+                                <div key={clave} className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-muted-foreground">{etiqueta}</span>
+                                    <span className="text-muted-foreground/70">No disponible en tu versión de Integra</span>
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div key={clave} className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs text-foreground">{etiqueta}</span>
+                                <select
+                                    value={actual?.id ?? ''}
+                                    disabled={!canManage || guardando === clave}
+                                    onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
+                                    className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                >
+                                    <option value="">Sin elegir</option>
+                                    {(estado.disponibles ?? []).map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.title} ({p.language}){p.con_documento ? '' : ' · sin adjunto'}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <p className="text-[11px] text-muted-foreground">
+                    Estos ajustes viven en Integra: se leen y se guardan allí, así que no hay dos copias
+                    que puedan quedar distintas.
+                </p>
+            </div>
+        </Panel>
+    );
+}
+
+/** Un interruptor con lo que hace escrito al lado. */
+function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar }) {
+    return (
+        <label className={cn('flex items-start gap-3', disabled ? 'opacity-60' : 'cursor-pointer')}>
+            <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!activo}
+                disabled={disabled || ocupado}
+                onChange={e => onCambiar(e.target.checked)}
+            />
+            <span className="min-w-0">
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    {titulo}
+                    {ocupado && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                </span>
+                <span className="block text-[11px] text-muted-foreground">{descripcion}</span>
+            </span>
+        </label>
     );
 }
 

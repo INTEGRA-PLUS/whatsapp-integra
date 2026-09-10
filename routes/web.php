@@ -654,6 +654,11 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:integrations.view')->name('integrations.index');
     Route::post('/integrations/linea-erp', [WebhookEndpointController::class, 'elegirLineaDelErp'])
         ->middleware('permission:integrations.create')->name('integrations.linea-erp');
+    // Los ajustes de envío del ERP: se leen y se escriben en Integra, no aquí.
+    Route::get('/integrations/ajustes-envio', [WebhookEndpointController::class, 'ajustesDeEnvio'])
+        ->middleware('permission:integrations.view');
+    Route::put('/integrations/ajustes-envio', [WebhookEndpointController::class, 'guardarAjustesDeEnvio'])
+        ->middleware('permission:integrations.create');
     Route::prefix('api/webhooks')->group(function () {
         Route::get('/', [WebhookEndpointController::class, 'list'])
             ->middleware('permission:integrations.view');

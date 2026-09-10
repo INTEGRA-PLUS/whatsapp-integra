@@ -6,6 +6,7 @@ use App\Jobs\DeliverWebhook;
 use App\Models\WebhookEndpoint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Support\IntegrationProvider;
 use Inertia\Inertia;
@@ -23,6 +24,76 @@ class WebhookEndpointController extends Controller
             'lineasDelErp'  => $this->lineasDelErp(),
             'lineaElegida'  => auth()->user()->company->tieneLineaDelErpElegida(),
         ]);
+    }
+
+    /**
+     * Los ajustes de envío del ERP: interruptores y plantillas por defecto.
+     *
+     * Se leen de Integra en cada visita y no se guardan aquí. Es lo que evita
+     * que haya dos copias de la misma configuración y que nadie sepa cuál manda
+     * — el problema con el que empezó todo este trabajo.
+     */
+    public function ajustesDeEnvio()
+    {
+        $cliente = $this->clienteDeIntegra();
+
+        if (! $cliente) {
+            return response()->json(['conectado' => false]);
+        }
+
+        $res = $cliente->ajustesDeEnvio();
+
+        return response()->json($res['ok']
+            ? ['conectado' => true] + $res['datos']
+            : ['conectado' => true, 'error' => $this->avisoDeAjustes($res)]);
+    }
+
+    public function guardarAjustesDeEnvio(Request $request)
+    {
+        $validado = $request->validate([
+            'envio_automatico_facturas' => 'nullable|boolean',
+            'envio_automatico_recibos' => 'nullable|boolean',
+            'plantilla_factura_id' => 'nullable|integer',
+            'plantilla_tirilla_id' => 'nullable|integer',
+            'plantilla_contrato_id' => 'nullable|integer',
+        ]);
+
+        $cliente = $this->clienteDeIntegra();
+
+        if (! $cliente) {
+            return response()->json(['message' => 'Integra no está conectado.'], 422);
+        }
+
+        $res = $cliente->guardarAjustesDeEnvio($validado);
+
+        if (! $res['ok']) {
+            return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
+        }
+
+        return response()->json(['ok' => true] + $res['datos']);
+    }
+
+    /** Lo que hay que hacer, no el código de error. */
+    private function avisoDeAjustes(array $res): string
+    {
+        return match (true) {
+            ($res['sin_permiso'] ?? false) => 'Tu conexión con Integra es anterior a esta función. '
+                .'Vuelve a conectarla aquí mismo para poder ver y cambiar estos ajustes.',
+            ($res['sin_endpoint'] ?? false) => 'Tu versión de Integra todavía no expone estos ajustes. '
+                .'Actualízala y vuelve a intentarlo.',
+            default => $res['error'] ?? 'No se pudieron leer los ajustes de Integra.',
+        };
+    }
+
+    /** La conexión con Integra de esta empresa, si está conectada. */
+    private function clienteDeIntegra(): ?\App\Services\IntegraClient
+    {
+        $integracion = CompanyIntegration::where('company_id', auth()->user()->company_id)
+            ->whereIn('key', IntegrationProvider::find(IntegrationProvider::INTEGRA)['legacy_keys'] ?? [])
+            ->get()
+            ->first(fn (CompanyIntegration $i) => $i->isConnected());
+
+        return $integracion?->client();
     }
 
     /**

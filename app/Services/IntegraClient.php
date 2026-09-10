@@ -107,9 +107,16 @@ class IntegraClient
      */
     public const ABILITY_INSTANCIAS = 'whatsapp.instancias.crear';
 
+    /** Ver y cambiar desde aquí los ajustes de envío del ERP. */
+    public const ABILITY_AJUSTES_LEER = 'whatsapp.ajustes.leer';
+
+    public const ABILITY_AJUSTES_ESCRIBIR = 'whatsapp.ajustes.escribir';
+
     public const ABILITIES_OPTIONAL = [
         self::ABILITY_EMIT,
         self::ABILITY_INSTANCIAS,
+        self::ABILITY_AJUSTES_LEER,
+        self::ABILITY_AJUSTES_ESCRIBIR,
     ];
 
     protected string $baseUrl;
@@ -299,9 +306,14 @@ class IntegraClient
     protected function call(string $method, string $path, array $data = []): Response
     {
         try {
-            $res = $method === 'post'
-                ? $this->request()->post($path, $data)
-                : $this->request()->get($path, $data);
+            // Antes sólo distinguía post de get, así que cualquier otro verbo
+            // —un put— salía como GET y el cambio no se guardaba, sin error.
+            $res = match ($method) {
+                'post' => $this->request()->post($path, $data),
+                'put' => $this->request()->put($path, $data),
+                'patch' => $this->request()->patch($path, $data),
+                default => $this->request()->get($path, $data),
+            };
         } catch (\Throwable $e) {
             Log::warning('Integra: error de red', ['path' => $path, 'msg' => $e->getMessage()]);
             throw new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL del entorno.', 0);
@@ -381,6 +393,58 @@ class IntegraClient
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Los ajustes de envío por WhatsApp que vive el ERP.
+     *
+     * No se guardan aquí: se leen y se escriben allí. Copiar la configuración a
+     * los dos lados es lo que hace que se desincronicen en silencio y que nadie
+     * sepa cuál manda.
+     *
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function ajustesDeEnvio(): array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/whatsapp/ajustes');
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $cambios
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function guardarAjustesDeEnvio(array $cambios): array
+    {
+        try {
+            $res = $this->call('put', '/api/v1/whatsapp/ajustes', $cambios);
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
+     * Los dos fallos que el admin puede arreglar, separados del resto: 403 es
+     * un token anterior a esta función —hay que reconectar—, y la ruta que no
+     * existe es un Integra sin actualizar. Ninguno se arregla reintentando.
+     *
+     * @return array{ok: false, error: string, sin_permiso: bool, sin_endpoint: bool}
+     */
+    private function falloDeAjustes(\RuntimeException $e): array
+    {
+        return [
+            'ok' => false,
+            'sin_permiso' => $e->getCode() === 403,
+            'sin_endpoint' => $e->getCode() === self::CODE_ENDPOINT_MISSING,
+            'error' => $e->getMessage(),
+        ];
     }
 
     public function testConnection(): array
