@@ -65,6 +65,33 @@ const STATUS_DOT = {
     DELETED: 'bg-destructive',
 };
 
+/**
+ * Qué significa cada estado, en español y sin siglas.
+ *
+ * Meta los devuelve en inglés y en mayúsculas —PENDING, REJECTED—, y así se
+ * enseñaban tal cual. El estado más frecuente al crear una plantilla es
+ * "pendiente", y se comunicaba con un punto naranja y nada más: quien la acaba
+ * de crear no sabe si tiene que hacer algo, si falló, o si sólo hay que
+ * esperar. La respuesta —esperar a que Meta la revise— cabe en una frase.
+ */
+const ESTADO = {
+    APPROVED: { texto: 'Aprobada', ayuda: 'Meta la aprobó. Ya se puede enviar.' },
+    PENDING: {
+        texto: 'En revisión',
+        ayuda: 'Meta la está revisando. Suele tardar unos minutos, a veces algunas horas. No hay que hacer nada: cuando la apruebe podrás enviarla.',
+    },
+    REJECTED: {
+        texto: 'Rechazada',
+        ayuda: 'Meta no la aprobó. Revisa el texto —las promociones encubiertas y los enlaces sospechosos son los motivos más comunes— y crea una versión corregida.',
+    },
+    DISABLED: { texto: 'Deshabilitada', ayuda: 'Meta la deshabilitó por su calidad. No se puede enviar.' },
+    PAUSED: { texto: 'En pausa', ayuda: 'Pausada temporalmente por Meta, normalmente por muchos reportes de los destinatarios.' },
+    IN_APPEAL: { texto: 'En apelación', ayuda: 'Se pidió a Meta que revisara su decisión. Toca esperar.' },
+    DELETED: { texto: 'Eliminada', ayuda: 'Ya no existe en Meta.' },
+};
+
+const estadoDe = s => ESTADO[s] ?? { texto: s ?? 'Sin estado', ayuda: '' };
+
 const CATEGORY_STYLES = {
     MARKETING: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 ring-1 ring-inset ring-fuchsia-500/30',
     UTILITY: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
@@ -289,7 +316,52 @@ export default function TemplatesIndex({ instances = [] }) {
                         <StatCard icon={FileText} label="Total" value={stats.total} tone="primary" />
                         <StatCard icon={Languages} label="Familias" value={stats.families} tone="indigo" />
                         <StatCard icon={CheckCircle2} label="Aprobadas" value={stats.approved} tone="emerald" />
-                        <StatCard icon={Clock} label="Pendientes" value={stats.pending} tone="amber" />
+                        <StatCard icon={Clock} label="En revisión" value={stats.pending} tone="amber" />
+                    </div>
+                )}
+
+                {/* Qué significa que haya plantillas en revisión.
+
+                    La tarjeta de arriba dice cuántas hay, pero no si eso es un
+                    problema ni si hay que hacer algo. Es el estado con el que
+                    nace toda plantilla, así que quien acaba de crear la suya lo
+                    ve siempre, y sin esta frase no sabe si le falló algo o sólo
+                    tiene que esperar. Sólo aparece cuando hay alguna: si están
+                    todas aprobadas, no hay nada que explicar. */}
+                {stats.pending > 0 && (
+                    <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3">
+                        <Clock className="size-4 shrink-0 text-warning mt-0.5" />
+                        <p className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {stats.pending === 1
+                                    ? 'Una plantilla está en revisión.'
+                                    : `${stats.pending} plantillas están en revisión.`}
+                            </span>{' '}
+                            Meta revisa cada plantilla antes de dejar enviarla: suele tardar
+                            unos minutos, a veces algunas horas. No tienes que hacer nada —
+                            cuando la apruebe podrás usarla en campañas y respuestas.
+                        </p>
+                    </div>
+                )}
+
+                {/* Las rechazadas sí piden acción, y por eso se avisan aparte y
+                    en rojo: quedarse esperando una plantilla que Meta ya
+                    descartó es perder días. */}
+                {stats.rejected > 0 && (
+                    <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+                        <XCircle className="size-4 shrink-0 text-destructive mt-0.5" />
+                        <p className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {stats.rejected === 1
+                                    ? 'Una plantilla fue rechazada.'
+                                    : `${stats.rejected} plantillas fueron rechazadas.`}
+                            </span>{' '}
+                            {stats.rejected === 1
+                                ? 'Meta no la aprobó y no se puede enviar. Ábrela para ver el texto:'
+                                : 'Meta no las aprobó y no se pueden enviar. Ábrelas para ver el texto:'}{' '}
+                            las promociones encubiertas y los enlaces sospechosos son los
+                            motivos más comunes. Corrige y crea una versión nueva.
+                        </p>
                     </div>
                 )}
 
@@ -620,11 +692,25 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                         <button
                             key={v.id}
                             onClick={() => onOpenDetail(v)}
-                            title={`Ver detalle · ${LANG_LABELS[v.language] ?? v.language} · ${v.status}`}
-                            className="group/pill inline-flex items-center gap-1.5 rounded-full border bg-background pl-2 pr-2.5 py-1 text-xs font-mono hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                            title={`${LANG_LABELS[v.language] ?? v.language} · ${estadoDe(v.status).texto}. ${estadoDe(v.status).ayuda}`}
+                            className={`group/pill inline-flex items-center gap-1.5 rounded-full border pl-2 pr-2.5 py-1 text-xs font-mono transition-colors hover:border-primary/50 hover:bg-primary/5 ${
+                                v.status === 'APPROVED'
+                                    ? 'bg-background'
+                                    : STATUS_STYLES[v.status] ?? 'bg-background'
+                            }`}
                         >
                             <span className={`size-1.5 rounded-full ${STATUS_DOT[v.status] ?? 'bg-muted'}`} />
                             <span className="font-medium">{v.language}</span>
+                            {/* Lo aprobado no lleva texto: es el estado normal y en una
+                                empresa con veinte plantillas sería ruido repetido veinte
+                                veces. Lo que no está aprobado sí lo dice, porque es
+                                justo lo que hay que entender. Un punto de color no
+                                explica nada por sí solo. */}
+                            {v.status !== 'APPROVED' && (
+                                <span className="font-sans font-semibold">
+                                    {estadoDe(v.status).texto}
+                                </span>
+                            )}
                             <Eye className="size-3 opacity-0 group-hover/pill:opacity-100 transition-opacity text-muted-foreground" />
                         </button>
                     ))}
@@ -652,8 +738,11 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                                     <span className="font-mono text-sm">{v.language}</span>
                                     <span className="text-[10px] text-muted-foreground truncate">id: {v.id}</span>
                                 </div>
-                                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[v.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                    {v.status}
+                                <span
+                                    title={estadoDe(v.status).ayuda}
+                                    className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[v.status] ?? 'bg-muted text-muted-foreground'}`}
+                                >
+                                    {estadoDe(v.status).texto}
                                 </span>
                             </button>
                         ))}
@@ -764,8 +853,11 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                                     )}
                                 </Field>
                                 <Field label="Estado">
-                                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[template.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                        {template.status}
+                                    <span
+                                        title={estadoDe(template.status).ayuda}
+                                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[template.status] ?? 'bg-muted text-muted-foreground'}`}
+                                    >
+                                        {estadoDe(template.status).texto}
                                     </span>
                                 </Field>
                             </div>
@@ -815,7 +907,7 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                                             >
                                                 <span className="font-mono">{s.language}</span>
                                                 <span className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold ${STATUS_STYLES[s.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                                    {s.status}
+                                                    {estadoDe(s.status).texto}
                                                 </span>
                                             </button>
                                         );
