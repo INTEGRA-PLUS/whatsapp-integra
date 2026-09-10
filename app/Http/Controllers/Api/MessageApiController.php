@@ -353,12 +353,33 @@ class MessageApiController extends Controller
         ]);
 
         if ($validator->fails()) {
+            // Un 422 que nadie ve es un recibo que no llega y nadie sabe por
+            // qué: el ERP lo recibe, lo da por perdido y sigue. Queda escrito
+            // con qué llamó, sin el archivo ni el texto del mensaje.
+            Log::channel('whatsapp')->warning('📄 Documento rechazado por validación', [
+                'company_id' => $instance->company_id,
+                'instance_id' => $instance->id,
+                'errores' => $validator->errors()->toArray(),
+                'traia' => [
+                    'archivo' => $request->hasFile('file'),
+                    'document_url' => $request->filled('document_url'),
+                    'template_name' => $request->input('template_name'),
+                    'caption_largo' => mb_strlen((string) $request->input('caption')),
+                    'to_largo' => mb_strlen((string) $request->input('to')),
+                ],
+            ]);
+
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
         $to = WhatsAppConversation::normalizeRecipient($request->to);
 
         if ($to === '') {
+            Log::channel('whatsapp')->warning('📄 Documento sin destinatario utilizable', [
+                'company_id' => $instance->company_id,
+                'to_largo' => mb_strlen((string) $request->input('to')),
+            ]);
+
             return response()->json(['errors' => ['to' => [
                 'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
             ]]], 422);
