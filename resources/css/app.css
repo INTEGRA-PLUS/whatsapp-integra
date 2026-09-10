@@ -228,4 +228,33 @@
     body {
         @apply bg-background text-foreground;
     }
+
+    /* La barra de desplazamiento de la barra lateral.
+
+       Era la del sistema: ancha, gris claro y con su propio carril, un tubo
+       plateado plantado encima del navy que se veía antes que cualquier
+       elemento del menú. Ahora se dibuja con el color del propio texto de la
+       barra a muy baja opacidad, así que funciona igual en los dos temas y sólo
+       se nota cuando hace falta.
+
+       Van las dos sintaxis a propósito: `scrollbar-width` es la de Firefox y
+       `::-webkit-scrollbar` la de Chrome y Safari; ninguna de las dos sirve
+       sola. */
+    [data-sidebar='content'] {
+        scrollbar-width: thin;
+        scrollbar-color: color-mix(in oklab, var(--sidebar-foreground) 12%, transparent) transparent;
+    }
+    [data-sidebar='content']::-webkit-scrollbar {
+        width: 6px;
+    }
+    [data-sidebar='content']::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    [data-sidebar='content']::-webkit-scrollbar-thumb {
+        background: color-mix(in oklab, var(--sidebar-foreground) 12%, transparent);
+        border-radius: 999px;
+    }
+    [data-sidebar='content']:hover::-webkit-scrollbar-thumb {
+        background: color-mix(in oklab, var(--sidebar-foreground) 32%, transparent);
+    }
 }
