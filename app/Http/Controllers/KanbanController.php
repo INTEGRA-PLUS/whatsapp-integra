@@ -49,6 +49,7 @@ class KanbanController extends Controller
 
         $this->colocarEnColumna($query, $column, $delGrupo);
         $this->aplicarFiltros($query, $request->input('filtros', []), $user->company_id);
+        $this->aplicarFiltrosDeFicha($query, $request);
 
         $paginated = $query->simplePaginate($perPage);
 
@@ -115,7 +116,14 @@ class KanbanController extends Controller
     /**
      * Los filtros son las columnas de los **otros** grupos: ver el tablero de
      * «Estado» sólo con lo de MONTERIA, o sólo lo de FACTURACION en MONTERIA.
-     * Se acumulan (y), que es lo que espera quien va marcando chips.
+     *
+     * Dentro de un mismo grupo se suman (**o**); entre grupos distintos se
+     * acumulan (**y**). Antes todo iba con «y», y eso hacía que marcar dos
+     * municipios devolviera siempre cero: pedía una conversación que estuviera
+     * en Cereté *y* en Montería a la vez. Medido sobre los datos de prueba: 0
+     * resultados con «y», 1 con «o». Con «o» marcar dos municipios significa
+     * lo que parece —los de cualquiera de los dos— y seguir marcando un área
+     * de otro grupo sí estrecha.
      */
     private function aplicarFiltros($query, array $filtros, int $companyId): void
     {
@@ -123,13 +131,53 @@ class KanbanController extends Controller
             return;
         }
 
-        $validos = KanbanColumn::where('company_id', $companyId)
+        $columnas = KanbanColumn::where('company_id', $companyId)
             ->whereIn('id', array_filter(array_map('intval', $filtros)))
-            ->pluck('tag_id')
-            ->filter();
+            ->whereNotNull('tag_id')
+            ->get(['id', 'tag_id', 'grupo']);
 
-        foreach ($validos as $tagId) {
-            $query->whereHas('tags', fn ($t) => $t->where('tags.id', $tagId));
+        foreach ($columnas->groupBy(fn ($c) => $c->grupo ?? '__sin__') as $delMismoGrupo) {
+            $tagIds = $delMismoGrupo->pluck('tag_id')->all();
+            $query->whereHas('tags', fn ($t) => $t->whereIn('tags.id', $tagIds));
+        }
+    }
+
+    /**
+     * Los filtros que no son etapas: agente, contacto y antigüedad.
+     *
+     * Van aparte de `aplicarFiltros` porque no miran etiquetas, y se aplican
+     * igual al pintar las tarjetas y al contar, para que el número de la
+     * cabecera de cada etapa no contradiga lo que hay debajo.
+     */
+    private function aplicarFiltrosDeFicha($query, Request $request): void
+    {
+        $agentes = array_values(array_filter((array) $request->input('agentes', [])));
+
+        if (! empty($agentes)) {
+            // «sin_asignar» viaja en la misma lista que los ids porque en la
+            // pantalla es una opción más del mismo desplegable.
+            $sinAsignar = in_array('sin_asignar', $agentes, true);
+            $ids        = array_filter(array_map('intval', array_diff($agentes, ['sin_asignar'])));
+
+            $query->where(function ($q) use ($ids, $sinAsignar) {
+                if (! empty($ids)) {
+                    $q->whereIn('assigned_to', $ids);
+                }
+                if ($sinAsignar) {
+                    $q->orWhereNull('assigned_to');
+                }
+            });
+        }
+
+        if ($request->filled('conversacion')) {
+            $query->where('id', (int) $request->input('conversacion'));
+        }
+
+        if ($request->boolean('estancadas')) {
+            $query->where(function ($q) {
+                $q->where('last_message_at', '<', now()->subDays(7))
+                    ->orWhereNull('last_message_at');
+            });
         }
     }
 
@@ -152,6 +200,39 @@ class KanbanController extends Controller
             unset($value);
         }
         return $input;
+    }
+
+    /**
+     * Contactos para el desplegable de búsqueda del tablero.
+     *
+     * Es el mismo `scopeSearch` del chat —el que encuentra a alguien por el
+     * nombre del contacto vinculado y no sólo por el de la conversación—, así
+     * que buscar aquí da los mismos resultados que buscar allá. Devuelve pocos
+     * y ordenados por actividad: el desplegable se abre para elegir, no para
+     * leer tres mil filas.
+     */
+    public function contactos(Request $request)
+    {
+        $user = auth()->user();
+        $texto = trim((string) $request->input('q', ''));
+
+        $conversaciones = WhatsAppConversation::query()
+            ->select(['id', 'name', 'phone_number', 'wa_id', 'last_message_at', 'assigned_to'])
+            ->with(['assignedAgent:id,name', 'contact:id,name,last_name'])
+            ->whereIn('instance_id', Instance::where('company_id', $user->company_id)->pluck('id'))
+            ->when($texto !== '', fn ($q) => $q->search($texto))
+            ->orderByDesc('last_message_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json($conversaciones->map(fn ($c) => [
+            'id'       => $c->id,
+            // El nombre que se enseña es el del contacto vinculado si lo hay,
+            // porque es el que el agente conoce; si no, el de la conversación.
+            'nombre'   => trim(($c->contact->name ?? '') . ' ' . ($c->contact->last_name ?? '')) ?: ($c->name ?: $c->phone_number),
+            'telefono' => $c->phone_number ?: $c->wa_id,
+            'agente'   => $c->assignedAgent->name ?? null,
+        ]));
     }
 
     // GET /api/kanban/columns
@@ -183,6 +264,13 @@ class KanbanController extends Controller
         // los filtros de los otros grupos.
         $base = WhatsAppConversation::whereIn('instance_id', $instanceIds);
         $this->aplicarFiltros($base, $request->input('filtros', []), $user->company_id);
+        $this->aplicarFiltrosDeFicha($base, $request);
+
+        if ($request->filled('search')) {
+            // El buscador también entra en los conteos: sin esto la cabecera
+            // decía «3.184» sobre una columna que enseñaba dos tarjetas.
+            $base->search($request->input('search'));
+        }
 
         $tagsDelGrupo = $delGrupo->pluck('tag_id')->filter();
 
