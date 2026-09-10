@@ -86,7 +86,15 @@ return [
             // WhatsApp si no se declara: son webhooks distintos pero Meta no
             // exige que el token lo sea, y obligar a inventar uno el día del
             // despliegue es una forma barata de bloquearse.
-            'verify_token' => env('META_IG_WEBHOOK_VERIFY_TOKEN', env('META_WEBHOOK_VERIFY_TOKEN')),
+            //
+            // Con `?:` y no con el segundo argumento de env(), y eso importa:
+            // el bloque x-app-env declara `${META_IG_WEBHOOK_VERIFY_TOKEN:-}`,
+            // así que cuando no está en el .env.docker la variable llega al
+            // contenedor **definida y vacía**, no ausente. env() sólo usa su
+            // valor por defecto si la clave NO existe, de modo que devolvía ''
+            // y el respaldo no se activaba nunca. Costó una verificación
+            // fallida en producción (10-sep-2026).
+            'verify_token' => env('META_IG_WEBHOOK_VERIFY_TOKEN') ?: env('META_WEBHOOK_VERIFY_TOKEN'),
         ],
         'api_version' => env('META_API_VERSION', 'v21.0'),
         // La coexistencia (`smb_app_data`, `is_on_biz_app`) no existe en la v21
