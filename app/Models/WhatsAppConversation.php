@@ -355,6 +355,25 @@ class WhatsAppConversation extends Model
             ->withTimestamps();
     }
 
+    /**
+     * Por qué canal llegó esta conversación.
+     *
+     * Se deriva de la instancia en vez de copiarse en la tabla: una conversación
+     * no cambia de canal nunca, así que duplicar el dato sólo daría dos sitios
+     * donde pueda quedar desactualizado. Si algún día el listado necesita
+     * filtrar por canal sin cargar la instancia, entonces se denormaliza y se
+     * dirá aquí por qué.
+     */
+    public function canal(): string
+    {
+        return $this->instance?->channel ?? Instance::CANAL_WHATSAPP;
+    }
+
+    public function nombreDelCanal(): string
+    {
+        return $this->instance?->nombreDelCanal() ?? 'WhatsApp';
+    }
+
     public function markAsRead()
     {
         $this->update(['unread_count' => 0]);
