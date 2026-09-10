@@ -13,6 +13,7 @@ import {
     ChevronLeft,
     ChevronRight,
     AlertCircle,
+    Trash2,
     GripVertical,
     Calendar,
     ArrowRight,
@@ -30,12 +31,36 @@ import {
 } from '@hello-pangea/dnd';
 import { clsx } from 'clsx';
 import { colorPorIndice } from '@/lib/paleta';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useAviso } from '@/components/ui/toast';
 
 const PER_PAGE = 30;
 
 // Icon map: backend string → React component
 const ICON_MAP = { Plus, MessageSquare, Calendar, CheckCircle2, Zap, LayoutDashboard, Users, User };
 const getIcon = (name) => ICON_MAP[name] ?? Zap;
+
+/**
+ * Tooltip del tablero, con el mismo aspecto que los del menú lateral.
+ *
+ * Antes eran `title=` nativos: aparecían con medio segundo de retraso, en el
+ * gris del sistema operativo y sin relación visual con la aplicación. Encima,
+ * sobre un botón que ya estaba dentro de una barra flotante, el recuadro del
+ * sistema tapaba los botones de al lado.
+ */
+function Pista({ texto, lado = 'top', children }) {
+    if (!texto) return children;
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side={lado} align="center">
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
 
 function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content ?? '';
@@ -129,12 +154,11 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
             <div className="flex items-center justify-between gap-2">
                 {conv.assigned_agent ? (
                     <div className="flex items-center gap-1.5 min-w-0">
-                        <div
-                            className="size-5 shrink-0 rounded-full bg-primary/20 text-accent-foreground flex items-center justify-center text-[8px] font-black"
-                            title={conv.assigned_agent.name}
-                        >
-                            {conv.assigned_agent.name.substring(0, 2).toUpperCase()}
-                        </div>
+                        <Pista texto={`Atiende ${conv.assigned_agent.name}`}>
+                            <div className="size-5 shrink-0 rounded-full bg-primary/20 text-accent-foreground flex items-center justify-center text-[8px] font-black">
+                                {conv.assigned_agent.name.substring(0, 2).toUpperCase()}
+                            </div>
+                        </Pista>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
                             {conv.assigned_agent.name}
                         </span>
@@ -144,19 +168,20 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
                 )}
 
                 {dias !== null && (
-                    <span
-                        className={clsx(
-                            'shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums',
-                            estancada
-                                ? 'bg-warning/15 text-warning'
-                                : 'bg-muted text-muted-foreground'
-                        )}
-                        title={estancada
-                            ? `Lleva ${dias} días en esta etapa sin moverse`
-                            : `Entró en esta etapa hace ${dias} ${dias === 1 ? 'día' : 'días'}`}
-                    >
-                        {dias === 0 ? 'hoy' : `${dias} d`}
-                    </span>
+                    <Pista texto={estancada
+                        ? `Lleva ${dias} días en esta etapa sin moverse`
+                        : `Entró en esta etapa hace ${dias} ${dias === 1 ? 'día' : 'días'}`}>
+                        <span
+                            className={clsx(
+                                'shrink-0 px-2 py-0.5 rounded-full text-[10px] font-black tabular-nums',
+                                estancada
+                                    ? 'bg-warning/15 text-warning'
+                                    : 'bg-muted text-muted-foreground'
+                            )}
+                        >
+                            {dias === 0 ? 'hoy' : `${dias} d`}
+                        </span>
+                    </Pista>
                 )}
             </div>
         </div>
@@ -285,13 +310,14 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
                                 />
                             </form>
                         ) : (
-                            <h2
-                                onClick={() => setIsEditing(true)}
-                                title={col.name}
-                                className="font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.08em] cursor-text truncate"
-                            >
-                                {col.name}
-                            </h2>
+                            <Pista texto={`${col.name} — clic para renombrar`}>
+                                <h2
+                                    onClick={() => setIsEditing(true)}
+                                    className="font-black text-[12px] text-foreground dark:text-muted-foreground uppercase tracking-[0.08em] cursor-text truncate"
+                                >
+                                    {col.name}
+                                </h2>
+                            </Pista>
                         )}
                         {editandoGrupo ? (
                             <form onSubmit={guardarGrupo}>
@@ -311,41 +337,49 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
                                 {(totalCount ?? items.length).toLocaleString('es-CO')}
                             </span>
                             {col.es_bandeja && (
-                                <span
-                                    className="inline-flex items-center gap-1 text-[9px] font-black text-muted-foreground uppercase tracking-wider"
-                                    title="Recoge lo que no está clasificado en este grupo"
-                                >
-                                    <Inbox className="size-2.5" /> Bandeja
-                                </span>
+                                <Pista texto="Recoge lo que no está clasificado en este grupo">
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-black text-muted-foreground uppercase tracking-wider">
+                                        <Inbox className="size-2.5" /> Bandeja
+                                    </span>
+                                </Pista>
                             )}
                         </div>
                     </div>
                 </div>
 
                 <div className="absolute right-2.5 top-2.5 flex items-center gap-0.5 p-0.5 rounded-xl bg-card/90 backdrop-blur shadow-sm border border-border/60 opacity-0 group-hover/column:opacity-100 transition-opacity">
-                    <button
-                        onClick={() => onCambiarBandeja(col.id, !col.es_bandeja)}
-                        className={clsx(
-                            'p-1.5 rounded-lg transition-colors',
-                            col.es_bandeja
-                                ? 'bg-primary/15 text-accent-foreground'
-                                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                        )}
-                        title={col.es_bandeja
-                            ? 'Recoge lo que no está clasificado en este grupo'
-                            : 'Hacer que recoja lo que no está clasificado en este grupo'}
-                    >
-                        <Inbox className="size-3.5" />
-                    </button>
-                    <button onClick={() => setEditandoGrupo(true)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors" title="Grupo de la etapa">
-                        <Layers className="size-3.5" />
-                    </button>
-                    <button onClick={() => onDelete(col.id)} className="p-1.5 hover:bg-destructive/15 dark:hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-lg transition-colors" title="Eliminar etapa">
-                        <AlertCircle className="size-3.5" />
-                    </button>
-                    <button onClick={() => onAddCard(col.id)} className="p-1.5 hover:bg-muted dark:hover:bg-muted text-muted-foreground hover:text-muted-foreground rounded-lg transition-colors" title="Agregar tarjeta">
-                        <Plus className="size-3.5" />
-                    </button>
+                    <Pista texto={col.es_bandeja
+                        ? 'Recoge lo que no está clasificado en este grupo'
+                        : 'Hacer que recoja lo que no está clasificado en este grupo'}>
+                        <button
+                            onClick={() => onCambiarBandeja(col.id, !col.es_bandeja)}
+                            className={clsx(
+                                'p-1.5 rounded-lg transition-colors',
+                                col.es_bandeja
+                                    ? 'bg-primary/15 text-accent-foreground'
+                                    : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                            )}
+                        >
+                            <Inbox className="size-3.5" />
+                        </button>
+                    </Pista>
+                    <Pista texto="Grupo de la etapa">
+                        <button onClick={() => setEditandoGrupo(true)} className="p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors">
+                            <Layers className="size-3.5" />
+                        </button>
+                    </Pista>
+                    <Pista texto="Eliminar etapa">
+                        <button onClick={() => onDelete(col.id)} className="p-1.5 hover:bg-destructive/15 dark:hover:bg-destructive/20 text-muted-foreground hover:text-destructive rounded-lg transition-colors">
+                            {/* Era un círculo de admiración, que anuncia un aviso, no un
+                                borrado: nadie adivinaba que ese botón eliminaba la etapa. */}
+                            <Trash2 className="size-3.5" />
+                        </button>
+                    </Pista>
+                    <Pista texto="Agregar tarjeta">
+                        <button onClick={() => onAddCard(col.id)} className="p-1.5 hover:bg-muted dark:hover:bg-muted text-muted-foreground hover:text-muted-foreground rounded-lg transition-colors">
+                            <Plus className="size-3.5" />
+                        </button>
+                    </Pista>
                 </div>
             </div>
 
@@ -537,6 +571,9 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
     const [creandoEtapa, setCreandoEtapa]   = useState(false);
     const [errorEtapa, setErrorEtapa]       = useState(null);
+    const [etapaABorrar, setEtapaABorrar]   = useState(null);   // id, para el diálogo
+    const [borrando, setBorrando]           = useState(false);
+    const aviso = useAviso();
     const [newCardColumn, setNewCardColumn] = useState(null);
 
     // boardData[colId] = Card[]
@@ -865,6 +902,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             setFiltros([]);
         } catch (err) {
             console.error('Error al cambiar el grupo:', err);
+            aviso.error('No se pudo cambiar el grupo de la etapa', { detalle: err.message });
         }
     };
 
@@ -889,6 +927,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             columnasVisibles.forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
         } catch (err) {
             console.error('Error al cambiar la bandeja:', err);
+            aviso.error('No se pudo cambiar la bandeja', { detalle: err.message });
         }
     };
 
@@ -898,16 +937,45 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             setColumns(prev => prev.map(c => c.id === id ? { ...c, name: updated.name } : c));
         } catch (err) {
             console.error('Error al renombrar columna:', err);
+            aviso.error('No se pudo renombrar la etapa', { detalle: err.message });
         }
     };
 
-    const deleteColumn = async (id) => {
-        if (!confirm('¿Eliminar esta etapa? Las tarjetas pasarán a la primera etapa disponible.')) return;
+    // El borrado pide confirmación en el diálogo de la aplicación, no en el
+    // `confirm` del navegador, que se pinta pegado al borde con el dominio como
+    // título y no se parece a nada de lo que hay alrededor.
+    const deleteColumn = (id) => setEtapaABorrar(id);
+
+    const confirmarBorrado = async () => {
+        const id = etapaABorrar;
+        if (!id) return;
+        const nombre = columns.find(c => c.id === id)?.name;
+
+        setBorrando(true);
         try {
             await apiRequest('DELETE', `/api/kanban/columns/${id}`);
-            window.location.reload();
+
+            // Antes esto recargaba la página entera, lo que además se llevaba
+            // por delante el aviso de que había salido bien. El servidor
+            // recoloca las tarjetas huérfanas, así que basta con quitar la
+            // etapa y volver a pedir lo que queda.
+            const quedan = columns.filter(c => c.id !== id);
+            setColumns(quedan);
+            setBoardData(prev => { const { [id]: _fuera, ...resto } = prev; return resto; });
+            setEtapaABorrar(null);
+            setBorrando(false);
+            aviso.exito(nombre ? `Etapa «${nombre}» eliminada` : 'Etapa eliminada', {
+                detalle: 'Las tarjetas que tuviera pasaron a la primera etapa disponible.',
+            });
+            loadCounts();
+            quedan
+                .filter(c => (c.grupo ?? null) === (grupoActivo ?? null))
+                .forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
         } catch (err) {
             console.error('Error al eliminar columna:', err);
+            setBorrando(false);
+            setEtapaABorrar(null);
+            aviso.error('No se pudo eliminar la etapa', { detalle: err.message });
         }
     };
 
@@ -915,6 +983,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         setNewCardColumn(null);
         const colId = card.kanban_column_id ?? columns[0]?.id;
         if (!colId) return;
+        aviso.exito(`${card.name || card.phone_number} entró en ${columns.find(c => c.id === colId)?.name ?? 'el tablero'}`);
         setBoardData(prev => ({ ...prev, [colId]: [card, ...(prev[colId] ?? [])] }));
         setColCounts(prev => ({ ...prev, [colId]: (prev[colId] ?? 0) + 1 }));
     };
@@ -963,6 +1032,12 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             apiRequest('POST', `/api/kanban/conversations/${activeIdStr}/move`, { column_id: targetColId })
                 .catch(err => {
                     console.error('Move failed:', err);
+                    // La tarjeta ya se movió en pantalla y aquí vuelve a su
+                    // sitio: sin este aviso, el salto no tiene explicación.
+                    aviso.error(
+                        `No se pudo mover a ${columns.find(c => String(c.id) === String(targetColId))?.name ?? 'la otra etapa'}`,
+                        { detalle: err.message },
+                    );
                     loadColumnCards(originColId, 1, debouncedSearch, true);
                     loadColumnCards(targetColId, 1, debouncedSearch, true);
                     loadCounts();
@@ -1007,6 +1082,25 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     return (
         <>
             <Head title="Tablero" />
+
+            <ConfirmDialog
+                open={etapaABorrar !== null}
+                title="¿Eliminar esta etapa?"
+                description={(() => {
+                    const col = columns.find(c => c.id === etapaABorrar);
+                    const cuantas = colCounts[etapaABorrar];
+                    const nombre = col ? `«${col.name}»` : 'La etapa';
+                    return cuantas
+                        ? `${nombre} tiene ${cuantas.toLocaleString('es-CO')} ${cuantas === 1 ? 'tarjeta' : 'tarjetas'}. Pasarán a la primera etapa disponible; no se borra ninguna conversación.`
+                        : `${nombre} se elimina del tablero. Las tarjetas que tuviera pasarán a la primera etapa disponible.`;
+                })()}
+                confirmLabel="Eliminar etapa"
+                cancelLabel="Cancelar"
+                variant="danger"
+                loading={borrando}
+                onConfirm={confirmarBorrado}
+                onCancel={() => setEtapaABorrar(null)}
+            />
 
             {newCardColumn !== null && (
                 <NewCardModal
