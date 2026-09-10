@@ -13,12 +13,14 @@ Estado hoy: última solicitud **aprobada**, ninguna pendiente, `can_submit: true
 Meta exige **ver la función andando** antes de dar acceso avanzado. No se puede
 grabar lo que no existe, así que la solicitud no va primero: va cuarta.
 
-1. **Configurar el producto Instagram** en el panel (abajo están los valores)
+1. ~~**Configurar el producto Instagram** en el panel~~ — **hecho el 10-sep-2026**,
+   salvo el webhook, que no se puede: ver «El webhook no va aquí» más abajo
 2. **Construir la integración mínima** — recibir un DM y contestarlo desde el CRM
-3. **Probarla con nuestra propia cuenta profesional de Instagram**, que el
+3. **Suscribir el webhook**, ya con el endpoint contestando
+4. **Probarla con nuestra propia cuenta profesional de Instagram**, que el
    acceso estándar ya permite sin ninguna aprobación
-4. **Grabar el screencast** con eso funcionando
-5. **Enviar la solicitud** de acceso avanzado
+5. **Grabar el screencast** con eso funcionando
+6. **Enviar la solicitud** de acceso avanzado
 
 El paso 3 es la clave y mucha gente no lo sabe: **acceso estándar sirve para
 cuentas propias añadidas en el panel**. O sea que se puede construir, probar y
@@ -32,23 +34,63 @@ screencast esté grabado y seguir construyendo mientras tanto.
 
 ## 1 · Configuración en el panel
 
-**App Dashboard → Productos → Instagram → API con Instagram Login**
+**Ya no hay menú «Productos».** Esta app está en el modelo de *casos de uso*, y
+el camino real es:
+
+**Casos de uso → Agregar casos de uso → Administración de contenido →
+«Administrar mensajes y contenido en Instagram» → Personalizar**
+
+Dentro, la pestaña que sirve es **«Configuración de la API con inicio de sesión
+con Instagram»** (hay otra casi igual, *con inicio de sesión con Facebook*, que
+es el camino viejo y no es el nuestro).
+
+### Añadir el caso de uso crea una segunda app
+
+Esto no está en la documentación y conviene saberlo antes: al añadirlo, Meta
+crea sola una app de Instagram aparte, con **identidad propia**:
+
+| | |
+|---|---|
+| Nombre | **Integra CRM-IG** |
+| Instagram App ID | **`28822685693981719`** |
+| Clave secreta | en la misma pantalla, botón «Mostrar» |
+
+**No son los de Facebook** (`865904982715022`). El *client_id* del OAuth de
+Instagram es el de arriba; la clave secreta es la que va a la lista de
+`META_APP_SECRETS`, junto a la de WhatsApp, no en su lugar — el validador de
+firmas ya prueba todas las entradas ([[env-meta-app-secrets]]).
 
 ### URLs que hay que registrar
 
-| Campo | Valor propuesto |
-|---|---|
-| OAuth redirect URI | `https://wpp.integracolombia.online/instagram/callback` |
-| Deauthorize callback URL | `https://wpp.integracolombia.online/instagram/desautorizar` |
-| Data deletion request URL | `https://wpp.integracolombia.online/instagram/eliminar-datos` |
-| Webhook callback URL | `https://wpp.integracolombia.online/webhooks/instagram` |
+| Campo | Valor | Estado |
+|---|---|---|
+| OAuth redirect URI | `https://wpp.integracolombia.online/instagram/callback` | ✅ guardada |
+| Deauthorize callback URL | `https://wpp.integracolombia.online/instagram/desautorizar` | ✅ guardada |
+| Data deletion request URL | `https://wpp.integracolombia.online/instagram/eliminar-datos` | ✅ guardada |
+| Webhook callback URL | `https://wpp.integracolombia.online/webhooks/instagram` | ⛔ ver abajo |
 
-Las tres primeras las pide Meta al configurar Business Login. **Las tres tienen
-que responder 200 antes de enviar la solicitud**: el revisor las visita.
+Las tres primeras están en dos sitios distintos y por eso se pasan por alto: la
+de redirección se pide en el paso **4. Configurar el inicio de sesión de empresa
+de Instagram → Configurar**, y las otras dos sólo aparecen si, *después*, se
+despliega ese mismo paso 4 y se pulsa **«Configuración de inicio de sesión del
+negocio»**. Ahí están las tres juntas.
+
+**Las tres tienen que responder 200 antes de enviar la solicitud**: el revisor
+las visita. Hoy ninguna existe todavía en el código.
 
 Las dos últimas —desautorizar y eliminar datos— son obligación legal, no
 trámite: Meta avisa por ahí cuando un usuario revoca el acceso o pide borrado, y
 hay que atenderlas de verdad.
+
+### El webhook no va aquí, va después
+
+El paso 3 del panel tiene los campos, pero **guardar es «Verificar y guardar»**:
+Meta llama al momento con `hub.challenge` y sólo acepta la URL si algo contesta.
+Sin `routes/web.php` publicando `/webhooks/instagram`, el botón falla — no es un
+formulario que se rellene por adelantado.
+
+Por eso el webhook se movió detrás de construir el endpoint, y por eso el orden
+de arriba tiene seis pasos y no cinco.
 
 ### Permisos a solicitar
 
@@ -59,6 +101,15 @@ hay que atenderlas de verdad.
 `instagram_business_content_publish` sin usarlos alarga la revisión y da motivos
 para rechazar. Si más adelante hacen falta, se piden aparte.
 
+**Cuidado con el botón «Add all required permissions»** del paso 1 del panel:
+mete **tres**, con `instagram_business_manage_comments` incluido. No se ha
+pulsado a propósito. Los permisos se añaden de uno en uno desde **Permisos y
+funciones → Agregar a revisión de la app**, y eso ya es el expediente de
+revisión, así que se hace con el screencast grabado, no antes.
+
+Para construir y probar con nuestra propia cuenta no hace falta añadir nada: el
+acceso estándar del caso de uso ya lo permite.
+
 ### Webhook
 
 Tópico `instagram`, con estos campos:
@@ -67,14 +118,11 @@ Tópico `instagram`, con estos campos:
 `messaging_referrals` · `messaging_optins`
 
 Va en su propio `callback_url`, distinto del de WhatsApp: son tópicos separados
-y caben los dos en la misma app.
-
-### Dos datos que hay que copiar del panel
-
-En **Instagram → Configuración de la API con Instagram Login → Business login
-settings** aparecen el **Instagram App ID** y el **Instagram App Secret**, que
-**no son los de Facebook**. El secreto va a la lista de
-`META_APP_SECRETS`; el validador de firmas ya prueba todas las entradas.
+y caben los dos en la misma app. Comprobado el 10-sep-2026, después de añadir
+el caso de uso de Instagram: la suscripción de WhatsApp sigue intacta —
+`whatsapp_business_account`, sus doce campos, `enabled: true`. **Añadir
+Instagram no toca nada de WhatsApp**, que era el miedo razonable teniendo once
+clientes en producción sobre esta misma app.
 
 ---
 
@@ -168,9 +216,9 @@ Va en las descripciones, abriéndolas con esa frase.
 ## 4 · Antes de darle a enviar
 
 - [ ] Las cuatro URLs responden 200 desde fuera de nuestra red
-- [ ] El producto Instagram añadido y Business Login configurado
+- [x] Caso de uso de Instagram añadido y Business Login configurado *(10-sep-2026)*
 - [ ] Webhook del tópico `instagram` suscrito y verificado
-- [ ] Instagram App Secret añadido a `META_APP_SECRETS`
+- [ ] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
 - [ ] Nuestra cuenta profesional de Instagram conectada y funcionando en
       acceso estándar
 - [ ] Screencast con las cinco tomas, sin cortes
