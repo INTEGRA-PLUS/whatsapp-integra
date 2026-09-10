@@ -16,6 +16,7 @@ class Instance extends Model
         'name',
         'phone_number_id',
         'waba_id',
+        'external_account_id',
         'display_phone_number',
         'type',
         'channel',
@@ -26,6 +27,7 @@ class Instance extends Model
         'health_error',
         'meta',
         'access_token',
+        'token_expires_at',
     ];
 
     /**
@@ -44,6 +46,7 @@ class Instance extends Model
         'api_token_created_at' => 'datetime',
         'api_token_last_used_at' => 'datetime',
         'api_last_seen_at' => 'datetime',
+        'token_expires_at' => 'datetime',
         'meta' => 'array',
     ];
 
@@ -101,6 +104,52 @@ class Instance extends Model
     public function scopeCanal($query, string $canal)
     {
         return $query->where('channel', $canal);
+    }
+
+    /**
+     * Deja guardada la cuenta profesional de Instagram que acaba de conectarse.
+     *
+     * El nombre de usuario va dentro de `meta` y no en columna propia porque es
+     * descriptivo: cambia cuando el cliente lo cambia en Instagram y sólo sirve
+     * para pintarlo. Lo que identifica la línea es `external_account_id`.
+     *
+     * Se pasa por aquí y no asignando `meta` a pelo: ese campo es un cajón
+     * compartido con la configuración de llamadas y las plantillas de reserva, y
+     * sobrescribirlo entero borra lo de los demás.
+     */
+    public function guardarCuentaDeInstagram(string $usuario, ?string $foto = null): void
+    {
+        $meta = $this->meta ?? [];
+        $meta['instagram'] = array_merge($meta['instagram'] ?? [], array_filter([
+            'username' => $usuario,
+            'profile_picture_url' => $foto,
+        ], fn ($valor) => $valor !== null));
+
+        $this->meta = $meta;
+    }
+
+    public function usuarioDeInstagram(): ?string
+    {
+        return $this->meta['instagram']['username'] ?? null;
+    }
+
+    /**
+     * Si al token le quedan menos días que los indicados.
+     *
+     * Los de Instagram duran 60 días y se renuevan por API sin molestar al
+     * cliente, pero sólo mientras sigan vivos: uno caducado obliga a rehacer el
+     * inicio de sesión con el cliente delante. Por eso se renuevan con margen y
+     * no el último día.
+     */
+    public function tokenPorCaducar(int $dias = 10): bool
+    {
+        if ($this->token_expires_at === null) {
+            // Sin fecha no caduca, que es el caso de los tokens de usuario del
+            // sistema de WhatsApp.
+            return false;
+        }
+
+        return $this->token_expires_at->lessThan(now()->addDays($dias));
     }
 
     /**
@@ -187,10 +236,14 @@ class Instance extends Model
     public function isMetaConfigured()
     {
         // Cada canal se configura con cosas distintas: WhatsApp con un número y
-        // una WABA, Messenger con una página, Instagram con una cuenta
-        // profesional. Mientras esos dos no estén construidos, decir que no
-        // están listos es la respuesta correcta —y la segura: ningún camino de
-        // salida intentará hablar con Meta por un canal que aún no sabe hacerlo.
+        // una WABA, Instagram con una cuenta profesional. Messenger todavía no
+        // está construido, y decir que no está listo es la respuesta correcta
+        // —y la segura: ningún camino de salida intentará hablar con Meta por un
+        // canal que aún no sabe hacerlo.
+        if ($this->esInstagram()) {
+            return ! empty($this->external_account_id) && ! empty($this->access_token);
+        }
+
         if (! $this->esWhatsApp()) {
             return false;
         }

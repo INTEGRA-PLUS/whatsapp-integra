@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
+import ConectarInstagramButton from '@/components/ConectarInstagramButton';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
     // El token recién creado. Vive sólo en memoria y sólo hasta cerrar el aviso:
@@ -107,7 +108,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
             <div className="flex flex-col gap-6 p-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Instancias de WhatsApp</h1>
+                        <h1 className="text-2xl font-semibold text-foreground">Instancias</h1>
                         <p className="text-sm text-muted-foreground mt-1">Gestiona tus conexiones con la API de Meta</p>
                     </div>
                     {/* Conectar con Facebook es el camino normal; "Nueva
@@ -116,6 +117,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         tiene configurada. */}
                     <div className="flex items-center gap-2">
                         <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
+                        <ConectarInstagramButton disponible={instagramDisponible} />
                         <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nueva Instancia
                         </Button>

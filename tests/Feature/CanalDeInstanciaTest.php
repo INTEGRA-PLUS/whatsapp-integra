@@ -68,27 +68,62 @@ class CanalDeInstanciaTest extends TestCase
     }
 
     /**
-     * La protección que de verdad importa mientras los canales nuevos no estén
-     * construidos: nada intenta enviar por ellos.
+     * Cada canal se configura con cosas distintas, y tener las de otro no vale.
+     *
+     * Un número y una WABA no configuran una cuenta de Instagram, igual que un
+     * IGSID no configura un número de WhatsApp. La protección importa: dar una
+     * línea por lista manda el fallo al worker —un envío aceptado y muerto con
+     * un 401— en vez de decirlo al conectarla.
      */
-    public function test_una_linea_que_no_es_whatsapp_no_se_da_por_configurada(): void
+    public function test_cada_canal_necesita_lo_suyo_para_darse_por_configurado(): void
     {
-        $completa = [
+        $deWhatsApp = [
             'phone_number_id' => '1177962515404155',
             'waba_id' => 'waba-1',
             'access_token' => 'un-token-que-parece-bueno',
         ];
 
-        $this->assertTrue($this->instancia($completa)->isMetaConfigured());
+        $this->assertTrue($this->instancia($deWhatsApp)->isMetaConfigured());
 
-        foreach ([Instance::CANAL_MESSENGER, Instance::CANAL_INSTAGRAM] as $canal) {
-            $ajena = $this->instancia($completa + ['channel' => $canal]);
+        // Los datos de WhatsApp no configuran una línea de Instagram.
+        $this->assertFalse(
+            $this->instancia($deWhatsApp + ['channel' => Instance::CANAL_INSTAGRAM])->isMetaConfigured(),
+            'Una línea de Instagram se dio por lista sin cuenta conectada.'
+        );
 
-            $this->assertFalse(
-                $ajena->isMetaConfigured(),
-                "Una línea de {$canal} se dio por lista para enviar, y ese camino todavía no existe."
-            );
-        }
+        // Con lo suyo, sí.
+        $this->assertTrue(
+            $this->instancia([
+                'channel' => Instance::CANAL_INSTAGRAM,
+                'external_account_id' => '17841400008460056',
+                'access_token' => 'el-token-largo',
+            ])->isMetaConfigured()
+        );
+
+        // Y sin token tampoco, aunque la cuenta esté.
+        $this->assertFalse(
+            $this->instancia([
+                'channel' => Instance::CANAL_INSTAGRAM,
+                'external_account_id' => '17841400008460057',
+                'access_token' => '',
+            ])->isMetaConfigured()
+        );
+    }
+
+    /**
+     * Messenger sigue sin construirse, y mientras tanto nada debe intentar
+     * enviar por ahí.
+     */
+    public function test_messenger_no_se_da_por_configurado(): void
+    {
+        $this->assertFalse(
+            $this->instancia([
+                'channel' => Instance::CANAL_MESSENGER,
+                'phone_number_id' => '1177962515404155',
+                'waba_id' => 'waba-1',
+                'access_token' => 'un-token-que-parece-bueno',
+            ])->isMetaConfigured()
+        );
     }
 
     public function test_la_conversacion_sabe_por_donde_llego(): void

@@ -52,7 +52,8 @@ Route::post('/webhooks/instagram', [InstagramWebhookController::class, 'recibir'
 // Las tres URL que Meta exige registrar en Business Login. El revisor del App
 // Review las visita: si alguna no contesta 200, la solicitud se rechaza antes
 // de mirar el screencast.
-Route::get('/instagram/callback', [InstagramConexionController::class, 'callback']);
+Route::get('/instagram/callback', [InstagramConexionController::class, 'callback'])
+    ->name('instagram.callback');
 Route::match(['get', 'post'], '/instagram/desautorizar', [InstagramPrivacidadController::class, 'desautorizar']);
 Route::match(['get', 'post'], '/instagram/eliminar-datos', [InstagramPrivacidadController::class, 'eliminarDatos']);
 Route::get('/instagram/eliminar-datos/{codigo}', [InstagramPrivacidadController::class, 'estadoDeBorrado'])
@@ -275,6 +276,12 @@ Route::middleware('auth')->group(function () {
         ->name('sistema-diseno');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Arranca Business Login for Instagram. Va aquí dentro —y no con las rutas
+    // públicas de arriba— porque necesita saber qué empresa está conectando: el
+    // callback lo recoge de la sesión, no de la URL.
+    Route::get('/instancias/conectar-instagram', [InstagramConexionController::class, 'conectar'])
+        ->middleware('permission:instances.create')->name('instagram.conectar');
 
     // La guía de conexión por coexistencia, dentro del producto. Va antes que
     // /instances/{instance} para que "guia-coexistencia" no se tome por un id.
