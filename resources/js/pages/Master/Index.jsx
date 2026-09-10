@@ -31,7 +31,9 @@ import {
     BarChart as BarChartIcon,
     KeyRound,
     Copy,
-    ShieldAlert
+    ShieldAlert,
+    X as XIcon,
+    UserCog,
 } from 'lucide-react';
 
 export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters }) {
@@ -458,14 +460,137 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             </div>
 
             {/* Modals for Create/Edit Company */}
-            {showCreate && <Modal title="Deploy New Organization" onClose={() => setShowCreate(false)}><form onSubmit={handleCreate} className="space-y-8"><Field label="Nombre Empresa" value={createForm.name} onChange={v => setCreateForm(f => ({ ...f, name: v }))} required /><Field label="Email Empresa" type="email" value={createForm.email} onChange={v => setCreateForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-primary/50 border border-primary/10 space-y-6"><Field label="Nombre Admin" value={createForm.admin_name} onChange={v => setCreateForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" value={createForm.admin_email} onChange={v => setCreateForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={createForm.password} onChange={v => setCreateForm(f => ({ ...f, password: v }))} required /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest text-primary-foreground shadow-xl shadow-primary/20">Ejecutar Deployment</Button></form></Modal>}
-            {editingCompany && <Modal title="Edit Organization" onClose={() => setEditingCompany(null)}><form onSubmit={handleEdit} className="space-y-8"><Field label="Nombre" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} required /><Field label="Email" type="email" value={editForm.email} onChange={v => setEditForm(f => ({ ...f, email: v }))} required /><div className="p-6 rounded-[2rem] bg-primary/50 border border-primary/10 space-y-6"><Field label="Admin" value={editForm.admin_name} onChange={v => setEditForm(f => ({ ...f, admin_name: v }))} required /><Field label="Email Admin" type="email" value={editForm.admin_email} onChange={v => setEditForm(f => ({ ...f, admin_email: v }))} required /><Field label="Password" type="password" value={editForm.password} onChange={v => setEditForm(f => ({ ...f, password: v }))} /></div><Button type="submit" className="w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest text-primary-foreground shadow-xl shadow-primary/20">Guardar Cambios</Button></form>
-                <UsuariosDeLaEmpresa
-                    usuarios={company_users}
-                    flash={flash}
-                    onRestablecer={restablecerContrasena}
-                />
-            </Modal>}
+            {showCreate && (
+                <Modal
+                    title="Nueva empresa"
+                    description="Se crea la empresa y, con ella, el usuario que la administrará."
+                    onClose={() => setShowCreate(false)}
+                    footer={
+                        <>
+                            <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
+                                Cancelar
+                            </Button>
+                            <Button type="submit" form="form-crear-empresa" className="gap-1.5">
+                                <Plus className="size-4" />
+                                Crear empresa
+                            </Button>
+                        </>
+                    }
+                >
+                    <form id="form-crear-empresa" onSubmit={handleCreate} className="space-y-5">
+                        <div className="space-y-4">
+                            <Field
+                                label="Nombre de la empresa"
+                                value={createForm.name}
+                                onChange={v => setCreateForm(f => ({ ...f, name: v }))}
+                                placeholder="Redes del Sur SAS"
+                                required
+                            />
+                            <Field
+                                label="Correo de la empresa"
+                                type="email"
+                                value={createForm.email}
+                                onChange={v => setCreateForm(f => ({ ...f, email: v }))}
+                                placeholder="contacto@empresa.com"
+                                required
+                            />
+                        </div>
+
+                        <BloqueAdmin titulo="Quien la administrará">
+                            <Field
+                                label="Nombre"
+                                value={createForm.admin_name}
+                                onChange={v => setCreateForm(f => ({ ...f, admin_name: v }))}
+                                placeholder="María Restrepo"
+                                required
+                            />
+                            <Field
+                                label="Correo"
+                                type="email"
+                                value={createForm.admin_email}
+                                onChange={v => setCreateForm(f => ({ ...f, admin_email: v }))}
+                                placeholder="maria@empresa.com"
+                                ayuda="Con este correo entrará al CRM."
+                                required
+                            />
+                            <Field
+                                label="Contraseña"
+                                type="password"
+                                value={createForm.password}
+                                onChange={v => setCreateForm(f => ({ ...f, password: v }))}
+                                autoComplete="new-password"
+                                required
+                            />
+                        </BloqueAdmin>
+                    </form>
+                </Modal>
+            )}
+            {editingCompany && (
+                <Modal
+                    title={editingCompany.name}
+                    description="Datos de la empresa y de quien la administra."
+                    onClose={() => setEditingCompany(null)}
+                    footer={
+                        <>
+                            <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
+                                Cancelar
+                            </Button>
+                            <Button type="submit" form="form-editar-empresa">
+                                Guardar cambios
+                            </Button>
+                        </>
+                    }
+                >
+                    <form id="form-editar-empresa" onSubmit={handleEdit} className="space-y-5">
+                        <div className="space-y-4">
+                            <Field
+                                label="Nombre de la empresa"
+                                value={editForm.name}
+                                onChange={v => setEditForm(f => ({ ...f, name: v }))}
+                                required
+                            />
+                            <Field
+                                label="Correo de la empresa"
+                                type="email"
+                                value={editForm.email}
+                                onChange={v => setEditForm(f => ({ ...f, email: v }))}
+                                required
+                            />
+                        </div>
+
+                        <BloqueAdmin titulo="Quien la administra">
+                            <Field
+                                label="Nombre"
+                                value={editForm.admin_name}
+                                onChange={v => setEditForm(f => ({ ...f, admin_name: v }))}
+                                required
+                            />
+                            <Field
+                                label="Correo"
+                                type="email"
+                                value={editForm.admin_email}
+                                onChange={v => setEditForm(f => ({ ...f, admin_email: v }))}
+                                required
+                            />
+                            <Field
+                                label="Contraseña"
+                                type="password"
+                                value={editForm.password}
+                                onChange={v => setEditForm(f => ({ ...f, password: v }))}
+                                autoComplete="new-password"
+                                ayuda="Déjala vacía para no cambiarla."
+                            />
+                        </BloqueAdmin>
+                    </form>
+                    <div className="mt-6 border-t border-border pt-5">
+                        <UsuariosDeLaEmpresa
+                            usuarios={company_users}
+                            flash={flash}
+                            onRestablecer={restablecerContrasena}
+                        />
+                    </div>
+                </Modal>
+            )}
         </>
     );
 }
@@ -518,17 +643,60 @@ function KPICard({ label, value, sub, icon, trend, color }) {
     );
 }
 
-function Modal({ title, onClose, children }) {
+/**
+ * El diálogo de las empresas.
+ *
+ * Era un cartel: esquinas de 3rem, 56px de relleno, una franja de degradado
+ * arriba y el título centrado en versales enormes. Todo eso ocupaba media
+ * pantalla antes del primer campo, y el conjunto se parecía más a una portada
+ * que a un formulario de administración.
+ *
+ * Ahora la cabecera es una barra con el título a la izquierda y la X a la
+ * derecha, y se queda fija al desplazar: el diálogo de edición es largo —lleva
+ * la lista de usuarios— y al bajar se perdía de vista qué se estaba editando.
+ * El pie hace lo mismo con los botones, que antes había que ir a buscar al
+ * final del todo.
+ */
+function Modal({ title, description, onClose, footer, children }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-2xl p-4 animate-in fade-in duration-300" onClick={onClose}>
-            {/* `max-h` + scroll propio: el modal de edición creció al listar los
-                usuarios de la empresa y en un portátil no cabía entero. Sin esto
-                se corta por abajo y la rueda mueve la página de detrás, así que
-                el botón de guardar queda inalcanzable. */}
-            <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[3rem] bg-card border border-border/40 shadow-2xl p-14 animate-in zoom-in-95 duration-500 relative" onClick={e => e.stopPropagation()}>
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary to-info" />
-                <h2 className="text-3xl font-black text-center mb-12 tracking-tight uppercase text-foreground">{title}</h2>
-                {children}
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+            onClick={onClose}
+        >
+            <div
+                className="flex w-full max-w-lg max-h-[88vh] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-in zoom-in-95 duration-200"
+                onClick={e => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+            >
+                <header className="flex items-start gap-4 border-b border-border px-6 py-4">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="font-heading text-base font-bold tracking-tight text-foreground">
+                            {title}
+                        </h2>
+                        {description && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Cerrar"
+                        className="-mr-1 -mt-1 shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                        <XIcon className="size-4" />
+                    </button>
+                </header>
+
+                {/* El scroll vive aquí y no en el diálogo entero, para que la
+                    cabecera y el pie no se muevan. */}
+                <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+
+                {footer && (
+                    <footer className="flex items-center justify-end gap-2 border-t border-border bg-muted/30 px-6 py-3">
+                        {footer}
+                    </footer>
+                )}
             </div>
         </div>
     );
@@ -628,11 +796,54 @@ function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
     );
 }
 
-function Field({ label, value, onChange, type = 'text', required = false, placeholder = '' }) {
+/**
+ * Un campo del formulario.
+ *
+ * Los campos medían 56px de alto con 24px de sangrado y el texto iba en
+ * monoespaciada y negrita: un nombre de empresa y un correo no son código, y
+ * en esa tipografía se leen peor. Ahora usan la altura y la fuente del resto
+ * del producto, y la ayuda opcional evita tener que adivinar para qué sirve un
+ * campo por su etiqueta de dos palabras.
+ */
+/**
+ * Los datos del administrador, agrupados.
+ *
+ * Iban dentro de un recuadro con `bg-primary/50`: el verde de la marca a media
+ * opacidad, un bloque de color plano que se comía la mitad del formulario y no
+ * decía por qué esos tres campos van juntos. Ahora es una superficie neutra con
+ * un rótulo que lo explica — son los datos de una persona, no de la empresa.
+ */
+function BloqueAdmin({ titulo, children }) {
     return (
-        <div className="space-y-3">
-            <label className="text-[11px] font-black text-muted-foreground uppercase tracking-widest ml-1">{label}</label>
-            <input type={type} value={value} onChange={e => onChange(e.target.value)} required={required} placeholder={placeholder} className="h-14 w-full rounded-2xl border border-border/40 bg-background px-6 text-sm font-bold shadow-inner outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary/40 transition-all font-mono" />
+        <section className="rounded-xl border border-border bg-muted/40 p-4">
+            <div className="mb-3 flex items-center gap-2">
+                <UserCog className="size-3.5 text-muted-foreground" />
+                <p className="text-xs font-semibold text-foreground">{titulo}</p>
+            </div>
+            <div className="space-y-4">{children}</div>
+        </section>
+    );
+}
+
+function Field({ label, value, onChange, type = 'text', required = false, placeholder = '', ayuda = '', autoComplete }) {
+    return (
+        <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                {label}
+                {!required && (
+                    <span className="text-[10px] font-normal text-muted-foreground">(opcional)</span>
+                )}
+            </label>
+            <input
+                type={type}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                required={required}
+                placeholder={placeholder}
+                autoComplete={autoComplete}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+            {ayuda && <p className="text-[11px] leading-snug text-muted-foreground">{ayuda}</p>}
         </div>
     );
 }
