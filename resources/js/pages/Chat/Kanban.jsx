@@ -1018,8 +1018,8 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             )}
 
             {/*
-                La altura se fija aquí, como en el chat (`h-[calc(100vh-49px)]`,
-                49px de la barra superior).
+                La altura se fija aquí, como en el chat (`h-[calc(100svh-49px)]`, la
+                barra superior; y desde `md` los 8px de margen del inset).
 
                 Sin eso, las columnas crecían con sus tarjetas, el `main` del
                 layout crecía con ellas —nada de la cadena acota la altura— y la
@@ -1029,7 +1029,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 vista, y no se podía comparar dos columnas porque cada una tenía
                 sus tarjetas a distinta altura.
             */}
-            <div className="relative h-[calc(100vh-49px)] flex flex-col min-h-0 bg-tablero overflow-hidden">
+            <div className="relative h-[calc(100svh-49px)] md:h-[calc(100svh-65px)] flex flex-col min-h-0 bg-tablero overflow-hidden">
                 {/* Header */}
                 <div className="px-6 lg:px-10 pt-8 pb-4 relative z-10">
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">

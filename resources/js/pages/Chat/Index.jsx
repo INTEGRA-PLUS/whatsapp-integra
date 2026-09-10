@@ -3914,7 +3914,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 </DropdownMenu>
             </TopBarActions>
 
-            <div className="h-[calc(100vh-49px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
+            {/* El alto se fija aquí, y el descuento son dos cosas, no una:
+                la barra superior (`h-12` + su borde = 49px) y, desde `md`, los
+                8px de margen que `SidebarInset` deja arriba y abajo (`m-2`).
+                Sólo se restaban los 49, así que el chat sobresalía 15px del
+                hueco: el borde inferior de la barra de escribir quedaba cortado
+                y la pastilla de Responder se apretaba contra la conversación.
+                `svh` en vez de `vh` para que en el móvil no cuente la barra del
+                navegador que se retrae. */}
+            <div className="h-[calc(100svh-49px)] md:h-[calc(100svh-65px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {!selectedInstanceId ? (
                     <div className="flex-1 flex items-center justify-center">
                         <div className="text-center max-w-sm">
@@ -5468,7 +5476,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                     {/* Composer mode strip: Responder / Nota interna */}
                                     {!isRecording && (
-                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2.5 flex items-center gap-1.5 z-10">
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 pb-2 flex items-center gap-1.5 z-10 border-t border-black/5 dark:border-white/10">
                                             <button
                                                 onClick={() => { setComposerMode('reply'); closeMentions(); clearNoteImage(); }}
                                                 className={clsx(
@@ -5496,7 +5504,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                     {/* Input Area - WhatsApp Web Style */}
                                     <div className={clsx(
-                                        "px-3 pt-2 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
+                                        "px-3 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
                                         composerMode === 'note' && !isRecording
                                             ? "bg-warning/15"
                                             : "bg-[#f0f2f5] dark:bg-[#202c33]"
