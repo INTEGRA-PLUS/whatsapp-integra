@@ -3914,7 +3914,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 </DropdownMenu>
             </TopBarActions>
 
-            <div className="h-[calc(100vh-49px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
+            {/* La altura se toma del hueco que queda, no de una resta a mano.
+                Estaba fijada en `calc(100vh-49px)` suponiendo que la barra
+                superior medía 49px; mide 56, y el layout añade 8px de margen
+                arriba. El chat acababa 7px por debajo del borde de la ventana:
+                lo justo para comerse el borde inferior de la barra de escribir,
+                que quedaba cortada por abajo sin que nada indicara por qué.
+
+                Con `flex-1 min-h-0` el contenedor ocupa exactamente lo que
+                sobra —el padre ya es una columna flex— y deja de depender de un
+                número que se desajusta cada vez que la cabecera cambia. */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {!selectedInstanceId ? (
                     <div className="flex-1 flex items-center justify-center">
                         <div className="text-center max-w-sm">
