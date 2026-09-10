@@ -1762,6 +1762,14 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
                                 <p>Conectada el {new Date(integration.connected_at).toLocaleString('es-CO')}</p>
                             )}
                         </div>
+                    ) : integration.token_ilegible ? (
+                        /* Hay credencial guardada pero el servidor ya no la
+                           puede descifrar. Verificar no la va a arreglar, así
+                           que se dice qué sí lo hace. */
+                        <p className="text-xs text-muted-foreground mt-1">
+                            La credencial guardada ya no se puede leer en este servidor. Vuelve a conectar
+                            Integra con tu usuario y contraseña: es lo único que la restablece.
+                        </p>
                     ) : (
                         <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conecta Integra para empezar.'}</p>
                     )}
