@@ -71,6 +71,23 @@ return [
         //
         // Formato: uno o varios secretos separados por coma.
         'webhook_app_secrets' => env('META_APP_SECRETS', env('META_APP_SECRET')),
+        // Instagram. El caso de uso «API con inicio de sesión con Instagram»
+        // hace que Meta cree una app APARTE —«Integra CRM-IG»— con identidad
+        // propia: su App ID es el client_id del OAuth y su clave secreta es la
+        // que firma sus webhooks. Los de Facebook no sirven aquí.
+        //
+        // La clave secreta NO va en su propia variable: se AÑADE a la lista de
+        // META_APP_SECRETS como "<app_id>:<secreto>", igual que las demás. El
+        // validador de firmas ya prueba todas las entradas, así que sumar un
+        // canal no obliga a tocar el código que valida.
+        'instagram' => [
+            'app_id' => env('META_IG_APP_ID'),
+            // Token de verificación del tópico `instagram`. Cae en el de
+            // WhatsApp si no se declara: son webhooks distintos pero Meta no
+            // exige que el token lo sea, y obligar a inventar uno el día del
+            // despliegue es una forma barata de bloquearse.
+            'verify_token' => env('META_IG_WEBHOOK_VERIFY_TOKEN', env('META_WEBHOOK_VERIFY_TOKEN')),
+        ],
         'api_version' => env('META_API_VERSION', 'v21.0'),
         // La coexistencia (`smb_app_data`, `is_on_biz_app`) no existe en la v21
         // con la que envían los 11 clientes en producción. Va aparte por lo
