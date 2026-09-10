@@ -1565,7 +1565,7 @@ function CallingSettingsPanel({ instanceId, showToast }) {
                         onClick={() => toggleOutbound(!outbound)}
                         className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${outbound ? 'bg-warning' : 'bg-muted'}`}
                     >
-                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${outbound ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${outbound ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                     </button>
                 </div>
                 {!enabled && (
@@ -1847,7 +1847,7 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                         onClick={() => toggleDisabled(!disabled)}
                         className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${!disabled ? 'bg-primary' : 'bg-muted'}`}
                     >
-                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${!disabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${!disabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
                     </button>
                 </div>
             </div>
@@ -2455,7 +2455,7 @@ function AiSwitch({ checked, disabled, onChange }) {
             onClick={() => onChange(!checked)}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-primary' : 'bg-muted'}`}
         >
-            <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            <span className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
         </button>
     );
 }

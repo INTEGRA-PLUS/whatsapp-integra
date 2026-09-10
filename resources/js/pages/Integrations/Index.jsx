@@ -1449,15 +1449,23 @@ function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar
                 disabled={bloqueado}
                 onClick={() => onCambiar(!activo)}
                 className={cn(
-                    'relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors',
+                    'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
                     bloqueado ? 'cursor-not-allowed' : 'cursor-pointer',
                     activo ? 'bg-primary' : 'bg-muted-foreground/30',
                 )}
             >
+                {/* La bolita va en el flujo, no en `absolute`.
+                    Estaba posicionada de forma absoluta sin `left`, así que
+                    partía de su posición estática —que un botón centra— en vez
+                    del borde izquierdo: las dos posiciones salían unos 12px
+                    corridas a la derecha y, encendido, se salía del carril.
+                    Con `inline-flex` en el carril, el desplazamiento se cuenta
+                    desde la izquierda y los 22px dejan el mismo margen de 2px a
+                    cada lado. Es el mismo patrón que ya usan los de Ajustes. */}
                 <span
                     className={cn(
-                        'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
+                        'inline-block size-5 rounded-full bg-white shadow transition-transform',
                         activo ? 'translate-x-[22px]' : 'translate-x-0.5',
                     )}
                 />
