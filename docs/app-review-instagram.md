@@ -67,7 +67,7 @@ firmas ya prueba todas las entradas ([[env-meta-app-secrets]]).
 | OAuth redirect URI | `https://wpp.integracolombia.online/instagram/callback` | ✅ guardada |
 | Deauthorize callback URL | `https://wpp.integracolombia.online/instagram/desautorizar` | ✅ guardada |
 | Data deletion request URL | `https://wpp.integracolombia.online/instagram/eliminar-datos` | ✅ guardada |
-| Webhook callback URL | `https://wpp.integracolombia.online/webhooks/instagram` | ⛔ ver abajo |
+| Webhook callback URL | `https://wpp.integracolombia.online/webhooks/instagram` | ✅ verificada y guardada |
 
 Las tres primeras están en dos sitios distintos y por eso se pasan por alto: la
 de redirección se pide en el paso **4. Configurar el inicio de sesión de empresa
@@ -82,7 +82,7 @@ Las dos últimas —desautorizar y eliminar datos— son obligación legal, no
 trámite: Meta avisa por ahí cuando un usuario revoca el acceso o pide borrado, y
 hay que atenderlas de verdad.
 
-### El webhook no va aquí, va después
+### El webhook va después de construir el endpoint
 
 El paso 3 del panel tiene los campos, pero **guardar es «Verificar y guardar»**:
 Meta llama al momento con `hub.challenge` y sólo acepta la URL si algo contesta.
@@ -90,7 +90,39 @@ Sin `routes/web.php` publicando `/webhooks/instagram`, el botón falla — no es
 formulario que se rellene por adelantado.
 
 Por eso el webhook se movió detrás de construir el endpoint, y por eso el orden
-de arriba tiene seis pasos y no cinco.
+de arriba tiene seis pasos y no cinco. Desplegado el endpoint, la verificación
+pasó a la primera y el paso 3 quedó en verde (10-sep-2026).
+
+**Y va en el producto, no en la página general de Webhooks.** Si se entra por
+*Casos de uso → Webhooks → Producto: Instagram*, Meta avisa en amarillo: «Las
+configuraciones de Webhooks para la API de Instagram con inicio de sesión de
+empresa de Instagram solo se admiten dentro del producto». Los campos de esa
+pantalla no sirven para este camino.
+
+### Los campos del tópico llegan con la cuenta, no antes
+
+`messages`, `messaging_postbacks` y compañía **no se marcan a mano** en Instagram
+Login. El paso 2 del panel lo dice sin subrayarlo: «Agrega una cuenta de
+Instagram para generar tokens de acceso **y configurar suscripciones a
+webhooks**». O sea que la suscripción a campos es por cuenta conectada y llega
+con el OAuth, no antes.
+
+Lo que se comprueba por API mientras tanto es que **no se rompió nada**:
+`devtools_webhook_list` sobre `865904982715022` sigue devolviendo un solo tópico,
+`whatsapp_business_account`, con sus doce campos y `enabled: true`.
+
+### La trampa que costó la primera verificación
+
+`META_IG_WEBHOOK_VERIFY_TOKEN` estaba documentada como «si se deja vacía usa la
+de WhatsApp», y era mentira. El bloque `x-app-env` del compose la declara como
+`${META_IG_WEBHOOK_VERIFY_TOKEN:-}`, así que sin valor en el `.env.docker` la
+variable llega al contenedor **definida y vacía**, no ausente — y `env()` sólo
+usa su valor por defecto cuando la clave **no existe**.
+
+Resultado: el endpoint devolvía 403 con el token correcto. Se arregló con `?:` en
+vez del segundo argumento de `env()`, con prueba que lo fija. Merece la pena
+recordarlo porque afecta a **cualquier** variable nueva de este proyecto: en
+Docker, «vacía» y «sin declarar» no son lo mismo.
 
 ### Permisos a solicitar
 
@@ -215,9 +247,10 @@ Va en las descripciones, abriéndolas con esa frase.
 
 ## 4 · Antes de darle a enviar
 
-- [ ] Las cuatro URLs responden 200 desde fuera de nuestra red
+- [x] Las cuatro URLs responden 200 desde fuera de nuestra red *(10-sep-2026)*
 - [x] Caso de uso de Instagram añadido y Business Login configurado *(10-sep-2026)*
-- [ ] Webhook del tópico `instagram` suscrito y verificado
+- [x] Webhook del tópico `instagram` verificado y guardado *(10-sep-2026)*; los
+      campos llegan al conectar la primera cuenta
 - [ ] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
 - [ ] Nuestra cuenta profesional de Instagram conectada y funcionando en
       acceso estándar
