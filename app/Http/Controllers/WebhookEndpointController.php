@@ -26,6 +26,57 @@ class WebhookEndpointController extends Controller
     }
 
     /**
+     * Qué plantillas aprobadas tiene la línea de hoy y le faltan a la nueva.
+     *
+     * Los catálogos de plantillas viven en Meta y son **por WABA**: dos líneas
+     * de la misma empresa no comparten ninguna. Mudarse a una línea sin su
+     * catálogo es quedarse sin facturar, y se nota factura a factura.
+     *
+     * Si no se puede leer alguno de los dos catálogos no se bloquea nada: no
+     * saber no es lo mismo que saber que falta, y dejar a alguien sin poder
+     * cambiar de línea porque Meta no contestó sería peor.
+     *
+     * @return list<string>
+     */
+    private function plantillasQueFaltan(\App\Models\Company $company, int $nuevaId): array
+    {
+        $actual = $company->instanciaDelErp();
+        $nueva = Instance::find($nuevaId);
+
+        if (! $actual || ! $nueva || $actual->id === $nueva->id || $actual->waba_id === $nueva->waba_id) {
+            return [];
+        }
+
+        $meta = app(\App\Services\MetaWhatsAppService::class);
+
+        $aprobadasDe = function (Instance $linea) use ($meta): ?array {
+            if (empty($linea->waba_id) || empty($linea->access_token)) {
+                return null;
+            }
+
+            $res = $meta->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
+
+            if (! ($res['success'] ?? false)) {
+                return null;
+            }
+
+            return collect($res['data']['data'] ?? [])
+                ->where('status', 'APPROVED')
+                ->map(fn ($p) => ($p['name'] ?? '').' ('.($p['language'] ?? '').')')
+                ->all();
+        };
+
+        $enActual = $aprobadasDe($actual);
+        $enNueva = $aprobadasDe($nueva);
+
+        if ($enActual === null || $enNueva === null) {
+            return [];
+        }
+
+        return array_values(array_diff($enActual, $enNueva));
+    }
+
+    /**
      * Por qué líneas está enviando el ERP, y desde cuándo no lo hace.
      *
      * El CRM e Integra 2.0 son dos bases de datos distintas, cada una con su
@@ -92,6 +143,21 @@ class WebhookEndpointController extends Controller
                     'instance_id' => 'Esa línea no es de tu empresa o no está activa.',
                 ]);
             }
+        }
+
+        // Una línea sin las plantillas de la que envía hoy no puede facturar:
+        // los catálogos de Meta son por WABA. El 10-sep-2026 cambiar de línea
+        // sin comprobarlo dejó a Transinternet una noche entera con Meta
+        // devolviendo «(#100) Invalid parameter» en cada factura, y nadie se
+        // enteró hasta que el cliente lo dijo por WhatsApp a las 6 de la mañana.
+        if ($instanceId !== null && ($faltan = $this->plantillasQueFaltan($company, $instanceId)) !== []) {
+            return back()->withErrors([
+                'instance_id' => 'Esa línea todavía no tiene aprobadas estas plantillas: '
+                    .implode(', ', array_slice($faltan, 0, 5))
+                    .(count($faltan) > 5 ? ' y '.(count($faltan) - 5).' más' : '')
+                    .'. Cópialas desde Plantillas y espera a que Meta las apruebe: '
+                    .'si cambias ahora, las facturas dejarán de salir.',
+            ]);
         }
 
         $company->elegirInstanciaDelErp($instanceId);
