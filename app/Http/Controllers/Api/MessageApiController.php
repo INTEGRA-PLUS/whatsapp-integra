@@ -289,6 +289,208 @@ class MessageApiController extends Controller
         ], 500);
     }
 
+    /**
+     * Enviar un documento (PDF) por la línea de la empresa.
+     *
+     * Es la pieza que faltaba para que haya **un solo emisor de WhatsApp**.
+     * Hasta ahora Integra 2.0 mandaba las tirillas y las facturas por su cuenta
+     * a `graph.facebook.com` y después llamaba a `/messages/register` para que
+     * el CRM se enterara; su propio código lo decía: *«Sin esto, el envío va
+     * directo a graph.facebook.com y el microservicio nunca se entera»*
+     * (`IngresoWhatsAppService.php:224`, 9-sep-2026).
+     *
+     * Lo hacía porque este API sólo sabía enviar texto y plantillas: para un
+     * PDF no había camino. De ahí salía todo lo demás —dos configuraciones, dos
+     * sitios donde mirar si algo no llegó, y un hilo de chat que se enteraba a
+     * posteriori y sin el archivo.
+     *
+     * El PDF se guarda en el almacenamiento del CRM y se envía **por URL**, no
+     * subiéndolo a Meta: así queda también en el hilo, que es lo que permite al
+     * asesor ver el recibo que se le mandó al cliente. Meta sólo aloja lo que
+     * le subes unos treinta días.
+     */
+    public function sendDocument(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if ($instance instanceof JsonResponse) {
+            return $instance;
+        }
+        if (! $instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'to' => 'required|string',
+            // El archivo o su URL: una de las dos, no las dos.
+            'file' => 'required_without:document_url|file|max:20480',
+            'document_url' => 'required_without:file|url',
+            'filename' => 'nullable|string|max:120',
+            // Meta corta el pie del documento en 1024.
+            'caption' => 'nullable|string|max:1024',
+            'incoming_invoice_id' => 'nullable|integer',
+            'incoming_contract_id' => 'nullable|integer',
+            'incoming_payment_id' => 'nullable|integer',
+            'incoming_company_nit' => 'nullable|integer',
+            'template_id' => 'nullable|integer',
+            // Para el caso de fuera de ventana: la plantilla lleva el PDF en su
+            // encabezado y es la única forma de entregarlo pasadas las 24h.
+            'template_name' => 'nullable|string',
+            'language_code' => 'nullable|string',
+            'components' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $to = WhatsAppConversation::normalizeRecipient($request->to);
+
+        if ($to === '') {
+            return response()->json(['errors' => ['to' => [
+                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+            ]]], 422);
+        }
+
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $to,
+            [
+                'phone_number' => $to,
+                'name' => $to,
+                'status' => 'open',
+                'last_message_at' => now(),
+            ]
+        );
+
+        $windowClosed = ! $conversation->isWindowOpen();
+
+        // Fuera de la ventana, un documento suelto no se entrega: WhatsApp sólo
+        // acepta plantillas aprobadas. Si quien llama trae una, ése es el
+        // camino bueno —el PDF viaja en el encabezado de la plantilla—.
+        if ($windowClosed && $request->filled('template_name')) {
+            Log::channel('whatsapp')->info('🔁 Ventana de 24h cerrada: el documento sale como plantilla', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template' => $request->template_name,
+            ]);
+
+            return $this->sendTemplate($request);
+        }
+
+        // Y si no la trae, **no** se usa la plantilla de respaldo de texto: ésa
+        // entregaría el aviso sin el PDF, que es justo el documento que el
+        // cliente esperaba. Perder el recibo en silencio es peor que decir que
+        // no se pudo enviar.
+        if ($windowClosed && $this->windowGuardEnforced($instance)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'El destinatario no escribe desde hace más de 24 horas. '
+                    .'WhatsApp no permite enviar un documento fuera de esa ventana. '
+                    .'Manda este mismo documento con "template_name" y su encabezado '
+                    .'de tipo documento para que llegue como plantilla aprobada.',
+            ], 422);
+        }
+
+        if ($windowClosed) {
+            Log::channel('whatsapp')->warning('🕓 Ventana de 24h cerrada: documento dejado pasar en modo sombra', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+            ]);
+        }
+
+        $guardado = $this->guardarDocumento($request, $conversation);
+
+        if (! $guardado['ok']) {
+            return response()->json(['success' => false, 'error' => $guardado['error']], 500);
+        }
+
+        $result = $this->metaService->sendDocument(
+            $instance->phone_number_id,
+            $to,
+            $guardado['url'],
+            $guardado['filename'],
+            (string) ($request->caption ?? '')
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'error' => $result['error']['error']['message'] ?? 'Error al enviar el documento a Meta',
+            ], 500);
+        }
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'wamid' => $result['data']['messages'][0]['id'],
+            'type' => 'document',
+            'content' => (string) ($request->caption ?? ''),
+            'media_url' => $guardado['url'],
+            'media_mime_type' => $guardado['mime'],
+            'filename' => $guardado['filename'],
+            'direction' => 'outbound',
+            'status' => 'sent',
+            'sent_at' => now(),
+            'incoming_invoice_id' => $request->incoming_invoice_id,
+            'incoming_contract_id' => $request->incoming_contract_id,
+            'incoming_payment_id' => $request->incoming_payment_id,
+            'incoming_company_nit' => $request->incoming_company_nit,
+            'template_id' => $request->template_id,
+            'metadata' => $windowClosed ? ['window_guard' => 'shadow_pass'] : null,
+        ]);
+
+        $conversation->update([
+            'last_message' => '📄 '.$guardado['filename'],
+            'last_message_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message_id' => $message->id,
+            'wamid' => $message->wamid,
+            'media_url' => $guardado['url'],
+        ]);
+    }
+
+    /**
+     * Deja el documento donde Meta pueda leerlo y el hilo pueda enseñarlo.
+     *
+     * @return array{ok: bool, url?: string, filename?: string, mime?: string, error?: string}
+     */
+    private function guardarDocumento(Request $request, WhatsAppConversation $conversation): array
+    {
+        // Con una URL ya publicada no hay nada que guardar: se usa tal cual.
+        if (! $request->hasFile('file')) {
+            $url = (string) $request->document_url;
+
+            return [
+                'ok' => true,
+                'url' => $url,
+                'filename' => $request->filename ?: (basename(parse_url($url, PHP_URL_PATH) ?: '') ?: 'documento.pdf'),
+                'mime' => 'application/pdf',
+            ];
+        }
+
+        $file = $request->file('file');
+        $path = $file->storePublicly('whatsapp/media', 's3_media');
+
+        if (! $path) {
+            Log::channel('whatsapp')->error('❌ No se pudo guardar el documento del API', [
+                'conversation_id' => $conversation->id,
+                'original_name' => $file->getClientOriginalName(),
+            ]);
+
+            return ['ok' => false, 'error' => 'No se pudo guardar el archivo en el almacenamiento.'];
+        }
+
+        return [
+            'ok' => true,
+            'url' => \Illuminate\Support\Facades\Storage::disk('s3_media')->url($path),
+            'filename' => $request->filename ?: ($file->getClientOriginalName() ?: 'documento.pdf'),
+            'mime' => $file->getClientMimeType() ?: 'application/pdf',
+        ];
+    }
+
     public function sendTemplate(Request $request)
     {
         $instance = $this->validateInstance($request);

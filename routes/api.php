@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\MessageApiController;
 Route::prefix('v1')->group(function () {
     Route::post('/messages/send', [MessageApiController::class, 'sendMessage']);
     Route::post('/messages/template', [MessageApiController::class, 'sendTemplate']);
+    Route::post('/messages/document', [MessageApiController::class, 'sendDocument']);
     Route::post('/messages/register', [MessageApiController::class, 'registerMessage']);
     Route::get('/whatsapp-messages', [MessageApiController::class, 'getWhatsAppMessages']);
     Route::get('/conversations', [MessageApiController::class, 'getConversations']);
