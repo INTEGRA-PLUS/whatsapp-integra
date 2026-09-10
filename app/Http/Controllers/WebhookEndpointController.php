@@ -21,6 +21,7 @@ class WebhookEndpointController extends Controller
             // para que añadir uno nuevo no exija tocar también el frontend.
             'providers'     => IntegrationProvider::forDisplay(),
             'lineasDelErp'  => $this->lineasDelErp(),
+            'lineaElegida'  => auth()->user()->company->tieneLineaDelErpElegida(),
         ]);
     }
 
@@ -40,7 +41,10 @@ class WebhookEndpointController extends Controller
      */
     private function lineasDelErp(): array
     {
-        return Instance::where('company_id', auth()->user()->company_id)
+        $company = auth()->user()->company;
+        $elegida = $company->instanciaDelErp();
+
+        return Instance::where('company_id', $company->id)
             ->where('active', true)
             ->orderByDesc('api_last_seen_at')
             ->get(['id', 'name', 'phone_number_id', 'display_phone_number', 'api_last_seen_at', 'api_last_seen_via'])
@@ -51,9 +55,50 @@ class WebhookEndpointController extends Controller
                 'phone_number_id' => $instancia->phone_number_id,
                 'ultima_vez' => $instancia->api_last_seen_at?->toIso8601String(),
                 'credencial' => $instancia->api_last_seen_via,
+                'es_la_del_erp' => $elegida !== null && $instancia->id === $elegida->id,
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Elegir por qué línea envía el ERP sus facturas y recibos.
+     *
+     * Antes no se elegía: Integra 2.0 se quedaba con la que devolviera la base
+     * de datos. Con una sola línea da igual; con dos, el ERP estaba usando la
+     * que no era y nadie tenía dónde verlo ni dónde cambiarlo.
+     */
+    public function elegirLineaDelErp(Request $request)
+    {
+        $company = auth()->user()->company;
+
+        $validado = $request->validate([
+            'instance_id' => 'nullable|integer',
+        ]);
+
+        $instanceId = $validado['instance_id'] ?? null;
+
+        // Una línea de otra empresa no se puede elegir, y una inactiva no
+        // enviaría nada: las dos se rechazan aquí y no en el ERP, donde el
+        // fallo llegaría días después y sin explicación.
+        if ($instanceId !== null) {
+            $existe = Instance::where('id', $instanceId)
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->exists();
+
+            if (! $existe) {
+                return back()->withErrors([
+                    'instance_id' => 'Esa línea no es de tu empresa o no está activa.',
+                ]);
+            }
+        }
+
+        $company->elegirInstanciaDelErp($instanceId);
+
+        return back()->with('success', $instanceId
+            ? 'Listo: el ERP enviará por esa línea a partir del próximo envío.'
+            : 'Se quitó la elección: el ERP volverá a usar la primera línea activa.');
     }
 
     public function list()

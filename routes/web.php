@@ -648,6 +648,8 @@ Route::middleware('auth')->group(function () {
     // Integraciones — Webhooks salientes (parametrizables por empresa)
     Route::get('/integrations', [WebhookEndpointController::class, 'index'])
         ->middleware('permission:integrations.view')->name('integrations.index');
+    Route::post('/integrations/linea-erp', [WebhookEndpointController::class, 'elegirLineaDelErp'])
+        ->middleware('permission:integrations.create')->name('integrations.linea-erp');
     Route::prefix('api/webhooks')->group(function () {
         Route::get('/', [WebhookEndpointController::class, 'list'])
             ->middleware('permission:integrations.view');

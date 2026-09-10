@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -833,35 +833,47 @@ function ProviderSection({ can, onBack }) {
  * un cliente (9-sep-2026).
  */
 function LineasDelErp() {
-    const { lineasDelErp = [] } = usePage().props;
+    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
+    const [guardando, setGuardando] = useState(null);
 
     if (lineasDelErp.length === 0) return null;
 
     const activas = lineasDelErp.filter(l => l.ultima_vez);
 
+    const elegir = (id) => {
+        setGuardando(id);
+        router.post('/integrations/linea-erp', { instance_id: id }, {
+            preserveScroll: true,
+            onFinish: () => setGuardando(null),
+        });
+    };
+
     return (
         <Panel
             title="Por dónde envía Integra"
             Icon={Plug}
-            does="Las líneas por las que tu software administrativo manda facturas y recibos."
+            does="La línea por la que tu software administrativo manda facturas y recibos."
         >
-            {activas.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                    Integra todavía no ha enviado nada por ninguna de tus líneas. En cuanto mande
-                    la primera factura o el primer recibo, aparecerá aquí con la fecha.
+            {lineasDelErp.length > 1 && !lineaElegida && (
+                <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    Tienes más de una línea y ninguna está elegida, así que Integra usa la primera
+                    que encuentra. Elige cuál debe usar.
                 </p>
-            ) : (
-                <ul className="divide-y divide-border">
-                    {lineasDelErp.map(linea => (
-                        <li key={linea.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                            <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-foreground">
-                                    {linea.nombre}
-                                    {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
-                                </p>
-                                <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
-                            </div>
+            )}
 
+            <ul className="divide-y divide-border">
+                {lineasDelErp.map(linea => (
+                    <li key={linea.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
+                        <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-foreground">
+                                {linea.nombre}
+                                {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
+                            </p>
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
                             {linea.ultima_vez ? (
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">
                                     <CheckCircle2 className="size-3" />
@@ -872,10 +884,32 @@ function LineasDelErp() {
                                     Sin envíos
                                 </span>
                             )}
-                        </li>
-                    ))}
-                </ul>
-            )}
+
+                            {linea.es_la_del_erp ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-black text-accent-foreground">
+                                    <CheckCircle2 className="size-3" />
+                                    {lineaElegida ? 'Envía por aquí' : 'Por defecto'}
+                                </span>
+                            ) : (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={guardando !== null}
+                                    onClick={() => elegir(linea.id)}
+                                    className="h-7 px-2.5 text-[11px]"
+                                >
+                                    {guardando === linea.id ? 'Guardando…' : 'Usar esta'}
+                                </Button>
+                            )}
+                        </div>
+                    </li>
+                ))}
+            </ul>
+
+            <p className="mt-3 text-[11px] text-muted-foreground">
+                Integra pregunta cuál usar antes de cada tanda de envíos, así que el cambio vale
+                desde la siguiente factura. No hay que tocar nada del otro lado.
+            </p>
 
             {/* Con qué credencial entra dice si ese cliente ya se puede migrar
                 al token de verdad: el phone_number_id no es un secreto, se

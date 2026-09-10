@@ -778,6 +778,45 @@ class MessageApiController extends Controller
         return null;
     }
 
+    /**
+     * Qué tiene que saber el ERP antes de enviar.
+     *
+     * Es la mitad «pull» del reparto acordado el 9-sep-2026: el alta de una
+     * línea la **empuja** el CRM al ERP —es un hecho que ocurre una vez—, pero
+     * la configuración el ERP la **pregunta**, porque cambia. Copiar la
+     * configuración a los dos lados es lo que hace que se desincronicen en
+     * silencio y que nadie sepa cuál manda.
+     *
+     * Se contesta a cualquier token válido de la empresa: la pregunta es «¿por
+     * cuál de mis líneas envío?», y para hacerla el ERP ya tuvo que elegir una
+     * para autenticarse. La respuesta puede ser otra distinta, y ése es el
+     * punto.
+     */
+    public function config(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if ($instance instanceof JsonResponse) {
+            return $instance;
+        }
+        if (! $instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $company = $instance->company;
+        $linea = $company?->instanciaDelErp();
+
+        return response()->json([
+            'linea_envios' => $linea ? [
+                'phone_number_id' => $linea->phone_number_id,
+                'nombre' => $linea->name,
+                'numero' => $linea->display_phone_number,
+                // Para que el ERP pueda decir en su log si obedeció una
+                // elección o se quedó con la de por defecto.
+                'elegida' => $company->tieneLineaDelErpElegida(),
+            ] : null,
+        ]);
+    }
+
     public function registerMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
