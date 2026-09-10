@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback, memo } from 'react';
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import {
+    Image as ImageIcon,
     Search,
     MessageSquare,
     Plus,
@@ -14,6 +15,11 @@ import {
     ChevronRight,
     AlertCircle,
     Trash2,
+    UserCircle,
+    FileText,
+    Mic,
+    MapPin,
+    Video,
     GripVertical,
     Calendar,
     ArrowRight,
@@ -34,12 +40,47 @@ import { colorPorIndice } from '@/lib/paleta';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAviso } from '@/components/ui/toast';
+import { SelectorMultiple, SelectorBuscador } from '@/components/ui/selector';
+import PanelConversacion from './PanelConversacion';
 
 const PER_PAGE = 30;
 
 // Icon map: backend string → React component
 const ICON_MAP = { Plus, MessageSquare, Calendar, CheckCircle2, Zap, LayoutDashboard, Users, User };
 const getIcon = (name) => ICON_MAP[name] ?? Zap;
+
+/**
+ * Qué se envió por último, cuando no fue texto.
+ *
+ * La tarjeta enseñaba `last_message`, que es sólo texto: en un recibo salía
+ * «Recibo_8309.pdf» como si fuera un mensaje escrito, sin decir que era un
+ * archivo. Aquí se ve el tipo, y el nombre cuando lo hay.
+ */
+const ADJUNTOS = {
+    document: { icono: FileText,  texto: 'Documento' },
+    image:    { icono: ImageIcon, texto: 'Imagen' },
+    sticker:  { icono: ImageIcon, texto: 'Sticker' },
+    audio:    { icono: Mic,       texto: 'Audio' },
+    voice:    { icono: Mic,       texto: 'Nota de voz' },
+    video:    { icono: Video,     texto: 'Video' },
+    location: { icono: MapPin,    texto: 'Ubicación' },
+};
+
+function Adjunto({ tipo, archivo }) {
+    const pinta = ADJUNTOS[tipo];
+    if (!pinta) return null;
+
+    const Icono = pinta.icono;
+
+    return (
+        <span className="mb-2 flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-muted px-2 py-1">
+            <Icono className="size-3 shrink-0 text-muted-foreground" />
+            <span className="truncate text-[11px] font-bold text-muted-foreground">
+                {archivo || pinta.texto}
+            </span>
+        </span>
+    );
+}
 
 /**
  * Tooltip del tablero, con el mismo aspecto que los del menú lateral.
@@ -104,13 +145,43 @@ const diasEnEtapa = (entroEnEtapa) => {
 
 const DIAS_PARA_AVISAR = 7;
 
-const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
+const KanbanCard = memo(({ conv, isOverlay, isDragging, onAbrir, ...props }) => {
     const dias = diasEnEtapa(conv.entro_en_etapa);
     const estancada = dias !== null && dias >= DIAS_PARA_AVISAR;
+
+    /**
+     * Un clic abre la conversación; un arrastre no.
+     *
+     * No se usa `onClick`: la misma pulsación es el asa de arrastre, y la
+     * librería decide si hubo movimiento suficiente *después*, cancelando el
+     * click a veces y otras no. Aquí se mide: si el puntero no se movió más de
+     * cinco píxeles, era un clic.
+     */
+    const pulsacion = useRef(null);
+
+    const alPulsar = e => {
+        // Sólo el botón principal, y no cuando se pulsa sobre un enlace.
+        if (e.button !== 0) return;
+        pulsacion.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const alSoltar = e => {
+        const inicio = pulsacion.current;
+        pulsacion.current = null;
+        if (!inicio) return;
+
+        const movido = Math.hypot(e.clientX - inicio.x, e.clientY - inicio.y);
+        if (movido <= 5) onAbrir?.(conv);
+    };
 
     return (
         <div
             {...props}
+            onPointerDown={e => { props.onPointerDown?.(e); alPulsar(e); }}
+            onPointerUp={alSoltar}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAbrir?.(conv); } }}
             className={clsx(
                 'group relative bg-card px-3.5 py-3 rounded-2xl border select-none',
                 isOverlay
@@ -146,6 +217,8 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
 
                 <GripVertical className="size-4 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors" />
             </div>
+
+            <Adjunto tipo={conv.ultimo_tipo} archivo={conv.ultimo_archivo} />
 
             <p className="text-[12px] text-muted-foreground line-clamp-2 leading-snug mb-2.5">
                 {conv.last_message || 'Sin mensajes todavía'}
@@ -188,7 +261,7 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, ...props }) => {
     );
 });
 
-const SortableKanbanCard = memo(({ conv, index }) => {
+const SortableKanbanCard = memo(({ conv, index, onAbrir }) => {
     return (
         <Draggable draggableId={String(conv.id)} index={index}>
             {(provided, snapshot) => (
@@ -199,10 +272,11 @@ const SortableKanbanCard = memo(({ conv, index }) => {
                     className="outline-none"
                     style={provided.draggableProps.style}
                 >
-                    <KanbanCard 
-                        conv={conv} 
+                    <KanbanCard
+                        conv={conv}
                         isOverlay={snapshot.isDragging}
-                        isDragging={snapshot.isDragging} 
+                        isDragging={snapshot.isDragging}
+                        onAbrir={onAbrir}
                     />
                 </div>
             )}
@@ -257,7 +331,7 @@ const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error 
 
 // ─── BoardColumn ─────────────────────────────────────────────────────────────
 
-const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja }) => {
+const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, error, onLoadMore, onRename, onDelete, onAddCard, onCambiarGrupo, onCambiarBandeja, onAbrirTarjeta }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle]         = useState(col.name);
     const [editandoGrupo, setEditandoGrupo] = useState(false);
@@ -395,7 +469,7 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
                         )}
                     >
                         {items.map((conv, index) => (
-                            <SortableKanbanCard key={conv.id} conv={conv} index={index} />
+                            <SortableKanbanCard key={conv.id} conv={conv} index={index} onAbrir={onAbrirTarjeta} />
                         ))}
                         {provided.placeholder}
 
@@ -568,6 +642,11 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     // que ya existían.
     const [grupoActivo, setGrupoActivo]     = useState(() => (initialColumns ?? [])[0]?.grupo ?? null);
     const [filtros, setFiltros]             = useState([]);   // ids de columnas de otros grupos
+    const [agentes, setAgentes]             = useState([]);   // ids de usuarios, y 'sin_asignar'
+    const [soloEstancadas, setSoloEstancadas] = useState(false);
+    const [contacto, setContacto]           = useState(null); // { id, nombre }
+    const [usuarios, setUsuarios]           = useState([]);
+    const [tarjetaAbierta, setTarjetaAbierta] = useState(null); // la conversación del panel
     const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
     const [creandoEtapa, setCreandoEtapa]   = useState(false);
     const [errorEtapa, setErrorEtapa]       = useState(null);
@@ -603,12 +682,31 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         [columns, grupoActivo]
     );
 
-    const otrosGrupos = useMemo(
+    // Las etapas de los **otros** tableros, que son las que se pueden usar como
+    // filtro: las del tablero que se está viendo ya son las columnas.
+    const opcionesDeEtapas = useMemo(
         () => grupos
             .filter(g => g !== grupoActivo)
-            .map(g => ({ grupo: g, columnas: columns.filter(c => (c.grupo ?? null) === g) })),
+            .flatMap(g => columns
+                .filter(c => (c.grupo ?? null) === g)
+                .map(c => ({ valor: c.id, texto: c.name, seccion: g ?? 'Sin agrupar' }))),
         [grupos, grupoActivo, columns]
     );
+
+    const opcionesDeAgentes = useMemo(() => [
+        { valor: 'sin_asignar', texto: 'Sin asignar', ayuda: 'Nadie las está atendiendo' },
+        ...usuarios.map(u => ({ valor: String(u.id), texto: u.name, ayuda: u.email })),
+    ], [usuarios]);
+
+    const cuantosFiltros = filtros.length + agentes.length + (contacto ? 1 : 0) + (soloEstancadas ? 1 : 0);
+    const hayFiltros = cuantosFiltros > 0;
+
+    const limpiarFiltros = () => {
+        setFiltros([]);
+        setAgentes([]);
+        setContacto(null);
+        setSoloEstancadas(false);
+    };
 
     // ── Desplazamiento horizontal ──────────────────────────────────────────
     //
@@ -628,11 +726,42 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     // Para las dependencias de los efectos: un array nuevo en cada render los
     // dispararía en bucle.
     const filtrosKey = filtros.join(',');
+    const agentesKey = agentes.join(',');
+
+    /**
+     * Todo lo que define «lo que se está viendo», en un solo sitio.
+     *
+     * Antes cada llamada armaba sus parámetros a mano y era fácil olvidarse de
+     * uno: la recarga tras un movimiento fallido pedía las tarjetas **sin los
+     * filtros**, así que reaparecían tarjetas que el filtro había escondido. Y
+     * los conteos nunca incluían el buscador, de ahí una cabecera que decía
+     * «3.184» sobre una columna con dos tarjetas.
+     */
+    const vistaKey = [grupoActivo ?? '', filtrosKey, agentesKey, soloEstancadas ? '1' : '', contacto?.id ?? ''].join('|');
 
     // loadCounts se llama también desde el canal de tiempo real, sin
     // argumentos, así que lee la vista actual de aquí en vez de recrearse.
-    const vistaRef = useRef({ grupo: grupoActivo, filtros });
-    useEffect(() => { vistaRef.current = { grupo: grupoActivo, filtros }; }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const vistaRef = useRef({ grupo: grupoActivo, filtros, agentes, soloEstancadas, contacto, search: '' });
+    useEffect(() => {
+        vistaRef.current = { grupo: grupoActivo, filtros, agentes, soloEstancadas, contacto, search: debouncedSearch };
+    }, [vistaKey, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    /** Los parámetros de la vista actual, para cualquier petición del tablero. */
+    const paramsDeVista = useCallback((extra = {}) => {
+        const v = vistaRef.current;
+        const params = new URLSearchParams();
+
+        if (v.grupo) params.set('grupo', v.grupo);
+        if (v.search) params.set('search', v.search);
+        v.filtros.forEach(id => params.append('filtros[]', id));
+        v.agentes.forEach(id => params.append('agentes[]', id));
+        if (v.soloEstancadas) params.set('estancadas', '1');
+        if (v.contacto) params.set('conversacion', v.contacto.id);
+
+        Object.entries(extra).forEach(([k, valor]) => params.set(k, valor));
+
+        return params;
+    }, []);
 
     useEffect(() => {
         const tablero = tableroRef.current;
@@ -667,7 +796,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
     // ── Data fetching ──────────────────────────────────────────────────────
 
-    const loadColumnCards = useCallback(async (colId, page, search, reset = false, filtrosActivos = []) => {
+    const loadColumnCards = useCallback(async (colId, page, reset = false) => {
         // Cancel any in-flight request for this column
         if (abortControllersRef.current[colId]) {
             abortControllersRef.current[colId].abort();
@@ -677,9 +806,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
         setColMeta(prev => ({ ...prev, [colId]: { ...prev[colId], loading: true } }));
         try {
-            const params = new URLSearchParams({ page, per_page: PER_PAGE });
-            if (search) params.set('search', search);
-            filtrosActivos.forEach(id => params.append('filtros[]', id));
+            const params = paramsDeVista({ page, per_page: PER_PAGE });
 
             const res = await fetch(`/api/kanban/columns/${colId}/cards?${params}`, {
                 headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken() },
@@ -711,28 +838,42 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             console.error(`Error cargando columna ${colId}:`, err);
             setColMeta(prev => ({ ...prev, [colId]: { ...prev[colId], loading: false, error: err.message } }));
         }
-    }, []);
+    }, [paramsDeVista]);
 
     // Fetch real card counts per column
     const loadCounts = useCallback(async () => {
-        const { grupo, filtros: activos } = vistaRef.current;
         try {
-            const params = new URLSearchParams();
-            if (grupo) params.set('grupo', grupo);
-            activos.forEach(id => params.append('filtros[]', id));
-
-            const data = await apiRequest('GET', `/api/kanban/counts?${params}`);
+            const data = await apiRequest('GET', `/api/kanban/counts?${paramsDeVista()}`);
             setColCounts(data);
         } catch (err) {
             console.error('Error cargando conteos:', err);
         }
+    }, [paramsDeVista]);
+
+    // Los agentes del filtro salen del mismo endpoint que usa el chat para
+    // asignar, así que la lista es siempre la misma en las dos pantallas.
+    useEffect(() => {
+        let vivo = true;
+        apiRequest('GET', '/api/chat/users')
+            .then(datos => { if (vivo) setUsuarios(Array.isArray(datos) ? datos : []); })
+            .catch(err => console.error('Error cargando agentes:', err));
+        return () => { vivo = false; };
+    }, []);
+
+    const buscarContactos = useCallback(async texto => {
+        const datos = await apiRequest('GET', `/api/kanban/contactos?q=${encodeURIComponent(texto)}`);
+        return datos.map(c => ({
+            valor: c.id,
+            texto: c.nombre,
+            ayuda: [c.telefono, c.agente].filter(Boolean).join(' · '),
+        }));
     }, []);
 
     // Carga inicial, y recarga al cambiar de grupo o de filtros.
     useEffect(() => {
         loadCounts();
-        columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
-    }, [grupoActivo, filtrosKey]); // eslint-disable-line react-hooks/exhaustive-deps
+        columnasVisibles.forEach(col => loadColumnCards(col.id, 1, true));
+    }, [vistaKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Tiempo real ────────────────────────────────────────────────────────
     //
@@ -829,10 +970,12 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         return () => clearTimeout(t);
     }, [searchQuery]);
 
-    // Re-fetch all columns when search changes
+    // Al buscar se recargan las tarjetas y también los conteos: la cifra de la
+    // cabecera cuenta lo mismo que se ve debajo.
     useEffect(() => {
         if (debouncedSearch !== undefined) {
-            columnasVisibles.forEach(col => loadColumnCards(col.id, 1, debouncedSearch, true, filtros));
+            loadCounts();
+            columnasVisibles.forEach(col => loadColumnCards(col.id, 1, true));
         }
     }, [debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -840,7 +983,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         const meta = colMeta[colId];
         if (!meta || meta.loading) return;
         if (!meta.error && !meta.hasMore) return;
-        loadColumnCards(colId, meta.page + 1, debouncedSearch, false, filtros);
+        loadColumnCards(colId, meta.page + 1, false);
     };
 
     // ── Column CRUD ────────────────────────────────────────────────────────
@@ -924,7 +1067,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 return c;
             }));
             loadCounts();
-            columnasVisibles.forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
+            columnasVisibles.forEach(c => loadColumnCards(c.id, 1, true));
         } catch (err) {
             console.error('Error al cambiar la bandeja:', err);
             aviso.error('No se pudo cambiar la bandeja', { detalle: err.message });
@@ -970,7 +1113,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
             loadCounts();
             quedan
                 .filter(c => (c.grupo ?? null) === (grupoActivo ?? null))
-                .forEach(c => loadColumnCards(c.id, 1, debouncedSearch, true, filtros));
+                .forEach(c => loadColumnCards(c.id, 1, true));
         } catch (err) {
             console.error('Error al eliminar columna:', err);
             setBorrando(false);
@@ -1038,8 +1181,8 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                         `No se pudo mover a ${columns.find(c => String(c.id) === String(targetColId))?.name ?? 'la otra etapa'}`,
                         { detalle: err.message },
                     );
-                    loadColumnCards(originColId, 1, debouncedSearch, true);
-                    loadColumnCards(targetColId, 1, debouncedSearch, true);
+                    loadColumnCards(originColId, 1, true);
+                    loadColumnCards(targetColId, 1, true);
                     loadCounts();
                 });
         } else {
@@ -1082,6 +1225,20 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     return (
         <>
             <Head title="Tablero" />
+
+            {tarjetaAbierta && (
+                <PanelConversacion
+                    conversacionId={tarjetaAbierta.id}
+                    resumen={tarjetaAbierta}
+                    onCerrar={() => setTarjetaAbierta(null)}
+                    // Al enviar algo cambia el último mensaje y el «no leído»,
+                    // así que la tarjeta de detrás tiene que enterarse.
+                    onCambio={() => {
+                        loadCounts();
+                        columnasVisibles.forEach(c => loadColumnCards(c.id, 1, true));
+                    }}
+                />
+            )}
 
             <ConfirmDialog
                 open={etapaABorrar !== null}
@@ -1135,7 +1292,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                     : <>
                                         {columnasVisibles.length} {columnasVisibles.length === 1 ? 'etapa' : 'etapas'}
                                         {grupoActivo && <><ArrowRight className="size-2.5" /> {grupoActivo}</>}
-                                        {filtros.length > 0 && <span className="text-accent-foreground">· {filtros.length} {filtros.length === 1 ? 'filtro' : 'filtros'}</span>}
+                                        {hayFiltros && <span className="text-accent-foreground">· {cuantosFiltros} {cuantosFiltros === 1 ? 'filtro' : 'filtros'}</span>}
                                       </>}
                             </p>
                         </div>
@@ -1177,9 +1334,19 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                     </div>
                 </div>
 
-                {(grupos.length > 1 || otrosGrupos.length > 0) && (
-                    <div className="px-6 lg:px-10 pt-6 flex flex-wrap items-center gap-x-6 gap-y-3 relative z-10">
-                        <div className="flex items-center gap-2">
+                {/*
+                    La barra de filtros.
+
+                    «Ver por» elige el tablero que se pinta, y sigue siendo uno:
+                    una conversación está a la vez en una etapa de Estado y en
+                    una de Zona, así que pintar dos tableros juntos sacaría cada
+                    tarjeta dos veces. Lo que sí es múltiple es **filtrar** por
+                    las etapas de los otros tableros, que es lo que estrecha de
+                    verdad: los de MONTERIA dentro de FACTURACION.
+                */}
+                <div className="px-6 lg:px-10 pt-6 flex flex-wrap items-end gap-x-3 gap-y-3 relative z-20">
+                    {grupos.length > 1 && (
+                        <div className="flex flex-col gap-1">
                             <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Ver por</span>
                             <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-2xl">
                                 {grupos.map(g => (
@@ -1198,44 +1365,64 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 ))}
                             </div>
                         </div>
+                    )}
 
-                        {otrosGrupos.map(({ grupo, columnas }) => (
-                            <div key={grupo ?? '__sin__'} className="flex items-center gap-2">
-                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">
-                                    {grupo ?? 'Sin agrupar'}
-                                </span>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                    {columnas.map(c => {
-                                        const activo = filtros.includes(c.id);
-                                        return (
-                                            <button
-                                                key={c.id}
-                                                onClick={() => setFiltros(prev => activo ? prev.filter(id => id !== c.id) : [...prev, c.id])}
-                                                className={clsx(
-                                                    'px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all',
-                                                    activo
-                                                        ? 'bg-primary/15 border-primary/40 text-accent-foreground'
-                                                        : 'bg-transparent border-border text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                                                )}
-                                            >
-                                                {c.name}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        ))}
+                    {opcionesDeEtapas.length > 0 && (
+                        <SelectorMultiple
+                            etiqueta="Etapas de otros tableros"
+                            icono={Layers}
+                            opciones={opcionesDeEtapas}
+                            seleccion={filtros}
+                            onCambio={setFiltros}
+                            buscador={opcionesDeEtapas.length > 8}
+                            textoVacio="Sin filtrar"
+                            nota="Dentro de un mismo tablero se suman (una u otra). Entre tableros distintos se acumulan."
+                        />
+                    )}
 
-                        {filtros.length > 0 && (
-                            <button
-                                onClick={() => setFiltros([])}
-                                className="text-[10px] font-black text-muted-foreground hover:text-foreground underline underline-offset-4"
-                            >
-                                Quitar filtros
-                            </button>
+                    <SelectorMultiple
+                        etiqueta="Agente"
+                        icono={UserCircle}
+                        opciones={opcionesDeAgentes}
+                        seleccion={agentes}
+                        onCambio={setAgentes}
+                        buscador={opcionesDeAgentes.length > 8}
+                        textoVacio="Todos"
+                    />
+
+                    <SelectorBuscador
+                        etiqueta="Contacto"
+                        icono={Search}
+                        valor={contacto?.id ?? null}
+                        etiquetaDelValor={contacto?.nombre}
+                        onCambio={(valor, texto) => setContacto(valor ? { id: valor, nombre: texto } : null)}
+                        buscar={buscarContactos}
+                        textoVacio="Cualquiera"
+                    />
+
+                    <button
+                        type="button"
+                        onClick={() => setSoloEstancadas(v => !v)}
+                        className={clsx(
+                            'flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-[11.5px] font-bold transition-all',
+                            soloEstancadas
+                                ? 'border-warning/40 bg-warning/15 text-warning'
+                                : 'border-border bg-card text-muted-foreground hover:border-warning/30 hover:text-foreground'
                         )}
-                    </div>
-                )}
+                    >
+                        <Clock className="size-3.5" />
+                        Sin mover +7d
+                    </button>
+
+                    {hayFiltros && (
+                        <button
+                            onClick={limpiarFiltros}
+                            className="self-center text-[10px] font-black text-muted-foreground hover:text-foreground underline underline-offset-4"
+                        >
+                            Limpiar {cuantosFiltros} {cuantosFiltros === 1 ? 'filtro' : 'filtros'}
+                        </button>
+                    )}
+                </div>
 
                 {/* Board */}
                 {puedeIzquierda && (
@@ -1275,6 +1462,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 onCambiarBandeja={cambiarBandeja}
                                 onDelete={deleteColumn}
                                 onAddCard={setNewCardColumn}
+                                onAbrirTarjeta={setTarjetaAbierta}
                             />
                         ))}
 
