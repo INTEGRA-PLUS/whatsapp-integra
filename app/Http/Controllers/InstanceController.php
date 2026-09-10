@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\Instance;
+use App\Services\InstagramLoginService;
 use App\Services\RegistrarLineaEnIntegra;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
@@ -47,6 +48,10 @@ class InstanceController extends Controller
         return Inertia::render('Instances/Index', [
             'instances' => $instances->makeHidden('coexistenceSync'),
             'coexistenceSyncs' => $sincronizaciones,
+            // Sin App ID ni clave de Instagram el botón sólo llevaría a un error
+            // de Meta, así que no se pinta. Mismo criterio que el del registro
+            // insertado de WhatsApp.
+            'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
         ]);
     }
 

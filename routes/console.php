@@ -37,3 +37,9 @@ Schedule::command('integraciones:credenciales')->dailyAt('07:05')->withoutOverla
 // desconectar el número y rehacer el registro con el cliente delante. Cada hora
 // basta para avisar con margen dentro de un plazo de 24.
 Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();
+
+// Los tokens de Instagram duran 60 días y sólo se pueden renovar mientras
+// siguen vivos. Diario y con margen de diez días: si se intentara el día del
+// vencimiento, una caída de Meta o del scheduler mataría la cuenta y habría que
+// rehacer el inicio de sesión con el cliente delante.
+Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapping();
