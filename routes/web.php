@@ -659,6 +659,12 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:integrations.view');
     Route::put('/integrations/ajustes-envio', [WebhookEndpointController::class, 'guardarAjustesDeEnvio'])
         ->middleware('permission:integrations.create');
+    // Qué dato del ERP va en cada variable de la plantilla. Misma historia:
+    // se edita aquí, al lado de la plantilla, y se guarda en Integra.
+    Route::get('/integrations/plantillas/{plantilla}/campos', [WebhookEndpointController::class, 'camposDePlantilla'])
+        ->whereNumber('plantilla')->middleware('permission:integrations.view');
+    Route::put('/integrations/plantillas/{plantilla}/campos', [WebhookEndpointController::class, 'guardarCamposDePlantilla'])
+        ->whereNumber('plantilla')->middleware('permission:integrations.create');
     Route::prefix('api/webhooks')->group(function () {
         Route::get('/', [WebhookEndpointController::class, 'list'])
             ->middleware('permission:integrations.view');

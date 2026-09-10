@@ -839,6 +839,8 @@ function ProviderSection({ can, onBack }) {
 function AjustesDeEnvio({ showToast, canManage }) {
     const [estado, setEstado] = useState({ cargando: true });
     const [guardando, setGuardando] = useState(null);
+    // Qué plantilla se está parametrizando, si alguna.
+    const [parametrizando, setParametrizando] = useState(null);
 
     const cargar = async () => {
         try {
@@ -943,19 +945,41 @@ function AjustesDeEnvio({ showToast, canManage }) {
                         return (
                             <div key={clave} className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-xs text-foreground">{etiqueta}</span>
-                                <select
-                                    value={actual?.id ?? ''}
-                                    disabled={!canManage || guardando === clave}
-                                    onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
-                                    className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                >
-                                    <option value="">Sin elegir</option>
-                                    {(estado.disponibles ?? []).map(p => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.title} ({p.language}){p.con_documento ? '' : ' · sin adjunto'}
-                                        </option>
-                                    ))}
-                                </select>
+
+                                <div className="flex items-center gap-1.5">
+                                    <select
+                                        value={actual?.id ?? ''}
+                                        disabled={!canManage || guardando === clave}
+                                        onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
+                                        className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                    >
+                                        <option value="">Sin elegir</option>
+                                        {(estado.disponibles ?? []).map(p => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.title} ({p.language}){p.con_documento ? '' : ' · sin adjunto'}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    {/* Elegir la plantilla y decir qué lleva
+                                        dentro son la misma decisión: el botón
+                                        va al lado del selector, no en otra
+                                        pantalla y menos en otro sistema. */}
+                                    <button
+                                        type="button"
+                                        disabled={!actual?.id}
+                                        onClick={() => setParametrizando({ id: actual.id, uso: etiqueta.toLowerCase() })}
+                                        title={actual?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
+                                        className={cn(
+                                            'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
+                                            actual?.id
+                                                ? 'cursor-pointer text-foreground hover:bg-muted'
+                                                : 'cursor-not-allowed text-muted-foreground/50',
+                                        )}
+                                    >
+                                        <Pencil className="size-3" /> Variables
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}
@@ -966,7 +990,231 @@ function AjustesDeEnvio({ showToast, canManage }) {
                     que puedan quedar distintas.
                 </p>
             </div>
+
+            {parametrizando && (
+                <ParametrizarPlantilla
+                    plantillaId={parametrizando.id}
+                    uso={parametrizando.uso}
+                    canManage={canManage}
+                    showToast={showToast}
+                    onClose={() => setParametrizando(null)}
+                />
+            )}
         </Panel>
+    );
+}
+
+/**
+ * Qué dato del ERP va en cada `{{n}}` de la plantilla.
+ *
+ * Elegir la plantilla y decir qué lleva dentro son la misma decisión, y estaban
+ * en dos sistemas: la plantilla se elige aquí y sus variables se editaban en
+ * Integra. Ahora se resuelven las dos en el mismo sitio; la parametrización se
+ * sigue guardando allí, que es de donde el cron la lee.
+ *
+ * El texto que manda es el de Meta, no el que Integra tenga guardado: si la
+ * plantilla se editó en Meta y ahora pide una variable más, el envío se cae
+ * entero con «number of parameters does not match» y no hay forma de verlo
+ * hasta que las facturas empiezan a rebotar.
+ */
+function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage }) {
+    const [datos, setDatos] = useState(null);
+    const [error, setError] = useState(null);
+    const [variables, setVariables] = useState([]);
+    const [guardando, setGuardando] = useState(false);
+
+    useEffect(() => {
+        let vivo = true;
+
+        axios.get(`/integrations/plantillas/${plantillaId}/campos`)
+            .then(({ data }) => {
+                if (!vivo) return;
+                setDatos(data);
+                // Los huecos de Meta mandan: es lo que se envía de verdad.
+                const cuantos = data.meta?.encontrada ? data.meta.huecos : data.huecos;
+                setVariables(Array.from({ length: cuantos }, (_, i) => data.variables?.[i] ?? ''));
+            })
+            .catch(e => vivo && setError(e.response?.data?.message ?? 'No se pudo leer la plantilla en Integra.'));
+
+        return () => { vivo = false; };
+    }, [plantillaId]);
+
+    const guardar = async () => {
+        setGuardando(true);
+        try {
+            const { data } = await axios.put(`/integrations/plantillas/${plantillaId}/campos`, { variables });
+            setDatos(data);
+            showToast('Parametrización guardada en Integra.');
+            onClose();
+        } catch (e) {
+            showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const texto = datos?.meta?.encontrada ? datos.meta.texto : (datos?.contenido ?? '');
+    const catalogo = datos?.catalogo ?? [];
+    const ejemplos = datos?.ejemplos ?? {};
+    const grupos = [...new Set(catalogo.map(c => c.grupo))];
+
+    // Así queda el mensaje. Es lo que convierte «{{2}} = [factura.porpagar]» en
+    // una frase que se puede leer y aprobar de un vistazo.
+    const muestra = texto.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => {
+        const valor = variables[Number(n) - 1] ?? '';
+        if (!valor) return '⟨sin llenar⟩';
+        return ejemplos[valor] ?? valor;
+    });
+
+    const faltan = variables.some(v => !String(v).trim());
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+            <div
+                className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border bg-card p-6 shadow-2xl"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="mb-4 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-semibold text-foreground">Qué va en cada variable</h2>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                            {datos ? <>Plantilla <span className="font-medium text-foreground">{datos.title}</span> ({datos.language}) · se usa para {uso}.</> : 'Leyendo la plantilla…'}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <X className="size-4" />
+                    </button>
+                </div>
+
+                {error && (
+                    <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <AlertTriangle className="mt-px size-3.5 shrink-0" /> {error}
+                    </p>
+                )}
+
+                {!datos && !error && (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" /> Leyendo la plantilla…
+                    </p>
+                )}
+
+                {datos && (
+                    <div className="space-y-4">
+                        {/* Una plantilla que no está en la línea por la que
+                            envía el ERP no se puede enviar: Meta contesta
+                            «(#100) Invalid parameter» y la factura no sale. */}
+                        {datos.meta?.encontrada === false && (
+                            <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                Esta plantilla no existe en {datos.meta.linea}, que es la línea por la que envía
+                                Integra. Cópiala a esa línea desde Plantillas, o el envío fallará.
+                            </p>
+                        )}
+
+                        {datos.meta?.encontrada && datos.meta.huecos !== datos.huecos && (
+                            <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                En Meta esta plantilla pide {datos.meta.huecos} variable{datos.meta.huecos === 1 ? '' : 's'} y
+                                en Integra hay {datos.huecos} guardada{datos.huecos === 1 ? '' : 's'}. Manda Meta: llena las de abajo.
+                            </p>
+                        )}
+
+                        {datos.meta?.encontrada && datos.meta.estado !== 'APPROVED' && (
+                            <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                Meta todavía no la aprueba (está en {datos.meta.estado}). Hasta que lo haga no se puede enviar.
+                            </p>
+                        )}
+
+                        <div className="rounded-lg border border-border bg-muted/40 p-3">
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Texto de la plantilla
+                            </p>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{texto || '—'}</p>
+                        </div>
+
+                        {variables.length === 0 ? (
+                            <p className="rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
+                                Esta plantilla no tiene variables: se envía tal cual, no hay nada que parametrizar.
+                            </p>
+                        ) : (
+                            <div className="space-y-2">
+                                {variables.map((valor, i) => {
+                                    const esDelCatalogo = catalogo.some(c => c.clave === valor);
+                                    const fijo = valor !== '' && !esDelCatalogo;
+
+                                    return (
+                                        <div key={i} className="flex flex-wrap items-center gap-2">
+                                            <span className="w-14 shrink-0 rounded bg-primary/10 px-2 py-1 text-center font-mono text-[11px] text-primary">
+                                                {`{{${i + 1}}}`}
+                                            </span>
+
+                                            <select
+                                                value={fijo ? '__fijo__' : valor}
+                                                disabled={!canManage}
+                                                onChange={e => {
+                                                    const v = e.target.value === '__fijo__' ? ' ' : e.target.value;
+                                                    setVariables(prev => prev.map((x, j) => (j === i ? v : x)));
+                                                }}
+                                                className="h-8 min-w-[220px] flex-1 rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                            >
+                                                <option value="">Sin llenar</option>
+                                                {grupos.map(g => (
+                                                    <optgroup key={g} label={g}>
+                                                        {catalogo.filter(c => c.grupo === g).map(c => (
+                                                            <option key={c.clave} value={c.clave}>{c.etiqueta}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                                <option value="__fijo__">Texto fijo…</option>
+                                            </select>
+
+                                            {fijo && (
+                                                <input
+                                                    type="text"
+                                                    value={valor.trim() === '' ? '' : valor}
+                                                    autoFocus
+                                                    disabled={!canManage}
+                                                    placeholder="Lo que quieras que diga siempre"
+                                                    onChange={e => setVariables(prev => prev.map((x, j) => (j === i ? (e.target.value || ' ') : x)))}
+                                                    className="h-8 min-w-[180px] flex-1 rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {variables.length > 0 && (
+                            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                                    Así le llega al cliente
+                                </p>
+                                <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{muestra}</p>
+                                <p className="mt-2 text-[10px] text-muted-foreground">
+                                    Con datos de ejemplo. En el envío real van los de cada cliente y su factura.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+                            <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+                            <Button onClick={guardar} disabled={!canManage || guardando || faltan || variables.length === 0}>
+                                {guardando ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Save className="mr-1.5 size-4" />}
+                                Guardar en Integra
+                            </Button>
+                        </div>
+
+                        {faltan && variables.length > 0 && (
+                            <p className="text-right text-[11px] text-muted-foreground">
+                                Falta decir qué va en {variables.filter(v => !String(v).trim()).length} variable(s).
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }
 

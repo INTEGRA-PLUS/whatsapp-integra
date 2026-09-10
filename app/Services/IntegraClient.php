@@ -431,6 +431,44 @@ class IntegraClient
     }
 
     /**
+     * Qué dato del ERP va en cada `{{n}}` de una plantilla.
+     *
+     * El `{{1}}` de Meta no significa nada por sí solo: lo que le da sentido es
+     * la lista de campos que el cron resuelve contacto a contacto. Esa lista se
+     * editaba sólo en Integra, mientras la plantilla se elige aquí; ahora se
+     * edita al lado de la plantilla, pero se sigue guardando allí.
+     *
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function camposDePlantilla(int $plantillaId): array
+    {
+        try {
+            $res = $this->call('get', "/api/v1/whatsapp/plantillas/{$plantillaId}/campos");
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
+     * @param  list<string>  $variables
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function guardarCamposDePlantilla(int $plantillaId, array $variables): array
+    {
+        try {
+            $res = $this->call('put', "/api/v1/whatsapp/plantillas/{$plantillaId}/campos", [
+                'variables' => array_values($variables),
+            ]);
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
      * Los dos fallos que el admin puede arreglar, separados del resto: 403 es
      * un token anterior a esta función —hay que reconectar—, y la ruta que no
      * existe es un Integra sin actualizar. Ninguno se arregla reintentando.

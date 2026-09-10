@@ -73,6 +73,112 @@ class WebhookEndpointController extends Controller
         return response()->json(['ok' => true] + $res['datos']);
     }
 
+    /**
+     * Qué dato va en cada `{{n}}` de la plantilla elegida.
+     *
+     * Elegir la plantilla y decir qué lleva dentro son la misma decisión, y
+     * hasta ahora estaban en dos sistemas: la plantilla se elige aquí y sus
+     * variables se editaban en Integra. Se resuelven las dos en el mismo sitio,
+     * pero la parametrización se sigue guardando allí, que es de donde el cron
+     * la lee.
+     *
+     * Al detalle del ERP se le añade el texto real de la plantilla en Meta: es
+     * el que decide cuántas variables se envían, y si no coincide con el que
+     * Integra tiene guardado, Meta rechaza el envío entero.
+     */
+    public function camposDePlantilla(int $plantilla)
+    {
+        $cliente = $this->clienteDeIntegra();
+
+        if (! $cliente) {
+            return response()->json(['message' => 'Integra no está conectado.'], 422);
+        }
+
+        $res = $cliente->camposDePlantilla($plantilla);
+
+        if (! $res['ok']) {
+            return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
+        }
+
+        return response()->json($res['datos'] + ['meta' => $this->plantillaEnMeta($res['datos'])]);
+    }
+
+    public function guardarCamposDePlantilla(Request $request, int $plantilla)
+    {
+        $datos = $request->validate([
+            'variables' => 'present|array',
+            'variables.*' => 'nullable|string|max:1024',
+        ]);
+
+        $cliente = $this->clienteDeIntegra();
+
+        if (! $cliente) {
+            return response()->json(['message' => 'Integra no está conectado.'], 422);
+        }
+
+        $res = $cliente->guardarCamposDePlantilla($plantilla, $datos['variables']);
+
+        if (! $res['ok']) {
+            return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
+        }
+
+        return response()->json($res['datos'] + ['meta' => $this->plantillaEnMeta($res['datos'])]);
+    }
+
+    /**
+     * El cuerpo de esa misma plantilla tal y como está en Meta, buscada por
+     * nombre e idioma en la línea por la que envía el ERP.
+     *
+     * Es la única cuenta de variables que manda: si la plantilla se editó en
+     * Meta y ahora pide una más, Integra no se entera y el envío se cae entero
+     * con «number of parameters does not match». Si no se puede leer el
+     * catálogo se devuelve `null` y la pantalla se queda con lo que dice el
+     * ERP: no saber no es lo mismo que saber que no está.
+     *
+     * @param  array<string, mixed>  $delErp
+     * @return array<string, mixed>|null
+     */
+    private function plantillaEnMeta(array $delErp): ?array
+    {
+        $linea = auth()->user()->company->instanciaDelErp();
+
+        if (! $linea || empty($linea->waba_id) || empty($linea->access_token)) {
+            return null;
+        }
+
+        $res = app(\App\Services\MetaWhatsAppService::class)
+            ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
+
+        if (! ($res['success'] ?? false)) {
+            return null;
+        }
+
+        $nombre = $delErp['title'] ?? '';
+        $idioma = $delErp['language'] ?? '';
+
+        $plantilla = collect($res['data']['data'] ?? [])
+            ->first(fn ($p) => ($p['name'] ?? null) === $nombre
+                && (($p['language'] ?? null) === $idioma || ! $idioma));
+
+        if (! $plantilla) {
+            return ['encontrada' => false, 'linea' => $linea->display_phone_number ?: $linea->name];
+        }
+
+        $cuerpo = collect($plantilla['components'] ?? [])
+            ->first(fn ($c) => strtoupper($c['type'] ?? '') === 'BODY');
+
+        $texto = $cuerpo['text'] ?? '';
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $texto, $coincidencias);
+
+        return [
+            'encontrada' => true,
+            'linea' => $linea->display_phone_number ?: $linea->name,
+            'estado' => $plantilla['status'] ?? null,
+            'texto' => $texto,
+            'huecos' => empty($coincidencias[1]) ? 0 : max(array_map('intval', $coincidencias[1])),
+        ];
+    }
+
     /** Lo que hay que hacer, no el código de error. */
     private function avisoDeAjustes(array $res): string
     {
