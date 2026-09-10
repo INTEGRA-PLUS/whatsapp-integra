@@ -327,6 +327,10 @@ Route::middleware('auth')->group(function () {
     Route::prefix('api/templates')->group(function () {
         Route::get('/', [TemplateController::class, 'list'])
             ->middleware('permission:templates.view');
+        // Copiar plantillas de una línea a otra: los catálogos son por WABA,
+        // así que dos líneas de la misma empresa no comparten ninguna.
+        Route::post('/duplicar', [TemplateController::class, 'duplicar'])
+            ->middleware('permission:templates.create');
         Route::get('/analytics', [TemplateController::class, 'analytics'])
             ->middleware('permission:templates.view');
         Route::get('/analytics/conversations', [TemplateController::class, 'conversationAnalytics'])
