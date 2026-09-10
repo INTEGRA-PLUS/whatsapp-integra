@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\IniciarSincronizacionCoexistencia;
 use App\Models\Instance;
+use App\Services\RegistrarLineaEnIntegra;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -182,6 +183,10 @@ class EmbeddedSignupController extends Controller
             'status'               => 'active',
             'active'               => true,
         ]);
+
+        // Igual que en el alta manual: si la empresa tiene Integra conectado,
+        // la línea se registra allí sola.
+        app(RegistrarLineaEnIntegra::class)($instance);
 
         Log::info('Embedded Signup: instancia conectada', [
             'company_id'  => $user->company_id,

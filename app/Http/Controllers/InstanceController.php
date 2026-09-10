@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\Instance;
+use App\Services\RegistrarLineaEnIntegra;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -119,8 +120,19 @@ class InstanceController extends Controller
             'active' => true,
         ]);
 
-        return redirect()->route('instances.index')
+        // Y se da de alta en Integra, si la empresa lo tiene conectado. Sin
+        // esto había que registrar la línea a mano en los dos sistemas, que es
+        // de donde salían las líneas fantasma.
+        $registro = app(RegistrarLineaEnIntegra::class)($instance);
+
+        $respuesta = redirect()->route('instances.index')
             ->with('success', 'Instancia creada exitosamente');
+
+        // El aviso sólo aparece cuando hay algo que el admin pueda arreglar:
+        // que no tenga Integra conectado no es un problema que reportar.
+        return isset($registro['aviso'])
+            ? $respuesta->with('warning', $registro['aviso'])
+            : $respuesta;
     }
 
     public function update(Request $request, $id)

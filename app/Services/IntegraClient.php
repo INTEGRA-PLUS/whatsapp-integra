@@ -96,8 +96,20 @@ class IntegraClient
      */
     public const ABILITY_EMIT = 'facturas.emitir';
 
+    /**
+     * Dar de alta en Integra la línea de WhatsApp que se conecta aquí.
+     *
+     * Va como opcional por el mismo motivo que `facturas.emitir`: cada empresa
+     * conecta con SU entorno y no todos corren la misma versión. Pedirlo dentro
+     * de ABILITIES rompería el asistente de conexión entero en cualquier
+     * entorno que valide las abilities contra una lista blanca que aún no lo
+     * incluye.
+     */
+    public const ABILITY_INSTANCIAS = 'whatsapp.instancias.crear';
+
     public const ABILITIES_OPTIONAL = [
         self::ABILITY_EMIT,
+        self::ABILITY_INSTANCIAS,
     ];
 
     protected string $baseUrl;
@@ -331,6 +343,46 @@ class IntegraClient
      * @return array{ok: bool, cuentas: int, metodos_pago: int}
      * @throws \RuntimeException
      */
+    /**
+     * Dar de alta en Integra la línea de WhatsApp que se acaba de conectar aquí.
+     *
+     * Hasta el 10-sep-2026 una línea había que registrarla **a mano en los dos
+     * sistemas**, y eso es lo que produjo el enredo de Transinternet: dos líneas
+     * activas en el CRM, una que enviaba y otra que no, y nadie sabía cuál era
+     * cuál porque en Integra sólo existía una.
+     *
+     * Es el lado «push» del reparto: el alta ocurre una vez, así que se empuja.
+     * La configuración —qué línea usar, qué plantilla— se sigue preguntando,
+     * porque eso cambia y copiarlo desincroniza.
+     *
+     * @return array{ok: bool, creada?: bool, error?: string, sin_permiso?: bool}
+     */
+    public function crearInstancia(array $linea): array
+    {
+        try {
+            $res = $this->call('post', '/api/v1/whatsapp/instancias', array_filter(
+                $linea,
+                fn ($v) => $v !== null && $v !== ''
+            ));
+
+            return ['ok' => true, 'creada' => (bool) $res->json('data.creada')];
+        } catch (\RuntimeException $e) {
+            // 403 significa que el token de esta empresa es anterior a que
+            // existiera este permiso, y 404-ruta-inexistente que su entorno
+            // Integra aún no la tiene. Ninguno de los dos se arregla
+            // reintentando: hay que volver a conectar, o actualizar Integra.
+            // Quien llama tiene que poder decirlo con esas palabras.
+            $codigo = $e->getCode();
+
+            return [
+                'ok' => false,
+                'sin_permiso' => $codigo === 403,
+                'sin_endpoint' => $codigo === self::CODE_ENDPOINT_MISSING,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
     public function testConnection(): array
     {
         $data = $this->call('get', '/api/v1/pagos/catalogos')->json('data') ?? [];
