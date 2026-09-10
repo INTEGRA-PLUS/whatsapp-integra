@@ -270,6 +270,58 @@ class CoexistenceIngestTest extends TestCase
         $this->assertSame('Ya salimos para allá', $conversacion->last_message);
     }
 
+    /**
+     * La hora del eco es la nuestra, no UTC.
+     *
+     * Meta manda el timestamp en Unix. `createFromTimestamp` sin zona devuelve
+     * el Carbon en UTC y la columna se escribe tal cual, así que cada eco del
+     * celular quedaba cinco horas por delante de su propio `created_at`. Como
+     * ese `sent_at` se copia a `last_message_at`, la lista de conversaciones
+     * enseñaba una hora que aún no había ocurrido y colaba ese chat arriba del
+     * todo.
+     *
+     * El mismo fallo ya se había corregido en el webhook de entrantes; aquí se
+     * quedó sin corregir. Por eso hay test: es un despiste que vuelve.
+     */
+    public function test_la_hora_del_eco_queda_en_la_zona_de_la_aplicacion(): void
+    {
+        $instancia = $this->instancia();
+        $momento = now()->subMinutes(3);
+
+        $this->ingesta()->reflejarEco($instancia, [
+            'metadata'       => ['display_phone_number' => self::NEGOCIO, 'phone_number_id' => '1247515825107349'],
+            'message_echoes' => [[
+                'from'      => self::NEGOCIO,
+                'to'        => self::CLIENTE,
+                'id'        => 'wamid.eco-hora',
+                'timestamp' => (string) $momento->timestamp,
+                'type'      => 'text',
+                'text'      => ['body' => 'Voy en camino'],
+            ]],
+        ]);
+
+        $mensaje = WhatsAppMessage::where('wamid', 'wamid.eco-hora')->first();
+
+        $this->assertSame(
+            $momento->format('Y-m-d H:i'),
+            $mensaje->sent_at->format('Y-m-d H:i'),
+            'El eco se guardó con otra hora que la del timestamp de Meta',
+        );
+
+        // Lo que de verdad se veía roto: un mensaje que dice haberse enviado
+        // después de que lo registramos.
+        $this->assertTrue(
+            $mensaje->sent_at->lessThanOrEqualTo($mensaje->created_at->addMinute()),
+            'sent_at quedó por delante de created_at: ' . $mensaje->sent_at,
+        );
+
+        $conversacion = WhatsAppConversation::where('instance_id', $instancia->id)->first();
+        $this->assertTrue(
+            $conversacion->last_message_at->lessThanOrEqualTo(now()->addMinute()),
+            'last_message_at quedó en el futuro',
+        );
+    }
+
     // ------------------------------------------------------------- utilidades
 
     private function ingesta(): CoexistenceIngestService
