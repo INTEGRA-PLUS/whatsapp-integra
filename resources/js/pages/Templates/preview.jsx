@@ -123,7 +123,12 @@ export function templateToModel(template) {
     return out;
 }
 
-export function WhatsAppPreview({ model, verifiedName, empty }) {
+/**
+ * `bare` quita el marco propio —borde, esquinas y la nota del pie— para poder
+ * meter esta misma vista dentro de la maqueta de un teléfono, que ya pone su
+ * propio marco. Sin él se ven dos bordes redondeados, uno dentro del otro.
+ */
+export function WhatsAppPreview({ model, verifiedName, empty, bare = false, minHeight }) {
     const time = useMemo(() => {
         const d = new Date();
         return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
@@ -143,7 +148,7 @@ export function WhatsAppPreview({ model, verifiedName, empty }) {
     }
 
     return (
-        <div className="rounded-2xl overflow-hidden border bg-card shadow-inner">
+        <div className={bare ? 'overflow-hidden bg-card' : 'rounded-2xl overflow-hidden border bg-card shadow-inner'}>
             {/* WhatsApp top bar */}
             <div className="bg-[#075E54] dark:bg-[#202c33] text-white px-4 py-3 flex items-center gap-3">
                 <div className="size-9 rounded-full bg-white/20 flex items-center justify-center text-xs font-semibold">
@@ -158,7 +163,7 @@ export function WhatsAppPreview({ model, verifiedName, empty }) {
             </div>
 
             {/* Chat background */}
-            <div className="px-4 py-6 bg-[#e5ddd5] dark:bg-[#0b141a] min-h-[280px]">
+            <div className="px-4 py-6 bg-[#e5ddd5] dark:bg-[#0b141a]" style={{ minHeight: minHeight ?? 280 }}>
                 <div className="max-w-[85%] space-y-1">
                     <div className="relative rounded-lg rounded-tl-none px-3 py-2 bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] shadow-sm">
                         <span
@@ -186,7 +191,18 @@ export function WhatsAppPreview({ model, verifiedName, empty }) {
                             )
                         )}
 
-                        {hasHeader && model.header.mediaFormat && !model.header.mediaUrl && (
+                        {/* Un documento sin URL pero con nombre ya se puede
+                            enseñar como lo que es: el adjunto que va a llegar.
+                            «[DOCUMENT]» no le dice nada a nadie. */}
+                        {hasHeader && model.header.mediaFormat === 'DOCUMENT' && !model.header.mediaUrl && model.header.filename && (
+                            <div className="mb-2 flex items-center gap-2 rounded-md bg-black/5 px-3 py-3 text-[12px] dark:bg-white/5">
+                                <span className="text-lg">📄</span>
+                                <span className="truncate">{model.header.filename}</span>
+                            </div>
+                        )}
+
+                        {hasHeader && model.header.mediaFormat && !model.header.mediaUrl
+                            && !(model.header.mediaFormat === 'DOCUMENT' && model.header.filename) && (
                             <div className="mb-2 rounded-md bg-black/5 dark:bg-white/5 py-6 text-center text-[11px] text-muted-foreground">
                                 [{model.header.mediaFormat}]
                             </div>
@@ -235,9 +251,11 @@ export function WhatsAppPreview({ model, verifiedName, empty }) {
                 </div>
             </div>
 
-            <div className="px-4 py-2 bg-muted/30 border-t text-[10px] text-muted-foreground text-center">
-                Vista previa aproximada · La apariencia final depende del dispositivo del cliente.
-            </div>
+            {!bare && (
+                <div className="px-4 py-2 bg-muted/30 border-t text-[10px] text-muted-foreground text-center">
+                    Vista previa aproximada · La apariencia final depende del dispositivo del cliente.
+                </div>
+            )}
         </div>
     );
 }

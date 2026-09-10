@@ -89,7 +89,13 @@ class ParametrizarPlantillaDelErpTest extends TestCase
             ->assertOk()
             ->assertJsonPath('meta.encontrada', true)
             ->assertJsonPath('meta.huecos', 3)
-            ->assertJsonPath('meta.estado', 'APPROVED');
+            ->assertJsonPath('meta.estado', 'APPROVED')
+            // Los componentes enteros: el encabezado, el pie y los botones
+            // también son parte de lo que ve el cliente, y la vista previa los
+            // pinta. Sólo con el cuerpo el PDF adjunto no se veía por ninguna
+            // parte, que es justo lo que más se pregunta.
+            ->assertJsonPath('meta.componentes.0.format', 'DOCUMENT')
+            ->assertJsonPath('meta.componentes.1.type', 'BODY');
     }
 
     /**

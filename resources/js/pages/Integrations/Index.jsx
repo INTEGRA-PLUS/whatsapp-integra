@@ -5,6 +5,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import IntegrationsHelp from './IntegrationsHelp';
+import { WhatsAppPreview } from '../Templates/preview';
 import { cn } from '@/lib/utils';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
@@ -1097,10 +1098,48 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
 
     const faltan = variables.some(v => !String(v).trim());
 
+    /**
+     * El mensaje tal y como sale en el teléfono del cliente.
+     *
+     * El cuerpo es el de arriba —con las variables ya resueltas—, y el resto
+     * viene de Meta tal cual: el encabezado, el pie y los botones también son
+     * parte de lo que llega, y hasta ahora no se veían por ningún lado. Con
+     * encabezado de documento se pinta el PDF adjunto con el nombre que le pone
+     * el ERP de verdad: `Factura_FV-10482.pdf` sale de `CronController`.
+     */
+    const componentes = datos?.meta?.componentes ?? [];
+    const encabezado = componentes.find(c => (c.type ?? '').toUpperCase() === 'HEADER');
+    const pie = componentes.find(c => (c.type ?? '').toUpperCase() === 'FOOTER');
+    const botones = componentes.find(c => (c.type ?? '').toUpperCase() === 'BUTTONS');
+
+    // Sin catálogo de Meta se cae al `body_header` que guarda el ERP: dice si
+    // la plantilla adjunta documento, que es lo que más se pregunta.
+    const formatoEncabezado = encabezado
+        ? (encabezado.format ?? 'TEXT').toUpperCase()
+        : (datos?.con_documento ? 'DOCUMENT' : null);
+
+    const adjunto = uso.includes('recibo') ? 'Recibo_RC-3391.pdf' : 'Factura_FV-10482.pdf';
+
+    const modelo = {
+        header: formatoEncabezado === 'TEXT'
+            ? { text: conEjemplos(encabezado?.text ?? '') }
+            : formatoEncabezado
+                ? { text: '', mediaFormat: formatoEncabezado, filename: formatoEncabezado === 'DOCUMENT' ? adjunto : null }
+                : null,
+        body: { text: muestra },
+        footer: pie?.text ? { text: pie.text } : null,
+        buttons: (botones?.buttons ?? []).map(b => ({
+            type: b.type ?? 'QUICK_REPLY',
+            text: b.text ?? '',
+            url: b.url ?? '',
+            phone_number: b.phone_number ?? '',
+        })),
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
             <div
-                className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border bg-card p-6 shadow-2xl"
+                className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border bg-card p-6 shadow-2xl"
                 onClick={e => e.stopPropagation()}
             >
                 <div className="mb-4 flex items-start justify-between gap-4">
@@ -1128,7 +1167,8 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
                 )}
 
                 {datos && (
-                    <div className="space-y-4">
+                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className="space-y-4">
                         {/* Una plantilla que no está en la línea por la que
                             envía el ERP no se puede enviar: Meta contesta
                             «(#100) Invalid parameter» y la factura no sale. */}
@@ -1223,18 +1263,6 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
                             </div>
                         )}
 
-                        {variables.length > 0 && (
-                            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-                                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                                    Así le llega al cliente
-                                </p>
-                                <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{muestra}</p>
-                                <p className="mt-2 text-[10px] text-muted-foreground">
-                                    Con datos de ejemplo. En el envío real van los de cada cliente y su factura.
-                                </p>
-                            </div>
-                        )}
-
                         <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
                             <Button variant="ghost" onClick={onClose}>Cerrar</Button>
                             <Button onClick={guardar} disabled={!canManage || guardando || faltan || variables.length === 0}>
@@ -1248,8 +1276,65 @@ function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage
                                 Falta llenar {variables.filter(v => !String(v).trim()).length} variable(s).
                             </p>
                         )}
+                      </div>
+
+                      {/* El teléfono, al lado y siempre a la vista: lo que se
+                          está llenando a la izquierda se ve llegar aquí. */}
+                      <div className="lg:sticky lg:top-0 lg:self-start">
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Así le llega al cliente
+                          </p>
+
+                          <Celular>
+                              <WhatsAppPreview
+                                  model={modelo}
+                                  verifiedName={datos.meta?.nombre_visible ?? 'Tu empresa'}
+                                  bare
+                                  minHeight={360}
+                              />
+                          </Celular>
+
+                          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+                              Con datos de ejemplo. En el envío real van los de cada cliente.
+                          </p>
+
+                          {formatoEncabezado === 'DOCUMENT' && (
+                              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-success/10 px-2.5 py-2 text-[11px] text-success">
+                                  <FileCheck2 className="mt-px size-3.5 shrink-0" />
+                                  Esta plantilla lleva el PDF adjunto: el cliente recibe el documento junto al mensaje.
+                              </p>
+                          )}
+
+                          {formatoEncabezado !== 'DOCUMENT' && (
+                              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                                  <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                  Sin encabezado de documento: el mensaje llega solo, sin el PDF adjunto.
+                              </p>
+                          )}
+                      </div>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * La maqueta del teléfono.
+ *
+ * Un párrafo de texto no dice cómo viaja el mensaje: el cliente pregunta si el
+ * PDF va adjunto, si su nombre sale arriba o dentro, si el pie se ve. Puesto en
+ * un teléfono se responde solo, y es la misma vista que ya se usa al crear
+ * plantillas, para que no haya dos ideas distintas de cómo se ve un WhatsApp.
+ */
+function Celular({ children }) {
+    return (
+        <div className="mx-auto w-full max-w-[300px] rounded-[2.2rem] border-[7px] border-neutral-800 bg-neutral-800 p-0 shadow-2xl dark:border-neutral-700 dark:bg-neutral-700">
+            <div className="relative overflow-hidden rounded-[1.7rem] bg-card">
+                {/* La muesca de arriba, que es lo que lo hace leerse como un
+                    teléfono y no como una tarjeta más. */}
+                <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-[18px] w-24 -translate-x-1/2 rounded-b-2xl bg-neutral-800 dark:bg-neutral-700" />
+                {children}
             </div>
         </div>
     );

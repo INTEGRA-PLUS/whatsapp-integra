@@ -184,9 +184,14 @@ class WebhookEndpointController extends Controller
         return [
             'encontrada' => true,
             'linea' => $linea->display_phone_number ?: $linea->name,
+            'nombre_visible' => $linea->meta['verified_name'] ?? $linea->name,
             'estado' => $plantilla['status'] ?? null,
             'texto' => $texto,
             'huecos' => empty($coincidencias[1]) ? 0 : max(array_map('intval', $coincidencias[1])),
+            // Los componentes enteros, no sólo el cuerpo: el encabezado, el pie
+            // y los botones son parte de lo que ve el cliente, y la vista
+            // previa del CRM ya sabe pintarlos.
+            'componentes' => array_values($plantilla['components'] ?? []),
         ];
     }
 
