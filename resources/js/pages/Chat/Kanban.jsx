@@ -145,9 +145,15 @@ const diasEnEtapa = (entroEnEtapa) => {
 
 const DIAS_PARA_AVISAR = 7;
 
+/** Deja sólo letras y números, para comparar «📄 Recibo.pdf» con «Recibo.pdf». */
+const soloLoQueCuenta = texto => (texto ?? '').replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+
 const KanbanCard = memo(({ conv, isOverlay, isDragging, onAbrir, ...props }) => {
     const dias = diasEnEtapa(conv.entro_en_etapa);
     const estancada = dias !== null && dias >= DIAS_PARA_AVISAR;
+
+    const repiteElArchivo = !!conv.ultimo_archivo
+        && soloLoQueCuenta(conv.last_message) === soloLoQueCuenta(conv.ultimo_archivo);
 
     /**
      * Un clic abre la conversación; un arrastre no.
@@ -220,9 +226,14 @@ const KanbanCard = memo(({ conv, isOverlay, isDragging, onAbrir, ...props }) => 
 
             <Adjunto tipo={conv.ultimo_tipo} archivo={conv.ultimo_archivo} />
 
-            <p className="text-[12px] text-muted-foreground line-clamp-2 leading-snug mb-2.5">
-                {conv.last_message || 'Sin mensajes todavía'}
-            </p>
+            {/* Cuando el último mensaje es sólo el archivo, `last_message` ya
+                trae «📄 Recibo_8362.pdf» y la pastilla lo repetía: el mismo
+                nombre dos veces, una encima de la otra. */}
+            {!repiteElArchivo && (
+                <p className="text-[12px] text-muted-foreground line-clamp-2 leading-snug mb-2.5">
+                    {conv.last_message || 'Sin mensajes todavía'}
+                </p>
+            )}
 
             <div className="flex items-center justify-between gap-2">
                 {conv.assigned_agent ? (
@@ -290,7 +301,7 @@ const SortableKanbanCard = memo(({ conv, index, onAbrir }) => {
 // dentro. Enter la crea, Escape o dejarla vacía la descarta.
 
 const ColumnaBorrador = ({ valor, onCambio, onCrear, onCancelar, creando, error }) => (
-    <div className="flex-1 min-w-[300px] max-w-[400px] flex flex-col">
+    <div className="flex w-[86vw] max-w-[360px] shrink-0 snap-start flex-col sm:w-auto sm:min-w-[300px] sm:flex-1 sm:shrink">
         <form
             onSubmit={e => { e.preventDefault(); onCrear(valor); }}
             className="mb-6 px-3"
@@ -354,7 +365,7 @@ const BoardColumn = memo(({ col, indice, items, totalCount, loading, hasMore, er
 
     return (
         <div className={clsx(
-            'flex-1 min-w-[290px] max-w-[360px] flex flex-col h-full group/column rounded-3xl border overflow-hidden transition-colors',
+            'flex h-full w-[86vw] max-w-[360px] shrink-0 snap-start flex-col overflow-hidden rounded-3xl border transition-colors group/column sm:w-auto sm:min-w-[290px] sm:flex-1 sm:shrink',
             tono.borde,
             tono.tenue
         )}>
@@ -1210,15 +1221,16 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
      * tablero y cuántas llevan una semana sin moverse.
      */
     const stats = useMemo(() => [
-        { label: 'Conversaciones', value: total_conversations.toLocaleString('es-CO'), icon: User,            color: 'text-info',              bg: 'bg-info/5',
+        // «Etapas» estaba aquí y se fue: el subtítulo ya dice «4 etapas» dos
+        // centímetros a la izquierda, y en la franja compacta cada pastilla
+        // repetida es sitio que le quitas a los filtros.
+        { label: total_conversations === 1 ? 'Conversación' : 'Conversaciones', value: total_conversations.toLocaleString('es-CO'), icon: User, color: 'text-info', bg: 'bg-info/5',
           hint: 'Todas las de la empresa' },
         { label: 'En el tablero',  value: en_tablero.toLocaleString('es-CO'),          icon: LayoutDashboard, color: 'text-accent-foreground', bg: 'bg-primary/5',
           hint: 'Colocadas en alguna etapa' },
         { label: 'Sin mover +7d',  value: estancadas.toLocaleString('es-CO'),          icon: Clock,           color: estancadas > 0 ? 'text-warning' : 'text-muted-foreground', bg: 'bg-warning/5',
           hint: 'Una semana sin actividad' },
-        { label: 'Etapas',         value: columns.length,                       icon: Layers,          color: 'text-success',           bg: 'bg-success/5',
-          hint: 'Columnas del tablero' },
-    ], [total_conversations, en_tablero, estancadas, columns.length]);
+    ], [total_conversations, en_tablero, estancadas]);
 
     // ── Render ─────────────────────────────────────────────────────────────
 
@@ -1281,12 +1293,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                 sus tarjetas a distinta altura.
             */}
             <div className="relative h-[calc(100svh-49px)] md:h-[calc(100svh-65px)] flex flex-col min-h-0 bg-tablero overflow-hidden">
-                {/* Header */}
-                <div className="px-6 lg:px-10 pt-8 pb-4 relative z-10">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-                        <div>
-                            <h1 className="text-3xl font-black text-foreground dark:text-white tracking-tighter mb-1">Tablero</h1>
-                            <p className="text-muted-foreground text-[11px] font-bold flex items-center gap-1.5">
+                {/*
+                    Cabecera compacta, en dos franjas.
+
+                    Antes ocupaba tres bloques —título grande, cuatro tarjetas
+                    de métricas y la barra de filtros— y las columnas empezaban
+                    a 440px del borde: casi la mitad de una pantalla de
+                    portátil gastada antes de ver la primera tarjeta. Un tablero
+                    se lee por las columnas, así que las métricas bajan a
+                    pastillas de una línea y todo cabe en ~96px.
+
+                    En móvil las dos franjas se desplazan en horizontal en vez
+                    de apilarse: apilar dejaba las columnas otra vez abajo.
+                */}
+                <div className="relative z-20 shrink-0 px-4 pb-2 pt-3 lg:px-6">
+                    <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 shrink items-baseline gap-2">
+                            <h1 className="shrink-0 text-lg font-black tracking-tighter text-foreground dark:text-white">Tablero</h1>
+                            <p className="hidden truncate text-[11px] font-bold text-muted-foreground sm:flex sm:items-center sm:gap-1.5">
                                 {columnasVisibles.length === 0
                                     ? 'Sin etapas todavía'
                                     : <>
@@ -1297,9 +1321,9 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                             </p>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <div className="relative group">
-                                <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+                            <div className="relative min-w-0 flex-1 sm:flex-none">
+                                <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
                                     <Search className="size-3.5 text-muted-foreground" />
                                 </div>
                                 <input
@@ -1307,56 +1331,47 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                     placeholder="Buscar..."
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-10 pr-4 py-2.5 bg-white dark:bg-muted border border-border rounded-2xl text-xs focus:outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/40 transition-all w-[240px] lg:w-[300px] shadow-sm placeholder:text-muted-foreground"
+                                    className="w-full rounded-xl border border-border bg-white py-2 pl-9 pr-3 text-xs shadow-sm transition-all placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-4 focus:ring-primary/5 sm:w-[220px] lg:w-[280px] dark:bg-muted"
                                 />
                             </div>
-                            <button onClick={addColumn} className="flex items-center gap-2 px-5 py-2.5 bg-foreground dark:bg-foreground text-background dark:text-background rounded-2xl text-xs font-black shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
-                                <LayoutDashboard className="size-4" /> Nueva Etapa
-                            </button>
+                            <Pista texto="Crear una etapa nueva">
+                                <button
+                                    onClick={addColumn}
+                                    aria-label="Nueva etapa"
+                                    className="flex shrink-0 items-center gap-2 rounded-xl bg-foreground px-3 py-2 text-xs font-black text-background shadow-lg transition-all hover:scale-[1.02] active:scale-95 sm:px-4"
+                                >
+                                    <LayoutDashboard className="size-4" />
+                                    <span className="hidden sm:inline">Nueva Etapa</span>
+                                </button>
+                            </Pista>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+                    {/* Métricas y filtros comparten franja: una sola línea que
+                        se desplaza en horizontal cuando no cabe. */}
+                    <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] lg:-mx-6 lg:px-6 [&::-webkit-scrollbar]:hidden">
                         {stats.map((stat, i) => (
-                            <div key={i} className="bg-white dark:bg-muted p-4 lg:p-5 rounded-3xl border border-border shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className={clsx('p-3 rounded-2xl shadow-inner', stat.bg, stat.color)}>
-                                        <stat.icon className="size-5" />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">{stat.label}</p>
-                                        <p className="text-lg font-black text-foreground dark:text-white tracking-tighter leading-none">{stat.value}</p>
-                                        <p className="text-[10px] text-muted-foreground mt-1 truncate">{stat.hint}</p>
-                                    </div>
-                                </div>
-                            </div>
+                            <Pista key={i} texto={`${stat.label}: ${stat.hint}`}>
+                                <span className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-2">
+                                    <stat.icon className={clsx('size-3.5', stat.color)} />
+                                    <span className="text-[12.5px] font-black leading-none tabular-nums text-foreground dark:text-white">{stat.value}</span>
+                                    <span className="text-[9px] font-black uppercase leading-none tracking-widest text-muted-foreground">{stat.label}</span>
+                                </span>
+                            </Pista>
                         ))}
-                    </div>
-                </div>
 
-                {/*
-                    La barra de filtros.
+                        <span className="mx-1 h-6 w-px shrink-0 bg-border" />
 
-                    «Ver por» elige el tablero que se pinta, y sigue siendo uno:
-                    una conversación está a la vez en una etapa de Estado y en
-                    una de Zona, así que pintar dos tableros juntos sacaría cada
-                    tarjeta dos veces. Lo que sí es múltiple es **filtrar** por
-                    las etapas de los otros tableros, que es lo que estrecha de
-                    verdad: los de MONTERIA dentro de FACTURACION.
-                */}
-                <div className="px-6 lg:px-10 pt-6 flex flex-wrap items-end gap-x-3 gap-y-3 relative z-20">
-                    {grupos.length > 1 && (
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Ver por</span>
-                            <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-2xl">
+                        {grupos.length > 1 && (
+                            <div className="flex shrink-0 items-center gap-1 rounded-xl bg-muted/60 p-1">
                                 {grupos.map(g => (
                                     <button
                                         key={g ?? '__sin__'}
                                         onClick={() => { setGrupoActivo(g); setFiltros([]); }}
                                         className={clsx(
-                                            'px-3 py-1.5 rounded-xl text-[11px] font-black transition-all',
+                                            'rounded-lg px-2.5 py-1 text-[11px] font-black transition-all',
                                             g === grupoActivo
-                                                ? 'bg-white dark:bg-background text-foreground shadow-sm'
+                                                ? 'bg-white text-foreground shadow-sm dark:bg-background'
                                                 : 'text-muted-foreground hover:text-foreground'
                                         )}
                                     >
@@ -1364,64 +1379,70 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                     </button>
                                 ))}
                             </div>
-                        </div>
-                    )}
-
-                    {opcionesDeEtapas.length > 0 && (
-                        <SelectorMultiple
-                            etiqueta="Etapas de otros tableros"
-                            icono={Layers}
-                            opciones={opcionesDeEtapas}
-                            seleccion={filtros}
-                            onCambio={setFiltros}
-                            buscador={opcionesDeEtapas.length > 8}
-                            textoVacio="Sin filtrar"
-                            nota="Dentro de un mismo tablero se suman (una u otra). Entre tableros distintos se acumulan."
-                        />
-                    )}
-
-                    <SelectorMultiple
-                        etiqueta="Agente"
-                        icono={UserCircle}
-                        opciones={opcionesDeAgentes}
-                        seleccion={agentes}
-                        onCambio={setAgentes}
-                        buscador={opcionesDeAgentes.length > 8}
-                        textoVacio="Todos"
-                    />
-
-                    <SelectorBuscador
-                        etiqueta="Contacto"
-                        icono={Search}
-                        valor={contacto?.id ?? null}
-                        etiquetaDelValor={contacto?.nombre}
-                        onCambio={(valor, texto) => setContacto(valor ? { id: valor, nombre: texto } : null)}
-                        buscar={buscarContactos}
-                        textoVacio="Cualquiera"
-                    />
-
-                    <button
-                        type="button"
-                        onClick={() => setSoloEstancadas(v => !v)}
-                        className={clsx(
-                            'flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-[11.5px] font-bold transition-all',
-                            soloEstancadas
-                                ? 'border-warning/40 bg-warning/15 text-warning'
-                                : 'border-border bg-card text-muted-foreground hover:border-warning/30 hover:text-foreground'
                         )}
-                    >
-                        <Clock className="size-3.5" />
-                        Sin mover +7d
-                    </button>
 
-                    {hayFiltros && (
+                        {opcionesDeEtapas.length > 0 && (
+                            <div className="shrink-0">
+                                <SelectorMultiple
+                                    etiqueta="Otros tableros"
+                                    icono={Layers}
+                                    opciones={opcionesDeEtapas}
+                                    seleccion={filtros}
+                                    onCambio={setFiltros}
+                                    buscador={opcionesDeEtapas.length > 8}
+                                    textoVacio="Sin filtrar"
+                                    nota="Dentro de un mismo tablero se suman (una u otra). Entre tableros distintos se acumulan."
+                                />
+                            </div>
+                        )}
+
+                        <div className="shrink-0">
+                            <SelectorMultiple
+                                etiqueta="Agente"
+                                icono={UserCircle}
+                                opciones={opcionesDeAgentes}
+                                seleccion={agentes}
+                                onCambio={setAgentes}
+                                buscador={opcionesDeAgentes.length > 8}
+                                textoVacio="Todos"
+                            />
+                        </div>
+
+                        <div className="shrink-0">
+                            <SelectorBuscador
+                                etiqueta="Contacto"
+                                icono={Search}
+                                valor={contacto?.id ?? null}
+                                etiquetaDelValor={contacto?.nombre}
+                                onCambio={(valor, texto) => setContacto(valor ? { id: valor, nombre: texto } : null)}
+                                buscar={buscarContactos}
+                                textoVacio="Cualquiera"
+                            />
+                        </div>
+
                         <button
-                            onClick={limpiarFiltros}
-                            className="self-center text-[10px] font-black text-muted-foreground hover:text-foreground underline underline-offset-4"
+                            type="button"
+                            onClick={() => setSoloEstancadas(v => !v)}
+                            className={clsx(
+                                'flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11.5px] font-bold transition-all',
+                                soloEstancadas
+                                    ? 'border-warning/40 bg-warning/15 text-warning'
+                                    : 'border-border bg-card text-muted-foreground hover:border-warning/30 hover:text-foreground'
+                            )}
                         >
-                            Limpiar {cuantosFiltros} {cuantosFiltros === 1 ? 'filtro' : 'filtros'}
+                            <Clock className="size-3.5" />
+                            Sin mover +7d
                         </button>
-                    )}
+
+                        {hayFiltros && (
+                            <button
+                                onClick={limpiarFiltros}
+                                className="shrink-0 whitespace-nowrap px-1 text-[10px] font-black text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                            >
+                                Limpiar {cuantosFiltros} {cuantosFiltros === 1 ? 'filtro' : 'filtros'}
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Board */}
@@ -1429,7 +1450,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                     <button
                         onClick={() => desplazar(-1)}
                         aria-label="Ver las etapas anteriores"
-                        className="absolute left-2 top-1/2 z-30 size-10 rounded-full bg-white/90 dark:bg-muted/90 border border-border shadow-lg backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-105 active:scale-95 transition-all"
+                        className="absolute left-2 top-1/2 z-30 hidden size-10 items-center justify-center rounded-full border border-border bg-white/90 text-muted-foreground shadow-lg backdrop-blur transition-all hover:scale-105 hover:text-foreground active:scale-95 sm:flex dark:bg-muted/90"
                     >
                         <ChevronLeft className="size-5" />
                     </button>
@@ -1438,13 +1459,13 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                     <button
                         onClick={() => desplazar(1)}
                         aria-label="Ver las etapas siguientes"
-                        className="absolute right-2 top-1/2 z-30 size-10 rounded-full bg-white/90 dark:bg-muted/90 border border-border shadow-lg backdrop-blur flex items-center justify-center text-muted-foreground hover:text-foreground hover:scale-105 active:scale-95 transition-all"
+                        className="absolute right-2 top-1/2 z-30 hidden size-10 items-center justify-center rounded-full border border-border bg-white/90 text-muted-foreground shadow-lg backdrop-blur transition-all hover:scale-105 hover:text-foreground active:scale-95 sm:flex dark:bg-muted/90"
                     >
                         <ChevronRight className="size-5" />
                     </button>
                 )}
 
-                <div ref={tableroRef} className="flex-1 overflow-x-auto px-6 lg:px-10 pt-4 pb-8 flex gap-6 lg:gap-8 custom-scrollbar relative z-10">
+                <div ref={tableroRef} className="relative z-10 flex flex-1 gap-4 overflow-x-auto px-4 pb-4 pt-1 snap-x snap-mandatory scroll-pl-4 lg:snap-none custom-scrollbar lg:gap-6 lg:px-6 lg:scroll-pl-6">
                     <DragDropContext onDragEnd={handleDragEnd}>
                         {columnasVisibles.map((col, indice) => (
                             <BoardColumn
@@ -1476,7 +1497,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                 error={errorEtapa}
                             />
                         ) : (
-                            <div className="flex-shrink-0 w-[100px] flex flex-col items-center justify-start pt-12">
+                            <div className="flex w-[100px] shrink-0 flex-col items-center justify-start pt-6">
                                 <button onClick={addColumn} className="size-12 rounded-full border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:text-accent-foreground hover:border-primary/30 hover:bg-primary/5 transition-all group">
                                     <Plus className="size-6 group-hover:rotate-90 transition-transform duration-300" />
                                 </button>
