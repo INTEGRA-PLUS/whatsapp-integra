@@ -316,9 +316,7 @@ class WebhookEndpointController extends Controller
                 ->exists();
 
             if (! $existe) {
-                return back()->withErrors([
-                    'instance_id' => 'Esa línea no es de tu empresa o no está activa.',
-                ]);
+                return $this->rechazarLinea($request, 'Esa línea no es de tu empresa o no está activa.');
             }
         }
 
@@ -328,20 +326,50 @@ class WebhookEndpointController extends Controller
         // devolviendo «(#100) Invalid parameter» en cada factura, y nadie se
         // enteró hasta que el cliente lo dijo por WhatsApp a las 6 de la mañana.
         if ($instanceId !== null && ($faltan = $this->plantillasQueFaltan($company, $instanceId)) !== []) {
-            return back()->withErrors([
-                'instance_id' => 'Esa línea todavía no tiene aprobadas estas plantillas: '
+            return $this->rechazarLinea(
+                $request,
+                'Esa línea todavía no tiene aprobadas estas plantillas: '
                     .implode(', ', array_slice($faltan, 0, 5))
                     .(count($faltan) > 5 ? ' y '.(count($faltan) - 5).' más' : '')
                     .'. Cópialas desde Plantillas y espera a que Meta las apruebe: '
                     .'si cambias ahora, las facturas dejarán de salir.',
-            ]);
+                $faltan,
+            );
         }
 
         $company->elegirInstanciaDelErp($instanceId);
 
-        return back()->with('success', $instanceId
+        $aviso = $instanceId
             ? 'Listo: el ERP enviará por esa línea a partir del próximo envío.'
-            : 'Se quitó la elección: el ERP volverá a usar la primera línea activa.');
+            : 'Se quitó la elección: el ERP volverá a usar la primera línea activa.';
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => true, 'message' => $aviso]);
+        }
+
+        return back()->with('success', $aviso);
+    }
+
+    /**
+     * El «no» a un cambio de línea, dicho donde se pidió.
+     *
+     * Rechazarlo con `back()->withErrors()` obliga a recargar la página entera
+     * para que el error llegue, y esa recarga devuelve al cliente a la galería
+     * de complementos: pulsaba «Usar esta», salía de la pantalla, y tenía que
+     * volver a entrar para leer por qué no había pasado nada. Pedido desde el
+     * navegador con `Accept: application/json` se contesta aquí mismo, sin
+     * moverse de sitio; la respuesta de Inertia se conserva para quien llegue
+     * sin JavaScript y para los tests que la comprueban.
+     *
+     * @param  list<string>  $faltan
+     */
+    private function rechazarLinea(Request $request, string $motivo, array $faltan = [])
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['message' => $motivo, 'faltan' => $faltan], 422);
+        }
+
+        return back()->withErrors(['instance_id' => $motivo]);
     }
 
     public function list()

@@ -140,6 +140,71 @@ class LineaDelErpTest extends TestCase
     }
 
     /**
+     * El mismo «no», pedido desde el navegador, se contesta ahí mismo.
+     *
+     * Con la respuesta de Inertia el motivo sólo llegaba recargando la página
+     * entera, y esa recarga devolvía al cliente a la galería de complementos:
+     * pulsaba «Usar esta», salía de la pantalla, y tenía que volver a entrar
+     * para leer por qué no había pasado nada. La lista de plantillas viaja
+     * completa —no recortada a cinco— para poder enseñarlas una a una.
+     */
+    public function test_el_rechazo_se_contesta_sin_recargar_la_pagina(): void
+    {
+        [$empresa, $primera, $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+
+        $this->fingirCatalogos(
+            enLaDeHoy: [
+                ['name' => 'facturacion', 'language' => 'es_CO', 'status' => 'APPROVED'],
+                ['name' => 'tirillas', 'language' => 'es_CO', 'status' => 'APPROVED'],
+            ],
+            enLaNueva: [['name' => 'aviso', 'language' => 'es', 'status' => 'APPROVED']],
+        );
+
+        $respuesta = $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id]);
+
+        $respuesta->assertStatus(422)
+            ->assertJsonPath('faltan', ['facturacion (es_CO)', 'tirillas (es_CO)']);
+
+        $this->assertStringContainsString('dejarán de salir', $respuesta->json('message'));
+        $this->assertSame($primera->id, $empresa->fresh()->instanciaDelErp()->id);
+    }
+
+    /** Y el «sí» también, para poder refrescar sólo lo que cambió. */
+    public function test_el_cambio_bueno_tambien_contesta_json(): void
+    {
+        [$empresa, , $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+
+        $this->fingirCatalogos(
+            enLaDeHoy: [['name' => 'facturacion', 'language' => 'es_CO', 'status' => 'APPROVED']],
+            enLaNueva: [['name' => 'facturacion', 'language' => 'es_CO', 'status' => 'APPROVED']],
+        );
+
+        $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id])
+            ->assertOk()
+            ->assertJsonPath('ok', true);
+
+        $this->assertSame($segunda->id, $empresa->fresh()->instanciaDelErp()->id);
+    }
+
+    /** Una línea ajena se rechaza igual, y también sin recargar. */
+    public function test_una_linea_ajena_se_rechaza_en_json(): void
+    {
+        [$empresa] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+
+        [$otra, $ajena] = $this->empresaConDosLineas();
+
+        $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $ajena->id])
+            ->assertStatus(422)
+            ->assertJsonPath('faltan', []);
+    }
+
+    /**
      * Si Meta no contesta no se bloquea: no saber no es lo mismo que saber que
      * falta, y dejar a alguien sin poder cambiar de línea porque Meta tuvo un
      * mal minuto sería peor que el riesgo que se evita.

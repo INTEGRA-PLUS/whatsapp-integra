@@ -794,7 +794,7 @@ function ProviderSection({ can, onBack }) {
                             <StepStatus integration={payments} onUpdated={() => load()} showToast={showToast} />
                         )}
 
-                        <LineasDelErp />
+                        <LineasDelErp showToast={showToast} canManage={canManage} />
 
                         <AjustesDeEnvio showToast={showToast} canManage={canManage} />
 
@@ -1273,28 +1273,53 @@ function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar
  * la pregunta «¿está conectado de verdad?» no tenía respuesta que enseñarle a
  * un cliente (9-sep-2026).
  */
-function LineasDelErp() {
-    const { lineasDelErp = [], lineaElegida = false, errors = {} } = usePage().props;
+function LineasDelErp({ showToast, canManage }) {
+    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
     const [guardando, setGuardando] = useState(null);
-
-    // El rechazo del cambio llegaba en `errors.instance_id` y no se pintaba en
-    // ninguna parte: pulsabas «Usar esta» y no pasaba nada. Es exactamente el
-    // final ciego que este trabajo venía a quitar, repetido.
-    const rechazo = errors.instance_id;
+    // Qué línea se pidió cambiar y por qué no se pudo. Va por línea y no suelto
+    // arriba: el motivo se lee al lado del botón que lo provocó.
+    const [rechazo, setRechazo] = useState(null);
+    // La confirmación, también en la fila. Cambiar de línea mueve la
+    // facturación de toda la empresa a otro número; no es un clic de ida.
+    const [confirmando, setConfirmando] = useState(null);
 
     if (lineasDelErp.length === 0) return null;
 
     const activas = lineasDelErp.filter(l => l.ultima_vez);
+    const actual = lineasDelErp.find(l => l.es_la_del_erp);
 
-    const elegir = (id) => {
+    /**
+     * El cambio se pide con axios, no con `router.post`.
+     *
+     * Con Inertia el rechazo sólo llegaba recargando la página entera, y esa
+     * recarga devolvía al cliente a la galería de complementos: pulsabas «Usar
+     * esta», salías de la pantalla, y tenías que volver a entrar para leer por
+     * qué no había pasado nada. Así el motivo aparece en la misma fila y sin
+     * moverse; al salir bien se refrescan sólo las dos props que cambian, con
+     * el estado de la pantalla intacto.
+     */
+    const elegir = async (id) => {
         setGuardando(id);
-        router.post('/integrations/linea-erp', { instance_id: id }, {
-            preserveScroll: true,
-            // preserveState:false para que `errors` llegue a esta pantalla; con
-            // el estado preservado el rechazo no se veía.
-            preserveState: false,
-            onFinish: () => setGuardando(null),
-        });
+        setRechazo(null);
+
+        try {
+            const { data } = await axios.post('/integrations/linea-erp', { instance_id: id });
+            setConfirmando(null);
+            showToast?.(data.message ?? 'Listo: el ERP enviará por esa línea.');
+            router.reload({
+                only: ['lineasDelErp', 'lineaElegida'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        } catch (e) {
+            setRechazo({
+                id,
+                motivo: e.response?.data?.message ?? 'No se pudo cambiar la línea.',
+                faltan: e.response?.data?.faltan ?? [],
+            });
+        } finally {
+            setGuardando(null);
+        }
     };
 
     return (
@@ -1303,13 +1328,6 @@ function LineasDelErp() {
             Icon={Plug}
             does="La línea por la que tu software administrativo manda facturas y recibos."
         >
-            {rechazo && (
-                <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
-                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                    {rechazo}
-                </p>
-            )}
-
             {lineasDelErp.length > 1 && !lineaElegida && (
                 <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="mt-px size-3.5 shrink-0" />
@@ -1320,44 +1338,118 @@ function LineasDelErp() {
 
             <ul className="divide-y divide-border">
                 {lineasDelErp.map(linea => (
-                    <li key={linea.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                        <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-foreground">
-                                {linea.nombre}
-                                {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
+                    <li key={linea.id} className="py-2.5 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                    {linea.nombre}
+                                    {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
+                                </p>
+                                <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {linea.ultima_vez ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">
+                                        <CheckCircle2 className="size-3" />
+                                        {formatearUltimaVez(linea.ultima_vez)}
+                                    </span>
+                                ) : (
+                                    <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                                        Sin envíos
+                                    </span>
+                                )}
+
+                                {linea.es_la_del_erp ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-black text-accent-foreground">
+                                        <CheckCircle2 className="size-3" />
+                                        {lineaElegida ? 'Envía por aquí' : 'Por defecto'}
+                                    </span>
+                                ) : confirmando === linea.id ? (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            disabled={guardando !== null}
+                                            onClick={() => elegir(linea.id)}
+                                            className="h-7 px-2.5 text-[11px]"
+                                        >
+                                            {guardando === linea.id
+                                                ? <><Loader2 className="mr-1 size-3 animate-spin" /> Cambiando…</>
+                                                : 'Sí, cambiar'}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={guardando !== null}
+                                            onClick={() => { setConfirmando(null); setRechazo(null); }}
+                                            className="h-7 px-2.5 text-[11px]"
+                                        >
+                                            Cancelar
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!canManage || guardando !== null}
+                                        onClick={() => { setConfirmando(linea.id); setRechazo(null); }}
+                                        className="h-7 px-2.5 text-[11px]"
+                                    >
+                                        Usar esta
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Qué va a pasar, antes de que pase. Integra pregunta
+                            la línea antes de cada tanda, así que el cambio se
+                            nota en la siguiente factura de toda la empresa. */}
+                        {confirmando === linea.id && !rechazo && (
+                            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                <span>
+                                    Integra dejará de enviar por {actual?.numero || actual?.nombre || 'la línea de ahora'} y
+                                    pasará a {linea.numero || linea.nombre}. Vale desde la próxima factura, para toda la empresa.
+                                </span>
                             </p>
-                            <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
-                        </div>
+                        )}
 
-                        <div className="flex items-center gap-2">
-                            {linea.ultima_vez ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">
-                                    <CheckCircle2 className="size-3" />
-                                    {formatearUltimaVez(linea.ultima_vez)}
-                                </span>
-                            ) : (
-                                <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-                                    Sin envíos
-                                </span>
-                            )}
+                        {rechazo?.id === linea.id && (
+                            <div className="mt-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                                <p className="flex items-start gap-1.5">
+                                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                    <span>
+                                        No se cambió nada: Integra sigue enviando por
+                                        {' '}{actual?.numero || actual?.nombre || 'la línea de ahora'}.
+                                    </span>
+                                </p>
 
-                            {linea.es_la_del_erp ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-black text-accent-foreground">
-                                    <CheckCircle2 className="size-3" />
-                                    {lineaElegida ? 'Envía por aquí' : 'Por defecto'}
-                                </span>
-                            ) : (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={guardando !== null}
-                                    onClick={() => elegir(linea.id)}
-                                    className="h-7 px-2.5 text-[11px]"
-                                >
-                                    {guardando === linea.id ? 'Guardando…' : 'Usar esta'}
-                                </Button>
-                            )}
-                        </div>
+                                {rechazo.faltan.length > 0 ? (
+                                    <>
+                                        <p className="mt-1.5 pl-5">
+                                            A esa línea le faltan {rechazo.faltan.length} plantilla{rechazo.faltan.length === 1 ? '' : 's'} de
+                                            las que se están usando hoy. Los catálogos de Meta son por número, así que no se heredan:
+                                            si cambias sin copiarlas, las facturas dejan de salir.
+                                        </p>
+                                        <ul className="mt-1.5 flex flex-wrap gap-1 pl-5">
+                                            {rechazo.faltan.map(nombre => (
+                                                <li key={nombre} className="rounded bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px]">
+                                                    {nombre}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <a
+                                            href="/templates"
+                                            className="mt-2 ml-5 inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-2 py-1 text-[11px] font-medium hover:bg-destructive/10"
+                                        >
+                                            <Copy className="size-3" /> Copiarlas a esta línea
+                                        </a>
+                                    </>
+                                ) : (
+                                    <p className="mt-1.5 pl-5">{rechazo.motivo}</p>
+                                )}
+                            </div>
+                        )}
                     </li>
                 ))}
             </ul>
