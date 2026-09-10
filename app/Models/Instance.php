@@ -18,6 +18,7 @@ class Instance extends Model
         'waba_id',
         'display_phone_number',
         'type',
+        'channel',
         'status',
         'active',
         'health_status',
@@ -48,6 +49,59 @@ class Instance extends Model
 
     /** El prefijo hace reconocible el token si aparece en un log o en un pegado. */
     public const API_TOKEN_PREFIJO = 'wai_';
+
+    /**
+     * Por dónde escribe el cliente final.
+     *
+     * No confundir con `type`, que dice con qué proveedor hablamos (`meta`,
+     * `vibio`). Messenger e Instagram también son Meta: son preguntas distintas.
+     */
+    public const CANAL_WHATSAPP = 'whatsapp';
+
+    public const CANAL_MESSENGER = 'messenger';
+
+    public const CANAL_INSTAGRAM = 'instagram';
+
+    public const CANALES = [
+        self::CANAL_WHATSAPP,
+        self::CANAL_MESSENGER,
+        self::CANAL_INSTAGRAM,
+    ];
+
+    /** Cómo se llama el canal en pantalla. */
+    public const NOMBRES_DE_CANAL = [
+        self::CANAL_WHATSAPP => 'WhatsApp',
+        self::CANAL_MESSENGER => 'Messenger',
+        self::CANAL_INSTAGRAM => 'Instagram',
+    ];
+
+    public function esWhatsApp(): bool
+    {
+        // Sin canal es WhatsApp: las líneas creadas antes de que existiera la
+        // columna lo son, y una instancia recién construida en memoria todavía
+        // no tiene el valor por defecto de la base.
+        return ($this->channel ?? self::CANAL_WHATSAPP) === self::CANAL_WHATSAPP;
+    }
+
+    public function esMessenger(): bool
+    {
+        return $this->channel === self::CANAL_MESSENGER;
+    }
+
+    public function esInstagram(): bool
+    {
+        return $this->channel === self::CANAL_INSTAGRAM;
+    }
+
+    public function nombreDelCanal(): string
+    {
+        return self::NOMBRES_DE_CANAL[$this->channel ?? self::CANAL_WHATSAPP] ?? 'WhatsApp';
+    }
+
+    public function scopeCanal($query, string $canal)
+    {
+        return $query->where('channel', $canal);
+    }
 
     /**
      * Crea un token nuevo y guarda sólo su hash.
@@ -132,6 +186,15 @@ class Instance extends Model
      */
     public function isMetaConfigured()
     {
+        // Cada canal se configura con cosas distintas: WhatsApp con un número y
+        // una WABA, Messenger con una página, Instagram con una cuenta
+        // profesional. Mientras esos dos no estén construidos, decir que no
+        // están listos es la respuesta correcta —y la segura: ningún camino de
+        // salida intentará hablar con Meta por un canal que aún no sabe hacerlo.
+        if (! $this->esWhatsApp()) {
+            return false;
+        }
+
         return ! empty($this->phone_number_id)
             && ! empty($this->waba_id)
             && ! empty($this->access_token);

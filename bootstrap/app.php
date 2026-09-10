@@ -26,6 +26,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->validateCsrfTokens(except: [
             'webhooks/whatsapp',
+            'webhooks/instagram',
+            // Meta manda estos dos avisos como POST de formulario, sin sesión y
+            // sin token: la autenticidad la da el signed_request, que se valida
+            // dentro con la clave secreta de la app de Instagram.
+            'instagram/desautorizar',
+            'instagram/eliminar-datos',
             'master/impersonate/*',
         ]);
         $middleware->alias([
