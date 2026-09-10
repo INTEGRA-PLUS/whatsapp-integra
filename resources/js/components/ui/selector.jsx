@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Loader2, Search, X } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -11,15 +12,64 @@ import { clsx } from 'clsx';
  * propio cierre al hacer clic fuera y con Escape, que es todo lo que hace falta.
  */
 
-/** Cierra el panel al hacer clic fuera o al pulsar Escape. */
-function useCierreExterno(abierto, cerrar) {
+/**
+ * Cierra al hacer clic fuera o con Escape, y coloca el panel.
+ *
+ * El panel se pinta en un portal sobre `body` y no dentro del disparador
+ * porque la franja de filtros del tablero se desplaza en horizontal
+ * (`overflow-x-auto`), y ese contenedor **recorta todo lo que sobresale**: el
+ * desplegable salía cortado y por detrás de las columnas, y al abrirlo el
+ * navegador desplazaba la franja para intentar enseñarlo, así que las
+ * pastillas de arriba se iban de la vista.
+ *
+ * Con el panel fuera hay que mirar dos sitios al decidir si el clic fue
+ * «fuera»: el disparador y el propio panel.
+ */
+function usePanelFlotante(abierto, cerrar, ancho) {
     const cajaRef = useRef(null);
+    const panelRef = useRef(null);
+    const [sitio, setSitio] = useState(null);
+
+    const medir = useCallback(() => {
+        const disparador = cajaRef.current;
+        if (!disparador) return;
+
+        const r = disparador.getBoundingClientRect();
+        const margen = 8;
+
+        // Si no cabe a la derecha se pega al borde; si no cabe abajo, se abre
+        // hacia arriba. Un panel medio fuera de la pantalla no se puede usar.
+        const izquierda = Math.max(margen, Math.min(r.left, window.innerWidth - ancho - margen));
+        const alto = panelRef.current?.offsetHeight ?? 0;
+        const cabeAbajo = r.bottom + margen + alto <= window.innerHeight;
+
+        setSitio({
+            left: izquierda,
+            top: cabeAbajo ? r.bottom + margen : Math.max(margen, r.top - margen - alto),
+        });
+    }, [ancho]);
+
+    useLayoutEffect(() => {
+        if (!abierto) { setSitio(null); return; }
+
+        medir();
+        window.addEventListener('resize', medir);
+        // `true` para capturar también el desplazamiento de la franja de
+        // filtros, que no burbujea.
+        document.addEventListener('scroll', medir, true);
+        return () => {
+            window.removeEventListener('resize', medir);
+            document.removeEventListener('scroll', medir, true);
+        };
+    }, [abierto, medir]);
 
     useEffect(() => {
         if (!abierto) return;
 
         const fuera = e => {
-            if (cajaRef.current && !cajaRef.current.contains(e.target)) cerrar();
+            const enDisparador = cajaRef.current?.contains(e.target);
+            const enPanel = panelRef.current?.contains(e.target);
+            if (!enDisparador && !enPanel) cerrar();
         };
         const escape = e => {
             if (e.key === 'Escape') { e.stopPropagation(); cerrar(); }
@@ -35,7 +85,7 @@ function useCierreExterno(abierto, cerrar) {
         };
     }, [abierto, cerrar]);
 
-    return cajaRef;
+    return { cajaRef, panelRef, sitio, medir };
 }
 
 function Disparador({ icono: Icono, etiqueta, resumen, activo, abierto, onClick, onLimpiar }) {
@@ -88,15 +138,28 @@ function Disparador({ icono: Icono, etiqueta, resumen, activo, abierto, onClick,
     );
 }
 
-function Panel({ children, ancho = 'w-72' }) {
-    return (
-        <div className={clsx(
-            'absolute left-0 top-full z-50 mt-2 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-xl',
-            'animate-in fade-in slide-in-from-top-1 duration-150',
-            ancho,
-        )}>
+const ANCHOS = { normal: 288, ancho: 320 };
+
+function Panel({ children, medida = 'normal', panelRef, sitio }) {
+    // Hasta la primera medida se pinta invisible y ya montado: `offsetHeight`
+    // hace falta para saber si cabe hacia abajo.
+    return createPortal(
+        <div
+            ref={panelRef}
+            style={{
+                left: sitio?.left ?? 0,
+                top: sitio?.top ?? 0,
+                width: ANCHOS[medida],
+                visibility: sitio ? 'visible' : 'hidden',
+            }}
+            className={clsx(
+                'fixed z-[80] max-w-[calc(100vw-1rem)] overflow-hidden rounded-2xl border border-border bg-card shadow-xl',
+                'animate-in fade-in slide-in-from-top-1 duration-150',
+            )}
+        >
             {children}
-        </div>
+        </div>,
+        document.body,
     );
 }
 
@@ -120,7 +183,11 @@ export function SelectorMultiple({
 }) {
     const [abierto, setAbierto] = useState(false);
     const [texto, setTexto] = useState('');
-    const cajaRef = useCierreExterno(abierto, () => setAbierto(false));
+    const cerrar = useCallback(() => setAbierto(false), []);
+    const { cajaRef, panelRef, sitio, medir } = usePanelFlotante(abierto, cerrar, ANCHOS.normal);
+
+    // Al filtrar dentro del panel cambia su alto, y con él si cabe hacia abajo.
+    useEffect(() => { if (abierto) medir(); }, [texto, abierto, medir]);
 
     const visibles = useMemo(() => {
         const q = texto.trim().toLowerCase();
@@ -162,7 +229,7 @@ export function SelectorMultiple({
             />
 
             {abierto && (
-                <Panel>
+                <Panel panelRef={panelRef} sitio={sitio}>
                     {buscador && (
                         <div className="flex items-center gap-2 border-b border-border px-3 py-2 focus-within:border-primary/40 focus-within:bg-primary/5">
                             <Search className="size-3.5 shrink-0 text-muted-foreground" />
@@ -246,7 +313,11 @@ export function SelectorBuscador({
     const [texto, setTexto] = useState('');
     const [cargando, setCargando] = useState(false);
     const [resultados, setResultados] = useState([]);
-    const cajaRef = useCierreExterno(abierto, () => setAbierto(false));
+    const cerrar = useCallback(() => setAbierto(false), []);
+    const { cajaRef, panelRef, sitio, medir } = usePanelFlotante(abierto, cerrar, ANCHOS.ancho);
+
+    // Cada tanda de resultados cambia el alto del panel.
+    useEffect(() => { if (abierto) medir(); }, [resultados, abierto, medir]);
 
     // Se espera a que la escritura pare: sin esto, «ISNARDO» son siete
     // peticiones y la primera puede contestar la última.
@@ -282,7 +353,7 @@ export function SelectorBuscador({
             />
 
             {abierto && (
-                <Panel ancho="w-80">
+                <Panel medida="ancho" panelRef={panelRef} sitio={sitio}>
                     <div className="flex items-center gap-2 border-b border-border px-3 py-2 focus-within:border-primary/40 focus-within:bg-primary/5">
                         <Search className="size-3.5 shrink-0 text-muted-foreground" />
                         <input

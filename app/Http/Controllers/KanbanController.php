@@ -249,6 +249,32 @@ class KanbanController extends Controller
         ]));
     }
 
+    /**
+     * Guardar qué etapas esconde este usuario.
+     *
+     * Se validan contra las columnas de **su** empresa: los ids llegan del
+     * navegador, y sin acotar por empresa un usuario podría dejar guardados
+     * ids de otra —inofensivo pero sucio, y el aislamiento aquí es manual.
+     */
+    public function guardarEtapasOcultas(Request $request)
+    {
+        $user = auth()->user();
+
+        $validado = $request->validate([
+            'ocultas'   => 'present|array',
+            'ocultas.*' => 'integer',
+        ]);
+
+        $suyas = KanbanColumn::where('company_id', $user->company_id)
+            ->whereIn('id', $validado['ocultas'])
+            ->pluck('id')
+            ->all();
+
+        $user->guardarEtapasOcultas($suyas);
+
+        return response()->json(['ocultas' => $suyas]);
+    }
+
     // GET /api/kanban/columns
     public function columns()
     {

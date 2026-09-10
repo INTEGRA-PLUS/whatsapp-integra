@@ -16,6 +16,7 @@ import {
     AlertCircle,
     Trash2,
     UserCircle,
+    Eye,
     FileText,
     Mic,
     MapPin,
@@ -636,7 +637,7 @@ const NewCardModal = ({ instances, defaultColumnId, onClose, onCreated }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Kanban({ columns: initialColumns, total_conversations, en_tablero = 0, estancadas = 0, instances: initialInstances }) {
+export default function Kanban({ columns: initialColumns, total_conversations, en_tablero = 0, estancadas = 0, instances: initialInstances, etapas_ocultas = [] }) {
     const [searchQuery, setSearchQuery]     = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [columns, setColumns]             = useState(initialColumns ?? []);
@@ -658,6 +659,9 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
     const [contacto, setContacto]           = useState(null); // { id, nombre }
     const [usuarios, setUsuarios]           = useState([]);
     const [tarjetaAbierta, setTarjetaAbierta] = useState(null); // la conversación del panel
+    // Etapas que este usuario decidió no ver. Llegan ya resueltas en la página
+    // para no pintar las doce columnas y quitarlas un instante después.
+    const [ocultas, setOcultas]             = useState(() => (etapas_ocultas ?? []).map(Number));
     const [borradorEtapa, setBorradorEtapa] = useState(null);   // null = no hay borrador abierto
     const [creandoEtapa, setCreandoEtapa]   = useState(false);
     const [errorEtapa, setErrorEtapa]       = useState(null);
@@ -688,10 +692,38 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         return vistos;
     }, [columns]);
 
-    const columnasVisibles = useMemo(
+    const delTableroActivo = useMemo(
         () => columns.filter(c => (c.grupo ?? null) === grupoActivo),
         [columns, grupoActivo]
     );
+
+    const columnasVisibles = useMemo(
+        () => delTableroActivo.filter(c => !ocultas.includes(c.id)),
+        [delTableroActivo, ocultas]
+    );
+
+    /**
+     * Esconder o mostrar una etapa, y recordarlo para este usuario.
+     *
+     * Se guarda en el servidor y no en el navegador: la preferencia sigue ahí
+     * al volver a entrar y también desde otro equipo. Y se pinta antes de que
+     * el servidor conteste, porque esperar medio segundo a que desaparezca una
+     * columna se siente roto.
+     */
+    const alternarEtapa = async (id) => {
+        const siguientes = ocultas.includes(id)
+            ? ocultas.filter(x => x !== id)
+            : [...ocultas, id];
+
+        setOcultas(siguientes);
+
+        try {
+            await apiRequest('PUT', '/api/kanban/etapas-ocultas', { ocultas: siguientes });
+        } catch (err) {
+            setOcultas(ocultas);
+            aviso.error('No se pudo guardar qué etapas ves', { detalle: err.message });
+        }
+    };
 
     // Las etapas de los **otros** tableros, que son las que se pueden usar como
     // filtro: las del tablero que se está viendo ya son las columnas.
@@ -704,11 +736,24 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
         [grupos, grupoActivo, columns]
     );
 
+    const opcionesDeEtapasVisibles = useMemo(
+        () => delTableroActivo.map(c => ({ valor: c.id, texto: c.name })),
+        [delTableroActivo]
+    );
+
+    // El selector marca lo que **se ve**, que es lo que uno espera al abrirlo;
+    // por dentro se guarda lo contrario.
+    const visiblesMarcadas = useMemo(
+        () => delTableroActivo.filter(c => !ocultas.includes(c.id)).map(c => c.id),
+        [delTableroActivo, ocultas]
+    );
+
     const opcionesDeAgentes = useMemo(() => [
         { valor: 'sin_asignar', texto: 'Sin asignar', ayuda: 'Nadie las está atendiendo' },
         ...usuarios.map(u => ({ valor: String(u.id), texto: u.name, ayuda: u.email })),
     ], [usuarios]);
 
+    const ocultasDelTablero = delTableroActivo.filter(c => ocultas.includes(c.id)).length;
     const cuantosFiltros = filtros.length + agentes.length + (contacto ? 1 : 0) + (soloEstancadas ? 1 : 0);
     const hayFiltros = cuantosFiltros > 0;
 
@@ -1316,6 +1361,13 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                     : <>
                                         {columnasVisibles.length} {columnasVisibles.length === 1 ? 'etapa' : 'etapas'}
                                         {grupoActivo && <><ArrowRight className="size-2.5" /> {grupoActivo}</>}
+                                        {/* Sin esto, quien esconde una etapa la ve
+                                            desaparecer y no sabe que fue él. */}
+                                        {ocultasDelTablero > 0 && (
+                                            <span className="text-muted-foreground">
+                                                · {ocultasDelTablero} {ocultasDelTablero === 1 ? 'escondida' : 'escondidas'}
+                                            </span>
+                                        )}
                                         {hayFiltros && <span className="text-accent-foreground">· {cuantosFiltros} {cuantosFiltros === 1 ? 'filtro' : 'filtros'}</span>}
                                       </>}
                             </p>
@@ -1349,7 +1401,7 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
 
                     {/* Métricas y filtros comparten franja: una sola línea que
                         se desplaza en horizontal cuando no cabe. */}
-                    <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] lg:-mx-6 lg:px-6 [&::-webkit-scrollbar]:hidden">
+                    <div className="-mx-4 mt-2 flex items-center gap-2 overflow-x-auto overflow-y-hidden px-4 py-1 [scrollbar-width:none] lg:-mx-6 lg:px-6 [&::-webkit-scrollbar]:hidden">
                         {stats.map((stat, i) => (
                             <Pista key={i} texto={`${stat.label}: ${stat.hint}`}>
                                 <span className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-2">
@@ -1378,6 +1430,31 @@ export default function Kanban({ columns: initialColumns, total_conversations, e
                                         {g ?? 'Sin agrupar'}
                                     </button>
                                 ))}
+                            </div>
+                        )}
+
+                        {delTableroActivo.length > 1 && (
+                            <div className="shrink-0">
+                                <SelectorMultiple
+                                    etiqueta="Etapas visibles"
+                                    icono={Eye}
+                                    opciones={opcionesDeEtapasVisibles}
+                                    seleccion={visiblesMarcadas}
+                                    onCambio={siguientes => {
+                                        // Llega la lista de las que se ven; se
+                                        // busca la que cambió porque el
+                                        // guardado es por etapa.
+                                        const antes = new Set(visiblesMarcadas);
+                                        const ahora = new Set(siguientes);
+                                        const cambiada = delTableroActivo
+                                            .map(c => c.id)
+                                            .find(id => antes.has(id) !== ahora.has(id));
+                                        if (cambiada !== undefined) alternarEtapa(cambiada);
+                                    }}
+                                    buscador={delTableroActivo.length > 8}
+                                    textoVacio="Ninguna"
+                                    nota="Es tu vista: no cambia el tablero de tus compañeros y se recuerda la próxima vez que entres."
+                                />
                             </div>
                         )}
 

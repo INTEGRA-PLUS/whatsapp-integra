@@ -79,7 +79,9 @@ export function AppSidebar() {
                 label: 'Conversaciones',
                 items: [
                     { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
-                    { title: 'CRM', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
+                    // «CRM» no decía a dónde llevaba: el sistema entero es un CRM. La
+                    // pantalla es un tablero kanban y ahora se llama así.
+                    { title: 'Tablero Kanban', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
                     { title: 'Contactos', href: route('contacts.index'), icon: Contact, show: hasPermission('contacts.view') },
                 ],
             },

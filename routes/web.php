@@ -642,6 +642,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/columns', [KanbanController::class, 'columns']);
         Route::get('/counts', [KanbanController::class, 'columnCounts']);
         Route::get('/contactos', [KanbanController::class, 'contactos']);
+        Route::put('/etapas-ocultas', [KanbanController::class, 'guardarEtapasOcultas']);
         Route::post('/columns', [KanbanController::class, 'storeColumn']);
         Route::put('/columns/{id}', [KanbanController::class, 'updateColumn']);
         Route::delete('/columns/{id}', [KanbanController::class, 'deleteColumn']);

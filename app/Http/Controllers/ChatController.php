@@ -134,6 +134,10 @@ class ChatController extends Controller
 
         return Inertia::render('Chat/Kanban', [
             'columns' => $columns,
+            // Qué etapas esconde este usuario: su preferencia, no la de la
+            // empresa. Viaja en la página para que el tablero no pinte primero
+            // las doce columnas y las quite después.
+            'etapas_ocultas' => $user->etapasOcultas(),
             'total_conversations' => $total,
             'en_tablero' => $enTablero,
             'estancadas' => $estancadas,
