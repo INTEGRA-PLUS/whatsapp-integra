@@ -56,6 +56,10 @@ class ConectarInstagramTest extends TestCase
             'instagram_business_basic,instagram_business_manage_messages',
             $parametros['scope']
         );
+
+        // Sin el botón de «continuar con Facebook»: por ahí sale un token que no
+        // sirve contra graph.instagram.com y el error de Meta no lo dice.
+        $this->assertSame('false', $parametros['enable_fb_login']);
     }
 
     public function test_conecta_la_cuenta_y_guarda_el_token_de_sesenta_dias(): void
