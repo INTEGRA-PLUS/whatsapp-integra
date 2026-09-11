@@ -87,7 +87,13 @@ class InstagramLoginService
         return [
             'access_token' => (string) $datos['access_token'],
             'user_id' => (string) $datos['user_id'],
-            'permissions' => (string) ($datos['permissions'] ?? ''),
+            // `permissions` llega como LISTA, no como la cadena separada por
+            // comas que enseña la documentación. Forzarlo a string reventaba el
+            // canje con «Array to string conversion» y el cliente veía un 500
+            // justo después de autorizar (11-sep-2026).
+            'permissions' => is_array($datos['permissions'] ?? null)
+                ? implode(',', $datos['permissions'])
+                : (string) ($datos['permissions'] ?? ''),
         ];
     }
 
