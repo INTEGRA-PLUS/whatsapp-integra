@@ -171,6 +171,24 @@ clientes en producción sobre esta misma app.
 
 ---
 
+### El canje del token largo no hace falta, y el error no lo dice
+
+La documentación describe código → token de una hora → token de sesenta días con
+`ig_exchange_token`. **Business Login ya entrega el token largo**, y pedir el
+canje devuelve `Unsupported request - method type: get`, que manda a buscar
+donde no es.
+
+Descartado una por una (11-sep-2026): la URL era la documentada con sus tres
+parámetros, la clave era la de Instagram y no la de Facebook, esa misma URL con
+un token inválido responde con normalidad, la ruta versionada falla igual, y el
+token era real (`IGAG…`, 208-214 caracteres).
+
+Lo que funciona es pedir la **renovación**, que además devuelve la caducidad de
+verdad. El código prueba canje → renovación → seguir con el que hay, y valida
+siempre pidiendo el perfil antes de guardar nada.
+
+---
+
 ## 2 · Los textos de la solicitud
 
 Escritos para el revisor: concretos, sin marketing, y diciendo qué hace la app

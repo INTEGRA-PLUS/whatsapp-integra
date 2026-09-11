@@ -148,6 +148,102 @@ class ConectarInstagramTest extends TestCase
     }
 
     /**
+     * El caso REAL de producción (11-sep-2026): Business Login entrega un token
+     * que ya es de sesenta días, y pedirle `ig_exchange_token` devuelve
+     * «Unsupported request - method type: get», que no explica nada.
+     *
+     * La renovación confirma la hipótesis y además da la caducidad de verdad.
+     */
+    public function test_conecta_cuando_el_token_ya_era_de_larga_duracion(): void
+    {
+        // Sin respuestasDeMeta(): Laravel NO reemplaza los stubs, el primero que
+        // coincide gana, y el del canje correcto tapaba el fallo que se quiere
+        // reproducir aquí.
+        Http::fake([
+            'api.instagram.com/oauth/access_token' => Http::response([
+                'data' => [['access_token' => 'IGAGel-token-largo-de-entrada', 'user_id' => '17841400008460056', 'permissions' => ['instagram_business_basic']]],
+            ]),
+            // Lo que Meta devuelve de verdad cuando el token no es de una hora.
+            'graph.instagram.com/access_token*' => Http::response([
+                'error' => ['message' => 'Unsupported request - method type: get', 'type' => 'IGApiException', 'code' => 100],
+            ], 400),
+            'graph.instagram.com/refresh_access_token*' => Http::response([
+                'access_token' => 'el-token-renovado',
+                'expires_in' => 5_184_000,
+            ]),
+            'graph.instagram.com/*/me*' => Http::response([
+                'user_id' => '17841400008460056',
+                'username' => 'integracolombia',
+            ]),
+        ]);
+
+        $usuario = $this->usuario();
+        $estado = $this->arrancar($usuario);
+
+        $this->actingAs($usuario)
+            ->get(route('instagram.callback', ['code' => 'AQBx-hBsH3', 'state' => $estado]))
+            ->assertSessionHas('success');
+
+        $linea = Instance::canal(Instance::CANAL_INSTAGRAM)->firstOrFail();
+        $this->assertSame('el-token-renovado', $linea->access_token);
+        $this->assertEqualsWithDelta(60, now()->diffInDays($linea->token_expires_at), 1);
+    }
+
+    /**
+     * Y si ni el canje ni la renovación funcionan —la renovación exige que el
+     * token tenga 24 horas— se sigue con el que hay. No es rendirse: el perfil
+     * se pide acto seguido, así que un token inservible no llega a guardarse.
+     */
+    public function test_si_no_hay_canje_ni_renovacion_se_usa_el_token_que_hay(): void
+    {
+        Http::fake([
+            'api.instagram.com/oauth/access_token' => Http::response([
+                'data' => [['access_token' => 'IGAGel-token-de-entrada', 'user_id' => '17841400008460056', 'permissions' => []]],
+            ]),
+            'graph.instagram.com/access_token*' => Http::response(['error' => ['message' => 'Unsupported request']], 400),
+            'graph.instagram.com/refresh_access_token*' => Http::response(['error' => ['message' => 'too new']], 400),
+            'graph.instagram.com/*/me*' => Http::response([
+                'user_id' => '17841400008460056',
+                'username' => 'integracolombia',
+            ]),
+        ]);
+
+        $usuario = $this->usuario();
+        $estado = $this->arrancar($usuario);
+
+        $this->actingAs($usuario)
+            ->get(route('instagram.callback', ['code' => 'AQBx-hBsH3', 'state' => $estado]))
+            ->assertSessionHas('success');
+
+        $this->assertSame('IGAGel-token-de-entrada', Instance::canal(Instance::CANAL_INSTAGRAM)->firstOrFail()->access_token);
+    }
+
+    /**
+     * Lo que NO debe pasar: si el token no sirve para nada, no se guarda una
+     * línea que la bandeja daría por buena.
+     */
+    public function test_un_token_que_no_sirve_no_deja_linea_conectada(): void
+    {
+        Http::fake([
+            'api.instagram.com/oauth/access_token' => Http::response([
+                'data' => [['access_token' => 'IGAGtoken-muerto', 'user_id' => '17841400008460056', 'permissions' => []]],
+            ]),
+            'graph.instagram.com/access_token*' => Http::response(['error' => ['message' => 'Unsupported request']], 400),
+            'graph.instagram.com/refresh_access_token*' => Http::response(['error' => ['message' => 'too new']], 400),
+            'graph.instagram.com/*/me*' => Http::response(['error' => ['message' => 'Invalid OAuth access token']], 400),
+        ]);
+
+        $usuario = $this->usuario();
+        $estado = $this->arrancar($usuario);
+
+        $this->actingAs($usuario)
+            ->get(route('instagram.callback', ['code' => 'AQBx-hBsH3', 'state' => $estado]))
+            ->assertSessionHas('error');
+
+        $this->assertSame(0, Instance::canal(Instance::CANAL_INSTAGRAM)->count());
+    }
+
+    /**
      * Reconectar es normal —al renovar permisos, o si el token se perdió— y no
      * debe partir en dos el historial del mismo cliente.
      */
