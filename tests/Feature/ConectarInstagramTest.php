@@ -125,6 +125,29 @@ class ConectarInstagramTest extends TestCase
     }
 
     /**
+     * La forma REAL en que Meta devuelve los permisos: una lista, no la cadena
+     * separada por comas que enseña la documentación.
+     *
+     * Esta prueba existe porque la otra falseaba la respuesta con un string, así
+     * que pasaba en verde mientras producción devolvía un 500 («Array to string
+     * conversion») justo después de que el cliente autorizara (11-sep-2026).
+     */
+    public function test_conecta_aunque_los_permisos_lleguen_como_lista(): void
+    {
+        $this->respuestasDeMeta(permisosComoLista: true);
+
+        $usuario = $this->usuario();
+        $estado = $this->arrancar($usuario);
+
+        $this->actingAs($usuario)
+            ->get(route('instagram.callback', ['code' => 'AQBx-hBsH3', 'state' => $estado]))
+            ->assertRedirect(route('instances.index'))
+            ->assertSessionHas('success');
+
+        $this->assertSame(1, Instance::canal(Instance::CANAL_INSTAGRAM)->count());
+    }
+
+    /**
      * Reconectar es normal —al renovar permisos, o si el token se perdió— y no
      * debe partir en dos el historial del mismo cliente.
      */
@@ -183,14 +206,16 @@ class ConectarInstagramTest extends TestCase
         return $parametros['state'];
     }
 
-    private function respuestasDeMeta(): void
+    private function respuestasDeMeta(bool $permisosComoLista = false): void
     {
         Http::fake([
             'api.instagram.com/oauth/access_token' => Http::response([
                 'data' => [[
                     'access_token' => 'el-token-corto',
                     'user_id' => '17841400008460056',
-                    'permissions' => 'instagram_business_basic,instagram_business_manage_messages',
+                    'permissions' => $permisosComoLista
+                        ? ['instagram_business_basic', 'instagram_business_manage_messages']
+                        : 'instagram_business_basic,instagram_business_manage_messages',
                 ]],
             ]),
             'graph.instagram.com/access_token*' => Http::response([
