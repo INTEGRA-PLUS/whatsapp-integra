@@ -111,7 +111,7 @@ class InstagramLoginService
         ]);
 
         if ($respuesta->failed() || ! $respuesta->json('access_token')) {
-            $this->registrarFallo('obtener el token largo', $respuesta->json());
+            $this->registrarFallo('obtener el token largo', $respuesta->json(), $respuesta);
 
             return null;
         }
@@ -202,10 +202,24 @@ class InstagramLoginService
      * las cuatro cosas está mal —app id, clave, redirect o permisos— y sin eso
      * cada fallo de conexión es media hora de adivinar.
      */
-    private function registrarFallo(string $paso, mixed $cuerpo): void
+    private function registrarFallo(string $paso, mixed $cuerpo, mixed $respuesta = null): void
     {
-        Log::channel('instagram')->error("❌ Instagram: no se pudo {$paso}", [
-            'respuesta' => $cuerpo,
-        ]);
+        $contexto = ['respuesta' => $cuerpo];
+
+        // A qué dirección se acabó llamando y con qué parámetros, sin sus
+        // valores: ahí van la clave y el token. Sin esto, un «Unsupported
+        // request» de Meta no dice si falla la ruta, el método o el token, y se
+        // va media hora en adivinar (11-sep-2026).
+        if ($respuesta !== null && method_exists($respuesta, 'effectiveUri')) {
+            $uri = $respuesta->effectiveUri();
+
+            $contexto['llamada'] = $uri ? $uri->getScheme().'://'.$uri->getHost().$uri->getPath() : null;
+            $contexto['parametros'] = $uri
+                ? array_map(fn ($par) => explode('=', $par, 2)[0], array_filter(explode('&', $uri->getQuery())))
+                : null;
+            $contexto['estado_http'] = $respuesta->status();
+        }
+
+        Log::channel('instagram')->error("❌ Instagram: no se pudo {$paso}", $contexto);
     }
 }
