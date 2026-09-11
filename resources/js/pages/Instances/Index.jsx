@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
+import { LogoCanal, EtiquetaCanal } from '@/components/logo-canal';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
 export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false }) {
@@ -135,21 +136,29 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {instances.map(instance => (
                             <div key={instance.id} className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`flex size-10 items-center justify-center rounded-lg ${
-                                            !instance.active ? 'bg-muted'
-                                                : instance.health_status === 'unreachable' ? 'bg-destructive/10'
-                                                : 'bg-success/15'
-                                        }`}>
-                                            {instance.active && instance.health_status !== 'unreachable'
-                                                ? <Wifi className="size-5 text-success" />
-                                                : <WifiOff className={`size-5 ${instance.health_status === 'unreachable' && instance.active ? 'text-destructive' : 'text-muted-foreground'}`} />
-                                            }
-                                        </div>
-                                        <div>
-                                            <p className="font-semibold text-foreground text-sm">{instance.name ?? 'Sin nombre'}</p>
-                                            <p className="text-xs text-muted-foreground">{instance.display_phone_number ?? '—'}</p>
+                                {/* El logo de la plataforma en vez del icono de wifi que
+                                    llevaban todas: con WhatsApp e Instagram en la misma
+                                    pantalla no se distinguía cuál era cuál sin leer la
+                                    letra pequeña. El estado de la conexión se dice
+                                    aparte, en la pastilla de la derecha. */}
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <LogoCanal
+                                            instancia={instance}
+                                            apagado={!instance.active || instance.health_status === 'unreachable'}
+                                        />
+                                        <div className="min-w-0">
+                                            <p className="truncate font-semibold text-foreground text-sm">{instance.name ?? 'Sin nombre'}</p>
+                                            <div className="mt-0.5 flex items-center gap-2">
+                                                <EtiquetaCanal instancia={instance} />
+                                                {/* La identidad del canal: el número en
+                                                    WhatsApp, y nada en Instagram, donde el
+                                                    nombre de la línea YA es la cuenta y
+                                                    repetirlo sólo hace ruido. */}
+                                                {instance.channel !== 'instagram' && instance.display_phone_number && (
+                                                    <span className="truncate text-xs text-muted-foreground">{instance.display_phone_number}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     {/* "Activa" es una casilla nuestra; la salud es lo que
@@ -191,19 +200,29 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                     etiquetas vacías dejaba la tarjeta diciendo
                                     «Phone ID:» seguido de nada — y eso lo iba a ver el
                                     revisor del App Review en el screencast. */}
-                                <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs font-mono space-y-1">
+                                {/* Los identificadores técnicos, en gris y pequeños: se
+                                    necesitan para soporte, pero no son lo que el cliente
+                                    viene a ver. Cada canal enseña los suyos, y una cuenta
+                                    de Instagram no tiene número ni WABA. */}
+                                <dl className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] font-mono leading-relaxed">
                                     {instance.channel === 'instagram' ? (
-                                        <>
-                                            <div><span className="text-muted-foreground">Cuenta:</span> <span className="text-foreground">{instance.meta?.instagram?.username ? '@' + instance.meta.instagram.username : '—'}</span></div>
-                                            <div><span className="text-muted-foreground">ID:</span> <span className="text-foreground">{instance.external_account_id}</span></div>
-                                        </>
+                                        <div className="flex gap-2">
+                                            <dt className="shrink-0 text-muted-foreground">ID de cuenta</dt>
+                                            <dd className="truncate text-foreground">{instance.external_account_id ?? '—'}</dd>
+                                        </div>
                                     ) : (
                                         <>
-                                            <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
-                                            <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>
+                                            <div className="flex gap-2">
+                                                <dt className="shrink-0 text-muted-foreground">Phone ID</dt>
+                                                <dd className="truncate text-foreground">{instance.phone_number_id ?? '—'}</dd>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <dt className="shrink-0 text-muted-foreground">WABA ID</dt>
+                                                <dd className="truncate text-foreground">{instance.waba_id ?? '—'}</dd>
+                                            </div>
                                         </>
                                     )}
-                                </div>
+                                </dl>
                                 {/* `flex-wrap` y un ancho mínimo por botón: sin envolver,
                                     los cuatro se salían de la tarjeta —el de eliminar
                                     quedaba fuera del borde, flotando sobre la tarjeta de
