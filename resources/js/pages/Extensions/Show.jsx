@@ -223,6 +223,16 @@ export default function ExtensionShow({ extension: initial }) {
     );
 }
 
-ExtensionShow.layout = (page) => (
-    <AppLayout breadcrumb={['Extensiones', page.props.extension.name]}>{page}</AppLayout>
-);
+// Inertia 3 invoca este callback DOS VECES y con formas distintas: primero con
+// las props peladas, para averiguar si es una render function, y sólo después
+// con el elemento ya creado. Leer `page.props` a secas reventaba en esa primera
+// llamada —ahí `props.props` no existe— y se llevaba por delante toda la pagina.
+ExtensionShow.layout = (page) => {
+    const nombre = page?.props?.extension?.name ?? page?.extension?.name;
+
+    return (
+        <AppLayout breadcrumb={nombre ? ['Extensiones', nombre] : ['Extensiones']}>
+            {page}
+        </AppLayout>
+    );
+};
