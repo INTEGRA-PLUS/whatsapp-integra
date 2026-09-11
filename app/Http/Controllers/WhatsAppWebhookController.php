@@ -911,6 +911,15 @@ class WhatsAppWebhookController extends Controller
         // agente realmente abre la conversación (ver ChatController::messages()
         // y ::startConversation()), no apenas llega el mensaje al webhook.
 
+        // Las extensiones de la empresa, antes de decidir la respuesta: lo que
+        // hacen aquí —etiquetar, asignar— es contexto que el menú y la respuesta
+        // automática pueden querer mirar, y después llegaría tarde. El runner
+        // envuelve cada extensión en su propio try/catch, así que esto no puede
+        // tumbar el mensaje que ya quedó guardado.
+        if (!$isSystemNotice) {
+            app(\App\Extensions\ExtensionRunner::class)->onInbound($conversation, $savedMessage);
+        }
+
         // Las respuestas automáticas son un efecto secundario: si fallan, el
         // mensaje del cliente ya quedó guardado y no se debe reintentar el lote.
         if (!$skipAutoResponse) {
