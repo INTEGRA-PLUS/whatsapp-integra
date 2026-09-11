@@ -171,21 +171,43 @@ clientes en producción sobre esta misma app.
 
 ---
 
-### El canje del token largo no hace falta, y el error no lo dice
+### Sin el rol de evaluador, TODO falla con el mismo error
 
-La documentación describe código → token de una hora → token de sesenta días con
-`ig_exchange_token`. **Business Login ya entrega el token largo**, y pedir el
-canje devuelve `Unsupported request - method type: get`, que manda a buscar
-donde no es.
+Este fue el problema de verdad y costó seis intentos, así que conviene leerlo
+antes de tocar nada.
 
-Descartado una por una (11-sep-2026): la URL era la documentada con sus tres
-parámetros, la clave era la de Instagram y no la de Facebook, esa misma URL con
-un token inválido responde con normalidad, la ruta versionada falla igual, y el
-token era real (`IGAG…`, 208-214 caracteres).
+En acceso estándar, la cuenta de Instagram tiene que estar **registrada en la
+app con el rol de «evaluador de Instagram»**, y la cuenta tiene que **aceptar la
+invitación**. Mientras eso falte, Meta emite el token sin protestar y después
+**ninguna** llamada a `graph.instagram.com` resuelve. Todas —`/access_token`,
+`/refresh_access_token` y `/me`— responden lo mismo:
 
-Lo que funciona es pedir la **renovación**, que además devuelve la caducidad de
-verdad. El código prueba canje → renovación → seguir con el que hay, y valida
-siempre pidiendo el perfil antes de guardar nada.
+    Unsupported request - method type: get   (IGApiException, código 100)
+
+Ese mensaje idéntico para causas distintas es lo que hace perder horas: parece
+un problema de ruta o de método, y no lo es.
+
+**Cómo se hace, y dónde está escondido:**
+
+1. Panel → paso 2 «Generar tokens de acceso» → **Agregar cuenta** → rol
+   **Evaluador de Instagram** → escribir el nombre de usuario
+2. La cuenta acepta desde **instagram.com** (la app del móvil **no** lo muestra):
+   Configuración → Aplicaciones y sitios web → pestaña **«Invitaciones para
+   evaluadores»**
+3. Y una vez aceptada, activar **«Suscripción al webhook»** en esa misma fila del
+   paso 2: viene **desactivada**, y sin ella no llega ningún mensaje aunque la
+   cuenta esté conectada. **Es por cuenta, no por app**, así que hay que hacerlo
+   con cada cliente.
+
+Con el rol puesto, el canje documentado (`ig_exchange_token`) **funciona a la
+primera** y devuelve un token de 60 días. El código conserva de todos modos un
+respaldo —canje → renovación → seguir con el que hay— que no estorba, pero la
+causa nunca fue el endpoint.
+
+Lo que sí quedó descartado por el camino, y ahorra repetirlo: la URL era la
+documentada, la clave era la de Instagram y no la de Facebook, esa misma URL con
+un token inválido responde con normalidad, la ruta versionada se comporta igual,
+y el token era real (`IGAG…`, 208-218 caracteres).
 
 ---
 
