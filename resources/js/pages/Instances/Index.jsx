@@ -186,9 +186,23 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                     </div>
                                 )}
 
+                                {/* Cada canal enseña lo suyo. Una cuenta de Instagram no
+                                    tiene número ni WABA, así que pintar esas dos
+                                    etiquetas vacías dejaba la tarjeta diciendo
+                                    «Phone ID:» seguido de nada — y eso lo iba a ver el
+                                    revisor del App Review en el screencast. */}
                                 <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs font-mono space-y-1">
-                                    <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
-                                    <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>
+                                    {instance.channel === 'instagram' ? (
+                                        <>
+                                            <div><span className="text-muted-foreground">Cuenta:</span> <span className="text-foreground">{instance.meta?.instagram?.username ? '@' + instance.meta.instagram.username : '—'}</span></div>
+                                            <div><span className="text-muted-foreground">ID:</span> <span className="text-foreground">{instance.external_account_id}</span></div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
+                                            <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>
+                                        </>
+                                    )}
                                 </div>
                                 {/* `flex-wrap` y un ancho mínimo por botón: sin envolver,
                                     los cuatro se salían de la tarjeta —el de eliminar
