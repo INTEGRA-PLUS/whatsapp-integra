@@ -112,17 +112,27 @@ configuraciones de Webhooks para la API de Instagram con inicio de sesión de
 empresa de Instagram solo se admiten dentro del producto». Los campos de esa
 pantalla no sirven para este camino.
 
-### Los campos del tópico llegan con la cuenta, no antes
+### Los campos del tópico se suscriben solos al guardar la URL
 
-`messages`, `messaging_postbacks` y compañía **no se marcan a mano** en Instagram
-Login. El paso 2 del panel lo dice sin subrayarlo: «Agrega una cuenta de
-Instagram para generar tokens de acceso **y configurar suscripciones a
-webhooks**». O sea que la suscripción a campos es por cuenta conectada y llega
-con el OAuth, no antes.
+Al verificar y guardar el webhook, Meta dejó **ya suscritos** los campos que
+hacen falta, sin marcarlos a mano (comprobado en el panel el 11-sep-2026):
 
-Lo que se comprueba por API mientras tanto es que **no se rompió nada**:
-`devtools_webhook_list` sobre `865904982715022` sigue devolviendo un solo tópico,
-`whatsapp_business_account`, con sus doce campos y `enabled: true`.
+`messages` · `messaging_postbacks` · `messaging_seen` · `message_reactions` ·
+`messaging_referral` · `comments` · `live_comments` · `message_edit`
+
+Quedan fuera `messaging_handover`, `messaging_optins` y `standby`, que no
+usamos.
+
+**Ojo con comprobarlo por API:** `devtools_webhook_list` sobre
+`865904982715022` sigue devolviendo **un solo tópico**,
+`whatsapp_business_account`. Eso **no** significa que Instagram no esté
+suscrito: el tópico `instagram` cuelga de la app de Instagram
+(`28822685693981719`), que la API del MCP no sabe consultar
+(«Application not found or not accessible»). Para Instagram, la fuente es el
+panel.
+
+Lo que sí confirma esa llamada es que **no se rompió nada**: WhatsApp sigue con
+sus doce campos y `enabled: true`.
 
 ### La trampa que costó la primera verificación
 
@@ -264,7 +274,9 @@ Va en las descripciones, abriéndolas con esa frase.
 - [x] Caso de uso de Instagram añadido y Business Login configurado *(10-sep-2026)*
 - [x] Webhook del tópico `instagram` verificado y guardado *(10-sep-2026)*; los
       campos llegan al conectar la primera cuenta
-- [ ] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
+- [x] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
+      *(11-sep-2026)*. Verificado en producción: un evento firmado con esa clave
+      entra con 200 y uno con firma falsa se rechaza con 403.
 - [x] El código: conectar la cuenta, recibir DM y responder desde el CRM
       *(11-sep-2026)*
 - [ ] Nuestra cuenta profesional de Instagram conectada y funcionando en
