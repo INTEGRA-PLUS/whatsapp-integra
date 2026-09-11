@@ -104,22 +104,37 @@ class InstagramLoginService
      */
     public function tokenLargo(string $tokenCorto): ?array
     {
-        $respuesta = Http::get('https://graph.instagram.com/access_token', [
-            'grant_type' => 'ig_exchange_token',
-            'client_secret' => $this->appSecret(),
-            'access_token' => $tokenCorto,
-        ]);
+        // Dos direcciones, y la primera es la que documenta Meta. La segunda
+        // está porque la documentada devolvió «Unsupported request - method
+        // type: get» con un token real, mientras que con uno inválido responde
+        // con normalidad (11-sep-2026): la ruta existe, así que algo del
+        // enrutado de Graph la trata distinto según el token. Se prueba la
+        // versionada antes de rendirse y queda escrito cuál funcionó.
+        $version = config('services.meta.instagram.api_version', 'v23.0');
 
-        if ($respuesta->failed() || ! $respuesta->json('access_token')) {
-            $this->registrarFallo('obtener el token largo', $respuesta->json(), $respuesta);
+        foreach ([
+            'https://graph.instagram.com/access_token',
+            "https://graph.instagram.com/{$version}/access_token",
+        ] as $url) {
+            $respuesta = Http::get($url, [
+                'grant_type' => 'ig_exchange_token',
+                'client_secret' => $this->appSecret(),
+                'access_token' => $tokenCorto,
+            ]);
 
-            return null;
+            if (! $respuesta->failed() && $respuesta->json('access_token')) {
+                Log::channel('instagram')->info('🔑 Token largo obtenido', ['por' => $url]);
+
+                return [
+                    'access_token' => (string) $respuesta->json('access_token'),
+                    'expires_in' => (int) ($respuesta->json('expires_in') ?? 60 * 24 * 3600),
+                ];
+            }
+
+            $this->registrarFallo('obtener el token largo', $respuesta->json(), $respuesta, $tokenCorto);
         }
 
-        return [
-            'access_token' => (string) $respuesta->json('access_token'),
-            'expires_in' => (int) ($respuesta->json('expires_in') ?? 60 * 24 * 3600),
-        ];
+        return null;
     }
 
     /**
@@ -202,9 +217,17 @@ class InstagramLoginService
      * las cuatro cosas está mal —app id, clave, redirect o permisos— y sin eso
      * cada fallo de conexión es media hora de adivinar.
      */
-    private function registrarFallo(string $paso, mixed $cuerpo, mixed $respuesta = null): void
+    private function registrarFallo(string $paso, mixed $cuerpo, mixed $respuesta = null, ?string $token = null): void
     {
         $contexto = ['respuesta' => $cuerpo];
+
+        // Cómo empieza el token y cuánto mide. Los de Instagram empiezan por
+        // «IGAA»; si aquí saliera otra cosa, el problema no sería el endpoint
+        // sino que estamos leyendo el campo equivocado del canje del código.
+        if ($token !== null) {
+            $contexto['token_empieza_por'] = substr($token, 0, 4);
+            $contexto['token_longitud'] = strlen($token);
+        }
 
         // A qué dirección se acabó llamando y con qué parámetros, sin sus
         // valores: ahí van la clave y el token. Sin esto, un «Unsupported
