@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Instance;
+use App\Services\BandejaDeInstagram;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -12,17 +14,13 @@ use Illuminate\Support\Facades\Log;
  * Va en su propia URL y no colgando del de WhatsApp porque Meta admite un solo
  * `callback_url` por app y por tópico: son dos suscripciones independientes que
  * conviven en la misma app.
- *
- * Hoy este endpoint **valida y registra, pero todavía no guarda conversaciones**.
- * Es deliberado y es lo que destraba el resto: el panel de Meta no deja
- * suscribir el tópico con un botón de «Verificar y guardar» que llama en ese
- * mismo instante con `hub.challenge`, así que sin algo contestando aquí no se
- * puede ni configurar la suscripción, ni grabar el screencast, ni enviar el App
- * Review. La ingesta a la bandeja entra por `procesarMensaje()`.
  */
 class InstagramWebhookController extends Controller
 {
-    public function __construct(private MetaWhatsAppService $metaService) {}
+    public function __construct(
+        private MetaWhatsAppService $metaService,
+        private BandejaDeInstagram $bandeja,
+    ) {}
 
     /**
      * El apretón de manos: Meta llama con `hub.challenge` y hay que devolverlo
@@ -88,13 +86,12 @@ class InstagramWebhookController extends Controller
     }
 
     /**
-     * Un evento suelto del tópico `instagram`.
+     * Un evento suelto del tópico `instagram`, a la bandeja.
      *
-     * Aquí es donde entrará la ingesta a la bandeja. Todavía no lo hace porque
-     * no hay dónde colgarla: hace falta una línea de canal `instagram` con su
-     * token, y eso llega con el OAuth de Business Login. Mientras tanto deja
-     * traza de que el evento llegó, que es exactamente lo que hay que poder
-     * demostrar para cerrar la suscripción en el panel.
+     * `entry.id` es la cuenta profesional que recibió el mensaje, y es lo que
+     * dice de qué empresa es: una app de Tech Provider recibe eventos de todas
+     * las cuentas conectadas por el mismo callback, así que sin esta búsqueda un
+     * mensaje podría caer en la bandeja de otro cliente.
      */
     private function procesarMensaje(?string $cuenta, array $evento): void
     {
@@ -107,6 +104,28 @@ class InstagramWebhookController extends Controller
             'tipo' => $this->tipoDeEvento($evento),
             'mid' => $evento['message']['mid'] ?? null,
         ]);
+
+        if (! $cuenta) {
+            return;
+        }
+
+        $linea = Instance::canal(Instance::CANAL_INSTAGRAM)
+            ->where('external_account_id', $cuenta)
+            ->first();
+
+        if (! $linea) {
+            // Pasa de verdad: una cuenta que se desconectó de nuestro lado pero
+            // sigue suscrita en Meta, o un evento de pruebas. Se registra y se
+            // deja pasar; devolver error haría que Meta reintente para siempre
+            // un mensaje que no tiene dónde ir.
+            Log::channel('instagram')->warning('⚠️ Evento de una cuenta de Instagram que no tenemos conectada', [
+                'cuenta' => $cuenta,
+            ]);
+
+            return;
+        }
+
+        $this->bandeja->guardar($linea, $evento);
     }
 
     private function tipoDeEvento(array $evento): string

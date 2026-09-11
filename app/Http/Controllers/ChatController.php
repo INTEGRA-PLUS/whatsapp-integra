@@ -363,8 +363,11 @@ class ChatController extends Controller
 
         $conversation->markAsRead();
 
+        // El doble check azul sólo existe en WhatsApp. Una línea de Instagram no
+        // tiene `phone_number_id`, así que sin esta guarda se gastaría una
+        // llamada a Meta con un identificador nulo cada vez que se abre un chat.
         $lastInboundWamid = $messages->where('direction', 'inbound')->whereNotNull('wamid')->last()?->wamid;
-        if ($lastInboundWamid) {
+        if ($lastInboundWamid && $instance->esWhatsApp()) {
             $this->metaService->markAsRead($instance->phone_number_id, $lastInboundWamid);
         }
 
@@ -758,7 +761,8 @@ class ChatController extends Controller
         if (! $anteriorA) {
             $conversation->markAsRead();
 
-            if ($conversation->instance->isMetaConfigured()) {
+            // Ver arriba: el "leído" es cosa de WhatsApp.
+            if ($conversation->instance->isMetaConfigured() && $conversation->instance->esWhatsApp()) {
                 $lastInboundWamid = $conversation->messages()
                     ->where('direction', 'inbound')
                     ->whereNotNull('wamid')

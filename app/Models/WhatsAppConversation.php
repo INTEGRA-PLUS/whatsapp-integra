@@ -98,6 +98,14 @@ class WhatsAppConversation extends Model
      */
     public function recipientId(): string
     {
+        // Fuera de WhatsApp la identidad del cliente es `wa_id` y no hay más:
+        // un IGSID ni se normaliza ni tiene BSUID. Sin esta salida temprana la
+        // función devolvía cadena vacía y el mensaje salía **sin destinatario**,
+        // que es un envío perdido con un error de Meta que no dice por qué.
+        if ($this->canal() !== Instance::CANAL_WHATSAPP) {
+            return (string) $this->wa_id;
+        }
+
         $phone = self::normalizePhone($this->phone_number);
 
         if ($phone !== '') {
@@ -222,6 +230,46 @@ class WhatsAppConversation extends Model
                 ->where('wa_id', $waId)
                 ->firstOrFail()
                 ->absorbIdentity($bsuid, $digits);
+        }
+    }
+
+    /**
+     * El hilo de un canal que no es WhatsApp, buscado por su identificador.
+     *
+     * Va aparte de `resolveFor()` y no es duplicación: aquello resuelve la
+     * maraña propia de WhatsApp —normalizar teléfonos, absorber BSUID, buscar
+     * variantes del número— y aquí nada de eso aplica. Un IGSID de Instagram no
+     * es un teléfono, no se normaliza y no tiene variantes: **es o no es**.
+     *
+     * Meterlo por `resolveFor()` pasándolo como BSUID habría funcionado y habría
+     * sido una mentira permanente, igual que meter un IGSID en `phone_number_id`.
+     *
+     * `wa_id` sí se reutiliza a propósito: es «la clave única del hilo» y ya
+     * admite cualquier forma de identidad. `phone_number` se queda en null, que
+     * es justo para lo que se hizo anulable.
+     */
+    public static function resolverPorIdentidad(int $instanceId, string $identidad, array $defaults = []): self
+    {
+        $conversacion = static::where('instance_id', $instanceId)
+            ->where('wa_id', $identidad)
+            ->first();
+
+        if ($conversacion) {
+            return $conversacion;
+        }
+
+        try {
+            return static::create(array_merge($defaults, [
+                'instance_id' => $instanceId,
+                'wa_id' => $identidad,
+                'phone_number' => null,
+            ]));
+        } catch (UniqueConstraintViolationException $e) {
+            // Un lote del webhook puede traer dos mensajes del mismo cliente
+            // nuevo y competir por el índice único (instance_id, wa_id).
+            return static::where('instance_id', $instanceId)
+                ->where('wa_id', $identidad)
+                ->firstOrFail();
         }
     }
 

@@ -95,6 +95,10 @@ return [
             // y el respaldo no se activaba nunca. Costó una verificación
             // fallida en producción (10-sep-2026).
             'verify_token' => env('META_IG_WEBHOOK_VERIFY_TOKEN') ?: env('META_WEBHOOK_VERIFY_TOKEN'),
+            // Aparte de `api_version` por lo mismo que las demás: esa la usan
+            // los envíos de WhatsApp de los once clientes en producción y
+            // moverla para tocar Instagram es un riesgo que no hace falta.
+            'api_version' => env('META_IG_API_VERSION', 'v23.0'),
         ],
         'api_version' => env('META_API_VERSION', 'v21.0'),
         // La coexistencia (`smb_app_data`, `is_on_biz_app`) no existe en la v21
