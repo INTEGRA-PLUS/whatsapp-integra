@@ -30,3 +30,9 @@ Schedule::command('whatsapp:health-check')->dailyAt('07:00')->withoutOverlapping
 // desconectar el número y rehacer el registro con el cliente delante. Cada hora
 // basta para avisar con margen dentro de un plazo de 24.
 Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();
+
+// Las extensiones que corren solas (hoy, el seguimiento de conversaciones sin
+// respuesta). Un solo comando para todas: cada extensión nueva cambiaría este
+// archivo compartido, y el módulo existe precisamente para que añadir una no
+// toque nada fuera de su propia clase.
+Schedule::command('extensions:run')->everyFiveMinutes()->withoutOverlapping();
