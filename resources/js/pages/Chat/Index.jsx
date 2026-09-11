@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } fro
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import SelectorInstancia from '@/components/selector-instancia';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import {
@@ -3800,12 +3801,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
         const secs = seconds % 60;
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
-    function handleInstanceChange(e) {
+    function cambiarDeInstancia(id) {
         stopPolling();
         setConversations([]);
         setMessages([]);
         setSelectedConversation(null);
-        setSelectedInstanceId(e.target.value);
+        setSelectedInstanceId(id);
     }
 
     return (
@@ -3854,21 +3855,11 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 </div>
             )}
             <TopBarActions>
-                <div className="flex items-center gap-1.5 rounded-lg border border-border/10 bg-background/50 dark:bg-black/20 px-2 h-8">
-                    <span className="hidden sm:inline text-[10px] font-bold text-muted-foreground uppercase opacity-60">Instancia</span>
-                    <select
-                        value={selectedInstanceId}
-                        onChange={handleInstanceChange}
-                        className="bg-transparent text-xs font-black focus:outline-none cursor-pointer uppercase tracking-tight max-w-[140px]"
-                    >
-                        <option value="" className="bg-background">Elegir...</option>
-                        {instances.map(inst => (
-                            <option key={inst.id} value={inst.id} className="bg-background">
-                                {inst.name || 'SIN NOMBRE'}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                <SelectorInstancia
+                    instancias={instances}
+                    valor={selectedInstanceId}
+                    onCambio={cambiarDeInstancia}
+                />
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
