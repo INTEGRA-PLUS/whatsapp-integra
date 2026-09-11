@@ -9,6 +9,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
+use App\Http\Controllers\ExtensionController;
 use App\Http\Controllers\InstagramConexionController;
 use App\Http\Controllers\InstagramPrivacidadController;
 use App\Http\Controllers\InstagramWebhookController;
@@ -469,6 +470,26 @@ Route::middleware('auth')->group(function () {
     Route::get('/contactos', [ContactController::class, 'index'])
         ->middleware('permission:contacts.view')
         ->name('contacts.index');
+
+    // Extensiones — el catálogo y la ficha de cada extensión. Dos rutas para
+    // todas: las pantallas se generan a partir del manifiesto de cada una.
+    Route::prefix('extensiones')->name('extensions.')->group(function () {
+        Route::get('/', [ExtensionController::class, 'index'])
+            ->middleware('permission:extensions.view')->name('index');
+        Route::get('/{slug}', [ExtensionController::class, 'show'])
+            ->middleware('permission:extensions.view')->name('show');
+    });
+
+    Route::prefix('api/extensions')->group(function () {
+        Route::post('/{slug}/install', [ExtensionController::class, 'install'])
+            ->middleware('permission:extensions.create');
+        Route::delete('/{slug}', [ExtensionController::class, 'uninstall'])
+            ->middleware('permission:extensions.delete');
+        Route::post('/{slug}/toggle', [ExtensionController::class, 'toggle'])
+            ->middleware('permission:extensions.update');
+        Route::put('/{slug}/settings', [ExtensionController::class, 'updateSettings'])
+            ->middleware('permission:extensions.update');
+    });
 
     // Rutas Master
     Route::prefix('master')->name('master.')->group(function () {

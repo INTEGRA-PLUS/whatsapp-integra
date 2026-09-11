@@ -43,3 +43,9 @@ Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();
 // vencimiento, una caída de Meta o del scheduler mataría la cuenta y habría que
 // rehacer el inicio de sesión con el cliente delante.
 Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapping();
+
+// Las extensiones que corren solas (hoy, el seguimiento de conversaciones sin
+// respuesta). Un solo comando para todas: cada extensión nueva cambiaría este
+// archivo compartido, y el módulo existe precisamente para que añadir una no
+// toque nada fuera de su propia clase.
+Schedule::command('extensions:run')->everyFiveMinutes()->withoutOverlapping();

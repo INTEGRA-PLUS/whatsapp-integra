@@ -21,7 +21,8 @@ import {
     BellRing,
     Contact,
     Wand2,
-    ListTree
+    ListTree,
+    Blocks
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -117,6 +118,7 @@ export function AppSidebar() {
                 items: [
                     { title: 'Instancias', href: route('instances.index'), icon: Settings, show: hasPermission('instances.view') },
                     { title: 'Integraciones', href: route('integrations.index'), icon: Webhook, show: hasPermission('integrations.view') },
+                    { title: 'Extensiones', href: route('extensions.index'), icon: Blocks, show: hasPermission('extensions.view') },
                     { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
                     { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
                     { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },

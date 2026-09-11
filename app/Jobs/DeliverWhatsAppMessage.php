@@ -85,10 +85,18 @@ class DeliverWhatsAppMessage implements ShouldQueue
         }
 
         $result = match ($message->type) {
+            // El prefijo con el nombre del agente era un formato fijo aquí
+            // dentro, igual para las cuarenta empresas y sin forma de cambiarlo.
+            // Ahora pasa por las extensiones: sin ninguna instalada sale el
+            // mismo texto de siempre, y la que decida firmar de otra manera lo
+            // hace desde sus ajustes en vez de desde este archivo.
             'text' => $metaService->sendMessage(
                 $phoneNumberId,
                 $to,
-                '*' . ($message->sender->name ?? 'Agente') . ':*' . "\n" . $message->content,
+                app(\App\Extensions\ExtensionRunner::class)->outboundText(
+                    $message,
+                    '*' . ($message->sender->name ?? 'Agente') . ':*' . "\n" . $message->content
+                ),
                 $message->reply_to_wamid ?: null
             ),
             'image' => $metaService->sendImage(

@@ -13,7 +13,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // El catálogo de extensiones se resuelve una vez por petición: las
+        // clases no tienen estado y el webhook llega a preguntar por ellas en
+        // cada mensaje entrante.
+        $this->app->singleton(\App\Extensions\ExtensionRegistry::class);
     }
 
     /**
