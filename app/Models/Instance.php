@@ -36,8 +36,22 @@ class Instance extends Model
      * No sirve para autenticarse —es un hash— pero enseñarlo invita a probar, y
      * no hay ningún sitio de la aplicación que lo necesite.
      */
+    /**
+     * Lo que nunca sale del servidor al serializar.
+     *
+     * `access_token` es el token de Meta de la línea: con él se envían mensajes
+     * como el cliente y se lee su WABA entera. Estaba fuera de esta lista, y
+     * como el chat manda las instancias completas a Inertia, **viajaba dentro
+     * del HTML de `/chat`**: cualquier agente con acceso al chat —o cualquiera
+     * mirando el código fuente de la página— podía leerlo. Comprobado el
+     * 11-sep-2026 renderizando la pantalla.
+     *
+     * Con esto sigue disponible en PHP (`$instance->access_token`); lo único
+     * que cambia es que deja de serializarse.
+     */
     protected $hidden = [
         'api_token',
+        'access_token',
     ];
 
     protected $casts = [

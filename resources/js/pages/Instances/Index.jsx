@@ -99,7 +99,9 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
     }
 
     function openEdit(instance) {
-        setEditForm({ name: instance.name ?? '', phone_number_id: instance.phone_number_id ?? '', waba_id: instance.waba_id ?? '', display_phone_number: instance.display_phone_number ?? '', access_token: instance.access_token ?? '', active: !!instance.active });
+        // El token se deja vacío a propósito: ya no viaja al navegador, y el
+        // servidor conserva el que hay si este campo llega vacío.
+        setEditForm({ name: instance.name ?? '', phone_number_id: instance.phone_number_id ?? '', waba_id: instance.waba_id ?? '', display_phone_number: instance.display_phone_number ?? '', access_token: '', active: !!instance.active });
         setEditingInstance(instance);
     }
 
@@ -300,7 +302,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                         <Field label="Phone Number ID" value={editForm.phone_number_id} onChange={v => setEditForm(f => ({ ...f, phone_number_id: v }))} required />
                         <Field label="WABA ID" value={editForm.waba_id} onChange={v => setEditForm(f => ({ ...f, waba_id: v }))} required />
                         <Field label="Número de Teléfono" value={editForm.display_phone_number} onChange={v => setEditForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
-                        <Field label="Access Token" value={editForm.access_token} onChange={v => setEditForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
+                        <Field label="Access Token" value={editForm.access_token} onChange={v => setEditForm(f => ({ ...f, access_token: v }))} placeholder="Déjalo vacío para conservar el actual" />
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-primary" />
                             <span className="text-sm text-foreground">Instancia Activa</span>

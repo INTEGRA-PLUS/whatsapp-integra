@@ -161,14 +161,24 @@ class InstanceController extends Controller
             $this->assertPhoneNumberIdIsFree($request, $instance->id);
         }
 
-        $instance->update([
+        $cambios = [
             'name' => $request->name,
             'phone_number_id' => $request->phone_number_id,
             'waba_id' => $request->waba_id,
             'display_phone_number' => $request->display_phone_number,
-            'access_token' => $request->access_token,
             'active' => $request->has('active') ? $request->active : 0,
-        ]);
+        ];
+
+        // El token sólo se toca si mandan uno nuevo. El formulario ya no lo
+        // trae relleno —dejó de viajar al navegador el 11-sep-2026, porque con
+        // él se envían mensajes como el cliente—, así que llega vacío cada vez
+        // que alguien edita el nombre. Sin esta guarda, renombrar una línea la
+        // dejaba sin token y muda.
+        if (filled($request->access_token)) {
+            $cambios['access_token'] = $request->access_token;
+        }
+
+        $instance->update($cambios);
 
         return redirect()->route('instances.index')
             ->with('success', 'Instancia actualizada exitosamente');
