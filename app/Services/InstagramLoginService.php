@@ -28,6 +28,9 @@ class InstagramLoginService
      * y da motivos para rechazarla, y además obliga al cliente a conceder cosas
      * que no le hemos explicado.
      */
+    /** Lo que dura un token largo de Instagram, cuando Meta no dice otra cosa. */
+    private const SESENTA_DIAS = 60 * 24 * 3600;
+
     public const PERMISOS = [
         'instagram_business_basic',
         'instagram_business_manage_messages',
@@ -104,37 +107,49 @@ class InstagramLoginService
      */
     public function tokenLargo(string $tokenCorto): ?array
     {
-        // Dos direcciones, y la primera es la que documenta Meta. La segunda
-        // está porque la documentada devolvió «Unsupported request - method
-        // type: get» con un token real, mientras que con uno inválido responde
-        // con normalidad (11-sep-2026): la ruta existe, así que algo del
-        // enrutado de Graph la trata distinto según el token. Se prueba la
-        // versionada antes de rendirse y queda escrito cuál funcionó.
-        $version = config('services.meta.instagram.api_version', 'v23.0');
+        // 1. El canje documentado, para un token de una hora.
+        $respuesta = Http::get('https://graph.instagram.com/access_token', [
+            'grant_type' => 'ig_exchange_token',
+            'client_secret' => $this->appSecret(),
+            'access_token' => $tokenCorto,
+        ]);
 
-        foreach ([
-            'https://graph.instagram.com/access_token',
-            "https://graph.instagram.com/{$version}/access_token",
-        ] as $url) {
-            $respuesta = Http::get($url, [
-                'grant_type' => 'ig_exchange_token',
-                'client_secret' => $this->appSecret(),
-                'access_token' => $tokenCorto,
-            ]);
-
-            if (! $respuesta->failed() && $respuesta->json('access_token')) {
-                Log::channel('instagram')->info('🔑 Token largo obtenido', ['por' => $url]);
-
-                return [
-                    'access_token' => (string) $respuesta->json('access_token'),
-                    'expires_in' => (int) ($respuesta->json('expires_in') ?? 60 * 24 * 3600),
-                ];
-            }
-
-            $this->registrarFallo('obtener el token largo', $respuesta->json(), $respuesta, $tokenCorto);
+        if (! $respuesta->failed() && $respuesta->json('access_token')) {
+            return [
+                'access_token' => (string) $respuesta->json('access_token'),
+                'expires_in' => (int) ($respuesta->json('expires_in') ?? self::SESENTA_DIAS),
+            ];
         }
 
-        return null;
+        $this->registrarFallo('canjear el token por uno largo', $respuesta->json(), $respuesta, $tokenCorto);
+
+        // 2. Si el canje lo rechaza, la explicación más probable es que el token
+        //    YA sea de sesenta días: Business Login for Instagram los entrega
+        //    así, y pedir `ig_exchange_token` sobre uno que no es de una hora
+        //    devuelve «Unsupported request - method type: get», que no ayuda
+        //    nada a entenderlo (11-sep-2026, con el token real en la mano:
+        //    empieza por IGAG y mide 208-214 caracteres).
+        //
+        //    La renovación sirve entonces de dos cosas a la vez: confirma esa
+        //    hipótesis y devuelve la caducidad de verdad, en vez de que la
+        //    inventemos nosotros.
+        $renovado = $this->renovar($tokenCorto);
+
+        if ($renovado) {
+            Log::channel('instagram')->info('🔑 El token ya era de larga duración; renovado en el momento de conectar');
+
+            return $renovado;
+        }
+
+        // 3. Ni canje ni renovación. La renovación exige además que el token
+        //    tenga 24 horas, así que uno recién emitido la falla legítimamente.
+        //    Se sigue con el que hay: quien llama valida acto seguido pidiendo
+        //    el perfil, y si el token no sirviera no se guardaría nada.
+        Log::channel('instagram')->warning('⚠️ Se usa el token tal cual: ni el canje ni la renovación funcionaron', [
+            'caducidad' => 'supuesta a 60 días; la tarea diaria la corregirá al renovar',
+        ]);
+
+        return ['access_token' => $tokenCorto, 'expires_in' => self::SESENTA_DIAS];
     }
 
     /**
@@ -161,7 +176,7 @@ class InstagramLoginService
 
         return [
             'access_token' => (string) $respuesta->json('access_token'),
-            'expires_in' => (int) ($respuesta->json('expires_in') ?? 60 * 24 * 3600),
+            'expires_in' => (int) ($respuesta->json('expires_in') ?? self::SESENTA_DIAS),
         ];
     }
 
