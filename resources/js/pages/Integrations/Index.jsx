@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import IntegrationsHelp from './IntegrationsHelp';
+import { WhatsAppPreview } from '../Templates/preview';
+import { cn } from '@/lib/utils';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
@@ -793,6 +795,10 @@ function ProviderSection({ can, onBack }) {
                             <StepStatus integration={payments} onUpdated={() => load()} showToast={showToast} />
                         )}
 
+                        <LineasDelErp showToast={showToast} canManage={canManage} />
+
+                        <AjustesDeEnvio showToast={showToast} canManage={canManage} />
+
                         <Panel title="Pagos a facturas" Icon={Wallet}
                             does="Consultar la deuda de un cliente y registrar su pago sin salir del chat.">
                             {payments && <StepActivate integration={payments} onUpdated={upsert} showToast={showToast} />}
@@ -818,6 +824,881 @@ function ProviderSection({ can, onBack }) {
             </fieldset>
         </div>
     );
+}
+
+/**
+ * Los envíos automáticos del ERP y sus plantillas por defecto.
+ *
+ * Estaban en la configuración de Integra 2.0, mientras el WhatsApp lo lleva el
+ * CRM: el cliente tenía que saber que una cosa se toca en un sitio y la otra en
+ * el otro. Ahora se ven y se cambian aquí.
+ *
+ * **No se guardan aquí.** Se leen y se escriben en Integra en cada visita, para
+ * que no existan dos copias de la misma configuración: el problema con el que
+ * empezó todo este trabajo.
+ */
+function AjustesDeEnvio({ showToast, canManage }) {
+    const [estado, setEstado] = useState({ cargando: true });
+    const [guardando, setGuardando] = useState(null);
+    // Qué plantilla se está parametrizando, si alguna.
+    const [parametrizando, setParametrizando] = useState(null);
+
+    const cargar = async () => {
+        try {
+            const { data } = await axios.get('/integrations/ajustes-envio');
+            setEstado({ cargando: false, ...data });
+        } catch {
+            setEstado({ cargando: false, error: 'No se pudieron leer los ajustes de Integra.' });
+        }
+    };
+
+    useEffect(() => { cargar(); }, []);
+
+    const guardar = async (cambios, etiqueta) => {
+        setGuardando(etiqueta);
+        try {
+            const { data } = await axios.put('/integrations/ajustes-envio', cambios);
+            setEstado(e => ({ ...e, ...data }));
+            showToast('Guardado en Integra.');
+        } catch (e) {
+            showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
+            cargar();
+        } finally {
+            setGuardando(null);
+        }
+    };
+
+    if (estado.cargando) {
+        return (
+            <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" /> Leyendo los ajustes de Integra…
+                </p>
+            </Panel>
+        );
+    }
+
+    if (estado.conectado === false) return null;
+
+    if (estado.error) {
+        return (
+            <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+                <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" /> {estado.error}
+                </p>
+            </Panel>
+        );
+    }
+
+    const conDocumento = (estado.disponibles ?? []).filter(p => p.con_documento);
+
+    return (
+        <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
+            <div className="space-y-4">
+                <Interruptor
+                    titulo="Factura del mes"
+                    descripcion="Al generarse la factura en cada ciclo, se le manda al cliente por WhatsApp."
+                    activo={estado.envio_automatico_facturas}
+                    ocupado={guardando === 'facturas'}
+                    disabled={!canManage}
+                    onCambiar={v => guardar({ envio_automatico_facturas: v }, 'facturas')}
+                />
+
+                <Interruptor
+                    titulo="Recibo de pago (tirilla)"
+                    descripcion="Al registrar un pago —manual o de una pasarela— se le manda la tirilla confirmando."
+                    activo={estado.envio_automatico_recibos}
+                    ocupado={guardando === 'recibos'}
+                    disabled={!canManage}
+                    onCambiar={v => guardar({ envio_automatico_recibos: v }, 'recibos')}
+                />
+
+                <div className="space-y-3 border-t border-border pt-4">
+                    <p className="text-xs font-semibold text-foreground">Plantilla que se usa en cada caso</p>
+
+                    {/* Sólo las que llevan encabezado de documento pueden
+                        adjuntar la factura o la tirilla: ofrecer las demás es
+                        invitar a un envío que llega sin el PDF. */}
+                    {conDocumento.length === 0 && (
+                        <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                            Ninguna de tus plantillas lleva encabezado de documento, así que no pueden adjuntar
+                            el PDF. Crea una en Plantillas con encabezado de tipo DOCUMENTO.
+                        </p>
+                    )}
+
+                    {[
+                        ['factura', 'Facturas', 'plantilla_factura_id'],
+                        ['tirilla', 'Recibos de pago', 'plantilla_tirilla_id'],
+                        ['contrato', 'Contratos', 'plantilla_contrato_id'],
+                    ].map(([clave, etiqueta, campo]) => {
+                        const actual = estado.plantillas?.[clave];
+
+                        if (actual?.disponible === false) {
+                            return (
+                                <div key={clave} className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="text-muted-foreground">{etiqueta}</span>
+                                    <span className="text-muted-foreground/70">No disponible en tu versión de Integra</span>
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div key={clave} className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs text-foreground">{etiqueta}</span>
+
+                                <div className="flex items-center gap-1.5">
+                                    <select
+                                        value={actual?.id ?? ''}
+                                        disabled={!canManage || guardando === clave}
+                                        onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
+                                        className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                    >
+                                        <option value="">Sin elegir</option>
+                                        {(estado.disponibles ?? []).map(p => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.title} ({p.language}){p.con_documento ? '' : ' · sin adjunto'}
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    {/* Elegir la plantilla y decir qué lleva
+                                        dentro son la misma decisión: el botón
+                                        va al lado del selector, no en otra
+                                        pantalla y menos en otro sistema. */}
+                                    <button
+                                        type="button"
+                                        disabled={!actual?.id}
+                                        onClick={() => setParametrizando({ id: actual.id, uso: etiqueta.toLowerCase() })}
+                                        title={actual?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
+                                        className={cn(
+                                            'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
+                                            actual?.id
+                                                ? 'cursor-pointer text-foreground hover:bg-muted'
+                                                : 'cursor-not-allowed text-muted-foreground/50',
+                                        )}
+                                    >
+                                        <Pencil className="size-3" /> Variables
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <p className="text-[11px] text-muted-foreground">
+                    Estos ajustes viven en Integra: se leen y se guardan allí, así que no hay dos copias
+                    que puedan quedar distintas.
+                </p>
+            </div>
+
+            {parametrizando && (
+                <ParametrizarPlantilla
+                    plantillaId={parametrizando.id}
+                    uso={parametrizando.uso}
+                    canManage={canManage}
+                    showToast={showToast}
+                    onClose={() => setParametrizando(null)}
+                />
+            )}
+        </Panel>
+    );
+}
+
+/**
+ * Qué dato del ERP va en cada `{{n}}` de la plantilla.
+ *
+ * Elegir la plantilla y decir qué lleva dentro son la misma decisión, y estaban
+ * en dos sistemas: la plantilla se elige aquí y sus variables se editaban en
+ * Integra. Ahora se resuelven las dos en el mismo sitio; la parametrización se
+ * sigue guardando allí, que es de donde el cron la lee.
+ *
+ * El texto que manda es el de Meta, no el que Integra tenga guardado: si la
+ * plantilla se editó en Meta y ahora pide una variable más, el envío se cae
+ * entero con «number of parameters does not match» y no hay forma de verlo
+ * hasta que las facturas empiezan a rebotar.
+ */
+function ParametrizarPlantilla({ plantillaId, uso, onClose, showToast, canManage }) {
+    const [datos, setDatos] = useState(null);
+    const [error, setError] = useState(null);
+    const [variables, setVariables] = useState([]);
+    const [guardando, setGuardando] = useState(false);
+    // El insertador abierto, si hay alguno: uno solo a la vez.
+    const [insertando, setInsertando] = useState(null);
+    const campos = useRef([]);
+
+    useEffect(() => {
+        let vivo = true;
+
+        axios.get(`/integrations/plantillas/${plantillaId}/campos`)
+            .then(({ data }) => {
+                if (!vivo) return;
+                setDatos(data);
+                // Los huecos de Meta mandan: es lo que se envía de verdad.
+                const cuantos = data.meta?.encontrada ? data.meta.huecos : data.huecos;
+                setVariables(Array.from({ length: cuantos }, (_, i) => data.variables?.[i] ?? ''));
+            })
+            .catch(e => vivo && setError(e.response?.data?.message ?? 'No se pudo leer la plantilla en Integra.'));
+
+        return () => { vivo = false; };
+    }, [plantillaId]);
+
+    const guardar = async () => {
+        setGuardando(true);
+        try {
+            const { data } = await axios.put(`/integrations/plantillas/${plantillaId}/campos`, { variables });
+            setDatos(data);
+            showToast('Parametrización guardada en Integra.');
+            onClose();
+        } catch (e) {
+            showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
+        } finally {
+            setGuardando(false);
+        }
+    };
+
+    const texto = datos?.meta?.encontrada ? datos.meta.texto : (datos?.contenido ?? '');
+    const catalogo = datos?.catalogo ?? [];
+    const ejemplos = datos?.ejemplos ?? {};
+
+    /**
+     * Un valor con los datos cambiados por su ejemplo.
+     *
+     * Una variable no es «un campo o un texto»: es un texto que puede llevar
+     * dentro los campos que haga falta, y así se usan de verdad —el `{{1}}` de
+     * la plantilla de facturación de Transinternet es
+     * `[contacto.nombre] [contacto.apellido1] [contacto.apellido2]`—. El helper
+     * del ERP hace exactamente esto: reemplaza cada `[x.y]` allí donde esté.
+     */
+    const conEjemplos = (valor) =>
+        String(valor ?? '').replace(/\[[a-z]+\.[a-z0-9_]+\]/gi, m => ejemplos[m] ?? m);
+
+    // Inserta el campo donde esté el cursor, no al final: si estás componiendo
+    // «Sr(a) [contacto.nombre]» quieres el dato donde lo estabas escribiendo.
+    const insertar = (i, clave) => {
+        const campo = campos.current[i];
+        const valor = variables[i] ?? '';
+        const desde = campo?.selectionStart ?? valor.length;
+        const hasta = campo?.selectionEnd ?? valor.length;
+        const nuevo = valor.slice(0, desde) + clave + valor.slice(hasta);
+
+        setVariables(prev => prev.map((x, j) => (j === i ? nuevo : x)));
+        setInsertando(null);
+
+        requestAnimationFrame(() => {
+            campo?.focus();
+            campo?.setSelectionRange(desde + clave.length, desde + clave.length);
+        });
+    };
+
+    const muestra = texto.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => {
+        const valor = variables[Number(n) - 1] ?? '';
+        return valor.trim() ? conEjemplos(valor) : '⟨sin llenar⟩';
+    });
+
+    const faltan = variables.some(v => !String(v).trim());
+
+    /**
+     * El mensaje tal y como sale en el teléfono del cliente.
+     *
+     * El cuerpo es el de arriba —con las variables ya resueltas—, y el resto
+     * viene de Meta tal cual: el encabezado, el pie y los botones también son
+     * parte de lo que llega, y hasta ahora no se veían por ningún lado. Con
+     * encabezado de documento se pinta el PDF adjunto con el nombre que le pone
+     * el ERP de verdad: `Factura_FV-10482.pdf` sale de `CronController`.
+     */
+    const componentes = datos?.meta?.componentes ?? [];
+    const encabezado = componentes.find(c => (c.type ?? '').toUpperCase() === 'HEADER');
+    const pie = componentes.find(c => (c.type ?? '').toUpperCase() === 'FOOTER');
+    const botones = componentes.find(c => (c.type ?? '').toUpperCase() === 'BUTTONS');
+
+    // Sin catálogo de Meta se cae al `body_header` que guarda el ERP: dice si
+    // la plantilla adjunta documento, que es lo que más se pregunta.
+    const formatoEncabezado = encabezado
+        ? (encabezado.format ?? 'TEXT').toUpperCase()
+        : (datos?.con_documento ? 'DOCUMENT' : null);
+
+    const adjunto = uso.includes('recibo') ? 'Recibo_RC-3391.pdf' : 'Factura_FV-10482.pdf';
+
+    const modelo = {
+        header: formatoEncabezado === 'TEXT'
+            ? { text: conEjemplos(encabezado?.text ?? '') }
+            : formatoEncabezado
+                ? { text: '', mediaFormat: formatoEncabezado, filename: formatoEncabezado === 'DOCUMENT' ? adjunto : null }
+                : null,
+        body: { text: muestra },
+        footer: pie?.text ? { text: pie.text } : null,
+        buttons: (botones?.buttons ?? []).map(b => ({
+            type: b.type ?? 'QUICK_REPLY',
+            text: b.text ?? '',
+            url: b.url ?? '',
+            phone_number: b.phone_number ?? '',
+        })),
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+            <div
+                className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border bg-card p-6 shadow-2xl"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="mb-4 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-semibold text-foreground">Qué va en cada variable</h2>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                            {datos ? <>Plantilla <span className="font-medium text-foreground">{datos.title}</span> ({datos.language}) · se usa para {uso}.</> : 'Leyendo la plantilla…'}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <X className="size-4" />
+                    </button>
+                </div>
+
+                {error && (
+                    <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <AlertTriangle className="mt-px size-3.5 shrink-0" /> {error}
+                    </p>
+                )}
+
+                {!datos && !error && (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" /> Leyendo la plantilla…
+                    </p>
+                )}
+
+                {datos && (
+                    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className="space-y-4">
+                        {/* Una plantilla que no está en la línea por la que
+                            envía el ERP no se puede enviar: Meta contesta
+                            «(#100) Invalid parameter» y la factura no sale. */}
+                        {datos.meta?.encontrada === false && (
+                            <p className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                Esta plantilla no existe en {datos.meta.linea}, que es la línea por la que envía
+                                Integra. Cópiala a esa línea desde Plantillas, o el envío fallará.
+                            </p>
+                        )}
+
+                        {datos.meta?.encontrada && datos.meta.huecos !== datos.huecos && (
+                            <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                En Meta esta plantilla pide {datos.meta.huecos} variable{datos.meta.huecos === 1 ? '' : 's'} y
+                                en Integra hay {datos.huecos} guardada{datos.huecos === 1 ? '' : 's'}. Manda Meta: llena las de abajo.
+                            </p>
+                        )}
+
+                        {datos.meta?.encontrada && datos.meta.estado !== 'APPROVED' && (
+                            <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                Meta todavía no la aprueba (está en {datos.meta.estado}). Hasta que lo haga no se puede enviar.
+                            </p>
+                        )}
+
+                        {/* El texto con sus huecos resaltados: es el mapa de lo
+                            que se está llenando abajo. */}
+                        <div className="rounded-lg border border-border bg-muted/40 p-3">
+                            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Texto de la plantilla
+                            </p>
+                            <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                                {texto
+                                    ? texto.split(/(\{\{\s*\d+\s*\}\})/g).map((trozo, i) =>
+                                        /^\{\{\s*\d+\s*\}\}$/.test(trozo)
+                                            ? <span key={i} className="rounded bg-primary/15 px-1 font-mono text-[11px] text-primary">{trozo}</span>
+                                            : <span key={i}>{trozo}</span>,
+                                    )
+                                    : '—'}
+                            </p>
+                        </div>
+
+                        {variables.length === 0 ? (
+                            <p className="rounded-lg bg-success/10 px-3 py-2 text-xs text-success">
+                                Esta plantilla no tiene variables: se envía tal cual, no hay nada que parametrizar.
+                            </p>
+                        ) : (
+                            <div className="space-y-3">
+                                <p className="text-[11px] text-muted-foreground">
+                                    Cada variable puede llevar datos del cliente, texto tuyo, o las dos cosas mezcladas
+                                    —«Sr(a) [contacto.nombre]» es una sola variable—.
+                                </p>
+
+                                {variables.map((valor, i) => (
+                                    <div key={i} className="rounded-lg border border-border p-2.5">
+                                        <div className="flex items-center gap-2">
+                                            <span className="shrink-0 rounded bg-primary/10 px-1.5 py-1 font-mono text-[11px] text-primary">
+                                                {`{{${i + 1}}}`}
+                                            </span>
+
+                                            <input
+                                                ref={el => { campos.current[i] = el; }}
+                                                type="text"
+                                                value={valor}
+                                                disabled={!canManage}
+                                                placeholder="Escribe, o inserta un dato del cliente →"
+                                                onChange={e => setVariables(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                                                className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-card px-2 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                            />
+
+                                            <InsertarDato
+                                                abierto={insertando === i}
+                                                catalogo={catalogo}
+                                                disabled={!canManage}
+                                                onAbrir={() => setInsertando(insertando === i ? null : i)}
+                                                onElegir={clave => insertar(i, clave)}
+                                            />
+                                        </div>
+
+                                        {/* Cómo queda esa variable sola. Es lo
+                                            que convierte «[factura.porpagar]»
+                                            en «75.000» sin tener que buscarlo
+                                            en el párrafo de abajo. */}
+                                        <p className="mt-1.5 pl-1 text-[11px] text-muted-foreground">
+                                            {valor.trim()
+                                                ? <>Queda: <span className="text-foreground">{conEjemplos(valor)}</span></>
+                                                : <span className="text-warning">Sin llenar: el mensaje saldría con ese hueco vacío.</span>}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+                            <Button variant="ghost" onClick={onClose}>Cerrar</Button>
+                            <Button onClick={guardar} disabled={!canManage || guardando || faltan || variables.length === 0}>
+                                {guardando ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : <Save className="mr-1.5 size-4" />}
+                                Guardar en Integra
+                            </Button>
+                        </div>
+
+                        {faltan && variables.length > 0 && (
+                            <p className="text-right text-[11px] text-muted-foreground">
+                                Falta llenar {variables.filter(v => !String(v).trim()).length} variable(s).
+                            </p>
+                        )}
+                      </div>
+
+                      {/* El teléfono, al lado y siempre a la vista: lo que se
+                          está llenando a la izquierda se ve llegar aquí. */}
+                      <div className="lg:sticky lg:top-0 lg:self-start">
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Así le llega al cliente
+                          </p>
+
+                          <Celular>
+                              <WhatsAppPreview
+                                  model={modelo}
+                                  verifiedName={datos.meta?.nombre_visible ?? 'Tu empresa'}
+                                  bare
+                                  minHeight={360}
+                              />
+                          </Celular>
+
+                          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+                              Con datos de ejemplo. En el envío real van los de cada cliente.
+                          </p>
+
+                          {formatoEncabezado === 'DOCUMENT' && (
+                              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-success/10 px-2.5 py-2 text-[11px] text-success">
+                                  <FileCheck2 className="mt-px size-3.5 shrink-0" />
+                                  Esta plantilla lleva el PDF adjunto: el cliente recibe el documento junto al mensaje.
+                              </p>
+                          )}
+
+                          {formatoEncabezado !== 'DOCUMENT' && (
+                              <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                                  <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                  Sin encabezado de documento: el mensaje llega solo, sin el PDF adjunto.
+                              </p>
+                          )}
+                      </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * La maqueta del teléfono.
+ *
+ * Un párrafo de texto no dice cómo viaja el mensaje: el cliente pregunta si el
+ * PDF va adjunto, si su nombre sale arriba o dentro, si el pie se ve. Puesto en
+ * un teléfono se responde solo, y es la misma vista que ya se usa al crear
+ * plantillas, para que no haya dos ideas distintas de cómo se ve un WhatsApp.
+ */
+function Celular({ children }) {
+    return (
+        <div className="mx-auto w-full max-w-[300px] rounded-[2.2rem] border-[7px] border-neutral-800 bg-neutral-800 p-0 shadow-2xl dark:border-neutral-700 dark:bg-neutral-700">
+            <div className="relative overflow-hidden rounded-[1.7rem] bg-card">
+                {/* La muesca de arriba, que es lo que lo hace leerse como un
+                    teléfono y no como una tarjeta más. */}
+                <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-[18px] w-24 -translate-x-1/2 rounded-b-2xl bg-neutral-800 dark:bg-neutral-700" />
+                {children}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * El insertador de datos del cliente.
+ *
+ * Era un `<select>` con veintidós opciones agrupadas: se desplegaba por encima
+ * del modal, tapaba lo que estabas llenando, y obligaba a elegir *o* un dato
+ * *o* texto tuyo cuando lo que se necesita casi siempre es mezclarlos. Aquí el
+ * campo es texto normal y esto sólo pega el dato donde tengas el cursor, con un
+ * buscador porque veintidós nombres no se recorren con la vista.
+ */
+function InsertarDato({ abierto, catalogo, disabled, onAbrir, onElegir }) {
+    const [busca, setBusca] = useState('');
+
+    const filtrados = catalogo.filter(c =>
+        !busca.trim() || (c.etiqueta + ' ' + c.clave + ' ' + c.grupo).toLowerCase().includes(busca.toLowerCase()),
+    );
+    const grupos = [...new Set(filtrados.map(c => c.grupo))];
+
+    return (
+        <div className="relative shrink-0">
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={onAbrir}
+                title="Insertar un dato del cliente o de la factura"
+                className={cn(
+                    'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
+                    disabled ? 'cursor-not-allowed text-muted-foreground/50' : 'text-foreground hover:bg-muted',
+                    abierto && 'bg-muted',
+                )}
+            >
+                <Plus className="size-3" /> Dato
+            </button>
+
+            {abierto && (
+                <>
+                    {/* Un clic fuera lo cierra sin tocar nada. */}
+                    <div className="fixed inset-0 z-10" onClick={onAbrir} />
+
+                    <div className="absolute right-0 z-20 mt-1 w-72 rounded-lg border border-border bg-card p-2 shadow-2xl">
+                        <input
+                            type="text"
+                            value={busca}
+                            autoFocus
+                            placeholder="Buscar: saldo, vencimiento, cédula…"
+                            onChange={e => setBusca(e.target.value)}
+                            className="mb-1.5 h-8 w-full rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        />
+
+                        <div className="max-h-56 overflow-y-auto">
+                            {grupos.length === 0 && (
+                                <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
+                                    Ningún dato se llama así.
+                                </p>
+                            )}
+
+                            {grupos.map(g => (
+                                <div key={g} className="mb-1">
+                                    <p className="px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        {g}
+                                    </p>
+                                    {filtrados.filter(c => c.grupo === g).map(c => (
+                                        <button
+                                            key={c.clave}
+                                            type="button"
+                                            onClick={() => onElegir(c.clave)}
+                                            className="block w-full rounded px-1.5 py-1 text-left text-xs text-foreground hover:bg-muted"
+                                        >
+                                            {c.etiqueta}
+                                            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{c.clave}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Un interruptor de encender y apagar, con lo que hace escrito al lado.
+ *
+ * Una casilla de verificación se lee como «marca esto y luego guarda»; aquí no
+ * hay guardar: se enciende y ya está enviándose, o se apaga y deja de enviarse.
+ * El interruptor dice eso, la casilla no.
+ */
+function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar }) {
+    const bloqueado = disabled || ocupado;
+
+    return (
+        <div className={cn('flex items-start justify-between gap-4', bloqueado && 'opacity-60')}>
+            <div className="min-w-0">
+                <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    {titulo}
+                    {ocupado && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
+                </p>
+                <p className="text-[11px] text-muted-foreground">{descripcion}</p>
+            </div>
+
+            <button
+                type="button"
+                role="switch"
+                aria-checked={!!activo}
+                aria-label={titulo}
+                disabled={bloqueado}
+                onClick={() => onCambiar(!activo)}
+                className={cn(
+                    'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                    bloqueado ? 'cursor-not-allowed' : 'cursor-pointer',
+                    activo ? 'bg-primary' : 'bg-muted-foreground/30',
+                )}
+            >
+                {/* La bolita va en el flujo, no en `absolute`.
+                    Estaba posicionada de forma absoluta sin `left`, así que
+                    partía de su posición estática —que un botón centra— en vez
+                    del borde izquierdo: las dos posiciones salían unos 12px
+                    corridas a la derecha y, encendido, se salía del carril.
+                    Con `inline-flex` en el carril, el desplazamiento se cuenta
+                    desde la izquierda y los 22px dejan el mismo margen de 2px a
+                    cada lado. Es el mismo patrón que ya usan los de Ajustes. */}
+                <span
+                    className={cn(
+                        'inline-block size-5 rounded-full bg-white shadow transition-transform',
+                        activo ? 'translate-x-[22px]' : 'translate-x-0.5',
+                    )}
+                />
+            </button>
+        </div>
+    );
+}
+
+/**
+ * Por qué línea está enviando Integra, y desde cuándo no lo hace.
+ *
+ * El CRM e Integra 2.0 son dos sistemas con dos bases de datos, unidos por una
+ * sola cadena de texto: el `phone_number_id` de la línea. Hasta hoy no había
+ * ninguna pantalla donde comprobar si esa unión estaba viva —para saberlo había
+ * que contar mensajes con `incoming_invoice_id` en la base de datos—, así que
+ * la pregunta «¿está conectado de verdad?» no tenía respuesta que enseñarle a
+ * un cliente (9-sep-2026).
+ */
+function LineasDelErp({ showToast, canManage }) {
+    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
+    const [guardando, setGuardando] = useState(null);
+    // Qué línea se pidió cambiar y por qué no se pudo. Va por línea y no suelto
+    // arriba: el motivo se lee al lado del botón que lo provocó.
+    const [rechazo, setRechazo] = useState(null);
+    // La confirmación, también en la fila. Cambiar de línea mueve la
+    // facturación de toda la empresa a otro número; no es un clic de ida.
+    const [confirmando, setConfirmando] = useState(null);
+
+    if (lineasDelErp.length === 0) return null;
+
+    const activas = lineasDelErp.filter(l => l.ultima_vez);
+    const actual = lineasDelErp.find(l => l.es_la_del_erp);
+
+    /**
+     * El cambio se pide con axios, no con `router.post`.
+     *
+     * Con Inertia el rechazo sólo llegaba recargando la página entera, y esa
+     * recarga devolvía al cliente a la galería de complementos: pulsabas «Usar
+     * esta», salías de la pantalla, y tenías que volver a entrar para leer por
+     * qué no había pasado nada. Así el motivo aparece en la misma fila y sin
+     * moverse; al salir bien se refrescan sólo las dos props que cambian, con
+     * el estado de la pantalla intacto.
+     */
+    const elegir = async (id) => {
+        setGuardando(id);
+        setRechazo(null);
+
+        try {
+            const { data } = await axios.post('/integrations/linea-erp', { instance_id: id });
+            setConfirmando(null);
+            showToast?.(data.message ?? 'Listo: el ERP enviará por esa línea.');
+            router.reload({
+                only: ['lineasDelErp', 'lineaElegida'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        } catch (e) {
+            setRechazo({
+                id,
+                motivo: e.response?.data?.message ?? 'No se pudo cambiar la línea.',
+                faltan: e.response?.data?.faltan ?? [],
+            });
+        } finally {
+            setGuardando(null);
+        }
+    };
+
+    return (
+        <Panel
+            title="Por dónde envía Integra"
+            Icon={Plug}
+            does="La línea por la que tu software administrativo manda facturas y recibos."
+        >
+            {lineasDelErp.length > 1 && !lineaElegida && (
+                <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    Tienes más de una línea y ninguna está elegida, así que Integra usa la primera
+                    que encuentra. Elige cuál debe usar.
+                </p>
+            )}
+
+            <ul className="divide-y divide-border">
+                {lineasDelErp.map(linea => (
+                    <li key={linea.id} className="py-2.5 first:pt-0 last:pb-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                    {linea.nombre}
+                                    {linea.numero && <span className="ml-2 text-xs font-normal text-muted-foreground">{linea.numero}</span>}
+                                </p>
+                                <p className="truncate font-mono text-[11px] text-muted-foreground">{linea.phone_number_id}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {linea.ultima_vez ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">
+                                        <CheckCircle2 className="size-3" />
+                                        {formatearUltimaVez(linea.ultima_vez)}
+                                    </span>
+                                ) : (
+                                    <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                                        Sin envíos
+                                    </span>
+                                )}
+
+                                {linea.es_la_del_erp ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[11px] font-black text-accent-foreground">
+                                        <CheckCircle2 className="size-3" />
+                                        {lineaElegida ? 'Envía por aquí' : 'Por defecto'}
+                                    </span>
+                                ) : confirmando === linea.id ? (
+                                    <>
+                                        <Button
+                                            size="sm"
+                                            disabled={guardando !== null}
+                                            onClick={() => elegir(linea.id)}
+                                            className="h-7 px-2.5 text-[11px]"
+                                        >
+                                            {guardando === linea.id
+                                                ? <><Loader2 className="mr-1 size-3 animate-spin" /> Cambiando…</>
+                                                : 'Sí, cambiar'}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            disabled={guardando !== null}
+                                            onClick={() => { setConfirmando(null); setRechazo(null); }}
+                                            className="h-7 px-2.5 text-[11px]"
+                                        >
+                                            Cancelar
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={!canManage || guardando !== null}
+                                        onClick={() => { setConfirmando(linea.id); setRechazo(null); }}
+                                        className="h-7 px-2.5 text-[11px]"
+                                    >
+                                        Usar esta
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Qué va a pasar, antes de que pase. Integra pregunta
+                            la línea antes de cada tanda, así que el cambio se
+                            nota en la siguiente factura de toda la empresa. */}
+                        {confirmando === linea.id && !rechazo && (
+                            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                <span>
+                                    Integra dejará de enviar por {actual?.numero || actual?.nombre || 'la línea de ahora'} y
+                                    pasará a {linea.numero || linea.nombre}. Vale desde la próxima factura, para toda la empresa.
+                                </span>
+                            </p>
+                        )}
+
+                        {rechazo?.id === linea.id && (
+                            <div className="mt-2 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                                <p className="flex items-start gap-1.5">
+                                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                    <span>
+                                        No se cambió nada: Integra sigue enviando por
+                                        {' '}{actual?.numero || actual?.nombre || 'la línea de ahora'}.
+                                    </span>
+                                </p>
+
+                                {rechazo.faltan.length > 0 ? (
+                                    <>
+                                        <p className="mt-1.5 pl-5">
+                                            A esa línea le faltan {rechazo.faltan.length} plantilla{rechazo.faltan.length === 1 ? '' : 's'} de
+                                            las que se están usando hoy. Los catálogos de Meta son por número, así que no se heredan:
+                                            si cambias sin copiarlas, las facturas dejan de salir.
+                                        </p>
+                                        <ul className="mt-1.5 flex flex-wrap gap-1 pl-5">
+                                            {rechazo.faltan.map(nombre => (
+                                                <li key={nombre} className="rounded bg-destructive/15 px-1.5 py-0.5 font-mono text-[10px]">
+                                                    {nombre}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        <a
+                                            href="/templates"
+                                            className="mt-2 ml-5 inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-2 py-1 text-[11px] font-medium hover:bg-destructive/10"
+                                        >
+                                            <Copy className="size-3" /> Copiarlas a esta línea
+                                        </a>
+                                    </>
+                                ) : (
+                                    <p className="mt-1.5 pl-5">{rechazo.motivo}</p>
+                                )}
+                            </div>
+                        )}
+                    </li>
+                ))}
+            </ul>
+
+            <p className="mt-3 text-[11px] text-muted-foreground">
+                Integra pregunta cuál usar antes de cada tanda de envíos, así que el cambio vale
+                desde la siguiente factura. No hay que tocar nada del otro lado.
+            </p>
+
+            {/* Con qué credencial entra dice si ese cliente ya se puede migrar
+                al token de verdad: el phone_number_id no es un secreto, se
+                enseña en la pantalla de Instancias y en el panel de Meta. */}
+            {activas.some(l => l.credencial === 'phone_number_id') && (
+                <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    Integra entra con el identificador del número, que no es un secreto: se ve en la
+                    pantalla de Instancias y en el panel de Meta. Cuando puedas, cámbialo por un token.
+                </p>
+            )}
+        </Panel>
+    );
+}
+
+/** «hace 5 minutos» dice más que una fecha con hora y segundos. */
+function formatearUltimaVez(iso) {
+    const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+
+    if (minutos < 2) return 'ahora mismo';
+    if (minutos < 60) return `hace ${minutos} min`;
+
+    const horas = Math.floor(minutos / 60);
+    if (horas < 24) return `hace ${horas} h`;
+
+    const dias = Math.floor(horas / 24);
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+
+    return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 /** Una función del proveedor, con lo que hace escrito arriba. */
@@ -881,6 +1762,14 @@ function StepStatus({ integration, onUpdated, onNext, showToast }) {
                                 <p>Conectada el {new Date(integration.connected_at).toLocaleString('es-CO')}</p>
                             )}
                         </div>
+                    ) : integration.token_ilegible ? (
+                        /* Hay credencial guardada pero el servidor ya no la
+                           puede descifrar. Verificar no la va a arreglar, así
+                           que se dice qué sí lo hace. */
+                        <p className="text-xs text-muted-foreground mt-1">
+                            La credencial guardada ya no se puede leer en este servidor. Vuelve a conectar
+                            Integra con tu usuario y contraseña: es lo único que la restablece.
+                        </p>
                     ) : (
                         <p className="text-xs text-muted-foreground mt-1">{integration.last_error ?? 'Conecta Integra para empezar.'}</p>
                     )}

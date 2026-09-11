@@ -56,6 +56,9 @@ class IntegrationController extends Controller
             'last_error'      => $i->last_error ?? null,
             'connected_at'    => optional($i->connected_at ?? null)->toIso8601String(),
             'token_expired'   => $i ? $i->tokenExpired() : false,
+            // Hay credencial guardada pero no se puede descifrar: no es lo
+            // mismo que no tener ninguna, y sólo se arregla reconectando.
+            'token_ilegible'  => $i ? $i->tokenIlegible() : false,
             'last_synced_at'  => optional($i->last_synced_at ?? null)->toIso8601String(),
             'sync_status'     => $i->sync_status ?? null,
         ];
@@ -185,7 +188,7 @@ class IntegrationController extends Controller
         abort_unless(isset($this->catalog()[$key]), 404);
 
         $integration = $this->find($key);
-        if (! $integration || ! $integration->access_token) {
+        if (! $integration || ! $integration->tokenLegible()) {
             return response()->json($this->present($key, $integration));
         }
 

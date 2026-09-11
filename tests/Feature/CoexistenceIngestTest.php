@@ -270,6 +270,58 @@ class CoexistenceIngestTest extends TestCase
         $this->assertSame('Ya salimos para allá', $conversacion->last_message);
     }
 
+    /**
+     * La hora del eco es la nuestra, no UTC.
+     *
+     * Meta manda el timestamp en Unix. `createFromTimestamp` sin zona devuelve
+     * el Carbon en UTC y la columna se escribe tal cual, así que cada eco del
+     * celular quedaba cinco horas por delante de su propio `created_at`. Como
+     * ese `sent_at` se copia a `last_message_at`, la lista de conversaciones
+     * enseñaba una hora que aún no había ocurrido y colaba ese chat arriba del
+     * todo.
+     *
+     * El mismo fallo ya se había corregido en el webhook de entrantes; aquí se
+     * quedó sin corregir. Por eso hay test: es un despiste que vuelve.
+     */
+    public function test_la_hora_del_eco_queda_en_la_zona_de_la_aplicacion(): void
+    {
+        $instancia = $this->instancia();
+        $momento = now()->subMinutes(3);
+
+        $this->ingesta()->reflejarEco($instancia, [
+            'metadata'       => ['display_phone_number' => self::NEGOCIO, 'phone_number_id' => '1247515825107349'],
+            'message_echoes' => [[
+                'from'      => self::NEGOCIO,
+                'to'        => self::CLIENTE,
+                'id'        => 'wamid.eco-hora',
+                'timestamp' => (string) $momento->timestamp,
+                'type'      => 'text',
+                'text'      => ['body' => 'Voy en camino'],
+            ]],
+        ]);
+
+        $mensaje = WhatsAppMessage::where('wamid', 'wamid.eco-hora')->first();
+
+        $this->assertSame(
+            $momento->format('Y-m-d H:i'),
+            $mensaje->sent_at->format('Y-m-d H:i'),
+            'El eco se guardó con otra hora que la del timestamp de Meta',
+        );
+
+        // Lo que de verdad se veía roto: un mensaje que dice haberse enviado
+        // después de que lo registramos.
+        $this->assertTrue(
+            $mensaje->sent_at->lessThanOrEqualTo($mensaje->created_at->addMinute()),
+            'sent_at quedó por delante de created_at: ' . $mensaje->sent_at,
+        );
+
+        $conversacion = WhatsAppConversation::where('instance_id', $instancia->id)->first();
+        $this->assertTrue(
+            $conversacion->last_message_at->lessThanOrEqualTo(now()->addMinute()),
+            'last_message_at quedó en el futuro',
+        );
+    }
+
     // ------------------------------------------------------------- utilidades
 
     private function ingesta(): CoexistenceIngestService
@@ -292,6 +344,71 @@ class CoexistenceIngestTest extends TestCase
             'status'               => 'active',
             'active'               => true,
         ]);
+    }
+
+    /**
+     * El caso de Transintermet: fase 2 al 100, y aun así «importando».
+     *
+     * Los lotes de `history` llegan desordenados. Cuando uno rezagado llegaba
+     * después del que cerraba la importación, `avanzar()` lo volvía a poner en
+     * «importando»: el estado se decidía con el progreso de ese lote suelto, y
+     * un lote sin `progress` contaba como 0%.
+     *
+     * El resultado eran 70.035 mensajes ya guardados, la barra clavada en 99% y
+     * un vigilante a punto de decirle al cliente que rehiciera la conexión
+     * (9-sep-2026).
+     */
+    public function test_un_lote_rezagado_no_reabre_una_importacion_terminada(): void
+    {
+        $instancia = $this->instancia();
+
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.final', self::CLIENTE, 'el ultimo')],
+            fase: 2,
+            progreso: 100
+        ));
+
+        $sync = CoexistenceSync::where('instance_id', $instancia->id)->first();
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status);
+        $cerradaEn = $sync->completed_at;
+
+        // Llega uno de la misma fase con menos progreso, como los que Meta
+        // manda fuera de orden.
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.rezagado', self::CLIENTE, 'venia atras')],
+            fase: 2,
+            progreso: 40
+        ));
+
+        $sync->refresh();
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status, 'Un lote rezagado reabrió la importación.');
+        $this->assertSame(100, $sync->progress);
+        $this->assertEquals($cerradaEn, $sync->completed_at, 'Se reescribió la fecha de cierre con la del rezagado.');
+    }
+
+    /**
+     * Un lote sin `progress` en su metadata no dice «vamos por cero»: dice que
+     * no trae el dato. Tomarlo por cero borraba el avance.
+     */
+    public function test_un_lote_sin_progreso_no_borra_el_avance(): void
+    {
+        $instancia = $this->instancia();
+
+        $this->ingesta()->importarHistorial($instancia, $this->lote(
+            [$this->mensaje('wamid.uno', self::CLIENTE, 'hola')],
+            fase: 2,
+            progreso: 100
+        ));
+
+        $payload = $this->lote([$this->mensaje('wamid.dos', self::CLIENTE, 'otra')], fase: 2);
+        unset($payload['history'][0]['metadata']['progress']);
+
+        $this->ingesta()->importarHistorial($instancia, $payload);
+
+        $sync = CoexistenceSync::where('instance_id', $instancia->id)->first();
+
+        $this->assertSame(100, $sync->progress, 'Un lote sin progreso borró el avance acumulado.');
+        $this->assertSame(CoexistenceSync::COMPLETADA, $sync->status);
     }
 
     /** Un webhook de `history` con un solo hilo. */

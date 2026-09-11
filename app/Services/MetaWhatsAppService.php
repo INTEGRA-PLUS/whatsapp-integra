@@ -952,6 +952,30 @@ class MetaWhatsAppService
             if ($response->successful()) {
                 return ['success' => true, 'data' => $response->json('data')];
             }
+
+            // Un token sólo puede inspeccionarse a sí mismo si pertenece a la
+            // app que pregunta. Cuando no es el caso, Meta responde «You must
+            // provide an app access token, or a user access token that is an
+            // owner or developer of the app» y hasta ahora eso era el final del
+            // camino: la línea de coexistencia de Transinternet no se podía
+            // identificar, y sin su app_id no hay forma de subirle el archivo
+            // de muestra de una plantilla (10-sep-2026).
+            //
+            // Aquí hay dos apps de Meta entregando al mismo callback, y sus
+            // secretos están en META_APP_SECRETS como "app_id:secreto". Con
+            // ellos se arma el app access token de cada una y se pregunta: la
+            // que reconozca el token es su app.
+            foreach ($this->parseConfiguredAppSecrets()['by_app_id'] as $appId => $secret) {
+                $conApp = Http::get("{$this->baseUri}/debug_token", [
+                    'input_token' => $accessToken,
+                    'access_token' => "{$appId}|{$secret}",
+                ]);
+
+                if ($conApp->successful() && $conApp->json('data.app_id')) {
+                    return ['success' => true, 'data' => $conApp->json('data')];
+                }
+            }
+
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];

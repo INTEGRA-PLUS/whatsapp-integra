@@ -90,4 +90,46 @@ class Company extends Model
     {
         return $query->where('active', true);
     }
+    /**
+     * La línea por la que el ERP debe enviar facturas y recibos.
+     *
+     * Antes no se elegía: Integra 2.0 hacía `Instance::where(...)->first()` y
+     * se quedaba con la que devolviera la base de datos. Con una sola línea da
+     * igual, pero Transinternet tiene dos y el ERP estaba usando la que no era
+     * (9-sep-2026).
+     *
+     * Se elige **aquí**, en el CRM, porque es quien habla con WhatsApp, y el
+     * ERP la pregunta antes de enviar. Preguntarla no se desincroniza; copiarla
+     * a los dos lados, sí.
+     */
+    public function instanciaDelErp(): ?Instance
+    {
+        $elegida = $this->settings['erp_instance_id'] ?? null;
+
+        if ($elegida) {
+            $instancia = $this->instances()->where('id', $elegida)->where('active', true)->first();
+
+            if ($instancia) {
+                return $instancia;
+            }
+        }
+
+        // Sin elegir —o elegida una que ya no está activa— se devuelve la misma
+        // que venía usando el ERP, para no cambiarle el número por sorpresa a
+        // nadie: la primera por id.
+        return $this->instances()->where('active', true)->whereNotNull('phone_number_id')->orderBy('id')->first();
+    }
+
+    /** Si la línea del ERP está elegida a mano o es la que salió por defecto. */
+    public function tieneLineaDelErpElegida(): bool
+    {
+        return ! empty($this->settings['erp_instance_id']);
+    }
+
+    public function elegirInstanciaDelErp(?int $instanceId): void
+    {
+        $this->settings = array_merge($this->settings ?? [], ['erp_instance_id' => $instanceId]);
+        $this->save();
+    }
+
 }

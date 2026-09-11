@@ -84,6 +84,12 @@ x-app-env: &app-env
   # WhatsApp con Facebook" no se pinta — sin error y sin nada que investigar.
   META_APP_ID: ${META_APP_ID:-}
   META_ES_CONFIG_ID: ${META_ES_CONFIG_ID:-}
+  # Instagram. El App ID es el de «Integra CRM-IG», la app que Meta crea sola al
+  # añadir el caso de uso: NO es META_APP_ID. Su clave secreta no tiene variable
+  # propia — se añade a META_APP_SECRETS como "<app_id>:<secreto>", igual que las
+  # demás, porque el validador de firmas prueba todas las entradas.
+  META_IG_APP_ID: ${META_IG_APP_ID:-}
+  META_IG_WEBHOOK_VERIFY_TOKEN: ${META_IG_WEBHOOK_VERIFY_TOKEN:-}
   # Con default vacío la variable llega PUESTA pero vacía, y una cadena vacía
   # pisa el valor por defecto de config/services.php. El default va aquí, como
   # en META_API_VERSION dos líneas más abajo.

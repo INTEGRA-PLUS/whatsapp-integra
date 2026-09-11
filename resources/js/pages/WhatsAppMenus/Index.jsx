@@ -6,8 +6,12 @@ import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2, Bot,
+    Check, ChevronRight, MessageSquare,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import MenuHelp from './MenuHelp';
+import SelectorEmoji from '@/components/emoji/SelectorEmoji';
+import { insertarEnCursor } from '@/components/emoji/insertarEmoji';
 import ProviderConnectForm from '@/components/ProviderConnectForm';
 import {
     MATCH_LABELS, MATCH_OPTIONS, KEYWORD_TYPES,
@@ -398,6 +402,21 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
 
 function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, focusOption = null, onSubmit, onCancel, submitLabel }) {
     const options = form.options ?? [];
+    const mensajeRef = useRef(null);
+
+    // Cuando se entra desde un aviso de la revisión, el formulario abre
+    // directamente en las opciones: es donde está lo que hay que arreglar.
+    const [paso, setPaso] = useState(focusOption != null ? 2 : 0);
+
+    // Si el servidor devuelve un error, el asistente va al paso donde está ese
+    // campo. La clave del objeto de errores cambia en cada respuesta, así que
+    // se compara serializada y no por identidad.
+    const clavesDeError = Object.keys(errors ?? {}).sort().join(',');
+
+    useEffect(() => {
+        const destino = pasoDelError(errors);
+        if (destino !== null) setPaso(destino);
+    }, [clavesDeError]); // eslint-disable-line react-hooks/exhaustive-deps
     const catalogs = useIntegraCatalogs(
         integra.connected && options.some(o => o.action_type === 'reportar_falla')
     );
@@ -442,13 +461,25 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
         return { ...f, match_types: Array.from(set) };
     });
 
-    const blocked =
-        options.length === 0 ||
-        options.some(o => o.title.trim() === '') ||
-        options.some(o => o.action_type === 'reply_text' && (o.reply_text ?? '').trim() === '') ||
-        options.some(o => o.action_type === 'submenu' && o.target_menu_id === '') ||
-        (form.is_root && selectedTypes.length === 0) ||
-        (showTrigger && form.trigger_text.trim() === '');
+    // Las mismas comprobaciones que antes, pero repartidas por paso: cada una
+    // decide si se puede pasar al siguiente, y de las tres sale el bloqueo del
+    // botón de guardar. Así el aviso llega donde está el campo que falta, y no
+    // al final con el formulario entero por revisar.
+    const tipoListo =
+        form.name.trim() !== '' &&
+        !(form.is_root && selectedTypes.length === 0) &&
+        !(showTrigger && form.trigger_text.trim() === '');
+
+    const mensajeListo = form.body_text.trim() !== '';
+
+    const opcionesListas =
+        options.length > 0 &&
+        !options.some(o => o.title.trim() === '') &&
+        !options.some(o => o.action_type === 'reply_text' && (o.reply_text ?? '').trim() === '') &&
+        !options.some(o => o.action_type === 'submenu' && o.target_menu_id === '');
+
+    const blocked = !tipoListo || !mensajeListo || !opcionesListas;
+    const listoHastaPaso = [tipoListo, mensajeListo, opcionesListas, true];
 
     // Un menú no puede llevar a sí mismo, y ofrecer los menús raíz como destino
     // sólo invita a que el cliente entre en un circuito del que no sabe salir.
@@ -456,30 +487,64 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
 
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
-            <form onSubmit={onSubmit} className="space-y-5 min-w-0">
-                <Field label="Nombre" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))}
-                    required placeholder="Ej: Menú principal" error={errors?.name} />
+            {/* El formulario NUNCA guarda por sí solo: un Enter en cualquier
+                campo creaba el menú a medias. Guardar es el botón del último
+                paso, que llama a onSubmit a mano. */}
+            <form onSubmit={e => e.preventDefault()} className="space-y-5 min-w-0">
+                <PasosMenu paso={paso} setPaso={setPaso} listoHastaPaso={listoHastaPaso} />
 
-                <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Instancia</label>
-                    <Select value={form.instance_id} onChange={v => setForm(f => ({ ...f, instance_id: v }))}>
-                        <option value="">Todas las instancias</option>
-                        {instances.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                    </Select>
-                </div>
+                {/* ── Paso 1: qué clase de menú es ── */}
+                <div className={paso === 0 ? 'space-y-5' : 'hidden'}>
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-foreground">¿Qué estás creando?</label>
+                        <p className="text-[11px] text-muted-foreground">
+                            Es la decisión que cambia todo lo demás, y antes era una casilla
+                            perdida llamada «Es un submenú».
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            <TipoDeMenu
+                                elegido={form.is_root}
+                                onElegir={() => setForm(f => ({ ...f, is_root: true }))}
+                                icono={MessageSquare}
+                                titulo="Menú principal"
+                                descripcion="Se envía solo cuando el cliente escribe. Es la puerta de entrada."
+                            />
+                            <TipoDeMenu
+                                elegido={!form.is_root}
+                                onElegir={() => setForm(f => ({ ...f, is_root: false, match_types: [], trigger_text: '' }))}
+                                icono={CornerDownRight}
+                                titulo="Submenú"
+                                descripcion="No se dispara solo. Se abre cuando el cliente elige una opción de otro menú."
+                            />
+                        </div>
+                    </div>
 
-                <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">¿Cuándo aparece?</label>
-                    <label className="flex items-start gap-2 rounded-md border border-input p-2.5 text-sm cursor-pointer">
-                        <input type="checkbox" className="mt-0.5" checked={!form.is_root}
-                            onChange={e => setForm(f => ({ ...f, is_root: !e.target.checked }))} />
-                        <span>
-                            Es un submenú
-                            <span className="block text-[11px] text-muted-foreground">
-                                No se dispara solo: se abre desde una opción de otro menú.
-                            </span>
-                        </span>
-                    </label>
+                    <Field label="Nombre" value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))}
+                        required placeholder={form.is_root ? 'Ej: Menú principal' : 'Ej: Submenú de facturación'}
+                        hint="Este nombre es sólo para ti: el cliente no lo ve."
+                        error={errors?.name} />
+
+                    <div className="space-y-1.5">
+                        <label className="text-sm font-medium text-foreground">Instancia</label>
+                        <Select value={form.instance_id} onChange={v => setForm(f => ({ ...f, instance_id: v }))}>
+                            <option value="">Todas las instancias</option>
+                            {instances.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                        </Select>
+                        <p className="text-[11px] text-muted-foreground">
+                            Con «todas», el menú vale para cualquier número de la empresa.
+                        </p>
+                    </div>
+
+                    {!form.is_root && (
+                        <p className="flex items-start gap-1.5 rounded-md bg-info/10 px-2.5 py-2 text-[11px] text-info">
+                            <CornerDownRight className="size-3.5 shrink-0 mt-px" />
+                            Un submenú no aparece por sí solo. Cuando lo tengas creado, ve al menú
+                            de donde debe salir y pon una opción con la acción «Abrir otro menú».
+                        </p>
+                    )}
+
+                    <div className="space-y-1.5">
+                        {form.is_root && <label className="text-sm font-medium text-foreground">¿Cuándo aparece?</label>}
 
                     {form.is_root && (
                         <div className={`flex flex-col gap-1.5 rounded-md border p-2.5 ${errors?.match_types ? 'border-destructive' : 'border-input'}`}>
@@ -498,29 +563,39 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             })}
                         </div>
                     )}
-                    {errors?.match_types && <p className="text-xs text-destructive">{errors.match_types}</p>}
+                        {errors?.match_types && <p className="text-xs text-destructive">{errors.match_types}</p>}
+                    </div>
+
+                    {showTrigger && (
+                        <Field label="Palabras clave" value={form.trigger_text}
+                            onChange={v => setForm(f => ({ ...f, trigger_text: v }))}
+                            placeholder="menu, opciones, ayuda" error={errors?.trigger_text}
+                            hint="Sepáralas con comas. No distingue mayúsculas ni tildes." />
+                    )}
                 </div>
 
-                {showTrigger && (
-                    <Field label="Palabras clave" value={form.trigger_text}
-                        onChange={v => setForm(f => ({ ...f, trigger_text: v }))}
-                        placeholder="menu, opciones, ayuda" error={errors?.trigger_text}
-                        hint="Sepáralas con comas. No distingue mayúsculas ni tildes." />
-                )}
-
+                {/* ── Paso 2: lo que lee el cliente ── */}
+                <div className={paso === 1 ? 'space-y-5' : 'hidden'}>
                 <Field label="Encabezado (opcional)" value={form.header_text}
                     onChange={v => setForm(f => ({ ...f, header_text: v }))}
-                    placeholder="Ej: ColombiaWISP" maxLength={60} error={errors?.header_text} />
+                    placeholder="Ej: ColombiaWISP" maxLength={60} error={errors?.header_text} conEmojis />
 
                 <div className="space-y-1.5">
                     <label className="text-sm font-medium text-foreground">Mensaje</label>
-                    <textarea
-                        value={form.body_text}
-                        onChange={e => setForm(f => ({ ...f, body_text: e.target.value }))}
-                        required rows={3} maxLength={limits.max_body}
-                        placeholder={'¡Hola! 👋\nSoy tu asistente virtual.\n¿En qué puedo ayudarte hoy?'}
-                        className={`flex w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.body_text ? 'border-destructive' : 'border-input'}`}
-                    />
+                    <div className="relative">
+                        <textarea
+                            ref={mensajeRef}
+                            value={form.body_text}
+                            onChange={e => setForm(f => ({ ...f, body_text: e.target.value }))}
+                            required rows={3} maxLength={limits.max_body}
+                            placeholder={'¡Hola! 👋\nSoy tu asistente virtual.\n¿En qué puedo ayudarte hoy?'}
+                            className={`flex w-full rounded-md border bg-transparent px-3 py-2 pr-10 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.body_text ? 'border-destructive' : 'border-input'}`}
+                        />
+                        <SelectorEmoji
+                            className="absolute right-1.5 top-1.5"
+                            onElegir={emoji => setForm(f => ({ ...f, body_text: insertarEnCursor(mensajeRef.current, f.body_text, emoji) }))}
+                        />
+                    </div>
                     <p className="text-[11px] text-muted-foreground">
                         Puedes usar {'{name}'}, {'{phone}'} y {'{wa_id}'}. {form.body_text.length}/{limits.max_body}
                     </p>
@@ -529,9 +604,12 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
 
                 <Field label="Pie (opcional)" value={form.footer_text}
                     onChange={v => setForm(f => ({ ...f, footer_text: v }))}
-                    placeholder="Ej: Atención 24/7" maxLength={60} error={errors?.footer_text} />
+                    placeholder="Ej: Atención 24/7" maxLength={60} error={errors?.footer_text} conEmojis />
 
-                <div className="space-y-2 rounded-lg border p-3">
+                </div>
+
+                {/* ── Paso 3: qué puede elegir ── */}
+                <div className={paso === 2 ? 'space-y-2 rounded-lg border p-3' : 'hidden'}>
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-sm font-medium text-foreground">Opciones</p>
@@ -593,21 +671,40 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                     ))}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                    <Field label="Espera entre envíos (minutos)" type="number" value={form.cooldown_minutes}
-                        onChange={v => setForm(f => ({ ...f, cooldown_minutes: v }))}
-                        hint="Evita reenviar el mismo menú si el cliente escribe varias veces seguidas."
-                        error={errors?.cooldown_minutes} />
-                    <label className="flex items-center gap-2 text-sm self-end pb-2 cursor-pointer">
-                        <input type="checkbox" checked={form.active}
-                            onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
-                        Menú activo
-                    </label>
+                {/* ── Paso 4: ajustes y guardar ── */}
+                <div className={paso === 3 ? 'space-y-5' : 'hidden'}>
+                    <ResumenMenu form={form} options={options} isList={isList} limits={limits} menus={menus} />
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Espera entre envíos (minutos)" type="number" value={form.cooldown_minutes}
+                            onChange={v => setForm(f => ({ ...f, cooldown_minutes: v }))}
+                            hint="Evita reenviar el mismo menú si el cliente escribe varias veces seguidas."
+                            error={errors?.cooldown_minutes} />
+                        <label className="flex items-center gap-2 text-sm self-end pb-2 cursor-pointer">
+                            <input type="checkbox" checked={form.active}
+                                onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+                            Menú activo
+                        </label>
+                    </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
-                    <Button type="submit" disabled={blocked}>{submitLabel}</Button>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
+                    <Button type="button" variant="outline" onClick={paso === 0 ? onCancel : () => setPaso(p => p - 1)}>
+                        {paso === 0 ? 'Cancelar' : 'Atrás'}
+                    </Button>
+
+                    {paso < 3 ? (
+                        <Button
+                            type="button"
+                            disabled={!listoHastaPaso[paso]}
+                            onClick={() => setPaso(p => p + 1)}
+                            className="gap-1.5"
+                        >
+                            Continuar <ChevronRight className="size-4" />
+                        </Button>
+                    ) : (
+                        <Button type="button" disabled={blocked} onClick={onSubmit}>{submitLabel}</Button>
+                    )}
                 </div>
             </form>
 
@@ -636,6 +733,177 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
  * Ahora el "ya lo pedí" vive en una ref, que no provoca renders, y el efecto
  * sólo depende de si hace falta pedirlo.
  */
+/**
+ * En qué paso vive cada campo que puede dar error en el servidor.
+ *
+ * Sin esto el asistente tiene un final ciego: el servidor rechaza el menú por
+ * `match_types` —«ya existe un menú de bienvenida para esta instancia»—, ese
+ * campo está en el paso 1, y tú estás en el 4 pulsando «Crear menú» sin ver
+ * nada. El botón parece no hacer nada. Pasó en la primera prueba.
+ */
+const PASO_DEL_CAMPO = {
+    name: 0, instance_id: 0, match_types: 0, trigger_text: 0,
+    header_text: 1, body_text: 1, footer_text: 1,
+    list_button_text: 2,
+    cooldown_minutes: 3, active: 3,
+};
+
+const pasoDelError = (errores = {}) => {
+    const pasos = Object.keys(errores).map(campo => (
+        campo.startsWith('options') ? 2 : PASO_DEL_CAMPO[campo]
+    )).filter(p => p !== undefined);
+
+    return pasos.length ? Math.min(...pasos) : null;
+};
+
+const PASOS_MENU = [
+    { titulo: 'Tipo', ayuda: 'Principal o submenú' },
+    { titulo: 'Mensaje', ayuda: 'Lo que lee el cliente' },
+    { titulo: 'Opciones', ayuda: 'Qué puede elegir' },
+    { titulo: 'Revisar', ayuda: 'Ajustes y guardar' },
+];
+
+/**
+ * La barra de pasos del formulario de menú.
+ *
+ * El formulario era un scroll de diez secciones —tipo, disparadores, textos,
+ * opciones con su acción y su configuración, espera, activo— y había que
+ * entenderlo entero antes de escribir la primera letra. Partido en cuatro, cada
+ * pantalla hace una pregunta.
+ *
+ * Se puede volver a un paso ya hecho haciendo clic, pero no saltar hacia
+ * delante sin completar el actual: adelantarse es cómo se acaba con un menú
+ * guardado a medias.
+ */
+function PasosMenu({ paso, setPaso, listoHastaPaso }) {
+    return (
+        <ol className="flex items-center gap-1.5">
+            {PASOS_MENU.map((p, i) => {
+                const hecho = i < paso;
+                const actual = i === paso;
+                const alcanzable = i < paso || (i === paso + 1 && listoHastaPaso[paso]);
+
+                return (
+                    <li key={p.titulo} className="flex min-w-0 flex-1">
+                        <button
+                            type="button"
+                            disabled={!alcanzable && !actual}
+                            onClick={() => alcanzable && setPaso(i)}
+                            className={cn(
+                                'flex min-w-0 flex-1 items-center gap-2 rounded-xl border p-2 text-left transition-colors',
+                                actual && 'border-primary bg-primary/5',
+                                hecho && !actual && 'border-border hover:bg-muted',
+                                !actual && !hecho && 'border-dashed opacity-60',
+                            )}
+                        >
+                            <span
+                                className={cn(
+                                    'flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                                    actual && 'bg-primary text-primary-foreground',
+                                    hecho && !actual && 'bg-primary/15 text-primary',
+                                    !actual && !hecho && 'bg-muted text-muted-foreground',
+                                )}
+                            >
+                                {hecho && !actual ? <Check className="size-3.5" /> : i + 1}
+                            </span>
+                            <span className="min-w-0">
+                                <span className="block truncate text-xs font-semibold text-foreground">{p.titulo}</span>
+                                <span className="hidden truncate text-[10px] text-muted-foreground sm:block">{p.ayuda}</span>
+                            </span>
+                        </button>
+                    </li>
+                );
+            })}
+        </ol>
+    );
+}
+
+/** Menú principal o submenú, como dos tarjetas y no como una casilla. */
+function TipoDeMenu({ elegido, onElegir, icono: Icono, titulo, descripcion }) {
+    return (
+        <button
+            type="button"
+            onClick={onElegir}
+            aria-pressed={elegido}
+            className={cn(
+                'flex flex-col gap-1.5 rounded-xl border p-3 text-left transition-colors',
+                elegido ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-input hover:bg-muted',
+            )}
+        >
+            <span className="flex items-center gap-2">
+                <span className={cn(
+                    'flex size-7 items-center justify-center rounded-lg',
+                    elegido ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                )}>
+                    <Icono className="size-4" />
+                </span>
+                <span className="text-sm font-semibold text-foreground">{titulo}</span>
+            </span>
+            <span className="text-[11px] leading-snug text-muted-foreground">{descripcion}</span>
+        </button>
+    );
+}
+
+/**
+ * El resumen del último paso, en una frase por cosa.
+ *
+ * Guardar sin releer los diez campos era un acto de fe: aquí se ve, con
+ * palabras, cuándo se va a enviar el menú y qué forma va a tener en el
+ * teléfono.
+ */
+function ResumenMenu({ form, options, isList, limits, menus }) {
+    const cuando = form.is_root
+        ? (form.match_types ?? []).map(t => MATCH_OPTIONS.find(o => o.value === t)?.label ?? t)
+        : [];
+
+    const lineas = [
+        form.is_root
+            ? { que: 'Se envía', valor: cuando.length ? cuando.join(', ').toLowerCase() : 'todavía sin definir' }
+            : { que: 'Se abre', valor: 'desde una opción de otro menú, nunca por sí solo' },
+        {
+            que: 'Sale como',
+            valor: isList
+                ? `lista desplegable, con ${options.length} opciones`
+                : `${options.length} ${options.length === 1 ? 'botón' : 'botones'}`,
+        },
+        {
+            que: 'Aplica a',
+            valor: form.instance_id === ''
+                ? 'todas las instancias de la empresa'
+                : 'una sola instancia',
+        },
+    ];
+
+    const conSubmenu = options.filter(o => o.action_type === 'submenu').length;
+
+    if (conSubmenu > 0) {
+        lineas.push({
+            que: 'Lleva a',
+            valor: `${conSubmenu} ${conSubmenu === 1 ? 'submenú' : 'submenús'}`,
+        });
+    }
+
+    return (
+        <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-4">
+            <p className="text-sm font-semibold text-foreground">Esto es lo que va a pasar</p>
+            <dl className="space-y-1.5">
+                {lineas.map(l => (
+                    <div key={l.que} className="flex gap-2 text-[12px]">
+                        <dt className="w-20 shrink-0 font-semibold text-muted-foreground">{l.que}</dt>
+                        <dd className="text-foreground">{l.valor}</dd>
+                    </div>
+                ))}
+            </dl>
+            {!form.active && (
+                <p className="flex items-start gap-1.5 text-[11px] text-warning">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                    Se guardará desactivado: no se enviará a nadie hasta que lo actives.
+                </p>
+            )}
+        </div>
+    );
+}
+
 function useIntegraCatalogs(enabled) {
     const [state, setState] = useState({ loading: false, data: null, error: null });
     const requested = useRef(false);
@@ -721,21 +989,30 @@ function OptionLegend() {
     );
 }
 
+/**
+ * El color de cada tarjeta de opción dice de qué familia es la acción.
+ *
+ * El fondo era `bg-info/60`: **60% de opacidad de un azul saturado**, que en
+ * tema claro tapaba la tarjeta entera de azul fuerte y dejaba los campos
+ * flotando dentro de un bloque de color (9-sep-2026). El color tiene que
+ * marcar, no gritar: se queda en el borde izquierdo, que ya estaba, y el fondo
+ * baja a un lavado que se lee igual en los dos temas.
+ */
 const GROUP_TONES = {
     core: {
-        card: 'border-l-sky-400 bg-info/60',
-        badge: 'bg-info/15 text-info dark:bg-info/40 dark:text-info',
+        card: 'border-l-info bg-info/[0.04] dark:bg-info/[0.10]',
+        badge: 'bg-info/15 text-info dark:bg-info/25',
     },
     integra: {
-        card: 'border-l-success bg-success/60',
-        badge: 'bg-success/15 text-success dark:bg-success/40 dark:text-success',
+        card: 'border-l-success bg-success/[0.04] dark:bg-success/[0.10]',
+        badge: 'bg-success/15 text-success dark:bg-success/25',
     },
     pending: {
-        card: 'border-l-warning bg-warning/60',
-        badge: 'bg-warning/15 text-warning dark:bg-warning/40 dark:text-warning',
+        card: 'border-l-warning bg-warning/[0.05] dark:bg-warning/[0.10]',
+        badge: 'bg-warning/15 text-warning dark:bg-warning/25',
     },
     none: {
-        card: 'border-l-zinc-300 bg-muted/40',
+        card: 'border-l-border bg-muted/40',
         badge: 'bg-background text-muted-foreground',
     },
 };
@@ -862,6 +1139,8 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
 
 function OptionRow({ index, option, focused = false, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
     const ActionIcon = iconFor(option.action_type);
+    const tituloRef = useRef(null);
+    const respuestaRef = useRef(null);
     const meta = actionMeta[option.action_type];
     const config = option.config ?? {};
     const setConfig = patch => onChange({ config: { ...config, ...patch } });
@@ -908,13 +1187,21 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                 <span className={`flex size-6 shrink-0 items-center justify-center rounded text-xs font-semibold ${tone.badge}`}>
                     {index + 1}
                 </span>
-                <input
-                    value={option.title}
-                    onChange={e => onChange({ title: e.target.value })}
-                    maxLength={limits.max_row_title}
-                    placeholder="Título de la opción (ej: 📄 Consultar factura)"
-                    className={`flex h-8 w-full rounded-md border bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.title`] ? 'border-destructive' : 'border-input'}`}
-                />
+                <div className="relative w-full">
+                    <input
+                        ref={tituloRef}
+                        value={option.title}
+                        onChange={e => onChange({ title: e.target.value })}
+                        maxLength={limits.max_row_title}
+                        placeholder="Título de la opción (ej: 📄 Consultar factura)"
+                        className={`flex h-8 w-full rounded-md border bg-background px-2.5 pr-9 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.title`] ? 'border-destructive' : 'border-input'}`}
+                    />
+                    <SelectorEmoji
+                        className="absolute right-0.5 top-0.5"
+                        titulo="Poner un emoji en el título"
+                        onElegir={emoji => onChange({ title: insertarEnCursor(tituloRef.current, option.title, emoji) })}
+                    />
+                </div>
                 <div className="flex shrink-0">
                     <button type="button" onClick={() => onMove(-1)} disabled={!canMoveUp}
                         className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Subir">
@@ -961,13 +1248,20 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
             <OptionExplainer option={option} actionMeta={actionMeta} submenuChoices={submenuChoices} />
 
             {option.action_type === 'reply_text' && (
-                <textarea
-                    value={option.reply_text ?? ''}
-                    onChange={e => onChange({ reply_text: e.target.value })}
-                    rows={2} maxLength={4096}
-                    placeholder="Mensaje que recibirá el cliente al elegir esta opción"
-                    className={`flex w-full rounded-md border bg-background px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.reply_text`] ? 'border-destructive' : 'border-input'}`}
-                />
+                <div className="relative">
+                    <textarea
+                        ref={respuestaRef}
+                        value={option.reply_text ?? ''}
+                        onChange={e => onChange({ reply_text: e.target.value })}
+                        rows={2} maxLength={4096}
+                        placeholder="Mensaje que recibirá el cliente al elegir esta opción"
+                        className={`flex w-full rounded-md border bg-background px-2.5 py-1.5 pr-9 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${errors?.[`options.${index}.reply_text`] ? 'border-destructive' : 'border-input'}`}
+                    />
+                    <SelectorEmoji
+                        className="absolute right-1 top-1"
+                        onElegir={emoji => onChange({ reply_text: insertarEnCursor(respuestaRef.current, option.reply_text ?? '', emoji) })}
+                    />
+                </div>
             )}
 
             {option.action_type === 'reply_image' && (
@@ -1605,19 +1899,30 @@ function Modal({ title, description, onClose, wide = false, children }) {
     );
 }
 
-function Field({ label, value, onChange, type = 'text', required = false, placeholder = '', error, hint, maxLength }) {
+function Field({ label, value, onChange, type = 'text', required = false, placeholder = '', error, hint, maxLength, conEmojis = false }) {
+    const campo = useRef(null);
+
     return (
         <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">{label}</label>
-            <input
-                type={type}
-                value={value}
-                onChange={e => onChange(e.target.value)}
-                required={required}
-                placeholder={placeholder}
-                maxLength={maxLength}
-                className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${error ? 'border-destructive' : 'border-input'}`}
-            />
+            {label && <label className="text-sm font-medium text-foreground">{label}</label>}
+            <div className="relative">
+                <input
+                    ref={campo}
+                    type={type}
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                    required={required}
+                    placeholder={placeholder}
+                    maxLength={maxLength}
+                    className={`flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${conEmojis ? 'pr-10' : ''} ${error ? 'border-destructive' : 'border-input'}`}
+                />
+                {conEmojis && (
+                    <SelectorEmoji
+                        className="absolute right-1 top-1"
+                        onElegir={emoji => onChange(insertarEnCursor(campo.current, value, emoji))}
+                    />
+                )}
+            </div>
             {hint && !error && <p className="text-[11px] text-muted-foreground">{hint}</p>}
             {error && <p className="text-xs text-destructive mt-1">{error}</p>}
         </div>

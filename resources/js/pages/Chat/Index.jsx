@@ -113,12 +113,41 @@ import {
     Sheet,
     SheetContent,
 } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import QuickReplyPicker from '@/components/quick-reply-picker';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { refreshNotifications, useConversationsRefresh } from '@/lib/notifications';
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+/**
+ * El nombre de un icono de la columna plegada, al pasar por encima.
+ *
+ * El atributo `title` lo pinta el sistema operativo: una caja gris que ignora
+ * la marca, tarda un segundo largo en salir y aparece bajo el cursor, tapando
+ * el icono de al lado. La barra lateral del menú principal ya resuelve esto con
+ * el tooltip de Radix, así que esta columna usa el mismo y las dos se ven igual.
+ */
+function ConTooltip({ texto, children }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent
+                side="right"
+                align="center"
+                // En azul y no en el verde de la marca: esta columna es la
+                // navegación del chat, que se distingue del menú principal
+                // precisamente por el color. Un tooltip verde sobre un icono
+                // azul parecía de otra pantalla.
+                className="bg-info text-info-foreground"
+                arrowClassName="bg-info fill-info"
+            >
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
 
 // El chat ya no tiene barra propia: sus controles viven en la barra superior
 // del layout para no gastar alto de pantalla.
@@ -1265,6 +1294,10 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [selectedInstanceId, setSelectedInstanceId] = useState('');
     const [conversations, setConversations] = useState([]);
     const [messages, setMessages] = useState([]);
+    // El hilo se abre por su tramo final. `hayMasAntiguos` dice si queda
+    // historial por detrás; con la coexistencia pueden ser seis meses.
+    const [hayMasAntiguos, setHayMasAntiguos] = useState(false);
+    const [cargandoAntiguos, setCargandoAntiguos] = useState(false);
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [newMessage, setNewMessage] = useState('');
     // Presencia del chat abierto: otros agentes que lo tienen delante ahora
@@ -1276,6 +1309,8 @@ export default function ChatIndex({ instances, integrations = [] }) {
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
+    // Resultados que la búsqueda encuentra pero el filtro de estado esconde.
+    const [fueraDelFiltro, setFueraDelFiltro] = useState(0);
     const [loadingMore, setLoadingMore] = useState(false);
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState(null);
@@ -2240,6 +2275,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
             const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`);
             forceScrollRef.current = true;
             setMessages(res.data.messages);
+            setHayMasAntiguos(!!res.data.has_more);
             setLastUpdateTimestamp(res.data.timestamp);
             setConversations(prev =>
                 prev.map(c => (c.id === conv.id ? { ...c, unread_count: 0 } : c)),
@@ -2249,6 +2285,54 @@ export default function ChatIndex({ instances, integrations = [] }) {
         }
     }, [clearNoteImage]);
 
+    /**
+     * Trae el tramo anterior del hilo y lo pone por encima.
+     *
+     * Se mide el alto del contenedor antes y después para devolver el scroll a
+     * donde estaba: al insertar mensajes arriba, el navegador conserva el
+     * `scrollTop` y el contenido se desplaza bajo el cursor, así que sin esto
+     * la vista salta y el agente pierde el mensaje que estaba leyendo.
+     */
+    const cargarAnteriores = useCallback(async () => {
+        const conv = selectedConversationRef.current;
+        const primero = messages[0];
+
+        if (!conv || !primero || cargandoAntiguos) return;
+
+        setCargandoAntiguos(true);
+
+        const el = messagesContainerRef.current;
+        const altoAntes = el ? el.scrollHeight : 0;
+        const scrollAntes = el ? el.scrollTop : 0;
+
+        try {
+            const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`, {
+                params: { before_id: primero.id },
+            });
+
+            const anteriores = res.data.messages || [];
+
+            if (anteriores.length) {
+                // No se reordena ni se deduplica por wamid: el corte va por
+                // fecha e id, así que los tramos no se solapan.
+                setMessages(prev => [...anteriores, ...prev]);
+            }
+
+            setHayMasAntiguos(!!res.data.has_more);
+
+            requestAnimationFrame(() => {
+                const contenedor = messagesContainerRef.current;
+                if (contenedor) {
+                    contenedor.scrollTop = scrollAntes + (contenedor.scrollHeight - altoAntes);
+                }
+            });
+        } catch (err) {
+            console.error('Error cargando mensajes anteriores:', err);
+        } finally {
+            setCargandoAntiguos(false);
+        }
+    }, [messages, cargandoAntiguos]);
+
     const openConversationById = useCallback(async (id) => {
         try {
             const res = await axios.get(`/api/chat/conversations/${id}/messages`);
@@ -2256,6 +2340,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 forceScrollRef.current = true;
                 setSelectedConversation(res.data.conversation);
                 setMessages(res.data.messages);
+                setHayMasAntiguos(!!res.data.has_more);
                 setLastUpdateTimestamp(res.data.timestamp);
             }
         } catch (err) {
@@ -2783,6 +2868,9 @@ export default function ChatIndex({ instances, integrations = [] }) {
             setConversations(prev => pageNum === 1 ? newItems : [...prev, ...newItems]);
             setHasMore(res.data.next_page_url !== null);
             setPage(pageNum);
+            // Cuántas encajan con lo buscado pero se quedan fuera por el filtro
+            // de estado. El servidor sólo lo calcula al buscar con filtro.
+            setFueraDelFiltro(pageNum === 1 ? (res.data.fuera_del_filtro ?? 0) : fueraDelFiltro);
         } catch (err) {
             console.error('Error cargando conversaciones:', err);
         } finally {
@@ -3826,7 +3914,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                 </DropdownMenu>
             </TopBarActions>
 
-            <div className="h-[calc(100vh-49px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
+            {/* El alto se fija aquí, y el descuento son dos cosas, no una:
+                la barra superior (`h-12` + su borde = 49px) y, desde `md`, los
+                8px de margen que `SidebarInset` deja arriba y abajo (`m-2`).
+                Sólo se restaban los 49, así que el chat sobresalía 15px del
+                hueco: el borde inferior de la barra de escribir quedaba cortado
+                y la pastilla de Responder se apretaba contra la conversación.
+                `svh` en vez de `vh` para que en el móvil no cuente la barra del
+                navegador que se retrae. */}
+            <div className="h-[calc(100svh-49px)] md:h-[calc(100svh-65px)] flex flex-col overflow-hidden bg-[#f0f2f5] dark:bg-[#0b141a]">
                 {!selectedInstanceId ? (
                     <div className="flex-1 flex items-center justify-center">
                         <div className="text-center max-w-sm">
@@ -3843,14 +3939,15 @@ export default function ChatIndex({ instances, integrations = [] }) {
                             y el acceso a etiquetas. Devuelve ~200px al hilo del chat. */}
                         {!navOpen && (
                             <div className="hidden lg:flex w-14 shrink-0 flex-col items-center gap-1 py-3 bg-[#fafafa] dark:bg-[#0d1418] border-r border-border/10">
-                                <button
-                                    type="button"
-                                    onClick={() => setNavOpen(true)}
-                                    title="Desplegar carpetas y etiquetas"
-                                    className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
-                                >
-                                    <PanelLeftOpen className="size-4" />
-                                </button>
+                                <ConTooltip texto="Desplegar carpetas y etiquetas">
+                                    <button
+                                        type="button"
+                                        onClick={() => setNavOpen(true)}
+                                        className="p-2 rounded-lg text-muted-foreground/70 hover:text-info hover:bg-info/10 transition-all duration-200"
+                                    >
+                                        <PanelLeftOpen className="size-4" />
+                                    </button>
+                                </ConTooltip>
 
                                 <div className="w-6 h-px my-1 bg-border/40" />
 
@@ -3862,51 +3959,52 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     const active = folder === item.key;
                                     const Icon = item.icon;
                                     return (
-                                        <button
-                                            key={item.key}
-                                            type="button"
-                                            onClick={() => setFolder(item.key)}
-                                            title={item.label}
-                                            className={clsx(
-                                                "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
-                                                active
-                                                    ? "bg-info/15 text-info ring-1 ring-info/25"
-                                                    : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
-                                            )}
-                                        >
-                                            <Icon className="size-4" />
-                                            {item.count > 0 && (
-                                                <span className={clsx(
-                                                    "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
-                                                    active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
-                                                )}>
-                                                    {item.count > 99 ? '99+' : item.count}
-                                                </span>
-                                            )}
-                                        </button>
+                                        <ConTooltip key={item.key} texto={item.label}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFolder(item.key)}
+                                                className={clsx(
+                                                    "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
+                                                    active
+                                                        ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                        : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
+                                                )}
+                                            >
+                                                <Icon className="size-4" />
+                                                {item.count > 0 && (
+                                                    <span className={clsx(
+                                                        "absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none",
+                                                        active ? "bg-info text-info-foreground" : "bg-[#e9edef] dark:bg-[#2a3942] text-muted-foreground/80"
+                                                    )}>
+                                                        {item.count > 99 ? '99+' : item.count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        </ConTooltip>
                                     );
                                 })}
 
                                 <div className="w-6 h-px my-1 bg-border/40" />
 
-                                <button
-                                    type="button"
-                                    onClick={() => setNavOpen(true)}
-                                    title={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}
-                                    className={clsx(
-                                        "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
-                                        selectedTagIds.length > 0
-                                            ? "bg-info/15 text-info ring-1 ring-info/25"
-                                            : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
-                                    )}
-                                >
-                                    <TagIcon className="size-4" />
-                                    {selectedTagIds.length > 0 && (
-                                        <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
-                                            {selectedTagIds.length}
-                                        </span>
-                                    )}
-                                </button>
+                                <ConTooltip texto={selectedTagIds.length > 0 ? `${selectedTagIds.length} etiqueta(s) filtrando` : 'Etiquetas'}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNavOpen(true)}
+                                        className={clsx(
+                                            "relative p-2 rounded-lg transition-all duration-200 hover:scale-105",
+                                            selectedTagIds.length > 0
+                                                ? "bg-info/15 text-info ring-1 ring-info/25"
+                                                : "text-muted-foreground/70 hover:text-info hover:bg-info/10"
+                                        )}
+                                    >
+                                        <TagIcon className="size-4" />
+                                        {selectedTagIds.length > 0 && (
+                                            <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center rounded-full text-[9px] font-bold leading-none bg-info text-info-foreground">
+                                                {selectedTagIds.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </ConTooltip>
                             </div>
                         )}
 
@@ -4151,8 +4249,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                             >
                                                 <Filter className="size-[15px]" />
                                             </button>
+                                            {/* El panel se abre hacia la derecha, no hacia la
+                                                izquierda. Anclado a `right-0`, sus 340px se
+                                                extendían desde el botón hacia el borde de la
+                                                ventana y se salían: el título aparecía cortado por
+                                                la mitad y el primer desplegable a medias. A la
+                                                derecha del botón está el hilo del chat, que es
+                                                espacio de sobra. El ancho se acota al viewport
+                                                para el móvil, donde el panel ocupa la pantalla
+                                                entera. */}
                                             {filterOpen && (
-                                                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
+                                                <div className="absolute left-0 top-full mt-2 z-50 w-[340px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-border/10 bg-white dark:bg-[#202c33] shadow-2xl p-4">
                                                     <p className="text-sm font-bold text-foreground mb-3">Filtrar conversaciones</p>
                                                     <div className="space-y-2">
                                                         {draftFilters.map((row, i) => (
@@ -4348,6 +4455,30 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         </p>
                                     </div>
                                 )}
+
+                                {/* Lo que la búsqueda encuentra pero el filtro esconde.
+                                    Una empresa puede tener 19 conversaciones abiertas y
+                                    3.171 cerradas: casi cualquier búsqueda cae fuera del
+                                    filtro, y "no se encontraron chats" hacía pensar que el
+                                    cliente no estaba en el sistema. */}
+                                {fueraDelFiltro > 0 && !loadingMore && debouncedSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setStatusFilter('all')}
+                                        className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3 py-2.5 text-left transition-colors hover:bg-info/15"
+                                    >
+                                        <Search className="mt-0.5 size-3.5 shrink-0 text-info" />
+                                        <span className="text-[11px] leading-snug text-muted-foreground">
+                                            <span className="font-bold text-foreground">
+                                                {fueraDelFiltro === 1
+                                                    ? 'Hay 1 chat más'
+                                                    : `Hay ${fueraDelFiltro} chats más`}
+                                            </span>{' '}
+                                            con «{debouncedSearch}» en {statusFilter === 'closed' ? 'los abiertos' : 'los cerrados'}.{' '}
+                                            <span className="font-semibold text-info">Ver todos</span>
+                                        </span>
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -4392,7 +4523,12 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                 <>
                                     {/* Chat Header */}
                                     <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sm:gap-3 z-10 shadow-sm">
-                                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                        {/* `flex-1` para que el nombre reclame su sitio. Sin él,
+                                            los siete botones de la derecha —todos `shrink-0`— se
+                                            quedaban con todo el ancho y este bloque se encogía a
+                                            0px: en un móvil de 390px el nombre del cliente
+                                            desaparecía por completo de la cabecera. */}
+                                        <div className="flex flex-1 items-center gap-2 sm:gap-3 min-w-0">
                                             {/* Volver a la lista de chats (sólo móvil) */}
                                             <button
                                                 type="button"
@@ -4423,13 +4559,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         <span className="shrink-0 text-[9px] bg-muted/15 text-muted-foreground px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide">Cerrada</span>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-2.5 mt-0.5 min-w-0">
+                                                {/* `overflow-hidden` porque lo de dentro lleva
+                                                    `shrink-0`: en un móvil de 390px el número, el
+                                                    contacto y el agente no caben, no se encogían y
+                                                    acababan por encima de los botones de la
+                                                    derecha —el nombre del cliente desaparecía y
+                                                    "Vincular" se leía como "cular"—. */}
+                                                <div className="flex items-center gap-2.5 mt-0.5 min-w-0 overflow-hidden">
                                                     <span className="text-[11px] text-muted-foreground leading-tight shrink-0">{contactIdentity(selectedConversation)}</span>
                                                     {selectedConversation.contact ? (
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
                                                             title="Contacto vinculado — clic para cambiar"
-                                                            className="inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-0 max-w-[150px]"
+                                                            className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-0 max-w-[150px]"
                                                         >
                                                             <Contact className="size-3 shrink-0" /> <span className="truncate">{contactFullName(selectedConversation.contact)}</span>
                                                         </button>
@@ -4437,13 +4579,13 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         <button
                                                             onClick={() => setShowLinkContact(true)}
                                                             title="Vincular este número a un contacto"
-                                                            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-foreground dark:hover:text-accent-foreground transition-colors shrink-0"
+                                                            className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-foreground dark:hover:text-accent-foreground transition-colors shrink-0"
                                                         >
                                                             <UserPlus className="size-3" /> Vincular
                                                         </button>
                                                     )}
                                                     {selectedConversation.assigned_agent && (
-                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="inline-flex items-center gap-1 text-[11px] text-accent-foreground min-w-0 max-w-[130px]">
+                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground min-w-0 max-w-[130px]">
                                                             <span className="size-1.5 rounded-full bg-primary shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
                                                         </span>
                                                     )}
@@ -4478,7 +4620,14 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 shrink-0">
+                                        {/* En el móvil las acciones se deslizan en horizontal en
+                                            vez de repartirse el ancho: son siete y ninguna sobra
+                                            —buscar, llamar, etiquetas, IA— así que esconderlas las
+                                            dejaría inalcanzables. La barra de desplazamiento se
+                                            oculta; el gesto se descubre al arrastrar. En pantalla
+                                            grande vuelve a `visible`, que es lo que necesitan los
+                                            desplegables para salirse del contenedor. */}
+                                        <div className="flex max-w-[50%] shrink-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-none sm:overflow-x-visible">
                                             {/* Admin Assignment Button */}
                                             {isAdmin && (
                                                 <DropdownMenu>
@@ -4733,6 +4882,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                         onScroll={handleMessagesScroll}
                                         className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-6 sm:py-5 2xl:px-10 space-y-2 custom-scrollbar relative z-10 flex flex-col"
                                     >
+                                        {hayMasAntiguos && (
+                                            <div className="flex justify-center pb-2 shrink-0">
+                                                <button
+                                                    type="button"
+                                                    onClick={cargarAnteriores}
+                                                    disabled={cargandoAntiguos}
+                                                    className="text-[11px] font-bold uppercase tracking-tight px-3 py-1.5 rounded-full border border-border/40 bg-background/70 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+                                                >
+                                                    {cargandoAntiguos ? 'Cargando...' : 'Cargar mensajes anteriores'}
+                                                </button>
+                                            </div>
+                                        )}
+
                                         {messages.map((msg, i) => {
                                             const isOut = msg.direction === 'outbound';
                                             const quoted = msg.reply_to_wamid ? messagesByWamid.get(msg.reply_to_wamid) : null;
@@ -5233,13 +5395,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                                         el cliente conserva el texto que se le envió. */}
                                                                     {msg.metadata?.edited_at && !msg.is_internal && (
                                                                         <span
-                                                                            className="text-[9px] font-bold italic text-muted-foreground/60 dark:text-white/30 whitespace-nowrap"
+                                                                            className="text-[9px] font-bold italic text-muted-foreground/80 dark:text-white/65 whitespace-nowrap"
                                                                             title={`Corregido en el panel${msg.metadata.edited_by?.name ? ` por ${msg.metadata.edited_by.name}` : ''} el ${new Date(msg.metadata.edited_at).toLocaleString('es-CO')}.\nEl cliente recibió: "${msg.metadata.delivered_content ?? ''}"`}
                                                                         >
                                                                             editado
                                                                         </span>
                                                                     )}
-                                                                    <span className="text-[9px] font-bold text-muted-foreground/60 dark:text-white/30 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
+                                                                    {/* La hora tiene que leerse. En oscuro iba en blanco al 30%,
+                                                                        que sobre el verde de una burbuja saliente queda por
+                                                                        debajo de 2:1 — a 9px, eso no es discreto, es invisible.
+                                                                        Sigue siendo lo más apagado de la burbuja, pero legible. */}
+                                                                    <span className="text-[9px] font-bold text-muted-foreground/80 dark:text-white/65 whitespace-nowrap uppercase tracking-tighter">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                     {isOut && (
                                                                         <StatusIcons
                                                                             status={msg.status}
@@ -5310,7 +5476,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                     {/* Composer mode strip: Responder / Nota interna */}
                                     {!isRecording && (
-                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2.5 flex items-center gap-1.5 z-10">
+                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 pb-2 flex items-center gap-1.5 z-10 border-t border-black/5 dark:border-white/10">
                                             <button
                                                 onClick={() => { setComposerMode('reply'); closeMentions(); clearNoteImage(); }}
                                                 className={clsx(
@@ -5338,7 +5504,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
 
                                     {/* Input Area - WhatsApp Web Style */}
                                     <div className={clsx(
-                                        "px-3 pt-2 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
+                                        "px-3 pb-3 flex items-stretch gap-2 z-10 text-foreground min-h-[62px] transition-colors",
                                         composerMode === 'note' && !isRecording
                                             ? "bg-warning/15"
                                             : "bg-[#f0f2f5] dark:bg-[#202c33]"
@@ -5441,25 +5607,40 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                     <textarea
                                                         ref={messageInputRef}
                                                         rows={1}
+                                                        // El marcador dice qué se escribe, no cómo.
+                                                        // Antes cabía una frase entera con dos
+                                                        // atajos dentro, que llenaba el campo de
+                                                        // gris y en el móvil se cortaba a la mitad.
+                                                        // Los atajos ahora viven en la barra de
+                                                        // abajo, donde se leen sin estorbar.
                                                         placeholder={composerMode === 'note'
-                                                            ? "Nota privada para el equipo (escribe @ para mencionar a un agente) — el cliente no la verá"
-                                                            : "Escribe un mensaje aquí (escribe / para respuestas rápidas — Shift+Enter para nueva línea)"}
+                                                            ? "Nota privada para el equipo — el cliente no la verá"
+                                                            : "Escribe un mensaje…"}
                                                         value={newMessage}
                                                         onChange={handleComposerChange}
                                                         onKeyDown={handleComposerKeyDown}
                                                         onPaste={handleComposerPaste}
                                                         className={clsx(
-                                                            "block w-full border-none rounded-lg px-4 py-2.5 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
+                                                            "block w-full border-none rounded-t-lg px-3.5 pt-2.5 pb-1 text-[14.5px] leading-snug outline-none placeholder:text-muted-foreground/60 text-foreground resize-none overflow-y-auto whitespace-pre-wrap break-words",
                                                             composerMode === 'note'
-                                                                ? "bg-white dark:bg-[#2a3942] ring-1 ring-warning/70 dark:ring-warning/50"
+                                                                ? "bg-white dark:bg-[#2a3942]"
                                                                 : "bg-white dark:bg-[#2a3942]"
                                                         )}
                                                         style={{ maxHeight: '160px' }}
                                                     />
                                                 </div>
 
-                                                {/* Barra de herramientas inferior (estilo Chatwoot) */}
-                                                <div className="flex items-center justify-between gap-2">
+                                                {/* Barra de herramientas. Comparte caja con el campo
+                                                    —el campo redondea sólo arriba y ésta sólo abajo—
+                                                    para que se lean como una sola pieza. Antes eran
+                                                    tres bandas apiladas sobre el fondo gris: modos,
+                                                    campo y herramientas, cada una con su borde. */}
+                                                <div className={clsx(
+                                                    "-mt-2 flex items-center justify-between gap-2 rounded-b-lg px-2 pb-1.5",
+                                                    composerMode === 'note'
+                                                        ? "bg-white dark:bg-[#2a3942]"
+                                                        : "bg-white dark:bg-[#2a3942]"
+                                                )}>
                                                     <div className="flex items-center gap-0.5">
                                                         {composerMode === 'reply' ? (
                                                             <>
@@ -5515,6 +5696,18 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         )}
                                                     </div>
 
+                                                    {/* Los atajos que antes iban dentro del
+                                                        marcador. Aquí sólo aparecen cuando hay
+                                                        sitio y el campo está vacío: quien ya está
+                                                        escribiendo no los necesita. */}
+                                                    {!newMessage && (
+                                                        <p className="ml-auto mr-2 hidden shrink-0 text-[10.5px] text-muted-foreground/70 lg:block">
+                                                            {composerMode === 'note'
+                                                                ? '@ menciona a un agente'
+                                                                : '/ respuestas rápidas · Shift+Enter salto de línea'}
+                                                        </p>
+                                                    )}
+
                                                     <button
                                                         onClick={composerMode === 'note' ? sendNote : sendMessage}
                                                         disabled={sending || (composerMode === 'note'
@@ -5523,13 +5716,19 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                                         title={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
                                                         aria-label={composerMode === 'note' ? 'Guardar nota interna' : 'Enviar mensaje'}
                                                         className={clsx(
-                                                            "flex items-center gap-2 h-9 px-4 rounded-lg text-[13px] font-bold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none",
+                                                            "flex shrink-0 items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed",
                                                             composerMode === 'note'
-                                                                ? "bg-warning hover:bg-warning shadow-warning/25 focus-visible:ring-warning/30"
-                                                                : "bg-primary hover:bg-primary shadow-primary/25 focus-visible:ring-primary/30"
+                                                                ? "bg-warning text-warning-foreground hover:opacity-90 focus-visible:ring-warning/30"
+                                                                : "bg-primary text-primary-foreground hover:opacity-90 focus-visible:ring-primary/30"
                                                         )}
                                                     >
-                                                        <span>{composerMode === 'note' ? 'Guardar nota' : 'Enviar'}</span>
+                                                        {/* En el móvil sólo el icono: el texto y los
+                                                            cuatro botones de la izquierda no caben en
+                                                            360px, y era el botón el que se encogía
+                                                            hasta quedar ilegible. */}
+                                                        <span className="hidden sm:inline">
+                                                            {composerMode === 'note' ? 'Guardar nota' : 'Enviar'}
+                                                        </span>
                                                         <Send className={`size-4 ${sending ? 'animate-pulse' : ''}`} />
                                                     </button>
                                                 </div>

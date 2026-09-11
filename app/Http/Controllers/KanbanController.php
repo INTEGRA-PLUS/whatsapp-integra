@@ -21,44 +21,49 @@ class KanbanController extends Controller
         // Default columns are now handled via Tag model creation
     }
 
-    // GET /api/kanban/columns/{id}/cards?page=1&per_page=30&search=
+    // GET /api/kanban/columns/{id}/cards?page=1&per_page=30&search=&filtros[]=
     public function columnCards(Request $request, int $columnId)
     {
         $user   = auth()->user();
         $column = KanbanColumn::where('company_id', $user->company_id)->findOrFail($columnId);
 
-        // La primera columna es la primera *visible*: el tablero solo pinta las
-        // que tienen etiqueta. Sin este filtro, una columna sin etiqueta en una
-        // posición anterior hacía que ninguna columna se considerara la primera,
-        // y las conversaciones sin columna —todas las nuevas— no salían en
-        // ninguna parte del CRM, aunque el contador de la columna sí las sumaba
-        // (columnCounts sí filtra por etiqueta).
-        $isFirst = !KanbanColumn::where('company_id', $user->company_id)
-            ->whereNotNull('tag_id')
-            ->where('position', '<', $column->position)
-            ->exists();
+        $delGrupo = $this->columnasDelGrupo($user->company_id, $column->grupo);
 
         $perPage = min((int) ($request->per_page ?? 30), 100);
 
         $query = WhatsAppConversation::query()
             ->select(['id', 'instance_id', 'phone_number', 'name', 'last_message', 'last_message_at', 'status', 'kanban_column_id', 'assigned_to', 'unread_count'])
+            // Cuándo entró la tarjeta en esta columna: es la fecha en que se le
+            // enganchó la etiqueta. Va como subconsulta y no con el `pivot` de
+            // la relación porque cada tarjeta lleva etiquetas de varios grupos
+            // y aquí sólo interesa la de esta columna.
+            ->addSelect(['entro_en_etapa' => \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag')
+                ->select('created_at')
+                ->whereColumn('whatsapp_conversation_id', 'whatsapp_conversations.id')
+                ->where('tag_id', $column->tag_id)
+                ->limit(1)])
+            // Qué se envió por último, para que la tarjeta pueda decir si fue
+            // un PDF, una imagen o un audio. El `last_message` de la
+            // conversación es sólo texto: en un recibo enseñaba el nombre del
+            // archivo suelto, sin decir que era un archivo ni poder abrirlo.
+            ->addSelect(['ultimo_tipo' => \Illuminate\Support\Facades\DB::table('whatsapp_messages')
+                ->select('type')
+                ->whereColumn('conversation_id', 'whatsapp_conversations.id')
+                ->orderByDesc('id')
+                ->limit(1)])
+            ->addSelect(['ultimo_archivo' => \Illuminate\Support\Facades\DB::table('whatsapp_messages')
+                ->select('filename')
+                ->whereColumn('conversation_id', 'whatsapp_conversations.id')
+                ->orderByDesc('id')
+                ->limit(1)])
             ->with(['assignedAgent:id,name', 'tags'])
+            ->whereIn('instance_id', Instance::where('company_id', $user->company_id)->pluck('id'))
             ->when($request->search, fn ($q, $s) => $q->search($s))
             ->orderByDesc('last_message_at');
 
-        if ($isFirst) {
-            // For the first column, we must include cards without a column assigned,
-            // but we MUST restrict to the company's instances.
-            $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
-            $query->whereIn('instance_id', $instanceIds)
-                  ->where(function ($q) use ($columnId) {
-                      $q->where('kanban_column_id', $columnId)->orWhereNull('kanban_column_id');
-                  });
-        } else {
-            // For other columns, the column_id itself is enough to restrict to the company
-            // and allows using the (kanban_column_id, last_message_at) index perfectly.
-            $query->where('kanban_column_id', $columnId);
-        }
+        $this->colocarEnColumna($query, $column, $delGrupo);
+        $this->aplicarFiltros($query, $request->input('filtros', []), $user->company_id);
+        $this->aplicarFiltrosDeFicha($query, $request);
 
         $paginated = $query->simplePaginate($perPage);
 
@@ -67,6 +72,127 @@ class KanbanController extends Controller
             'current_page' => $paginated->currentPage(),
             'has_more'     => $paginated->hasMorePages(),
         ]);
+    }
+
+    /** Las columnas de un grupo, en orden. `null` es el grupo «sin agrupar». */
+    private function columnasDelGrupo(int $companyId, ?string $grupo): \Illuminate\Support\Collection
+    {
+        return KanbanColumn::where('company_id', $companyId)
+            ->whereNotNull('tag_id')
+            ->when(
+                $grupo === null,
+                fn ($q) => $q->whereNull('grupo'),
+                fn ($q) => $q->where('grupo', $grupo)
+            )
+            ->orderBy('position')
+            ->get();
+    }
+
+    /**
+     * Qué tarjetas caen en esta columna.
+     *
+     * La posición sale de la **etiqueta**, no de `kanban_column_id`. Ese campo
+     * guarda una sola columna, y con grupos una conversación está a la vez en
+     * una columna de «Estado», otra de «Zona» y otra de «Área»: por
+     * `kanban_column_id` el tablero de Zona no encontraría ninguna tarjeta.
+     *
+     * Si una conversación arrastra varias etiquetas del mismo grupo —herencia
+     * de cuando todas las columnas estaban revueltas: 119 de las 396 tarjetas
+     * de Star NET— se queda en la primera del grupo, para no salir duplicada en
+     * dos columnas. Se coloca sola en su sitio en cuanto alguien la arrastre.
+     *
+     * La columna marcada como bandeja recoge además lo que no lleva ninguna
+     * etiqueta del grupo. En «Estado» eso es «Nuevo», y sin ello las
+     * conversaciones nuevas no aparecerían en ninguna parte del CRM. En «Zona»
+     * no hay bandeja que valga: lo que no tiene municipio no es de Cereté, así
+     * que no sale, y la suma de las columnas es menor que el total.
+     */
+    private function colocarEnColumna($query, KanbanColumn $column, \Illuminate\Support\Collection $delGrupo): void
+    {
+        $tagsDelGrupo = $delGrupo->pluck('tag_id')->filter();
+        $anteriores   = $delGrupo->takeWhile(fn ($c) => $c->id !== $column->id)->pluck('tag_id')->filter();
+
+        $tieneLaSuya = fn ($q) => $q->whereHas('tags', fn ($t) => $t->where('tags.id', $column->tag_id))
+            ->when($anteriores->isNotEmpty(), fn ($qq) => $qq->whereDoesntHave('tags', fn ($t) => $t->whereIn('tags.id', $anteriores)));
+
+        if ($column->es_bandeja) {
+            $query->where(function ($q) use ($tieneLaSuya, $tagsDelGrupo) {
+                $q->where($tieneLaSuya)
+                    ->orWhereDoesntHave('tags', fn ($t) => $t->whereIn('tags.id', $tagsDelGrupo));
+            });
+
+            return;
+        }
+
+        $query->where($tieneLaSuya);
+    }
+
+    /**
+     * Los filtros son las columnas de los **otros** grupos: ver el tablero de
+     * «Estado» sólo con lo de MONTERIA, o sólo lo de FACTURACION en MONTERIA.
+     *
+     * Dentro de un mismo grupo se suman (**o**); entre grupos distintos se
+     * acumulan (**y**). Antes todo iba con «y», y eso hacía que marcar dos
+     * municipios devolviera siempre cero: pedía una conversación que estuviera
+     * en Cereté *y* en Montería a la vez. Medido sobre los datos de prueba: 0
+     * resultados con «y», 1 con «o». Con «o» marcar dos municipios significa
+     * lo que parece —los de cualquiera de los dos— y seguir marcando un área
+     * de otro grupo sí estrecha.
+     */
+    private function aplicarFiltros($query, array $filtros, int $companyId): void
+    {
+        if (empty($filtros)) {
+            return;
+        }
+
+        $columnas = KanbanColumn::where('company_id', $companyId)
+            ->whereIn('id', array_filter(array_map('intval', $filtros)))
+            ->whereNotNull('tag_id')
+            ->get(['id', 'tag_id', 'grupo']);
+
+        foreach ($columnas->groupBy(fn ($c) => $c->grupo ?? '__sin__') as $delMismoGrupo) {
+            $tagIds = $delMismoGrupo->pluck('tag_id')->all();
+            $query->whereHas('tags', fn ($t) => $t->whereIn('tags.id', $tagIds));
+        }
+    }
+
+    /**
+     * Los filtros que no son etapas: agente, contacto y antigüedad.
+     *
+     * Van aparte de `aplicarFiltros` porque no miran etiquetas, y se aplican
+     * igual al pintar las tarjetas y al contar, para que el número de la
+     * cabecera de cada etapa no contradiga lo que hay debajo.
+     */
+    private function aplicarFiltrosDeFicha($query, Request $request): void
+    {
+        $agentes = array_values(array_filter((array) $request->input('agentes', [])));
+
+        if (! empty($agentes)) {
+            // «sin_asignar» viaja en la misma lista que los ids porque en la
+            // pantalla es una opción más del mismo desplegable.
+            $sinAsignar = in_array('sin_asignar', $agentes, true);
+            $ids        = array_filter(array_map('intval', array_diff($agentes, ['sin_asignar'])));
+
+            $query->where(function ($q) use ($ids, $sinAsignar) {
+                if (! empty($ids)) {
+                    $q->whereIn('assigned_to', $ids);
+                }
+                if ($sinAsignar) {
+                    $q->orWhereNull('assigned_to');
+                }
+            });
+        }
+
+        if ($request->filled('conversacion')) {
+            $query->where('id', (int) $request->input('conversacion'));
+        }
+
+        if ($request->boolean('estancadas')) {
+            $query->where(function ($q) {
+                $q->where('last_message_at', '<', now()->subDays(7))
+                    ->orWhereNull('last_message_at');
+            });
+        }
     }
 
     private function sanitizeUtf8(mixed $input): mixed
@@ -90,6 +216,65 @@ class KanbanController extends Controller
         return $input;
     }
 
+    /**
+     * Contactos para el desplegable de búsqueda del tablero.
+     *
+     * Es el mismo `scopeSearch` del chat —el que encuentra a alguien por el
+     * nombre del contacto vinculado y no sólo por el de la conversación—, así
+     * que buscar aquí da los mismos resultados que buscar allá. Devuelve pocos
+     * y ordenados por actividad: el desplegable se abre para elegir, no para
+     * leer tres mil filas.
+     */
+    public function contactos(Request $request)
+    {
+        $user = auth()->user();
+        $texto = trim((string) $request->input('q', ''));
+
+        $conversaciones = WhatsAppConversation::query()
+            ->select(['id', 'name', 'phone_number', 'wa_id', 'last_message_at', 'assigned_to'])
+            ->with(['assignedAgent:id,name', 'contact:id,name,last_name'])
+            ->whereIn('instance_id', Instance::where('company_id', $user->company_id)->pluck('id'))
+            ->when($texto !== '', fn ($q) => $q->search($texto))
+            ->orderByDesc('last_message_at')
+            ->limit(20)
+            ->get();
+
+        return response()->json($conversaciones->map(fn ($c) => [
+            'id'       => $c->id,
+            // El nombre que se enseña es el del contacto vinculado si lo hay,
+            // porque es el que el agente conoce; si no, el de la conversación.
+            'nombre'   => trim(($c->contact->name ?? '') . ' ' . ($c->contact->last_name ?? '')) ?: ($c->name ?: $c->phone_number),
+            'telefono' => $c->phone_number ?: $c->wa_id,
+            'agente'   => $c->assignedAgent->name ?? null,
+        ]));
+    }
+
+    /**
+     * Guardar qué etapas esconde este usuario.
+     *
+     * Se validan contra las columnas de **su** empresa: los ids llegan del
+     * navegador, y sin acotar por empresa un usuario podría dejar guardados
+     * ids de otra —inofensivo pero sucio, y el aislamiento aquí es manual.
+     */
+    public function guardarEtapasOcultas(Request $request)
+    {
+        $user = auth()->user();
+
+        $validado = $request->validate([
+            'ocultas'   => 'present|array',
+            'ocultas.*' => 'integer',
+        ]);
+
+        $suyas = KanbanColumn::where('company_id', $user->company_id)
+            ->whereIn('id', $validado['ocultas'])
+            ->pluck('id')
+            ->all();
+
+        $user->guardarEtapasOcultas($suyas);
+
+        return response()->json(['ocultas' => $suyas]);
+    }
+
     // GET /api/kanban/columns
     public function columns()
     {
@@ -103,35 +288,63 @@ class KanbanController extends Controller
         );
     }
 
-    // GET /api/kanban/counts
-    public function columnCounts()
+    // GET /api/kanban/counts?grupo=&filtros[]=
+    public function columnCounts(Request $request)
     {
         $user        = auth()->user();
         $instanceIds = Instance::where('company_id', $user->company_id)->pluck('id');
-        $columns     = KanbanColumn::where('company_id', $user->company_id)
-            ->whereNotNull('tag_id')
-            ->orderBy('position')
-            ->get();
-        $firstColId  = $columns->first()?->id;
+        $grupo       = $request->filled('grupo') ? $request->input('grupo') : null;
+        $delGrupo    = $this->columnasDelGrupo($user->company_id, $grupo);
 
-        // Optimized query: if we have instanceIds, we can group by kanban_column_id
-        $counts = WhatsAppConversation::whereIn('instance_id', $instanceIds)
-            ->selectRaw('kanban_column_id, COUNT(*) as total')
-            ->groupBy('kanban_column_id')
-            ->pluck('total', 'kanban_column_id')
-            ->toArray();
+        if ($delGrupo->isEmpty()) {
+            return response()->json([]);
+        }
 
-        $nullCount = $counts[''] ?? $counts[null] ?? 0;
-        // Remove the null key — it will be merged into the first column
-        unset($counts[''], $counts[null]);
+        // El conjunto sobre el que se cuenta: la empresa, menos lo que quiten
+        // los filtros de los otros grupos.
+        $base = WhatsAppConversation::whereIn('instance_id', $instanceIds);
+        $this->aplicarFiltros($base, $request->input('filtros', []), $user->company_id);
+        $this->aplicarFiltrosDeFicha($base, $request);
 
-        $result = [];
-        foreach ($columns as $col) {
-            $count = $counts[$col->id] ?? 0;
-            if ($col->id === $firstColId) {
-                $count += $nullCount;
-            }
-            $result[$col->id] = $count;
+        if ($request->filled('search')) {
+            // El buscador también entra en los conteos: sin esto la cabecera
+            // decía «3.184» sobre una columna que enseñaba dos tarjetas.
+            $base->search($request->input('search'));
+        }
+
+        $tagsDelGrupo = $delGrupo->pluck('tag_id')->filter();
+
+        // Una sola consulta a la tabla pivote en vez de una por columna: sólo
+        // trae las filas de las etiquetas de este grupo, que son cientos, no
+        // los catorce mil registros de conversaciones.
+        $etiquetadas = \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag')
+            ->whereIn('tag_id', $tagsDelGrupo)
+            ->whereIn('whatsapp_conversation_id', (clone $base)->select('id'))
+            ->get(['whatsapp_conversation_id', 'tag_id'])
+            ->groupBy('whatsapp_conversation_id');
+
+        // Misma regla que al pintar las tarjetas: con varias etiquetas del
+        // grupo, manda la columna que va primero.
+        $posicionPorTag = $delGrupo->pluck('position', 'tag_id');
+        $columnaPorTag  = $delGrupo->pluck('id', 'tag_id');
+
+        $result = array_fill_keys($delGrupo->pluck('id')->all(), 0);
+
+        foreach ($etiquetadas as $filas) {
+            $tagId = collect($filas)
+                ->sortBy(fn ($fila) => $posicionPorTag[$fila->tag_id] ?? PHP_INT_MAX)
+                ->first()->tag_id;
+
+            $result[$columnaPorTag[$tagId]]++;
+        }
+
+        // Y la bandeja del grupo, si la hay, suma lo que no lleva ninguna
+        // etiqueta del grupo: las conversaciones nuevas. Un grupo sin bandeja
+        // —«Zona»— simplemente no las cuenta.
+        $bandeja = $delGrupo->firstWhere('es_bandeja', true);
+
+        if ($bandeja) {
+            $result[$bandeja->id] += (clone $base)->count() - $etiquetadas->count();
         }
 
         return response()->json($result);
@@ -146,7 +359,24 @@ class KanbanController extends Controller
             'color'    => 'nullable|string|max:50',
             'icon'     => 'nullable|string|max:50',
             'subtitle' => 'nullable|string|max:100',
+            'grupo'    => 'nullable|string|max:60',
+            'es_bandeja' => 'nullable|boolean',
         ]);
+
+        // Dos etapas con el mismo nombre no se pueden distinguir en el tablero, y
+        // como cada una crea su propia etiqueta, la que ve el agente en el chat
+        // depende de cuál se arrastró la última vez. El 9-sep-2026 había 22
+        // columnas repetidas en la flota: «CLIENTE» tres veces en CMNET,
+        // «COVEÑAS» tres veces y «MONTERIA» dos en Star NET.
+        // La comparación se hace en PHP y no con LOWER() en SQL: el LOWER de
+        // sqlite sólo baja ASCII, así que «COVEÑAS» y «coveñas» le parecen
+        // distintos, y el de MySQL depende de la colación de la tabla. Son 43
+        // columnas en el peor caso de la flota; no hay nada que optimizar.
+        if ($this->nombreOcupado($user->company_id, $validated['name'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'Ya existe una etapa con ese nombre.',
+            ]);
+        }
 
         // Columns are backed by tags: creating a tag fires the TagObserver, which
         // creates the matching kanban column. Creating a bare (tag-less) column
@@ -162,6 +392,12 @@ class KanbanController extends Controller
             ->where('tag_id', $tag->id)
             ->first();
 
+        // El observador de etiquetas crea la columna, así que el grupo se pone
+        // después: la etiqueta no sabe nada de tableros.
+        if ($column && ! empty($validated['grupo'])) {
+            $column->update(['grupo' => trim($validated['grupo'])]);
+        }
+
         return response()->json($column, 201);
     }
 
@@ -175,8 +411,19 @@ class KanbanController extends Controller
             'color'    => 'sometimes|string|max:50',
             'icon'     => 'sometimes|string|max:50',
             'subtitle' => 'sometimes|string|max:100',
+            'grupo'    => 'sometimes|nullable|string|max:60',
+            'es_bandeja' => 'sometimes|boolean',
             'position' => 'sometimes|integer|min:0',
         ]);
+
+        // Renombrar tampoco puede acabar en dos etapas iguales.
+        if (array_key_exists('name', $validated)) {
+            if ($this->nombreOcupado($column->company_id, $validated['name'], $column->id)) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'name' => 'Ya existe una etapa con ese nombre.',
+                ]);
+            }
+        }
 
         // Keep the backing tag's name in sync so it doesn't get reverted later
         // (the TagObserver pushes the tag name back onto the column on tag updates).
@@ -186,7 +433,13 @@ class KanbanController extends Controller
 
         $column->update($validated);
 
-        return response()->json($column);
+        // Dos bandejas en el mismo grupo mostrarían las mismas conversaciones
+        // sin clasificar en dos columnas a la vez.
+        if (! empty($validated['es_bandeja'])) {
+            $this->dejarUnaSolaBandeja($column);
+        }
+
+        return response()->json($column->fresh());
     }
 
     // DELETE /api/kanban/columns/{id}
@@ -222,6 +475,30 @@ class KanbanController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /** La bandeja es única dentro de su grupo: al marcar una, se desmarca la otra. */
+    private function dejarUnaSolaBandeja(KanbanColumn $column): void
+    {
+        KanbanColumn::where('company_id', $column->company_id)
+            ->where('id', '!=', $column->id)
+            ->when(
+                $column->grupo === null,
+                fn ($q) => $q->whereNull('grupo'),
+                fn ($q) => $q->where('grupo', $column->grupo)
+            )
+            ->update(['es_bandeja' => false]);
+    }
+
+    /** ¿Hay ya otra etapa de esta empresa que se llame así? */
+    private function nombreOcupado(int $companyId, string $nombre, ?int $exceptoId = null): bool
+    {
+        $buscado = mb_strtolower(trim($nombre));
+
+        return KanbanColumn::where('company_id', $companyId)
+            ->when($exceptoId, fn ($q) => $q->where('id', '!=', $exceptoId))
+            ->pluck('name')
+            ->contains(fn ($existente) => mb_strtolower(trim($existente)) === $buscado);
+    }
+
     // POST /api/kanban/conversations/{id}/move
     public function moveCard(Request $request, int $conversationId)
     {
@@ -248,16 +525,30 @@ class KanbanController extends Controller
         // move would reorder conversations everywhere, not just on the kanban.
         $conversation->update(['kanban_column_id' => $column->id]);
 
-        // Keep tags in sync with the board position: the card now "is" the
-        // destination column, so detach every other column-linked (status) tag
-        // and attach the destination one. Non-column tags are left untouched.
+        // La etiqueta se sincroniza con la posición en el tablero: la tarjeta
+        // ahora «es» la columna de destino. Pero sólo dentro de su grupo.
+        //
+        // Antes se desenganchaban **todas** las demás etiquetas de columna, y
+        // eso borraba datos: en Star NET, donde las 43 columnas eran seis
+        // dimensiones distintas mezcladas (área, tipo de falla, etapa
+        // comercial, cartera, estado y municipio), una tarjeta etiquetada
+        // «MESA DE AYUDA + Sin servicio + Falla de zona + TOLU VIEJO» perdía
+        // tres etiquetas al arrastrarla una sola vez. 119 de las 396 tarjetas
+        // del tablero llevaban más de una (9-sep-2026).
+        //
+        // Mover dentro del grupo «Estado» ya no toca el municipio ni el área.
         if ($column->tag_id) {
-            $statusTagIds = KanbanColumn::where('company_id', $user->company_id)
+            $delMismoGrupo = KanbanColumn::where('company_id', $user->company_id)
                 ->whereNotNull('tag_id')
                 ->where('tag_id', '!=', $column->tag_id)
+                ->when(
+                    $column->grupo === null,
+                    fn ($q) => $q->whereNull('grupo'),
+                    fn ($q) => $q->where('grupo', $column->grupo)
+                )
                 ->pluck('tag_id');
 
-            $conversation->tags()->detach($statusTagIds);
+            $conversation->tags()->detach($delMismoGrupo);
             $conversation->tags()->syncWithoutDetaching([$column->tag_id]);
         }
 

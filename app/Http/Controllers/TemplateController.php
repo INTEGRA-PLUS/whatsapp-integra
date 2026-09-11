@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Instance;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class TemplateController extends Controller
@@ -987,6 +988,214 @@ class TemplateController extends Controller
         }
 
         return response()->json(['data' => $result['data']]);
+    }
+
+    /**
+     * Copiar plantillas de una línea a otra de la misma empresa.
+     *
+     * Las plantillas **no viven en el CRM: viven en Meta y son por WABA**. Dos
+     * líneas con WABA distinto tienen catálogos separados, y lo que existe en
+     * una no existe en la otra.
+     *
+     * Eso rompió la facturación de Transinternet el 10-sep-2026: al cambiar la
+     * línea de envíos a la de WhatsApp Business, Meta empezó a devolver
+     * «(#100) Invalid parameter» en cada factura, porque su WABA tenía 1
+     * plantilla y la otra 10 — `facturacion` entre ellas—. Sin una forma de
+     * copiarlas, cambiar de línea significa rehacer el catálogo a mano.
+     *
+     * Lo que Meta NO deja copiar tal cual es el archivo de muestra del
+     * encabezado: el `header_handle` está atado al WABA que lo subió. Así que
+     * el de origen se descarga y se vuelve a subir contra la app de destino,
+     * que es lo que hace que una plantilla con factura adjunta se pueda
+     * duplicar de verdad y no sólo las de texto.
+     */
+    public function duplicar(Request $request)
+    {
+        $datos = $request->validate([
+            'origen_instance_id' => 'required|integer',
+            'destino_instance_id' => 'required|integer|different:origen_instance_id',
+            'nombres' => 'nullable|array',
+            'nombres.*' => 'string',
+        ]);
+
+        $origen = $this->resolveInstance($request->merge(['instance_id' => $datos['origen_instance_id']]));
+        if (! $origen instanceof Instance) {
+            return $origen;
+        }
+
+        $destino = $this->resolveInstance($request->merge(['instance_id' => $datos['destino_instance_id']]));
+        if (! $destino instanceof Instance) {
+            return $destino;
+        }
+
+        if ($origen->waba_id === $destino->waba_id) {
+            return response()->json([
+                'message' => 'Las dos líneas comparten el mismo WhatsApp Business, así que ya ven las mismas plantillas.',
+            ], 422);
+        }
+
+        $enOrigen = $this->catalogoDe($origen);
+        $enDestino = $this->catalogoDe($destino);
+
+        if ($enOrigen === null || $enDestino === null) {
+            return response()->json([
+                'message' => 'No se pudo leer el catálogo de plantillas de una de las dos líneas. Inténtalo en un minuto.',
+            ], 502);
+        }
+
+        // Lo que ya está en destino se identifica por nombre + idioma: Meta
+        // permite la misma plantilla en varios idiomas y son distintas.
+        $yaEstan = $enDestino->map(fn ($p) => ($p['name'] ?? '').'|'.($p['language'] ?? ''))->all();
+
+        // Las candidatas son el catálogo entero, o sólo las pedidas por nombre.
+        $candidatas = $enOrigen
+            ->when(! empty($datos['nombres']), fn ($c) => $c->whereIn('name', $datos['nombres']))
+            ->values();
+
+        $aCopiar = $candidatas
+            ->reject(fn ($p) => in_array(($p['name'] ?? '').'|'.($p['language'] ?? ''), $yaEstan, true))
+            ->values();
+
+        $resultados = [];
+
+        foreach ($aCopiar as $plantilla) {
+            $resultados[] = $this->copiarPlantilla($plantilla, $origen, $destino);
+        }
+
+        $copiadas = collect($resultados)->where('ok', true)->count();
+
+        return response()->json([
+            'copiadas' => $copiadas,
+            'total' => count($resultados),
+            // Contra las candidatas, no contra el catálogo entero: pidiendo
+            // una sola plantilla decía «10 ya estaban», que no es cierto ni
+            // ayuda a entender qué pasó.
+            'ya_estaban' => $candidatas->count() - $aCopiar->count(),
+            'resultados' => $resultados,
+            'mensaje' => $copiadas > 0
+                ? "Se enviaron {$copiadas} plantillas a la otra línea. Meta las revisa por su cuenta: aparecerán como pendientes hasta que las apruebe."
+                : 'No se copió ninguna plantilla.',
+        ]);
+    }
+
+    /** El catálogo de una línea, o null si Meta no contesta. */
+    private function catalogoDe(Instance $instancia): ?\Illuminate\Support\Collection
+    {
+        $res = $this->meta->listTemplates($instancia->waba_id, $instancia->access_token, ['limit' => 200]);
+
+        if (! ($res['success'] ?? false)) {
+            return null;
+        }
+
+        return collect($res['data']['data'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plantilla
+     * @return array<string, mixed>
+     */
+    private function copiarPlantilla(array $plantilla, Instance $origen, Instance $destino): array
+    {
+        $nombre = $plantilla['name'] ?? '?';
+
+        try {
+            $componentes = [];
+
+            foreach ($plantilla['components'] ?? [] as $componente) {
+                $handleViejo = $componente['example']['header_handle'][0] ?? null;
+
+                if ($handleViejo) {
+                    $handleNuevo = $this->rehacerMuestraDelEncabezado($handleViejo, $destino);
+
+                    if ($handleNuevo === null) {
+                        return [
+                            'plantilla' => $nombre,
+                            'ok' => false,
+                            'error' => 'No se pudo copiar el archivo de muestra del encabezado. '
+                                .'Créala a mano en la otra línea.',
+                        ];
+                    }
+
+                    $componente['example']['header_handle'] = [$handleNuevo];
+                }
+
+                // Lo que Meta devuelve al listar pero no acepta al crear.
+                unset($componente['id'], $componente['status'], $componente['quality_score']);
+
+                $componentes[] = $componente;
+            }
+
+            $res = $this->meta->createTemplate($destino->waba_id, $destino->access_token, [
+                'name' => $nombre,
+                'language' => $plantilla['language'] ?? 'es',
+                'category' => $plantilla['category'] ?? 'UTILITY',
+                'components' => $componentes,
+            ]);
+
+            if ($res['success'] ?? false) {
+                return ['plantilla' => $nombre, 'ok' => true, 'estado' => $res['data']['status'] ?? 'PENDING'];
+            }
+
+            return [
+                'plantilla' => $nombre,
+                'ok' => false,
+                'error' => $res['error']['error']['message'] ?? 'Meta no aceptó la plantilla.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('No se pudo duplicar la plantilla', [
+                'plantilla' => $nombre,
+                'origen' => $origen->id,
+                'destino' => $destino->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['plantilla' => $nombre, 'ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Descarga el archivo de muestra del encabezado y lo vuelve a subir contra
+     * la app de la línea de destino.
+     *
+     * El `header_handle` que Meta devuelve al listar está atado al WABA que lo
+     * subió: reusarlo en otro hace que la creación falle. Este rodeo es lo que
+     * permite duplicar una plantilla con la factura adjunta, que son justo las
+     * que importan.
+     */
+    private function rehacerMuestraDelEncabezado(string $url, Instance $destino): ?string
+    {
+        $temporal = null;
+
+        try {
+            $descarga = \Illuminate\Support\Facades\Http::timeout(60)->get($url);
+
+            if (! $descarga->successful()) {
+                return null;
+            }
+
+            $debug = $this->meta->debugToken($destino->access_token);
+            $appId = $debug['data']['app_id'] ?? null;
+
+            if (! $appId) {
+                return null;
+            }
+
+            $temporal = tempnam(sys_get_temp_dir(), 'muestra');
+            file_put_contents($temporal, $descarga->body());
+
+            $mime = $descarga->header('Content-Type') ?: 'application/pdf';
+            $subida = $this->meta->uploadResumable($appId, $destino->access_token, $temporal, $mime);
+
+            return ($subida['success'] ?? false) ? ($subida['handle'] ?? $subida['data']['h'] ?? null) : null;
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo rehacer la muestra del encabezado', ['error' => $e->getMessage()]);
+
+            return null;
+        } finally {
+            if ($temporal && is_file($temporal)) {
+                @unlink($temporal);
+            }
+        }
     }
 
     protected function resolveInstance(Request $request)

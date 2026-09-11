@@ -17,7 +17,10 @@ export function TooltipTrigger({ ...props }) {
     return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
-export function TooltipContent({ className, sideOffset = 4, children, ...props }) {
+// `arrowClassName` existe porque la flecha se pinta con su propio relleno: al
+// cambiar el fondo del tooltip por `className`, la punta se quedaba del color
+// anterior y aparecía un triángulo verde colgando de una caja azul.
+export function TooltipContent({ className, arrowClassName, sideOffset = 4, children, ...props }) {
     return (
         <TooltipPrimitive.Portal>
             <TooltipPrimitive.Content
@@ -30,7 +33,12 @@ export function TooltipContent({ className, sideOffset = 4, children, ...props }
                 {...props}
             >
                 {children}
-                <TooltipPrimitive.Arrow className="bg-primary fill-primary z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
+                <TooltipPrimitive.Arrow
+                    className={cn(
+                        'bg-primary fill-primary z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]',
+                        arrowClassName,
+                    )}
+                />
             </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
     );

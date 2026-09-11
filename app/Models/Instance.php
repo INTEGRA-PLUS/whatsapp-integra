@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Instance extends Model
 {
@@ -15,22 +16,180 @@ class Instance extends Model
         'name',
         'phone_number_id',
         'waba_id',
+        'external_account_id',
         'display_phone_number',
         'type',
+        'channel',
         'status',
         'active',
         'health_status',
         'health_checked_at',
         'health_error',
         'meta',
-        'access_token'
+        'access_token',
+        'token_expires_at',
+    ];
+
+    /**
+     * El hash del token de API no sale nunca de aquí.
+     *
+     * No sirve para autenticarse —es un hash— pero enseñarlo invita a probar, y
+     * no hay ningún sitio de la aplicación que lo necesite.
+     */
+    protected $hidden = [
+        'api_token',
     ];
 
     protected $casts = [
         'active' => 'boolean',
         'health_checked_at' => 'datetime',
+        'api_token_created_at' => 'datetime',
+        'api_token_last_used_at' => 'datetime',
+        'api_last_seen_at' => 'datetime',
+        'token_expires_at' => 'datetime',
         'meta' => 'array',
     ];
+
+    /** El prefijo hace reconocible el token si aparece en un log o en un pegado. */
+    public const API_TOKEN_PREFIJO = 'wai_';
+
+    /**
+     * Por dónde escribe el cliente final.
+     *
+     * No confundir con `type`, que dice con qué proveedor hablamos (`meta`,
+     * `vibio`). Messenger e Instagram también son Meta: son preguntas distintas.
+     */
+    public const CANAL_WHATSAPP = 'whatsapp';
+
+    public const CANAL_MESSENGER = 'messenger';
+
+    public const CANAL_INSTAGRAM = 'instagram';
+
+    public const CANALES = [
+        self::CANAL_WHATSAPP,
+        self::CANAL_MESSENGER,
+        self::CANAL_INSTAGRAM,
+    ];
+
+    /** Cómo se llama el canal en pantalla. */
+    public const NOMBRES_DE_CANAL = [
+        self::CANAL_WHATSAPP => 'WhatsApp',
+        self::CANAL_MESSENGER => 'Messenger',
+        self::CANAL_INSTAGRAM => 'Instagram',
+    ];
+
+    public function esWhatsApp(): bool
+    {
+        // Sin canal es WhatsApp: las líneas creadas antes de que existiera la
+        // columna lo son, y una instancia recién construida en memoria todavía
+        // no tiene el valor por defecto de la base.
+        return ($this->channel ?? self::CANAL_WHATSAPP) === self::CANAL_WHATSAPP;
+    }
+
+    public function esMessenger(): bool
+    {
+        return $this->channel === self::CANAL_MESSENGER;
+    }
+
+    public function esInstagram(): bool
+    {
+        return $this->channel === self::CANAL_INSTAGRAM;
+    }
+
+    public function nombreDelCanal(): string
+    {
+        return self::NOMBRES_DE_CANAL[$this->channel ?? self::CANAL_WHATSAPP] ?? 'WhatsApp';
+    }
+
+    public function scopeCanal($query, string $canal)
+    {
+        return $query->where('channel', $canal);
+    }
+
+    /**
+     * Deja guardada la cuenta profesional de Instagram que acaba de conectarse.
+     *
+     * El nombre de usuario va dentro de `meta` y no en columna propia porque es
+     * descriptivo: cambia cuando el cliente lo cambia en Instagram y sólo sirve
+     * para pintarlo. Lo que identifica la línea es `external_account_id`.
+     *
+     * Se pasa por aquí y no asignando `meta` a pelo: ese campo es un cajón
+     * compartido con la configuración de llamadas y las plantillas de reserva, y
+     * sobrescribirlo entero borra lo de los demás.
+     */
+    public function guardarCuentaDeInstagram(string $usuario, ?string $foto = null): void
+    {
+        $meta = $this->meta ?? [];
+        $meta['instagram'] = array_merge($meta['instagram'] ?? [], array_filter([
+            'username' => $usuario,
+            'profile_picture_url' => $foto,
+        ], fn ($valor) => $valor !== null));
+
+        $this->meta = $meta;
+    }
+
+    public function usuarioDeInstagram(): ?string
+    {
+        return $this->meta['instagram']['username'] ?? null;
+    }
+
+    /**
+     * Si al token le quedan menos días que los indicados.
+     *
+     * Los de Instagram duran 60 días y se renuevan por API sin molestar al
+     * cliente, pero sólo mientras sigan vivos: uno caducado obliga a rehacer el
+     * inicio de sesión con el cliente delante. Por eso se renuevan con margen y
+     * no el último día.
+     */
+    public function tokenPorCaducar(int $dias = 10): bool
+    {
+        if ($this->token_expires_at === null) {
+            // Sin fecha no caduca, que es el caso de los tokens de usuario del
+            // sistema de WhatsApp.
+            return false;
+        }
+
+        return $this->token_expires_at->lessThan(now()->addDays($dias));
+    }
+
+    /**
+     * Crea un token nuevo y guarda sólo su hash.
+     *
+     * Devuelve el token en claro **una sola vez**: es la única ocasión en que
+     * existe fuera del cliente. Si se pierde, se genera otro; no hay forma de
+     * recuperarlo, y eso es lo que lo hace un secreto de verdad.
+     *
+     * Generarlo de nuevo invalida el anterior en el acto, así que rotarlo es
+     * también la forma de cortarle el acceso a una integración.
+     */
+    public function generarApiToken(): string
+    {
+        $token = self::API_TOKEN_PREFIJO.Str::random(40);
+
+        $this->forceFill([
+            'api_token' => self::hashApiToken($token),
+            'api_token_created_at' => now(),
+            'api_token_last_used_at' => null,
+        ])->save();
+
+        return $token;
+    }
+
+    /**
+     * SHA-256 y no bcrypt: hay que encontrar la instancia *por* el token en cada
+     * petición, y con bcrypt habría que recorrer la tabla comparando una a una.
+     * El token son 40 caracteres aleatorios, no una contraseña que alguien
+     * pueda adivinar, así que el coste de bcrypt no compra nada aquí.
+     */
+    public static function hashApiToken(string $token): string
+    {
+        return hash('sha256', $token);
+    }
+
+    public function tieneApiToken(): bool
+    {
+        return $this->api_token !== null;
+    }
 
     public function company()
     {
@@ -66,9 +225,32 @@ class Instance extends Model
         return $query->where('company_id', $companyId);
     }
 
+    /**
+     * ¿Esta línea puede hablar con Meta?
+     *
+     * El token cuenta tanto como los identificadores. Sin él no hay llamada
+     * posible, así que dar la línea por configurada sólo servía para que el
+     * fallo apareciera más tarde y peor: un envío aceptado, encolado, y muerto
+     * en el worker con un 401, en vez de dicho al crear la instancia.
+     */
     public function isMetaConfigured()
     {
-        return !empty($this->phone_number_id) && !empty($this->waba_id);
+        // Cada canal se configura con cosas distintas: WhatsApp con un número y
+        // una WABA, Instagram con una cuenta profesional. Messenger todavía no
+        // está construido, y decir que no está listo es la respuesta correcta
+        // —y la segura: ningún camino de salida intentará hablar con Meta por un
+        // canal que aún no sabe hacerlo.
+        if ($this->esInstagram()) {
+            return ! empty($this->external_account_id) && ! empty($this->access_token);
+        }
+
+        if (! $this->esWhatsApp()) {
+            return false;
+        }
+
+        return ! empty($this->phone_number_id)
+            && ! empty($this->waba_id)
+            && ! empty($this->access_token);
     }
 
     public function calls()

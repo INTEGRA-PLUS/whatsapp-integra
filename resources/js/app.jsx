@@ -18,6 +18,9 @@ createInertiaApp({
         createRoot(el).render(<App {...props} />);
     },
     progress: {
-        color: '#16a34a',
+        // El verde del logo. Va escrito a mano porque Inertia pinta esta barra
+        // fuera de React, antes de que exista una hoja de estilos donde mirar
+        // `--primary`; si se le pasa `var(--primary)` no pinta nada.
+        color: '#76c652',
     },
 });

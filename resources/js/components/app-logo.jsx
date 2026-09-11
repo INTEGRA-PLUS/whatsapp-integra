@@ -25,7 +25,11 @@ export default function AppLogo() {
             </div>
             <div className="grid flex-1 text-left text-sm">
                 <span className="truncate leading-tight font-bold text-sidebar-foreground">Integra CRM</span>
-                <span className="truncate text-[10px] uppercase tracking-tighter text-muted-foreground font-semibold">Integra Colombia</span>
+                {/* Atenuado con el propio color de la barra, no con
+                    `text-muted-foreground`: ese gris está calculado sobre el
+                    fondo blanco de la aplicación, y la barra ya no es blanca en
+                    ningún tema. Sobre el navy quedaba ilegible. */}
+                <span className="truncate text-[10px] uppercase tracking-tighter text-sidebar-foreground/60 font-semibold">Integra Colombia</span>
             </div>
         </div>
     );

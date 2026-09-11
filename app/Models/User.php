@@ -42,7 +42,35 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'active' => 'boolean',
+            'preferencias' => 'array',
         ];
+    }
+
+    /**
+     * Las etapas del tablero que este usuario ha escondido.
+     *
+     * Es una preferencia suya, no de la empresa: con doce columnas, quien está
+     * en soporte no quiere ver las de facturación y quien factura quiere justo
+     * las otras.
+     */
+    public function etapasOcultas(): array
+    {
+        return array_values(array_filter(array_map(
+            'intval',
+            $this->preferencias['etapas_ocultas'] ?? []
+        )));
+    }
+
+    public function guardarEtapasOcultas(array $ids): void
+    {
+        // `array_merge` y no asignación directa: `preferencias` es un cajón
+        // compartido, y escribirlo entero borraría lo que guarden otras
+        // pantallas. Mismo problema que ya dio `instances.meta`.
+        $this->preferencias = array_merge($this->preferencias ?? [], [
+            'etapas_ocultas' => array_values(array_unique(array_map('intval', $ids))),
+        ]);
+
+        $this->save();
     }
 
     public function company()

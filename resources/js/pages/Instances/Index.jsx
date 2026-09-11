@@ -2,13 +2,19 @@ import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, WifiOff, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
+import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
+import ConectarInstagramButton from '@/components/ConectarInstagramButton';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
+    // El token recién creado. Vive sólo en memoria y sólo hasta cerrar el aviso:
+    // no hay dónde volver a verlo, y ese es justo el punto.
+    const [tokenNuevo, setTokenNuevo] = useState(null);
+    const [generando, setGenerando] = useState(null);
 
     // El diálogo de borrado: la instancia en cuestión, el resumen que pide al
     // servidor y el nombre que hay que teclear para confirmar.
@@ -19,6 +25,26 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
 
     const [createForm, setCreateForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '' });
     const [editForm, setEditForm] = useState({ name: '', phone_number_id: '', waba_id: '', display_phone_number: '', access_token: '', active: false });
+
+    async function generarToken(instance) {
+        const rotando = !!instance.api_token_created_at;
+
+        if (rotando && !confirm(
+            `«${instance.name}» ya tiene un token. Si generas otro, el anterior deja de funcionar `
+            + 'al instante y habrá que actualizar el ERP que lo esté usando. ¿Seguir?'
+        )) return;
+
+        setGenerando(instance.id);
+        try {
+            const res = await axios.post(route('instances.api-token', instance.id));
+            setTokenNuevo({ instancia: instance.name, ...res.data });
+            router.reload({ only: ['instances'] });
+        } catch {
+            alert('No se pudo generar el token.');
+        } finally {
+            setGenerando(null);
+        }
+    }
 
     function handleCreate(e) {
         e.preventDefault();
@@ -82,7 +108,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
             <div className="flex flex-col gap-6 p-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Instancias de WhatsApp</h1>
+                        <h1 className="text-2xl font-semibold text-foreground">Instancias</h1>
                         <p className="text-sm text-muted-foreground mt-1">Gestiona tus conexiones con la API de Meta</p>
                     </div>
                     {/* Conectar con Facebook es el camino normal; "Nueva
@@ -91,6 +117,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                         tiene configurada. */}
                     <div className="flex items-center gap-2">
                         <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
+                        <ConectarInstagramButton disponible={instagramDisponible} />
                         <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nueva Instancia
                         </Button>
@@ -163,20 +190,41 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                                     <div><span className="text-muted-foreground">Phone ID:</span> <span className="text-foreground">{instance.phone_number_id}</span></div>
                                     <div><span className="text-muted-foreground">WABA ID:</span> <span className="text-foreground">{instance.waba_id}</span></div>
                                 </div>
-                                <div className="flex gap-2 pt-1">
-                                    <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEdit(instance)}>
+                                {/* `flex-wrap` y un ancho mínimo por botón: sin envolver,
+                                    los cuatro se salían de la tarjeta —el de eliminar
+                                    quedaba fuera del borde, flotando sobre la tarjeta de
+                                    al lado— porque el texto no parte y «Desconectar» y
+                                    «Rotar token» no caben en una columna estrecha. */}
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                    <Button variant="outline" size="sm" className="flex-1 min-w-[6rem] gap-1.5" onClick={() => openEdit(instance)}>
                                         <Pencil className="size-3.5" /> Editar
                                     </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="flex-1 min-w-[7.5rem] gap-1.5"
+                                        disabled={generando === instance.id}
+                                        title={instance.api_token_created_at
+                                            ? 'Generar un token nuevo (el actual dejará de servir)'
+                                            : 'Generar el token de la API'}
+                                        onClick={() => generarToken(instance)}
+                                    >
+                                        <KeyRound className="size-3.5" />
+                                        {instance.api_token_created_at ? 'Rotar token' : 'Token API'}
+                                    </Button>
                                     {instance.active ? (
-                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
+                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
                                             <PowerOff className="size-3.5" /> Desconectar
                                         </Button>
                                     ) : (
-                                        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
+                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
                                             <Power className="size-3.5" /> Reconectar
                                         </Button>
                                     )}
-                                    <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
+                                    {/* El de eliminar no se estira ni se encoge: es el
+                                        único destructivo de la fila y conviene que tenga
+                                        siempre el mismo tamaño y el mismo sitio. */}
+                                    <Button variant="outline" size="sm" className="shrink-0 px-2.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
                                         <Trash2 className="size-3.5" />
                                     </Button>
                                 </div>
@@ -185,6 +233,16 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [] }) {
                     </div>
                 )}
             </div>
+
+            {tokenNuevo && (
+                <Modal
+                    title="Token de la API"
+                    description={`Para «${tokenNuevo.instancia}». Es la única vez que se ve.`}
+                    onClose={() => setTokenNuevo(null)}
+                >
+                    <TokenRecienCreado datos={tokenNuevo} onCerrar={() => setTokenNuevo(null)} />
+                </Modal>
+            )}
 
             {showCreate && (
                 <Modal title="Nueva Instancia" description="Conecta una nueva cuenta de WhatsApp Business" onClose={() => setShowCreate(false)}>
@@ -346,3 +404,62 @@ function Field({ label, value, onChange, type = 'text', required = false, placeh
 }
 
 InstancesIndex.layout = page => <AppLayout breadcrumb={['Instancias']}>{page}</AppLayout>;
+
+/**
+ * El token, enseñado una sola vez.
+ *
+ * Se guarda hasheado, así que ni el servidor puede volver a mostrarlo. Es lo
+ * que lo convierte en un secreto de verdad, a diferencia del phone_number_id
+ * que se usaba antes y que está escrito en esta misma pantalla.
+ */
+function TokenRecienCreado({ datos, onCerrar }) {
+    const [copiado, setCopiado] = useState(false);
+
+    async function copiar() {
+        try {
+            await navigator.clipboard.writeText(datos.token);
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 2000);
+        } catch {
+            // Sin permiso de portapapeles queda seleccionarlo a mano, que por
+            // eso el token se muestra en un campo y no en un párrafo.
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            {datos.reemplaza_uno_anterior && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-200">
+                    El token anterior ya no sirve. Actualiza el ERP que lo estuviera usando o sus
+                    peticiones empezarán a fallar.
+                </div>
+            )}
+
+            <div className="flex gap-2">
+                <input
+                    readOnly
+                    value={datos.token}
+                    onFocus={e => e.target.select()}
+                    className="flex-1 h-10 rounded-md border border-input bg-muted px-3 font-mono text-xs"
+                />
+                <Button variant="outline" onClick={copiar} className="gap-1.5 shrink-0">
+                    {copiado ? <Check className="size-4" /> : <Copy className="size-4" />}
+                    {copiado ? 'Copiado' : 'Copiar'}
+                </Button>
+            </div>
+
+            <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1">
+                <p className="text-muted-foreground">Se manda en la cabecera de cada petición:</p>
+                <p className="font-mono text-foreground break-all">X-Instance-Token: {datos.token}</p>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+                Guárdalo ahora. No se puede volver a ver: si se pierde, hay que generar otro.
+            </p>
+
+            <div className="flex justify-end">
+                <Button onClick={onCerrar}>Ya lo guardé</Button>
+            </div>
+        </div>
+    );
+}

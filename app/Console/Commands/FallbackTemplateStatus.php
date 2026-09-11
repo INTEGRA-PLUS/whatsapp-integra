@@ -55,8 +55,29 @@ class FallbackTemplateStatus extends Command
         $rows = [];
         $pendientes = 0;
         $problemas = 0;
+        $omitidas = 0;
 
         foreach ($instances as $instance) {
+            // Una instancia que el health-check ya marcó inalcanzable no tiene
+            // arreglo por aquí: Meta responde "does not exist or missing
+            // permissions" a cualquier consulta sobre su WABA, normalmente
+            // porque el cliente dejó de compartirla con la app. Preguntar cada
+            // hora sólo servía para llenar el log —371 errores en un mes— y
+            // tapar los fallos de verdad.
+            if ($instance->health_status === 'unreachable') {
+                $omitidas++;
+                $rows[] = [
+                    $instance->company_id,
+                    $instance->company?->name ?? '—',
+                    $instance->display_phone_number ?: $instance->name,
+                    '—',
+                    '—',
+                    '<fg=gray>omitida</>',
+                    'Meta no responde por esta cuenta',
+                ];
+                continue;
+            }
+
             $state = $this->option('dry')
                 ? $instance->fallbackTemplateSettings()
                 : $fallback->ensure($instance, (bool) $this->option('force'));
@@ -98,6 +119,12 @@ class FallbackTemplateStatus extends Command
         if ($pendientes > 0) {
             $this->warn("{$pendientes} plantilla(s) esperando aprobación de Meta. "
                 . 'Vuelve a correr este comando en unos minutos.');
+        }
+
+        if ($omitidas > 0) {
+            $this->warn("{$omitidas} instancia(s) omitidas porque Meta no responde por sus cuentas. "
+                . 'Reconéctalas desde el registro insertado o desconéctalas; mientras tanto no se '
+                . 'consultan y no cuentan como fallo de este comando.');
         }
 
         if ($problemas > 0) {

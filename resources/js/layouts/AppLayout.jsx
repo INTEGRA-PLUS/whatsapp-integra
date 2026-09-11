@@ -3,6 +3,8 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import NotificationBell from '@/components/notification-bell';
+import AvisoNuevaVersion from '@/components/aviso-nueva-version';
+import { AvisosProvider } from '@/components/ui/toast';
 
 function getDefaultOpen() {
     if (typeof document === 'undefined') return true;
@@ -28,6 +30,9 @@ export default function AppLayout({ children, breadcrumb }) {
     const { flash, auth } = usePage().props;
 
     return (
+        // Los avisos flotantes envuelven todo el layout para que cualquier
+        // pantalla pueda pedirlos con `useAviso()` sin montar nada propio.
+        <AvisosProvider>
         <SidebarProvider defaultOpen={getDefaultOpen()}>
             <AppSidebar />
             <SidebarInset>
@@ -75,7 +80,9 @@ export default function AppLayout({ children, breadcrumb }) {
                 )}
 
                 {children}
+                <AvisoNuevaVersion />
             </SidebarInset>
         </SidebarProvider>
+        </AvisosProvider>
     );
 }

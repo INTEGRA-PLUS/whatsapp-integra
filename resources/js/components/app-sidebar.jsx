@@ -68,10 +68,21 @@ export function AppSidebar() {
         // De lo que se usa cada día a lo que se configura una vez.
         navGroups = [
             {
+                label: 'Inicio',
+                items: [
+                    // Sin permiso: es la portada, y de ella cada quien ve lo que
+                    // le toca. Un usuario sin acceso a nada tampoco tendría a
+                    // dónde ir después de entrar.
+                    { title: 'Resumen', href: route('dashboard'), icon: Home, exact: true },
+                ],
+            },
+            {
                 label: 'Conversaciones',
                 items: [
                     { title: 'Chat', href: route('chat.index'), icon: MessageSquare, show: hasPermission('chat.view') },
-                    { title: 'CRM', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
+                    // «CRM» no decía a dónde llevaba: el sistema entero es un CRM. La
+                    // pantalla es un tablero kanban y ahora se llama así.
+                    { title: 'Tablero Kanban', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
                     { title: 'Contactos', href: route('contacts.index'), icon: Contact, show: hasPermission('contacts.view') },
                 ],
             },

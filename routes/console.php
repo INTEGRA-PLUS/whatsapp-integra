@@ -25,11 +25,24 @@ Schedule::command('whatsapp:fallback-template')->hourly()->withoutOverlapping();
 // avisa cuando el estado CAMBIA, para que la alerta no se vuelva ruido.
 Schedule::command('whatsapp:health-check')->dailyAt('07:00')->withoutOverlapping();
 
+// Las credenciales de integración se cifran con la APP_KEY. Si el contenedor
+// arranca con otra, todas dejan de funcionar a la vez sin borrarse: la fila
+// sigue en «connected» y la pantalla pide conectar de nuevo, así que el cliente
+// lo vive como «se me borró la integración» y la crea otra vez. El 10-sep-2026
+// pasó tres veces con la misma empresa antes de que nadie mirara el log.
+Schedule::command('integraciones:credenciales')->dailyAt('07:05')->withoutOverlapping();
+
 // Ventana de importación de coexistencia. Se pide una vez, Meta la entrega por
 // webhooks y NO hay segundo intento: si se queda a medias, recuperarla obliga a
 // desconectar el número y rehacer el registro con el cliente delante. Cada hora
 // basta para avisar con margen dentro de un plazo de 24.
 Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();
+
+// Los tokens de Instagram duran 60 días y sólo se pueden renovar mientras
+// siguen vivos. Diario y con margen de diez días: si se intentara el día del
+// vencimiento, una caída de Meta o del scheduler mataría la cuenta y habría que
+// rehacer el inicio de sesión con el cliente delante.
+Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapping();
 
 // Las extensiones que corren solas (hoy, el seguimiento de conversaciones sin
 // respuesta). Un solo comando para todas: cada extensión nueva cambiaría este

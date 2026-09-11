@@ -10,7 +10,9 @@ use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppCampaignRecipient;
 use App\Models\WhatsAppCampaignSegment;
 use App\Models\WhatsAppConversation;
+use App\Services\CampaignPacer;
 use App\Services\CampaignTemplateBuilder;
+use App\Services\MessagingLimitService;
 use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFailureTranslator;
@@ -41,7 +43,7 @@ class WhatsAppCampaignController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->isMaster() && !session('impersonated_by')) {
+        if ($user->isMaster() && ! session('impersonated_by')) {
             return redirect()->route('master.index');
         }
 
@@ -90,7 +92,7 @@ class WhatsAppCampaignController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $user = auth()->user();
 
@@ -99,16 +101,20 @@ class WhatsAppCampaignController extends Controller
             ->with('instance:id,name,display_phone_number', 'creator:id,name')
             ->firstOrFail();
 
+        $filtro = $this->filtroDestinatarios($request);
+        $resumen = $this->summary($campaign, true);
+
         return Inertia::render('Campaigns/Show', [
-            'campaign' => $this->summary($campaign, true),
-            'recipients' => $this->recipientRows($campaign),
+            'campaign' => $resumen,
+            'recipients' => $this->recipientRows($campaign, $filtro),
+            'recipientsMeta' => $this->metaDestinatarios($resumen, $filtro),
         ]);
     }
 
     /**
      * Progreso en vivo mientras la campaña está enviando, sin recargar la página.
      */
-    public function progress($id)
+    public function progress(Request $request, $id)
     {
         $user = auth()->user();
 
@@ -116,10 +122,55 @@ class WhatsAppCampaignController extends Controller
             ->where('company_id', $user->company_id)
             ->firstOrFail();
 
+        $filtro = $this->filtroDestinatarios($request);
+        $resumen = $this->summary($campaign, true);
+
         return response()->json([
-            'campaign' => $this->summary($campaign, true),
-            'recipients' => $this->recipientRows($campaign),
+            'campaign' => $resumen,
+            'recipients' => $this->recipientRows($campaign, $filtro),
+            'recipientsMeta' => $this->metaDestinatarios($resumen, $filtro),
         ]);
+    }
+
+    /**
+     * El estado por el que se está mirando la lista de destinatarios.
+     */
+    private function filtroDestinatarios(Request $request): string
+    {
+        $filtro = (string) $request->input('filter', 'all');
+
+        return in_array($filtro, ['all', 'pending', 'sent', 'delivered', 'read', 'failed', 'skipped'], true)
+            ? $filtro
+            : 'all';
+    }
+
+    /**
+     * Cuántos hay de verdad detrás de la lista recortada.
+     *
+     * Los totales salen del GROUP BY que ya hace `summary()`, así que saberlo no
+     * cuesta ninguna consulta extra. La pantalla lo necesita para no dar a
+     * entender que una campaña de doce mil tiene doscientos destinatarios.
+     */
+    private function metaDestinatarios(array $resumen, string $filtro): array
+    {
+        $c = $resumen['counts'];
+
+        $total = match ($filtro) {
+            'pending' => $c['pending'],
+            'sent' => $c['sent'],
+            'delivered' => $c['delivered'],
+            'read' => $c['read'],
+            'failed' => $c['failed'],
+            'skipped' => $c['skipped'] ?? 0,
+            default => (int) $resumen['total_recipients'],
+        };
+
+        return [
+            'filter' => $filtro,
+            'total' => $total,
+            'limit' => 200,
+            'truncated' => $total > 200,
+        ];
     }
 
     public function store(Request $request)
@@ -165,7 +216,7 @@ class WhatsAppCampaignController extends Controller
             return back()->withErrors(['recipients' => 'No se encontraron destinatarios válidos.']);
         }
 
-        if (collect($recipients)->every(fn ($r) => !empty($r['opted_out']))) {
+        if (collect($recipients)->every(fn ($r) => ! empty($r['opted_out']))) {
             return back()->withErrors([
                 'recipients' => 'Todos los destinatarios seleccionados pidieron no recibir campañas.',
             ]);
@@ -190,13 +241,13 @@ class WhatsAppCampaignController extends Controller
             $this->builder->components($draft, null)
         );
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             return back()->withErrors(['template_name' => $guard['error']]);
         }
 
         $scheduleType = $data['schedule_type'] ?? 'manual';
         $isRecurring = $scheduleType === 'recurring';
-        $launch = !$isRecurring && (bool) ($data['launch_now'] ?? false);
+        $launch = ! $isRecurring && (bool) ($data['launch_now'] ?? false);
 
         $campaign = DB::transaction(function () use ($data, $recipients, $user, $launch, $isRecurring, $scheduleType) {
             $campaign = WhatsAppCampaign::create([
@@ -219,7 +270,7 @@ class WhatsAppCampaignController extends Controller
                 'status' => $launch ? 'queued' : 'draft',
                 'schedule_type' => $scheduleType,
                 'schedule_days' => $isRecurring ? array_values($data['schedule_days']) : null,
-                'schedule_time' => $isRecurring ? ($data['schedule_time'] . ':00') : null,
+                'schedule_time' => $isRecurring ? ($data['schedule_time'].':00') : null,
                 'schedule_timezone' => $isRecurring ? config('app.timezone') : null,
                 'total_recipients' => count($recipients),
             ]);
@@ -267,11 +318,11 @@ class WhatsAppCampaignController extends Controller
     {
         $campaign = $this->ownCampaign($id);
 
-        if (!$campaign->isLaunchable()) {
+        if (! $campaign->isLaunchable()) {
             return back()->withErrors(['campaign' => $campaign->usesTemplate()
                 ? 'La campaña no se puede enviar en su estado actual.'
                 : 'Esta campaña se creó con texto libre. WhatsApp solo entrega envíos masivos como plantilla aprobada: '
-                    . 'créala de nuevo eligiendo una plantilla.']);
+                    .'créala de nuevo eligiendo una plantilla.']);
         }
 
         // Relanzar tras un fallo vuelve a poner en cola solo lo que no llegó.
@@ -282,7 +333,43 @@ class WhatsAppCampaignController extends Controller
         $campaign->update(['status' => 'queued', 'paused_at' => null, 'cancelled_at' => null]);
         ProcessWhatsAppCampaign::dispatch($campaign->id);
 
+        // El aviso del tramo se da en pantalla antes de pulsar, que es donde
+        // sirve de algo. Aquí queda sólo el rastro: si mañana alguien pregunta
+        // por qué Meta rechazó tres mil, esta línea lo explica sin reconstruir
+        // nada a mano.
+        $pendientes = $campaign->recipients()->where('status', 'pending')->count();
+        $revision = app(MessagingLimitService::class)->revisarCampana($campaign->instance, $pendientes);
+
+        if (! $revision['cabe']) {
+            Log::channel('whatsapp')->warning('Campaña por encima del tramo de mensajería del número', [
+                'campaign_id' => $campaign->id,
+                'destinatarios' => $pendientes,
+                'tramo' => $revision['tier'],
+                'limite' => $revision['limite'],
+            ]);
+        }
+
         return back()->with('success', 'Campaña encolada para envío');
+    }
+
+    /**
+     * Cuánta gente admite hoy el número: lo consulta el asistente al elegir la
+     * línea, para avisar antes de armar una lista que no va a caber.
+     */
+    public function capacity(Request $request)
+    {
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $request->integer('instance_id'))
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        return response()->json(
+            app(MessagingLimitService::class)->revisarCampana(
+                $instance,
+                max(0, $request->integer('recipients'))
+            )
+        );
     }
 
     /**
@@ -293,7 +380,7 @@ class WhatsAppCampaignController extends Controller
     {
         $campaign = $this->ownCampaign($id);
 
-        if (!in_array($campaign->status, ['queued', 'sending'], true)) {
+        if (! in_array($campaign->status, ['queued', 'sending'], true)) {
             return back()->withErrors(['campaign' => 'Solo se puede pausar una campaña que esté enviando.']);
         }
 
@@ -330,6 +417,11 @@ class WhatsAppCampaignController extends Controller
             'error_message' => 'La campaña se canceló antes de llegar a este destinatario.',
         ]);
         $campaign->refreshCounters();
+
+        // Una campaña grande reserva horas del reloj del número. Cancelada, esa
+        // reserva ya no corresponde a nada: sin soltarla, la siguiente campaña
+        // esperaría un turno que nadie va a usar.
+        app(CampaignPacer::class)->releaseIfIdle($campaign->instance_id);
 
         return back()->with('success', 'Campaña cancelada');
     }
@@ -378,7 +470,7 @@ class WhatsAppCampaignController extends Controller
     {
         $campaign = $this->ownCampaign($id);
 
-        $filename = 'campana-' . $campaign->id . '-' . now()->format('Ymd-Hi') . '.csv';
+        $filename = 'campana-'.$campaign->id.'-'.now()->format('Ymd-Hi').'.csv';
 
         return response()->streamDownload(function () use ($campaign) {
             $out = fopen('php://output', 'w');
@@ -419,7 +511,7 @@ class WhatsAppCampaignController extends Controller
 
         $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, ['limit' => 200]);
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             return response()->json([
                 'templates' => [],
                 'error' => 'No se pudo leer el catálogo de plantillas de WhatsApp. Inténtalo de nuevo en un minuto.',
@@ -448,14 +540,14 @@ class WhatsAppCampaignController extends Controller
             ->where('company_id', auth()->user()->company_id)
             ->firstOrFail();
 
-        if (!$instance->isMetaConfigured()) {
+        if (! $instance->isMetaConfigured()) {
             return response()->json(['success' => false, 'error' => 'La línea no está configurada.'], 400);
         }
 
         $file = $request->file('file');
         $result = $this->metaService->uploadMedia($instance->phone_number_id, $file->getRealPath(), $file->getMimeType());
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             return response()->json([
                 'success' => false,
                 'error' => 'WhatsApp no aceptó el archivo. Revisa el formato y el tamaño.',
@@ -467,7 +559,7 @@ class WhatsAppCampaignController extends Controller
         // nuestro bucket se vuelve a subir en cada corrida. Y la vista previa del
         // detalle necesita una URL de verdad: la del navegador (blob:) solo vale
         // dentro de la pestaña que la creó.
-        $path = 'whatsapp/campaigns/' . Str::uuid() . '.' . ($file->getClientOriginalExtension() ?: 'bin');
+        $path = 'whatsapp/campaigns/'.Str::uuid().'.'.($file->getClientOriginalExtension() ?: 'bin');
         $url = null;
 
         try {
@@ -530,7 +622,7 @@ class WhatsAppCampaignController extends Controller
                 ->forPage($page, 25)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])
                 ->map(fn ($c) => [
-                    'key' => 'contact:' . $c->id,
+                    'key' => 'contact:'.$c->id,
                     'contact_id' => $c->id,
                     'conversation_id' => null,
                     'name' => $c->name,
@@ -554,7 +646,7 @@ class WhatsAppCampaignController extends Controller
                 ->forPage($page, 25)
                 ->get(['id', 'name', 'phone_number', 'wa_id', 'last_message_at'])
                 ->map(fn ($c) => [
-                    'key' => 'conversation:' . $c->id,
+                    'key' => 'conversation:'.$c->id,
                     'contact_id' => null,
                     'conversation_id' => $c->id,
                     'name' => $c->name,
@@ -592,14 +684,20 @@ class WhatsAppCampaignController extends Controller
 
         $term = trim((string) $request->input('q', ''));
 
+        // Se pide uno más que el techo para saber si había más y poder decirlo.
+        // El tope existe para no traerse la base entera al navegador; antes era
+        // un 5000 fijo y mudo, y una lista de 12.000 se quedaba en 5.000 sin que
+        // nadie se enterara hasta contar los enviados.
+        $techo = max(1, (int) config('whatsapp.campaigns.max_selection', 25000));
+
         if ($request->input('source', 'conversations') === 'contacts') {
             $rows = Contact::where('company_id', $user->company_id)
                 ->whereNotNull('phone_number')
                 ->when($term !== '', fn ($q) => $q->search($term))
-                ->limit(5000)
+                ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])
                 ->map(fn ($c) => [
-                    'key' => 'contact:' . $c->id,
+                    'key' => 'contact:'.$c->id,
                     'contact_id' => $c->id,
                     'conversation_id' => null,
                     'name' => $c->name,
@@ -617,10 +715,10 @@ class WhatsAppCampaignController extends Controller
                     'tags',
                     fn ($t) => $t->whereIn('tags.id', $request->input('tag_ids'))
                 ))
-                ->limit(5000)
+                ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'wa_id'])
                 ->map(fn ($c) => [
-                    'key' => 'conversation:' . $c->id,
+                    'key' => 'conversation:'.$c->id,
                     'contact_id' => null,
                     'conversation_id' => $c->id,
                     'name' => $c->name,
@@ -629,7 +727,17 @@ class WhatsAppCampaignController extends Controller
                 ]);
         }
 
-        return response()->json(['contacts' => $rows->values(), 'total' => $rows->count()]);
+        $recortado = $rows->count() > $techo;
+
+        return response()->json([
+            'contacts' => $rows->take($techo)->values(),
+            'total' => min($rows->count(), $techo),
+            // El asistente lo usa para avisar en pantalla. Un recorte silencioso
+            // es peor que un error: la campaña sale, parece correcta, y falta
+            // gente.
+            'truncated' => $recortado,
+            'limit' => $techo,
+        ]);
     }
 
     public function storeSegment(Request $request)
@@ -680,7 +788,7 @@ class WhatsAppCampaignController extends Controller
                 'id' => $i->id,
                 'name' => $i->name,
                 'display_phone_number' => $i->display_phone_number,
-                'ready' => !empty($i->waba_id) && !empty($i->phone_number_id),
+                'ready' => ! empty($i->waba_id) && ! empty($i->phone_number_id),
             ]);
     }
 
@@ -747,10 +855,29 @@ class WhatsAppCampaignController extends Controller
         return $data;
     }
 
-    private function recipientRows(WhatsAppCampaign $campaign): array
+    /**
+     * Los destinatarios que se pintan en el detalle, filtrados y con techo.
+     *
+     * Antes devolvía la lista entera, y el detalle se refresca solo cada cuatro
+     * segundos mientras la campaña envía: con doce mil socios son varios MB de
+     * JSON cada cuatro segundos, por cada operador con la pantalla abierta, y
+     * durante todas las horas que dure el envío. Los contadores de arriba no
+     * salen de esta lista sino de un GROUP BY, así que recortarla no le quita
+     * información a nadie.
+     *
+     * El filtro se resuelve aquí y no en el navegador por lo mismo: filtrar
+     * doce mil filas en el cliente obliga a habérselas traído antes.
+     */
+    private function recipientRows(WhatsAppCampaign $campaign, ?string $filtro = null, int $limite = 200): array
     {
         return $campaign->recipients()
+            ->when($filtro === 'pending', fn ($q) => $q->whereIn('status', ['pending', 'sending']))
+            ->when(
+                $filtro !== null && ! in_array($filtro, ['all', 'pending'], true),
+                fn ($q) => $q->where('status', $filtro)
+            )
             ->orderBy('id')
+            ->limit($limite)
             ->get()
             ->map(fn (WhatsAppCampaignRecipient $r) => [
                 'id' => $r->id,
@@ -801,7 +928,7 @@ class WhatsAppCampaignController extends Controller
                 return;
             }
 
-            if (!WhatsAppConversation::isBsuid($phone) && strlen($phone) < 7) {
+            if (! WhatsAppConversation::isBsuid($phone) && strlen($phone) < 7) {
                 return;
             }
 
@@ -816,8 +943,11 @@ class WhatsAppCampaignController extends Controller
             ];
         };
 
-        if (!empty($data['conversation_ids'])) {
-            WhatsAppConversation::whereIn('whatsapp_conversations.id', $data['conversation_ids'])
+        // Los ids llegan en tandas de 500 y no de una vez: una cooperativa manda
+        // doce mil, y eso en un solo `IN (...)` es una consulta que MySQL corta
+        // por `max_allowed_packet` y un plan de ejecución que degenera.
+        foreach (array_chunk($data['conversation_ids'] ?? [], 500) as $ids) {
+            WhatsAppConversation::whereIn('whatsapp_conversations.id', $ids)
                 ->where('whatsapp_conversations.instance_id', $data['instance_id'])
                 ->join('instances', 'instances.id', '=', 'whatsapp_conversations.instance_id')
                 ->where('instances.company_id', $companyId)
@@ -831,8 +961,8 @@ class WhatsAppCampaignController extends Controller
                 ->each(fn ($c) => $push($c->phone_number ?: ($c->bsuid ?: $c->wa_id), $c->name, null, $c->id));
         }
 
-        if (!empty($data['contact_ids'])) {
-            Contact::whereIn('id', $data['contact_ids'])
+        foreach (array_chunk($data['contact_ids'] ?? [], 500) as $ids) {
+            Contact::whereIn('id', $ids)
                 ->where('company_id', $companyId)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])
                 ->each(fn ($c) => $push($c->phone_number, $c->name, $c->id, null, [

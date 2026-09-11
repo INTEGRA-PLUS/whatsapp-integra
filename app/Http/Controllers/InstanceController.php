@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\Instance;
+use App\Services\InstagramLoginService;
+use App\Services\RegistrarLineaEnIntegra;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -24,7 +26,7 @@ class InstanceController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->isMaster() && !session('impersonated_by')) {
+        if ($user->isMaster() && ! session('impersonated_by')) {
             return redirect()->route('master.index');
         }
 
@@ -46,6 +48,10 @@ class InstanceController extends Controller
         return Inertia::render('Instances/Index', [
             'instances' => $instances->makeHidden('coexistenceSync'),
             'coexistenceSyncs' => $sincronizaciones,
+            // Sin App ID ni clave de Instagram el botón sólo llevaría a un error
+            // de Meta, así que no se pinta. Mismo criterio que el del registro
+            // insertado de WhatsApp.
+            'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
         ]);
     }
 
@@ -85,9 +91,9 @@ class InstanceController extends Controller
 
         if ($owner) {
             throw ValidationException::withMessages([
-                'phone_number_id' => 'Ese Phone Number ID ya está activo en otra instancia (#' . $owner->id
-                    . '). Desactívala primero: si dos instancias comparten el número, los mensajes entrantes'
-                    . ' solo llegan a una de ellas.',
+                'phone_number_id' => 'Ese Phone Number ID ya está activo en otra instancia (#'.$owner->id
+                    .'). Desactívala primero: si dos instancias comparten el número, los mensajes entrantes'
+                    .' solo llegan a una de ellas.',
             ]);
         }
     }
@@ -99,7 +105,7 @@ class InstanceController extends Controller
             'phone_number_id' => 'required|string',
             'waba_id' => 'required|string',
             'display_phone_number' => 'nullable|string',
-            'access_token' => 'nullable|string'
+            'access_token' => 'nullable|string',
         ]);
 
         $this->assertPhoneNumberIdIsFree($request);
@@ -116,17 +122,28 @@ class InstanceController extends Controller
             'access_token' => $request->access_token,
             'type' => 'meta',
             'status' => 'active',
-            'active' => true
+            'active' => true,
         ]);
 
-        return redirect()->route('instances.index')
+        // Y se da de alta en Integra, si la empresa lo tiene conectado. Sin
+        // esto había que registrar la línea a mano en los dos sistemas, que es
+        // de donde salían las líneas fantasma.
+        $registro = app(RegistrarLineaEnIntegra::class)($instance);
+
+        $respuesta = redirect()->route('instances.index')
             ->with('success', 'Instancia creada exitosamente');
+
+        // El aviso sólo aparece cuando hay algo que el admin pueda arreglar:
+        // que no tenga Integra conectado no es un problema que reportar.
+        return isset($registro['aviso'])
+            ? $respuesta->with('warning', $registro['aviso'])
+            : $respuesta;
     }
 
     public function update(Request $request, $id)
     {
         $user = auth()->user();
-        
+
         $instance = Instance::where('id', $id)
             ->where('company_id', $user->company_id)
             ->firstOrFail();
@@ -137,7 +154,7 @@ class InstanceController extends Controller
             'waba_id' => 'required|string',
             'display_phone_number' => 'nullable|string',
             'access_token' => 'nullable|string',
-            'active' => 'boolean'
+            'active' => 'boolean',
         ]);
 
         if ($request->boolean('active', true)) {
@@ -150,7 +167,7 @@ class InstanceController extends Controller
             'waba_id' => $request->waba_id,
             'display_phone_number' => $request->display_phone_number,
             'access_token' => $request->access_token,
-            'active' => $request->has('active') ? $request->active : 0
+            'active' => $request->has('active') ? $request->active : 0,
         ]);
 
         return redirect()->route('instances.index')
@@ -286,5 +303,43 @@ class InstanceController extends Controller
             'contactos_empresa' => Contact::where('company_id', $instance->company_id)->count(),
             'historial_importado' => $instance->coexistenceSync !== null,
         ];
+    }
+
+    /**
+     * Crea la credencial de la API v1 y la devuelve una sola vez.
+     *
+     * Hasta ahora el token era el `phone_number_id`, que se enseña en esta misma
+     * pantalla y en el panel de Meta: quien lo viera podía leer los mensajes de
+     * la empresa y enviar en su nombre.
+     *
+     * Va por JSON y no por redirección con flash porque el token no debe quedar
+     * guardado en la sesión: de ahí acabaría en el almacenamiento del navegador
+     * y en los logs del servidor.
+     */
+    public function generateApiToken($id)
+    {
+        $user = auth()->user();
+
+        $instance = Instance::where('id', $id)
+            ->where('company_id', $user->company_id)
+            ->firstOrFail();
+
+        $yaTenia = $instance->tieneApiToken();
+        $token = $instance->generarApiToken();
+
+        Log::channel('whatsapp')->info('Token de API generado para una instancia', [
+            'instance_id' => $instance->id,
+            'company_id' => $instance->company_id,
+            'por_usuario' => $user->id,
+            'reemplaza_uno_anterior' => $yaTenia,
+        ]);
+
+        return response()->json([
+            'token' => $token,
+            'reemplaza_uno_anterior' => $yaTenia,
+            // Se dice también aquí y no sólo en la pantalla: quien llame a esta
+            // ruta desde un script tiene que saber que no hay segunda copia.
+            'aviso' => 'Guárdalo ahora. No se puede volver a ver: si se pierde, hay que generar otro.',
+        ]);
     }
 }

@@ -26,6 +26,9 @@ import {
     Sparkles,
     FileSearch,
     Smartphone,
+    Copy,
+    ArrowRight,
+    AlertTriangle,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -62,6 +65,33 @@ const STATUS_DOT = {
     DELETED: 'bg-destructive',
 };
 
+/**
+ * Qué significa cada estado, en español y sin siglas.
+ *
+ * Meta los devuelve en inglés y en mayúsculas —PENDING, REJECTED—, y así se
+ * enseñaban tal cual. El estado más frecuente al crear una plantilla es
+ * "pendiente", y se comunicaba con un punto naranja y nada más: quien la acaba
+ * de crear no sabe si tiene que hacer algo, si falló, o si sólo hay que
+ * esperar. La respuesta —esperar a que Meta la revise— cabe en una frase.
+ */
+const ESTADO = {
+    APPROVED: { texto: 'Aprobada', ayuda: 'Meta la aprobó. Ya se puede enviar.' },
+    PENDING: {
+        texto: 'En revisión',
+        ayuda: 'Meta la está revisando. Suele tardar unos minutos, a veces algunas horas. No hay que hacer nada: cuando la apruebe podrás enviarla.',
+    },
+    REJECTED: {
+        texto: 'Rechazada',
+        ayuda: 'Meta no la aprobó. Revisa el texto —las promociones encubiertas y los enlaces sospechosos son los motivos más comunes— y crea una versión corregida.',
+    },
+    DISABLED: { texto: 'Deshabilitada', ayuda: 'Meta la deshabilitó por su calidad. No se puede enviar.' },
+    PAUSED: { texto: 'En pausa', ayuda: 'Pausada temporalmente por Meta, normalmente por muchos reportes de los destinatarios.' },
+    IN_APPEAL: { texto: 'En apelación', ayuda: 'Se pidió a Meta que revisara su decisión. Toca esperar.' },
+    DELETED: { texto: 'Eliminada', ayuda: 'Ya no existe en Meta.' },
+};
+
+const estadoDe = s => ESTADO[s] ?? { texto: s ?? 'Sin estado', ayuda: '' };
+
 const CATEGORY_STYLES = {
     MARKETING: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 ring-1 ring-inset ring-fuchsia-500/30',
     UTILITY: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
@@ -86,6 +116,7 @@ export default function TemplatesIndex({ instances = [] }) {
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
     const [instanceId, setInstanceId] = useState(instances[0]?.id ?? null);
+    const [copiando, setCopiando] = useState(false);
     const [templates, setTemplates] = useState([]);
     const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -224,6 +255,16 @@ export default function TemplatesIndex({ instances = [] }) {
                                     <Sparkles className="size-4" /> Plantillas por defecto
                                 </Button>
                             </Link>
+                            {can('templates.create') && instanceId && instances.length > 1 && (
+                                <Button
+                                    onClick={() => setCopiando(true)}
+                                    variant="outline"
+                                    className="gap-2 h-9 bg-card/80"
+                                    title="Llevar plantillas de esta línea a otra"
+                                >
+                                    <Copy className="size-4" /> Copiar a otra línea
+                                </Button>
+                            )}
                             {can('templates.create') && instanceId && (
                                 <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
                                     <Sparkles className="size-4" /> Nueva plantilla
@@ -232,6 +273,15 @@ export default function TemplatesIndex({ instances = [] }) {
                         </div>
                     </div>
                 </div>
+
+                {copiando && (
+                    <CopiarPlantillasModal
+                        instances={instances}
+                        origenId={instanceId}
+                        onClose={() => setCopiando(false)}
+                        onCopiado={load}
+                    />
+                )}
 
                 {instances.length === 0 && (
                     <div className="rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">
@@ -266,7 +316,52 @@ export default function TemplatesIndex({ instances = [] }) {
                         <StatCard icon={FileText} label="Total" value={stats.total} tone="primary" />
                         <StatCard icon={Languages} label="Familias" value={stats.families} tone="indigo" />
                         <StatCard icon={CheckCircle2} label="Aprobadas" value={stats.approved} tone="emerald" />
-                        <StatCard icon={Clock} label="Pendientes" value={stats.pending} tone="amber" />
+                        <StatCard icon={Clock} label="En revisión" value={stats.pending} tone="amber" />
+                    </div>
+                )}
+
+                {/* Qué significa que haya plantillas en revisión.
+
+                    La tarjeta de arriba dice cuántas hay, pero no si eso es un
+                    problema ni si hay que hacer algo. Es el estado con el que
+                    nace toda plantilla, así que quien acaba de crear la suya lo
+                    ve siempre, y sin esta frase no sabe si le falló algo o sólo
+                    tiene que esperar. Sólo aparece cuando hay alguna: si están
+                    todas aprobadas, no hay nada que explicar. */}
+                {stats.pending > 0 && (
+                    <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3">
+                        <Clock className="size-4 shrink-0 text-warning mt-0.5" />
+                        <p className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {stats.pending === 1
+                                    ? 'Una plantilla está en revisión.'
+                                    : `${stats.pending} plantillas están en revisión.`}
+                            </span>{' '}
+                            Meta revisa cada plantilla antes de dejar enviarla: suele tardar
+                            unos minutos, a veces algunas horas. No tienes que hacer nada —
+                            cuando la apruebe podrás usarla en campañas y respuestas.
+                        </p>
+                    </div>
+                )}
+
+                {/* Las rechazadas sí piden acción, y por eso se avisan aparte y
+                    en rojo: quedarse esperando una plantilla que Meta ya
+                    descartó es perder días. */}
+                {stats.rejected > 0 && (
+                    <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+                        <XCircle className="size-4 shrink-0 text-destructive mt-0.5" />
+                        <p className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {stats.rejected === 1
+                                    ? 'Una plantilla fue rechazada.'
+                                    : `${stats.rejected} plantillas fueron rechazadas.`}
+                            </span>{' '}
+                            {stats.rejected === 1
+                                ? 'Meta no la aprobó y no se puede enviar. Ábrela para ver el texto:'
+                                : 'Meta no las aprobó y no se pueden enviar. Ábrelas para ver el texto:'}{' '}
+                            las promociones encubiertas y los enlaces sospechosos son los
+                            motivos más comunes. Corrige y crea una versión nueva.
+                        </p>
                     </div>
                 )}
 
@@ -390,6 +485,152 @@ export default function TemplatesIndex({ instances = [] }) {
     );
 }
 
+/**
+ * Copiar plantillas de una línea a otra de la misma empresa.
+ *
+ * Las plantillas no viven en el CRM: viven en Meta y son **por WABA**. Dos
+ * líneas con WhatsApp Business distinto tienen catálogos separados, y lo que
+ * hay en una no existe en la otra.
+ *
+ * Eso rompió la facturación de Transinternet el 10-sep-2026: al cambiar su
+ * línea de envíos, Meta devolvía «(#100) Invalid parameter» en cada factura
+ * porque en el WABA nuevo no existía `facturacion`. Antes de esto, mudarse de
+ * línea significaba rehacer el catálogo a mano y descubrirlo factura a factura.
+ */
+function CopiarPlantillasModal({ instances, origenId, onClose, onCopiado }) {
+    const origen = instances.find(i => i.id === origenId);
+    const destinos = instances.filter(i => i.id !== origenId);
+
+    const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? null);
+    const [enviando, setEnviando] = useState(false);
+    const [resultado, setResultado] = useState(null);
+    const [error, setError] = useState(null);
+
+    const copiar = async () => {
+        setEnviando(true);
+        setError(null);
+        setResultado(null);
+
+        try {
+            const { data } = await axios.post('/api/templates/duplicar', {
+                origen_instance_id: origenId,
+                destino_instance_id: destinoId,
+            });
+            setResultado(data);
+            onCopiado?.();
+        } catch (e) {
+            setError(e.response?.data?.message ?? 'No se pudieron copiar las plantillas.');
+        } finally {
+            setEnviando(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+            <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold text-foreground">Copiar plantillas a otra línea</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Cada línea tiene su propio catálogo en Meta. Esto lleva a la otra las que le falten.
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+                        <X className="size-4" />
+                    </button>
+                </div>
+
+                {!resultado && (
+                    <>
+                        <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3">
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Desde</p>
+                                <p className="truncate text-sm font-semibold text-foreground">{origen?.name}</p>
+                                <p className="truncate text-xs text-muted-foreground">{origen?.display_phone_number}</p>
+                            </div>
+
+                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+
+                            <div className="min-w-0 flex-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Hacia</label>
+                                <select
+                                    value={destinoId ?? ''}
+                                    onChange={e => setDestinoId(Number(e.target.value))}
+                                    className="mt-1 h-9 w-full rounded-lg border border-input bg-card px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                                >
+                                    {destinos.map(i => (
+                                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Que Meta apruebe por su cuenta no es un detalle: es la
+                            diferencia entre «ya puedo enviar» y «puedo enviar
+                            cuando Meta diga». */}
+                        <div className="mb-4 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
+                            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                            {/* El texto va dentro de un span: suelto, cada nodo se
+                                convierte en un elemento flex y la frase se parte
+                                en columnas. */}
+                            <span>
+                                Las copias llegan como <strong>pendientes</strong>: cada WhatsApp Business las aprueba
+                                por separado, y hasta que Meta las apruebe no se pueden enviar por la línea nueva.
+                            </span>
+                        </div>
+
+                        {error && (
+                            <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+                            <Button onClick={copiar} disabled={enviando || !destinoId} className="gap-2">
+                                {enviando ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+                                {enviando ? 'Copiando…' : 'Copiar las que falten'}
+                            </Button>
+                        </div>
+                    </>
+                )}
+
+                {resultado && (
+                    <>
+                        <p className="mb-3 text-sm text-foreground">{resultado.mensaje}</p>
+
+                        {resultado.ya_estaban > 0 && (
+                            <p className="mb-3 text-xs text-muted-foreground">
+                                {resultado.ya_estaban} ya estaban en la otra línea y no se tocaron.
+                            </p>
+                        )}
+
+                        {resultado.resultados?.length > 0 && (
+                            <ul className="mb-4 max-h-56 space-y-1.5 overflow-y-auto">
+                                {resultado.resultados.map(r => (
+                                    <li key={r.plantilla} className="flex items-start gap-2 text-xs">
+                                        {r.ok
+                                            ? <CheckCircle2 className="mt-px size-3.5 shrink-0 text-success" />
+                                            : <XCircle className="mt-px size-3.5 shrink-0 text-destructive" />}
+                                        <span className="min-w-0">
+                                            <span className="font-semibold text-foreground">{r.plantilla}</span>
+                                            {r.ok
+                                                ? <span className="text-muted-foreground"> · {r.estado === 'APPROVED' ? 'aprobada' : 'pendiente de Meta'}</span>
+                                                : <span className="block text-destructive">{r.error}</span>}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        <div className="flex justify-end">
+                            <Button onClick={onClose}>Cerrar</Button>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function StatCard({ icon: Icon, label, value, tone }) {
     const tones = {
         primary: 'bg-primary/10 text-primary',
@@ -451,11 +692,25 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                         <button
                             key={v.id}
                             onClick={() => onOpenDetail(v)}
-                            title={`Ver detalle · ${LANG_LABELS[v.language] ?? v.language} · ${v.status}`}
-                            className="group/pill inline-flex items-center gap-1.5 rounded-full border bg-background pl-2 pr-2.5 py-1 text-xs font-mono hover:border-primary/50 hover:bg-primary/5 transition-colors"
+                            title={`${LANG_LABELS[v.language] ?? v.language} · ${estadoDe(v.status).texto}. ${estadoDe(v.status).ayuda}`}
+                            className={`group/pill inline-flex items-center gap-1.5 rounded-full border pl-2 pr-2.5 py-1 text-xs font-mono transition-colors hover:border-primary/50 hover:bg-primary/5 ${
+                                v.status === 'APPROVED'
+                                    ? 'bg-background'
+                                    : STATUS_STYLES[v.status] ?? 'bg-background'
+                            }`}
                         >
                             <span className={`size-1.5 rounded-full ${STATUS_DOT[v.status] ?? 'bg-muted'}`} />
                             <span className="font-medium">{v.language}</span>
+                            {/* Lo aprobado no lleva texto: es el estado normal y en una
+                                empresa con veinte plantillas sería ruido repetido veinte
+                                veces. Lo que no está aprobado sí lo dice, porque es
+                                justo lo que hay que entender. Un punto de color no
+                                explica nada por sí solo. */}
+                            {v.status !== 'APPROVED' && (
+                                <span className="font-sans font-semibold">
+                                    {estadoDe(v.status).texto}
+                                </span>
+                            )}
                             <Eye className="size-3 opacity-0 group-hover/pill:opacity-100 transition-opacity text-muted-foreground" />
                         </button>
                     ))}
@@ -483,8 +738,11 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                                     <span className="font-mono text-sm">{v.language}</span>
                                     <span className="text-[10px] text-muted-foreground truncate">id: {v.id}</span>
                                 </div>
-                                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[v.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                    {v.status}
+                                <span
+                                    title={estadoDe(v.status).ayuda}
+                                    className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[v.status] ?? 'bg-muted text-muted-foreground'}`}
+                                >
+                                    {estadoDe(v.status).texto}
                                 </span>
                             </button>
                         ))}
@@ -595,8 +853,11 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                                     )}
                                 </Field>
                                 <Field label="Estado">
-                                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[template.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                        {template.status}
+                                    <span
+                                        title={estadoDe(template.status).ayuda}
+                                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[template.status] ?? 'bg-muted text-muted-foreground'}`}
+                                    >
+                                        {estadoDe(template.status).texto}
                                     </span>
                                 </Field>
                             </div>
@@ -646,7 +907,7 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                                             >
                                                 <span className="font-mono">{s.language}</span>
                                                 <span className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold ${STATUS_STYLES[s.status] ?? 'bg-muted text-muted-foreground'}`}>
-                                                    {s.status}
+                                                    {estadoDe(s.status).texto}
                                                 </span>
                                             </button>
                                         );

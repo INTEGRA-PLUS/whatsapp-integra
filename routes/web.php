@@ -7,8 +7,12 @@ use App\Http\Controllers\BusinessHourController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ContactController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
 use App\Http\Controllers\ExtensionController;
+use App\Http\Controllers\InstagramConexionController;
+use App\Http\Controllers\InstagramPrivacidadController;
+use App\Http\Controllers\InstagramWebhookController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\KanbanController;
@@ -39,6 +43,22 @@ use Inertia\Inertia;
 // Webhooks públicos
 Route::get('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'verify']);
 Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook']);
+
+// Instagram. Va en su propia URL y no colgando del webhook de WhatsApp porque
+// Meta admite un solo callback_url por app y por tópico: son dos suscripciones
+// independientes que conviven en la misma app.
+Route::get('/webhooks/instagram', [InstagramWebhookController::class, 'verificar']);
+Route::post('/webhooks/instagram', [InstagramWebhookController::class, 'recibir']);
+
+// Las tres URL que Meta exige registrar en Business Login. El revisor del App
+// Review las visita: si alguna no contesta 200, la solicitud se rechaza antes
+// de mirar el screencast.
+Route::get('/instagram/callback', [InstagramConexionController::class, 'callback'])
+    ->name('instagram.callback');
+Route::match(['get', 'post'], '/instagram/desautorizar', [InstagramPrivacidadController::class, 'desautorizar']);
+Route::match(['get', 'post'], '/instagram/eliminar-datos', [InstagramPrivacidadController::class, 'eliminarDatos']);
+Route::get('/instagram/eliminar-datos/{codigo}', [InstagramPrivacidadController::class, 'estadoDeBorrado'])
+    ->name('instagram.eliminar-datos.estado');
 
 // Utilidad para servidor compartido (cPanel) - Estructura personalizada + Permisos
 Route::get('/run-storage-link', function () {
@@ -181,7 +201,10 @@ Route::post('/login', function (Request $request) {
             return redirect()->route('master.index');
         }
 
-        return redirect()->intended('/chat');
+        // A la portada, no al chat: es donde se ve qué falta por configurar y
+        // qué está sin responder. Quien venía siguiendo un enlace concreto
+        // sigue yendo a donde iba, que es lo que respeta `intended`.
+        return redirect()->intended('/');
     }
 
     return back()->withErrors([
@@ -217,8 +240,36 @@ Route::post('/logout', function (Request $request) {
 })->name('logout');
 
 // Rutas protegidas
+/**
+ * La versión de los assets que está sirviendo el servidor ahora mismo.
+ *
+ * Es el mismo valor que Inertia compara en cada petición para decidir si el
+ * JavaScript del navegador se quedó viejo. Cuando no coincide, Inertia responde
+ * 409 y el navegador recarga de golpe —protección deliberada, pero al usuario
+ * que está escribiendo se le va la página sin avisar.
+ *
+ * Consultándolo aparte, con una petición normal que nunca provoca ese 409, la
+ * pantalla puede enterarse del despliegue y ofrecer recargar cuando al usuario
+ * le venga bien.
+ *
+ * Va fuera de `auth` a propósito: es un hash de un archivo público, no dice nada
+ * de nadie, y así el aviso también funciona en la pantalla de entrar.
+ */
+Route::get('/api/version', function (Request $request) {
+    return response()->json([
+        'version' => (new App\Http\Middleware\HandleInertiaRequests)->version($request),
+    ]);
+})
+    // Fuera del middleware de Inertia a propósito. Estando dentro, preguntar la
+    // versión con las cabeceras de Inertia devolvía 409 —la recarga forzada que
+    // todo esto existe para evitar—, y el aviso no habría salido nunca.
+    ->withoutMiddleware(App\Http\Middleware\HandleInertiaRequests::class)
+    ->name('version');
+
 Route::middleware('auth')->group(function () {
-    Route::redirect('/', '/chat');
+    // La portada. Antes redirigía al chat, que dejaba al cliente recién
+    // conectado ante una lista vacía sin decirle qué le faltaba por configurar.
+    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     // El sistema de diseño, dentro del producto: pinta con los mismos tokens
     // que la aplicación, así que no puede documentar unos colores que ya no son.
@@ -226,6 +277,12 @@ Route::middleware('auth')->group(function () {
         ->name('sistema-diseno');
     Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
     Route::resource('instances', InstanceController::class)->only(['index', 'store', 'update', 'destroy']);
+
+    // Arranca Business Login for Instagram. Va aquí dentro —y no con las rutas
+    // públicas de arriba— porque necesita saber qué empresa está conectando: el
+    // callback lo recoge de la sesión, no de la URL.
+    Route::get('/instancias/conectar-instagram', [InstagramConexionController::class, 'conectar'])
+        ->middleware('permission:instances.create')->name('instagram.conectar');
 
     // La guía de conexión por coexistencia, dentro del producto. Va antes que
     // /instances/{instance} para que "guia-coexistencia" no se tome por un id.
@@ -237,6 +294,11 @@ Route::middleware('auth')->group(function () {
     // /instances/{algo} con otro significado.
     Route::get('/instances/{instance}/coexistence-sync', [InstanceController::class, 'coexistenceSync'])
         ->name('instances.coexistence-sync');
+    // Genera la credencial de la API v1. Sólo quien puede editar la instancia:
+    // el token deja enviar mensajes en nombre de la empresa.
+    Route::post('/instances/{instance}/api-token', [InstanceController::class, 'generateApiToken'])
+        ->middleware('permission:instances.update')
+        ->name('instances.api-token');
 
     // Apagar una instancia en vez de borrarla, que es lo que casi siempre se
     // quiere: el número deja de enviar y de recibir y el historial se queda.
@@ -266,6 +328,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:campaigns.view')->name('contacts.search');
         Route::get('/contacts/resolve', [WhatsAppCampaignController::class, 'resolveSelection'])
             ->middleware('permission:campaigns.view')->name('contacts.resolve');
+        Route::get('/capacity', [WhatsAppCampaignController::class, 'capacity'])
+            ->middleware('permission:campaigns.view')->name('capacity');
         Route::get('/templates', [WhatsAppCampaignController::class, 'templates'])
             ->middleware('permission:campaigns.view')->name('templates');
         Route::post('/template-media', [WhatsAppCampaignController::class, 'uploadTemplateMedia'])
@@ -315,6 +379,10 @@ Route::middleware('auth')->group(function () {
     Route::prefix('api/templates')->group(function () {
         Route::get('/', [TemplateController::class, 'list'])
             ->middleware('permission:templates.view');
+        // Copiar plantillas de una línea a otra: los catálogos son por WABA,
+        // así que dos líneas de la misma empresa no comparten ninguna.
+        Route::post('/duplicar', [TemplateController::class, 'duplicar'])
+            ->middleware('permission:templates.create');
         Route::get('/analytics', [TemplateController::class, 'analytics'])
             ->middleware('permission:templates.view');
         Route::get('/analytics/conversations', [TemplateController::class, 'conversationAnalytics'])
@@ -601,6 +669,8 @@ Route::middleware('auth')->group(function () {
     Route::prefix('api/kanban')->group(function () {
         Route::get('/columns', [KanbanController::class, 'columns']);
         Route::get('/counts', [KanbanController::class, 'columnCounts']);
+        Route::get('/contactos', [KanbanController::class, 'contactos']);
+        Route::put('/etapas-ocultas', [KanbanController::class, 'guardarEtapasOcultas']);
         Route::post('/columns', [KanbanController::class, 'storeColumn']);
         Route::put('/columns/{id}', [KanbanController::class, 'updateColumn']);
         Route::delete('/columns/{id}', [KanbanController::class, 'deleteColumn']);
@@ -656,6 +726,19 @@ Route::middleware('auth')->group(function () {
     // Integraciones — Webhooks salientes (parametrizables por empresa)
     Route::get('/integrations', [WebhookEndpointController::class, 'index'])
         ->middleware('permission:integrations.view')->name('integrations.index');
+    Route::post('/integrations/linea-erp', [WebhookEndpointController::class, 'elegirLineaDelErp'])
+        ->middleware('permission:integrations.create')->name('integrations.linea-erp');
+    // Los ajustes de envío del ERP: se leen y se escriben en Integra, no aquí.
+    Route::get('/integrations/ajustes-envio', [WebhookEndpointController::class, 'ajustesDeEnvio'])
+        ->middleware('permission:integrations.view');
+    Route::put('/integrations/ajustes-envio', [WebhookEndpointController::class, 'guardarAjustesDeEnvio'])
+        ->middleware('permission:integrations.create');
+    // Qué dato del ERP va en cada variable de la plantilla. Misma historia:
+    // se edita aquí, al lado de la plantilla, y se guarda en Integra.
+    Route::get('/integrations/plantillas/{plantilla}/campos', [WebhookEndpointController::class, 'camposDePlantilla'])
+        ->whereNumber('plantilla')->middleware('permission:integrations.view');
+    Route::put('/integrations/plantillas/{plantilla}/campos', [WebhookEndpointController::class, 'guardarCamposDePlantilla'])
+        ->whereNumber('plantilla')->middleware('permission:integrations.create');
     Route::prefix('api/webhooks')->group(function () {
         Route::get('/', [WebhookEndpointController::class, 'list'])
             ->middleware('permission:integrations.view');

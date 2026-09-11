@@ -3,9 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Validator;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -13,6 +10,11 @@ use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
 use App\Services\WhatsAppFallbackTemplateService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class MessageApiController extends Controller
 {
@@ -42,7 +44,34 @@ class MessageApiController extends Controller
     {
         $token = $request->header('X-Instance-Token');
 
-        if (!$token) {
+        if (! $token) {
+            return null;
+        }
+
+        // Camino nuevo: un secreto de verdad. Se busca por su hash, que es lo
+        // único que guardamos, y es unívoco por definición: no hay ambigüedad
+        // posible entre empresas.
+        $porToken = Instance::where('api_token', Instance::hashApiToken($token))
+            ->where('active', true)
+            ->first();
+
+        if ($porToken) {
+            // Sin tocar `updated_at`: esta columna es un dato de operación, no
+            // un cambio de la instancia, y moverlo en cada petición ensuciaría
+            // cualquier consulta que mire cuándo se editó por última vez.
+            Instance::whereKey($porToken->id)->update([
+                'api_token_last_used_at' => now(),
+                'api_last_seen_at' => now(),
+                'api_last_seen_via' => 'token',
+            ]);
+
+            return $porToken;
+        }
+
+        // Camino viejo: el phone_number_id como credencial. No es un secreto
+        // —se enseña en la pantalla de Instancias y en el panel de Meta— así
+        // que sólo se acepta mientras queden clientes por migrar.
+        if (! config('whatsapp.api.allow_legacy_token', true)) {
             return null;
         }
 
@@ -59,22 +88,44 @@ class MessageApiController extends Controller
 
             return response()->json([
                 'error' => 'Este phone_number_id está registrado como activo en más de una empresa, '
-                    . 'así que no identifica de forma única quién envía. Un administrador debe '
-                    . 'desactivar las instancias duplicadas antes de seguir enviando.',
+                    .'así que no identifica de forma única quién envía. Un administrador debe '
+                    .'desactivar las instancias duplicadas antes de seguir enviando.',
                 'code' => 'ambiguous_instance',
             ], 409);
         }
 
-        return $candidates->first();
+        $instance = $candidates->first();
+
+        // Cada uso del esquema viejo deja rastro con la empresa: es la lista de
+        // a quién falta avisar antes de poder apagarlo.
+        if ($instance) {
+            Log::channel('whatsapp')->info('Petición de API autenticada con el esquema antiguo', [
+                'instance_id' => $instance->id,
+                'company_id' => $instance->company_id,
+                'ruta' => $request->path(),
+                'tiene_token_nuevo' => $instance->tieneApiToken(),
+            ]);
+
+            // Y queda en la instancia, que es donde alguien puede verlo sin
+            // abrir un log: es la única señal de que el ERP sigue enviando por
+            // esta línea. Sin tocar `updated_at`: es un dato de operación, no
+            // un cambio de la instancia.
+            Instance::whereKey($instance->id)->update([
+                'api_last_seen_at' => now(),
+                'api_last_seen_via' => 'phone_number_id',
+            ]);
+        }
+
+        return $instance;
     }
 
     public function sendMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -121,7 +172,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $to, // Fallback to phone number
                 'status' => 'open',
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]
         );
 
@@ -129,7 +180,7 @@ class MessageApiController extends Controller
         // Con texto libre Meta responde 200 y devuelve wamid, y sólo después
         // avisa por webhook de que falló: quien llama se queda creyendo que el
         // aviso salió y el cliente final nunca lo recibe.
-        $windowClosed = !$conversation->isWindowOpen();
+        $windowClosed = ! $conversation->isWindowOpen();
 
         // Camino bueno: si nos dieron una plantilla de respaldo, el aviso sale
         // como plantilla en vez de morir. Es lo que convierte una notificación
@@ -183,10 +234,10 @@ class MessageApiController extends Controller
                 'code' => 'window_closed',
                 'template_status' => $fallback['status'] ?? null,
                 'error' => 'El destinatario no escribe desde hace más de 24 horas. '
-                    . 'WhatsApp no permite texto libre fuera de esa ventana. '
-                    . $this->fallbackHint($fallback ?? null)
-                    . ' También puedes añadir "template_name" (y sus "components") a esta '
-                    . 'misma llamada, o usar POST /api/v1/messages/template.',
+                    .'WhatsApp no permite texto libre fuera de esa ventana. '
+                    .$this->fallbackHint($fallback ?? null)
+                    .' También puedes añadir "template_name" (y sus "components") a esta '
+                    .'misma llamada, o usar POST /api/v1/messages/template.',
             ], 422);
         }
 
@@ -236,29 +287,310 @@ class MessageApiController extends Controller
 
             $conversation->update([
                 'last_message' => $messageContent,
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message_id' => $message->id,
-                'wamid' => $message->wamid
+                'wamid' => $message->wamid,
             ]);
         }
 
         return response()->json([
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar a Meta'
+            'error' => $result['error']['error']['message'] ?? 'Error al enviar a Meta',
         ], 500);
+    }
+
+    /**
+     * Enviar un documento (PDF) por la línea de la empresa.
+     *
+     * Es la pieza que faltaba para que haya **un solo emisor de WhatsApp**.
+     * Hasta ahora Integra 2.0 mandaba las tirillas y las facturas por su cuenta
+     * a `graph.facebook.com` y después llamaba a `/messages/register` para que
+     * el CRM se enterara; su propio código lo decía: *«Sin esto, el envío va
+     * directo a graph.facebook.com y el microservicio nunca se entera»*
+     * (`IngresoWhatsAppService.php:224`, 9-sep-2026).
+     *
+     * Lo hacía porque este API sólo sabía enviar texto y plantillas: para un
+     * PDF no había camino. De ahí salía todo lo demás —dos configuraciones, dos
+     * sitios donde mirar si algo no llegó, y un hilo de chat que se enteraba a
+     * posteriori y sin el archivo.
+     *
+     * El PDF se guarda en el almacenamiento del CRM y se envía **por URL**, no
+     * subiéndolo a Meta: así queda también en el hilo, que es lo que permite al
+     * asesor ver el recibo que se le mandó al cliente. Meta sólo aloja lo que
+     * le subes unos treinta días.
+     */
+    public function sendDocument(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if ($instance instanceof JsonResponse) {
+            return $instance;
+        }
+        if (! $instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        // En multipart no existen los arrays anidados, así que los componentes
+        // de la plantilla llegan como texto JSON. Sin esto la validación los
+        // rechaza con «The components field must be an array» y **la factura no
+        // sale**: pasó con las primeras facturas reales que entraron por aquí
+        // (9-sep-2026), y sin el aviso de más abajo no habría dejado rastro.
+        if (is_string($request->input('components'))) {
+            $decodificados = json_decode($request->input('components'), true);
+
+            // Si no se puede leer, se deja el texto tal cual: la regla `array`
+            // lo rechaza con un 422 que queda registrado. Ponerlo a null lo
+            // colaría como «sin componentes» y la plantilla saldría sin sus
+            // variables, que es peor que no salir.
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decodificados)) {
+                $request->merge(['components' => $decodificados]);
+            }
+        }
+
+        $validator = Validator::make($request->all(), [
+            'to' => 'required|string',
+            // El archivo o su URL: una de las dos, no las dos.
+            'file' => 'required_without:document_url|file|max:20480',
+            'document_url' => 'required_without:file|url',
+            'filename' => 'nullable|string|max:120',
+            // Meta corta el pie del documento en 1024.
+            'caption' => 'nullable|string|max:1024',
+            'incoming_invoice_id' => 'nullable|integer',
+            'incoming_contract_id' => 'nullable|integer',
+            'incoming_payment_id' => 'nullable|integer',
+            'incoming_company_nit' => 'nullable|integer',
+            'template_id' => 'nullable|integer',
+            // Para el caso de fuera de ventana: la plantilla lleva el PDF en su
+            // encabezado y es la única forma de entregarlo pasadas las 24h.
+            'template_name' => 'nullable|string',
+            'language_code' => 'nullable|string',
+            'components' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            // Un 422 que nadie ve es un recibo que no llega y nadie sabe por
+            // qué: el ERP lo recibe, lo da por perdido y sigue. Queda escrito
+            // con qué llamó, sin el archivo ni el texto del mensaje.
+            Log::channel('whatsapp')->warning('📄 Documento rechazado por validación', [
+                'company_id' => $instance->company_id,
+                'instance_id' => $instance->id,
+                'errores' => $validator->errors()->toArray(),
+                'traia' => [
+                    'archivo' => $request->hasFile('file'),
+                    'document_url' => $request->filled('document_url'),
+                    'template_name' => $request->input('template_name'),
+                    'caption_largo' => mb_strlen((string) $request->input('caption')),
+                    'to_largo' => mb_strlen((string) $request->input('to')),
+                ],
+            ]);
+
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $to = WhatsAppConversation::normalizeRecipient($request->to);
+
+        if ($to === '') {
+            Log::channel('whatsapp')->warning('📄 Documento sin destinatario utilizable', [
+                'company_id' => $instance->company_id,
+                'to_largo' => mb_strlen((string) $request->input('to')),
+            ]);
+
+            return response()->json(['errors' => ['to' => [
+                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+            ]]], 422);
+        }
+
+        $conversation = WhatsAppConversation::resolveFor(
+            $instance->id,
+            $to,
+            [
+                'phone_number' => $to,
+                'name' => $to,
+                'status' => 'open',
+                'last_message_at' => now(),
+            ]
+        );
+
+        $windowClosed = ! $conversation->isWindowOpen();
+
+        $guardado = $this->guardarDocumento($request, $conversation);
+
+        if (! $guardado['ok']) {
+            return response()->json(['success' => false, 'error' => $guardado['error']], 500);
+        }
+
+        // Con plantilla, el documento viaja en su encabezado. Es el único camino
+        // que Meta acepta pasadas las 24h, y es el que usa la facturación
+        // mensual: plantilla aprobada con la factura en el encabezado.
+        //
+        // La URL la pone aquí el CRM, que es quien acaba de guardar el archivo:
+        // quien llama no puede conocerla antes de subirlo, así que pedírsela
+        // sería pedirle que adivine.
+        if ($request->filled('template_name')) {
+            $request->merge([
+                'components' => $this->conElDocumentoEnElEncabezado(
+                    $request->input('components', []),
+                    $guardado['url'],
+                    $guardado['filename']
+                ),
+            ]);
+
+            Log::channel('whatsapp')->info('📄 El documento sale como plantilla', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+                'template' => $request->template_name,
+                'ventana_cerrada' => $windowClosed,
+            ]);
+
+            return $this->sendTemplate($request);
+        }
+
+        // Y si no la trae, **no** se usa la plantilla de respaldo de texto: ésa
+        // entregaría el aviso sin el PDF, que es justo el documento que el
+        // cliente esperaba. Perder el recibo en silencio es peor que decir que
+        // no se pudo enviar.
+        if ($windowClosed && $this->windowGuardEnforced($instance)) {
+            return response()->json([
+                'success' => false,
+                'code' => 'window_closed',
+                'error' => 'El destinatario no escribe desde hace más de 24 horas. '
+                    .'WhatsApp no permite enviar un documento fuera de esa ventana. '
+                    .'Manda este mismo documento con "template_name" y su encabezado '
+                    .'de tipo documento para que llegue como plantilla aprobada.',
+            ], 422);
+        }
+
+        if ($windowClosed) {
+            Log::channel('whatsapp')->warning('🕓 Ventana de 24h cerrada: documento dejado pasar en modo sombra', [
+                'company_id' => $instance->company_id,
+                'conversation_id' => $conversation->id,
+            ]);
+        }
+
+        $result = $this->metaService->sendDocument(
+            $instance->phone_number_id,
+            $to,
+            $guardado['url'],
+            $guardado['filename'],
+            (string) ($request->caption ?? '')
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'error' => $result['error']['error']['message'] ?? 'Error al enviar el documento a Meta',
+            ], 500);
+        }
+
+        $message = WhatsAppMessage::create([
+            'conversation_id' => $conversation->id,
+            'wamid' => $result['data']['messages'][0]['id'],
+            'type' => 'document',
+            'content' => (string) ($request->caption ?? ''),
+            'media_url' => $guardado['url'],
+            'media_mime_type' => $guardado['mime'],
+            'filename' => $guardado['filename'],
+            'direction' => 'outbound',
+            'status' => 'sent',
+            'sent_at' => now(),
+            'incoming_invoice_id' => $request->incoming_invoice_id,
+            'incoming_contract_id' => $request->incoming_contract_id,
+            'incoming_payment_id' => $request->incoming_payment_id,
+            'incoming_company_nit' => $request->incoming_company_nit,
+            'template_id' => $request->template_id,
+            'metadata' => $windowClosed ? ['window_guard' => 'shadow_pass'] : null,
+        ]);
+
+        $conversation->update([
+            'last_message' => '📄 '.$guardado['filename'],
+            'last_message_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message_id' => $message->id,
+            'wamid' => $message->wamid,
+            'media_url' => $guardado['url'],
+        ]);
+    }
+
+    /**
+     * Pone el documento recién guardado en el encabezado de la plantilla.
+     *
+     * Respeta el resto de componentes —el cuerpo con sus variables llega tal
+     * cual desde el ERP— y sustituye el encabezado si ya venía uno, para que
+     * mandar dos documentos distintos sea imposible.
+     *
+     * @param  array<int, array<string, mixed>>  $componentes
+     * @return array<int, array<string, mixed>>
+     */
+    private function conElDocumentoEnElEncabezado(array $componentes, string $url, string $filename): array
+    {
+        $encabezado = [
+            'type' => 'header',
+            'parameters' => [[
+                'type' => 'document',
+                'document' => ['link' => $url, 'filename' => $filename],
+            ]],
+        ];
+
+        $resto = array_values(array_filter(
+            $componentes,
+            fn ($componente) => strtolower($componente['type'] ?? '') !== 'header'
+        ));
+
+        return array_merge([$encabezado], $resto);
+    }
+
+    /**
+     * Deja el documento donde Meta pueda leerlo y el hilo pueda enseñarlo.
+     *
+     * @return array{ok: bool, url?: string, filename?: string, mime?: string, error?: string}
+     */
+    private function guardarDocumento(Request $request, WhatsAppConversation $conversation): array
+    {
+        // Con una URL ya publicada no hay nada que guardar: se usa tal cual.
+        if (! $request->hasFile('file')) {
+            $url = (string) $request->document_url;
+
+            return [
+                'ok' => true,
+                'url' => $url,
+                'filename' => $request->filename ?: (basename(parse_url($url, PHP_URL_PATH) ?: '') ?: 'documento.pdf'),
+                'mime' => 'application/pdf',
+            ];
+        }
+
+        $file = $request->file('file');
+        $path = $file->storePublicly('whatsapp/media', 's3_media');
+
+        if (! $path) {
+            Log::channel('whatsapp')->error('❌ No se pudo guardar el documento del API', [
+                'conversation_id' => $conversation->id,
+                'original_name' => $file->getClientOriginalName(),
+            ]);
+
+            return ['ok' => false, 'error' => 'No se pudo guardar el archivo en el almacenamiento.'];
+        }
+
+        return [
+            'ok' => true,
+            'url' => Storage::disk('s3_media')->url($path),
+            'filename' => $request->filename ?: ($file->getClientOriginalName() ?: 'documento.pdf'),
+            'mime' => $file->getClientMimeType() ?: 'application/pdf',
+        ];
     }
 
     public function sendTemplate(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -303,7 +635,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $to,
                 'status' => 'open',
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]
         );
 
@@ -312,20 +644,20 @@ class MessageApiController extends Controller
         // que el aviso no llegó. Aquí se entera ahora, con el motivo concreto.
         $guard = $this->templateGuard->check($instance, $templateName, $languageCode, $components);
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             Log::channel('whatsapp')->warning('⛔ Plantilla rechazada antes de llegar a Meta', [
-                'company_id'   => $instance->company_id,
+                'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
-                'template'     => $templateName,
-                'guard_code'   => $guard['code'],
-                'guard_error'  => $guard['error'],
+                'template' => $templateName,
+                'guard_code' => $guard['code'],
+                'guard_error' => $guard['error'],
             ]);
 
             return response()->json([
                 'success' => false,
-                'code'    => TemplateParameterGuard::CODE,
-                'reason'  => $guard['code'],
-                'error'   => $guard['error'],
+                'code' => TemplateParameterGuard::CODE,
+                'reason' => $guard['code'],
+                'error' => $guard['error'],
             ], 422);
         }
 
@@ -350,7 +682,7 @@ class MessageApiController extends Controller
             $filename = $this->headerFilename($mediaMetadata);
             $mediaMimeType = null;
 
-            if ($headerMediaId && !empty($instance->access_token)) {
+            if ($headerMediaId && ! empty($instance->access_token)) {
                 $mediaInfo = $this->metaService->downloadMedia($headerMediaId, $instance->access_token);
                 if ($mediaInfo) {
                     $mediaUrl = $mediaInfo['url'];
@@ -376,7 +708,7 @@ class MessageApiController extends Controller
                 'metadata' => [
                     'template' => $templateName,
                     'language' => $languageCode,
-                    'components' => $components
+                    'components' => $components,
                 ],
                 'incoming_invoice_id' => $request->incoming_invoice_id,
                 'incoming_contract_id' => $request->incoming_contract_id,
@@ -387,19 +719,19 @@ class MessageApiController extends Controller
 
             $conversation->update([
                 'last_message' => "[Plantilla: $templateName]",
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ]);
 
             return response()->json([
                 'success' => true,
                 'message_id' => $message->id,
-                'wamid' => $message->wamid
+                'wamid' => $message->wamid,
             ]);
         }
 
         return response()->json([
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar plantilla a Meta'
+            'error' => $result['error']['error']['message'] ?? 'Error al enviar plantilla a Meta',
         ], 500);
     }
 
@@ -410,14 +742,14 @@ class MessageApiController extends Controller
      */
     private function headerMediaId(?array $metadata): ?string
     {
-        if (!empty($metadata['header_media_id'])) {
+        if (! empty($metadata['header_media_id'])) {
             return (string) $metadata['header_media_id'];
         }
 
         foreach ($metadata['components'] ?? [] as $component) {
             foreach ($component['parameters'] ?? [] as $param) {
                 $mediaKey = $param['type'] ?? '';
-                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['id'])) {
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && ! empty($param[$mediaKey]['id'])) {
                     return (string) $param[$mediaKey]['id'];
                 }
             }
@@ -431,14 +763,14 @@ class MessageApiController extends Controller
      */
     private function headerFilename(?array $metadata): ?string
     {
-        if (!empty($metadata['filename'])) {
+        if (! empty($metadata['filename'])) {
             return (string) $metadata['filename'];
         }
 
         foreach ($metadata['components'] ?? [] as $component) {
             foreach ($component['parameters'] ?? [] as $param) {
                 $mediaKey = $param['type'] ?? '';
-                if (in_array($mediaKey, ['document', 'image', 'video'], true) && !empty($param[$mediaKey]['filename'])) {
+                if (in_array($mediaKey, ['document', 'image', 'video'], true) && ! empty($param[$mediaKey]['filename'])) {
                     return (string) $param[$mediaKey]['filename'];
                 }
             }
@@ -447,13 +779,52 @@ class MessageApiController extends Controller
         return null;
     }
 
+    /**
+     * Qué tiene que saber el ERP antes de enviar.
+     *
+     * Es la mitad «pull» del reparto acordado el 9-sep-2026: el alta de una
+     * línea la **empuja** el CRM al ERP —es un hecho que ocurre una vez—, pero
+     * la configuración el ERP la **pregunta**, porque cambia. Copiar la
+     * configuración a los dos lados es lo que hace que se desincronicen en
+     * silencio y que nadie sepa cuál manda.
+     *
+     * Se contesta a cualquier token válido de la empresa: la pregunta es «¿por
+     * cuál de mis líneas envío?», y para hacerla el ERP ya tuvo que elegir una
+     * para autenticarse. La respuesta puede ser otra distinta, y ése es el
+     * punto.
+     */
+    public function config(Request $request)
+    {
+        $instance = $this->validateInstance($request);
+        if ($instance instanceof JsonResponse) {
+            return $instance;
+        }
+        if (! $instance) {
+            return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
+        }
+
+        $company = $instance->company;
+        $linea = $company?->instanciaDelErp();
+
+        return response()->json([
+            'linea_envios' => $linea ? [
+                'phone_number_id' => $linea->phone_number_id,
+                'nombre' => $linea->name,
+                'numero' => $linea->display_phone_number,
+                // Para que el ERP pueda decir en su log si obedeció una
+                // elección o se quedó con la de por defecto.
+                'elegida' => $company->tieneLineaDelErpElegida(),
+            ] : null,
+        ]);
+    }
+
     public function registerMessage(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -500,7 +871,7 @@ class MessageApiController extends Controller
         $type = $request->type ?? 'text';
         $status = $request->status ?? 'sent';
         $direction = $request->direction ?? 'outbound';
-        $sentAt = $request->sent_at ? Carbon::parse($request->sent_at) : now();
+        $sentAt = $this->sentAtCreible($request->sent_at);
         $metadata = $request->metadata;
         $mediaUrl = $request->media_url;
         $filename = $request->filename;
@@ -511,7 +882,7 @@ class MessageApiController extends Controller
         // conoce el media_id que subió a Meta. Descargamos una copia a nuestro S3
         // para que el archivo quede visible/descargable en el chat. Si la descarga
         // falla igual guardamos el media_id: el chat lo reintenta al abrirlo.
-        if (!$mediaUrl && $mediaId && !empty($instance->access_token)) {
+        if (! $mediaUrl && $mediaId && ! empty($instance->access_token)) {
             $mediaInfo = $this->metaService->downloadMedia($mediaId, $instance->access_token);
             if ($mediaInfo) {
                 $mediaUrl = $mediaInfo['url'];
@@ -525,7 +896,7 @@ class MessageApiController extends Controller
         // además esconde el texto: los avisos de pago registrado llegaban con
         // aspecto de archivo roto. Si no hay nada que adjuntar, el mensaje vale
         // como texto y el agente lee la confirmación.
-        if (!$mediaUrl && !$mediaId && in_array($type, ['document', 'image', 'audio', 'video', 'sticker'], true)) {
+        if (! $mediaUrl && ! $mediaId && in_array($type, ['document', 'image', 'audio', 'video', 'sticker'], true)) {
             $type = 'text';
         }
 
@@ -537,7 +908,7 @@ class MessageApiController extends Controller
                 'phone_number' => $to,
                 'name' => $request->name ?? $to,
                 'status' => 'open',
-                'last_message_at' => $sentAt
+                'last_message_at' => $sentAt,
             ]
         );
 
@@ -563,35 +934,78 @@ class MessageApiController extends Controller
 
         $conversation->update([
             'last_message' => $content,
-            'last_message_at' => $sentAt
+            'last_message_at' => $sentAt,
         ]);
 
         return response()->json([
             'success' => true,
             'message_id' => $message->id,
-            'wamid' => $message->wamid
+            'wamid' => $message->wamid,
         ]);
+    }
+
+    /**
+     * La hora de envío que manda el sistema externo, si es que puede ser cierta.
+     *
+     * Un mensaje no puede haberse enviado después de que lo estamos registrando.
+     * El ERP viene mandando horas de dos a cuatro horas por delante —246 mensajes
+     * en dos días—, y como esa misma hora se copia a `last_message_at`, la lista
+     * de conversaciones enseñaba "12:36 a.m." en un chat cuyo último mensaje
+     * decía "09:01 p.m.": la misma burbuja con dos horas distintas.
+     *
+     * Se admite un minuto de margen porque dos relojes nunca van exactamente
+     * iguales, y ese desfase pequeño sí es hora legítima. Más allá, se descarta
+     * y se registra: el que hay que arreglar es el reloj del otro lado, y sin
+     * dejar rastro nadie se entera de que sigue mal.
+     */
+    private function sentAtCreible($valor): Carbon
+    {
+        if (! $valor) {
+            return now();
+        }
+
+        try {
+            $sentAt = Carbon::parse($valor);
+        } catch (\Throwable $e) {
+            Log::warning('sent_at no se pudo interpretar; se usa la hora del servidor', [
+                'sent_at' => $valor,
+            ]);
+
+            return now();
+        }
+
+        if ($sentAt->greaterThan(now()->addMinute())) {
+            Log::warning('sent_at venía en el futuro; se usa la hora del servidor', [
+                'sent_at' => $sentAt->toIso8601String(),
+                'ahora' => now()->toIso8601String(),
+                'adelanto_minutos' => round(now()->diffInMinutes($sentAt)),
+            ]);
+
+            return now();
+        }
+
+        return $sentAt;
     }
 
     public function getConversations(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
         $perPage = $request->query('per_page', 20);
-        
+
         $conversations = WhatsAppConversation::where('instance_id', $instance->id)
             ->orderBy('last_message_at', 'desc')
             ->paginate($perPage);
 
         $items = $conversations->items();
         // Ensure items are arrays for sanitization
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -602,18 +1016,18 @@ class MessageApiController extends Controller
                 'current_page' => $conversations->currentPage(),
                 'last_page' => $conversations->lastPage(),
                 'per_page' => $conversations->perPage(),
-                'total' => $conversations->total()
-            ]
+                'total' => $conversations->total(),
+            ],
         ]);
     }
 
     public function getMessages(Request $request, $conversationId)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -627,7 +1041,7 @@ class MessageApiController extends Controller
             ->paginate($perPage);
 
         $items = $messages->items();
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -638,18 +1052,18 @@ class MessageApiController extends Controller
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
                 'per_page' => $messages->perPage(),
-                'total' => $messages->total()
-            ]
+                'total' => $messages->total(),
+            ],
         ]);
     }
 
     public function getWhatsAppMessages(Request $request)
     {
         $instance = $this->validateInstance($request);
-        if ($instance instanceof \Illuminate\Http\JsonResponse) {
+        if ($instance instanceof JsonResponse) {
             return $instance;
         }
-        if (!$instance) {
+        if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
 
@@ -658,35 +1072,50 @@ class MessageApiController extends Controller
             'date_from' => 'required|date',
             'date_to' => 'required|date',
             'status' => 'nullable|string',
-            'per_page' => 'nullable|integer|min:1|max:500'
+            'per_page' => 'nullable|integer|min:1|max:500',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $query = WhatsAppMessage::query();
-        
+        // El NIT lo elige quien llama, así que por sí solo no acota nada: es una
+        // etiqueta que el ERP pone al registrar el mensaje, no una credencial.
+        // Consultando sólo por él, cualquiera con un token válido podía leer los
+        // mensajes de otra empresa pidiendo el NIT de esa otra empresa.
+        //
+        // Quien manda es la instancia del token: se acota por su empresa y el
+        // NIT queda como lo que siempre fue, un filtro dentro de lo tuyo.
+        $query = WhatsAppMessage::query()
+            ->join('whatsapp_conversations', 'whatsapp_conversations.id', '=', 'whatsapp_messages.conversation_id')
+            ->join('instances', 'instances.id', '=', 'whatsapp_conversations.instance_id')
+            ->where('instances.company_id', $instance->company_id)
+            ->select('whatsapp_messages.*');
+
         // Filter by company nit
-        $query->where('incoming_company_nit', $request->incoming_company_nit);
+        $query->where('whatsapp_messages.incoming_company_nit', $request->incoming_company_nit);
 
         // Filter by date range
         $dateFrom = Carbon::parse($request->date_from)->startOfDay();
         $dateTo = Carbon::parse($request->date_to)->endOfDay();
-        $query->whereBetween('created_at', [$dateFrom, $dateTo]);
+        $query->whereBetween('whatsapp_messages.created_at', [$dateFrom, $dateTo]);
 
         // Filter by status if provided
-        if ($request->has('status') && !empty($request->status)) {
+        //
+        // Cualificado con la tabla: `whatsapp_conversations` también tiene
+        // `status` y `created_at`, y sin el prefijo MySQL rechaza la consulta
+        // por ambigua desde que hay join.
+        if ($request->has('status') && ! empty($request->status)) {
             $statuses = array_map('trim', explode(',', $request->status));
-            $query->whereIn('status', $statuses);
+            $query->whereIn('whatsapp_messages.status', $statuses);
         }
 
         // Pagination
         $perPage = $request->query('per_page', 100);
-        $messages = $query->orderBy('created_at', 'desc')->paginate($perPage);
+        $messages = $query->orderBy('whatsapp_messages.created_at', 'desc')->paginate($perPage);
 
         $items = $messages->items();
-        $data = array_map(function($item) {
+        $data = array_map(function ($item) {
             return $item->toArray();
         }, $items);
 
@@ -697,15 +1126,15 @@ class MessageApiController extends Controller
                 'current_page' => $messages->currentPage(),
                 'last_page' => $messages->lastPage(),
                 'per_page' => $messages->perPage(),
-                'total' => $messages->total()
-            ]
+                'total' => $messages->total(),
+            ],
         ]);
     }
 
     /**
      * Recursively sanitize array data to ensure valid UTF-8.
      *
-     * @param mixed $input
+     * @param  mixed  $input
      * @return mixed
      */
     private function sanitizeUtf8($input)
@@ -718,6 +1147,7 @@ class MessageApiController extends Controller
             }
             unset($value);
         }
+
         return $input;
     }
 
@@ -752,17 +1182,17 @@ class MessageApiController extends Controller
             $fallback['components']
         );
 
-        if (!$guard['ok']) {
+        if (! $guard['ok']) {
             Log::channel('whatsapp')->error('❌ La plantilla de respaldo no cuadra con su definición en Meta', [
-                'company_id'  => $instance->company_id,
-                'template'    => $fallback['name'],
+                'company_id' => $instance->company_id,
+                'template' => $fallback['name'],
                 'guard_error' => $guard['error'],
             ]);
 
             return response()->json([
                 'success' => false,
-                'code'    => 'fallback_template_failed',
-                'error'   => $guard['error'],
+                'code' => 'fallback_template_failed',
+                'error' => $guard['error'],
             ], 500);
         }
 
@@ -774,7 +1204,7 @@ class MessageApiController extends Controller
             $guard['components']
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->error('❌ Falló el envío de la plantilla de respaldo', [
                 'company_id' => $instance->company_id,
                 'conversation_id' => $conversation->id,
@@ -839,17 +1269,12 @@ class MessageApiController extends Controller
     private function fallbackHint(?array $fallback): string
     {
         return match ($fallback['status'] ?? null) {
-            WhatsAppFallbackTemplateService::STATUS_PENDING =>
-                'La plantilla de respaldo de esta línea ya está creada y espera aprobación de Meta; '
-                . 'en cuanto se apruebe, estos avisos saldrán solos como plantilla.',
-            WhatsAppFallbackTemplateService::STATUS_REJECTED =>
-                'Meta rechazó la plantilla de respaldo de esta línea: revísala en Ajustes > WhatsApp.',
-            WhatsAppFallbackTemplateService::STATUS_DISABLED =>
-                'El respaldo automático está desactivado para esta línea.',
-            WhatsAppFallbackTemplateService::STATUS_UNAVAILABLE =>
-                'No se pudo comprobar la plantilla de respaldo con Meta.',
-            default =>
-                'Esta línea todavía no tiene una plantilla de respaldo aprobada.',
+            WhatsAppFallbackTemplateService::STATUS_PENDING => 'La plantilla de respaldo de esta línea ya está creada y espera aprobación de Meta; '
+                .'en cuanto se apruebe, estos avisos saldrán solos como plantilla.',
+            WhatsAppFallbackTemplateService::STATUS_REJECTED => 'Meta rechazó la plantilla de respaldo de esta línea: revísala en Ajustes > WhatsApp.',
+            WhatsAppFallbackTemplateService::STATUS_DISABLED => 'El respaldo automático está desactivado para esta línea.',
+            WhatsAppFallbackTemplateService::STATUS_UNAVAILABLE => 'No se pudo comprobar la plantilla de respaldo con Meta.',
+            default => 'Esta línea todavía no tiene una plantilla de respaldo aprobada.',
         };
     }
 

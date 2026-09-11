@@ -145,16 +145,53 @@ class CompanyIntegration extends Model
      */
     public function client(): ?IntegraClient
     {
-        if (empty($this->base_url) || empty($this->access_token)) {
+        $token = $this->tokenLegible();
+
+        if (empty($this->base_url) || $token === null || $token === '') {
             return null;
         }
 
-        return new IntegraClient($this->base_url, $this->access_token);
+        return new IntegraClient($this->base_url, $token);
     }
 
     public function isConnected(): bool
     {
-        return $this->status === 'connected' && ! empty($this->access_token);
+        $token = $this->tokenLegible();
+
+        return $this->status === 'connected' && $token !== null && $token !== '';
+    }
+
+    /**
+     * El token descifrado, o null si esta fila ya no se puede leer.
+     *
+     * El cast `encrypted` lanza `DecryptException` cuando la fila se cifró con
+     * otra `APP_KEY` —pasó el 10-sep-2026: veintiún filas quedaron ilegibles al
+     * cambiar el entorno del contenedor—, y esa excepción salía **desde
+     * `isConnected()`**, que se llama al pintar el listado. Una sola fila mala
+     * tumbaba la pantalla entera de Complementos con «Server Error», sin decir
+     * de qué empresa ni de qué integración.
+     *
+     * Un token que no se puede descifrar no sirve para nada, así que aquí vale
+     * exactamente lo mismo que no tener token: la integración sale como
+     * desconectada y se puede volver a conectar, que es lo único que la arregla.
+     */
+    public function tokenLegible(): ?string
+    {
+        try {
+            return $this->access_token;
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Hay credencial guardada pero no se puede leer: es distinto de no tener
+     * ninguna, y la pantalla lo dice con esas palabras en vez de dejar al
+     * cliente pulsando «Verificar» contra algo que nunca va a funcionar.
+     */
+    public function tokenIlegible(): bool
+    {
+        return ! empty($this->getRawOriginal('access_token')) && $this->tokenLegible() === null;
     }
 
     public function tokenExpired(): bool

@@ -10,7 +10,6 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Support\MensajeNoEntregado;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -39,12 +38,12 @@ class CoexistenceIngestService
      * guarda como leída, que es lo que significa para quien mira el chat.
      */
     private const ESTADOS = [
-        'READ'      => 'read',
-        'PLAYED'    => 'read',
+        'READ' => 'read',
+        'PLAYED' => 'read',
         'DELIVERED' => 'delivered',
-        'SENT'      => 'sent',
-        'PENDING'   => 'pending',
-        'ERROR'     => 'failed',
+        'SENT' => 'sent',
+        'PENDING' => 'pending',
+        'ERROR' => 'failed',
     ];
 
     // ---------------------------------------------------------------- history
@@ -62,8 +61,9 @@ class CoexistenceIngestService
         // Los adjuntos de los mensajes multimedia no vienen en el hilo: llegan
         // en un webhook `history` aparte que sí usa la forma normal
         // (`value.messages[]`) y que completa un mensaje ya guardado.
-        if (!empty($value['messages'])) {
+        if (! empty($value['messages'])) {
             $this->completarMultimedia($value['messages']);
+
             return;
         }
 
@@ -74,20 +74,20 @@ class CoexistenceIngestService
         foreach ($value['history'] ?? [] as $lote) {
             // El cliente eligió no compartir sus chats. No es un fallo nuestro
             // ni de Meta: es una decisión suya, y la pantalla debe decirlo así.
-            if (!empty($lote['errors'])) {
+            if (! empty($lote['errors'])) {
                 $error = $lote['errors'][0];
                 $sync->update([
-                    'status'        => (string) ($error['code'] ?? '') === CoexistenceSync::ERROR_SIN_HISTORIAL
+                    'status' => (string) ($error['code'] ?? '') === CoexistenceSync::ERROR_SIN_HISTORIAL
                         ? CoexistenceSync::RECHAZADA
                         : CoexistenceSync::FALLIDA,
-                    'error_code'    => (string) ($error['code'] ?? ''),
+                    'error_code' => (string) ($error['code'] ?? ''),
                     'error_message' => $error['title'] ?? $error['message'] ?? null,
-                    'completed_at'  => now(),
+                    'completed_at' => now(),
                 ]);
 
                 Log::channel('whatsapp')->info('📭 Historial no compartido por el negocio', [
                     'instance_id' => $instance->id,
-                    'code'        => $error['code'] ?? null,
+                    'code' => $error['code'] ?? null,
                 ]);
 
                 $this->emitir($sync);
@@ -120,8 +120,8 @@ class CoexistenceIngestService
 
         $conversacion = WhatsAppConversation::resolveFor($instance->id, $waId, [
             'phone_number' => $waId,
-            'name'         => $waId,
-            'status'       => 'open',
+            'name' => $waId,
+            'status' => 'open',
         ]);
 
         $nuevos = 0;
@@ -158,7 +158,7 @@ class CoexistenceIngestService
             || $ultimo->sent_at?->gt($conversacion->last_message_at)
         )) {
             $conversacion->update([
-                'last_message'    => $ultimo->metadata['resumen'] ?? $ultimo->content ?: 'Archivo adjunto',
+                'last_message' => $ultimo->metadata['resumen'] ?? $ultimo->content ?: 'Archivo adjunto',
                 'last_message_at' => $ultimo->sent_at,
             ]);
         }
@@ -179,7 +179,7 @@ class CoexistenceIngestService
      */
     public function sincronizarContactos(Instance $instance, array $value): void
     {
-        $sync   = $this->sync($instance);
+        $sync = $this->sync($instance);
         $nuevos = 0;
 
         foreach ($value['state_sync'] ?? [] as $cambio) {
@@ -200,8 +200,9 @@ class CoexistenceIngestService
             if (($cambio['action'] ?? 'add') === 'remove') {
                 Log::channel('whatsapp')->info('👤 Contacto eliminado en el celular (no se borra del CRM)', [
                     'instance_id' => $instance->id,
-                    'phone'       => $telefono,
+                    'phone' => $telefono,
                 ]);
+
                 continue;
             }
 
@@ -212,17 +213,18 @@ class CoexistenceIngestService
             $contacto = Contact::where('company_id', $instance->company_id)
                 ->where(function ($q) use ($telefono) {
                     $q->where('phone_number', $telefono)
-                      ->orWhere('phone_numbers', 'like', '%"' . $telefono . '"%');
+                        ->orWhere('phone_numbers', 'like', '%"'.$telefono.'"%');
                 })
                 ->first();
 
-            if (!$contacto) {
+            if (! $contacto) {
                 Contact::create([
-                    'company_id'   => $instance->company_id,
+                    'company_id' => $instance->company_id,
                     'phone_number' => $telefono,
-                    'name'         => $nombre,
+                    'name' => $nombre,
                 ]);
                 $nuevos++;
+
                 continue;
             }
 
@@ -269,8 +271,8 @@ class CoexistenceIngestService
 
             $conversacion = WhatsAppConversation::resolveFor($instance->id, $waId, [
                 'phone_number' => $waId,
-                'name'         => $waId,
-                'status'       => 'open',
+                'name' => $waId,
+                'status' => 'open',
             ]);
 
             $guardado = $this->guardarMensaje($conversacion, $eco, $telefonoNegocio, 'SENT');
@@ -280,7 +282,7 @@ class CoexistenceIngestService
             }
 
             $conversacion->update([
-                'last_message'    => $guardado->metadata['resumen'] ?? $guardado->content ?: 'Archivo adjunto',
+                'last_message' => $guardado->metadata['resumen'] ?? $guardado->content ?: 'Archivo adjunto',
                 'last_message_at' => $guardado->sent_at ?? now(),
             ]);
 
@@ -303,11 +305,11 @@ class CoexistenceIngestService
     ): ?WhatsAppMessage {
         $wamid = $mensaje['id'] ?? null;
 
-        if (!$wamid) {
+        if (! $wamid) {
             return null;
         }
 
-        $de       = WhatsAppConversation::normalizePhone($mensaje['from'] ?? '');
+        $de = WhatsAppConversation::normalizePhone($mensaje['from'] ?? '');
         // `from_me` es lo que manda el volcado; `from` sólo aparece en algunos
         // lotes y en los ecos. Se miran los dos, en ese orden.
         $saliente = $mensaje['history_context']['from_me']
@@ -318,6 +320,7 @@ class CoexistenceIngestService
         // que es mejor que dejar un "Mensaje no compatible" suelto en el hilo.
         if (($mensaje['type'] ?? null) === 'reaction') {
             $this->aplicarReaccion($conversacion, $mensaje);
+
             return null;
         }
 
@@ -325,11 +328,18 @@ class CoexistenceIngestService
 
         $datos = array_merge($contenido, [
             'conversation_id' => $conversacion->id,
-            'wamid'           => $wamid,
-            'direction'       => $saliente ? 'outbound' : 'inbound',
-            'status'          => self::ESTADOS[strtoupper((string) $estadoMeta)] ?? 'delivered',
-            'sent_at'         => isset($mensaje['timestamp'])
-                ? Carbon::createFromTimestamp((int) $mensaje['timestamp'])
+            'wamid' => $wamid,
+            'direction' => $saliente ? 'outbound' : 'inbound',
+            'status' => self::ESTADOS[strtoupper((string) $estadoMeta)] ?? 'delivered',
+            // La zona va explícita. `createFromTimestamp` sin ella devuelve el
+            // Carbon en UTC, y la columna se escribe tal cual: cada eco del
+            // celular quedaba cinco horas por delante de su propio `created_at`.
+            // Como este `sent_at` se copia luego a `last_message_at`, la lista
+            // de conversaciones enseñaba una hora futura y colaba ese chat
+            // arriba del todo. Mismo arreglo que ya lleva el webhook de
+            // entrantes en WhatsAppWebhookController.
+            'sent_at' => isset($mensaje['timestamp'])
+                ? Carbon::createFromTimestamp((int) $mensaje['timestamp'], config('app.timezone'))
                 : now(),
         ]);
 
@@ -357,37 +367,37 @@ class CoexistenceIngestService
 
         return match ($tipo) {
             'text' => [
-                'type'    => 'text',
+                'type' => 'text',
                 'content' => $mensaje['text']['body'] ?? '',
             ],
 
             'image', 'video', 'audio', 'document', 'sticker' => [
-                'type'            => $tipo,
-                'content'         => $mensaje[$tipo]['caption'] ?? null,
-                'media_id'        => $mensaje[$tipo]['id'] ?? null,
-                'media_url'       => $mensaje[$tipo]['url'] ?? null,
+                'type' => $tipo,
+                'content' => $mensaje[$tipo]['caption'] ?? null,
+                'media_id' => $mensaje[$tipo]['id'] ?? null,
+                'media_url' => $mensaje[$tipo]['url'] ?? null,
                 'media_mime_type' => $mensaje[$tipo]['mime_type'] ?? null,
-                'filename'        => $mensaje[$tipo]['filename'] ?? null,
+                'filename' => $mensaje[$tipo]['filename'] ?? null,
             ],
 
             // El contenido real llega en un webhook posterior, y sólo para los
             // mensajes de las dos últimas semanas. Hasta entonces el chat
             // muestra que hubo un archivo, en vez de un hueco.
             'media_placeholder' => [
-                'type'     => 'media_placeholder',
-                'content'  => 'Archivo adjunto',
+                'type' => 'media_placeholder',
+                'content' => 'Archivo adjunto',
                 'metadata' => ['pendiente_de_media' => true],
             ],
 
             'location' => [
-                'type'     => 'location',
-                'content'  => $mensaje['location']['name'] ?? 'Ubicación',
+                'type' => 'location',
+                'content' => $mensaje['location']['name'] ?? 'Ubicación',
                 'metadata' => ['location' => $mensaje['location'] ?? []],
             ],
 
             'contacts' => [
-                'type'     => 'contacts',
-                'content'  => 'Contacto compartido',
+                'type' => 'contacts',
+                'content' => 'Contacto compartido',
                 'metadata' => ['contacts' => $mensaje['contacts'] ?? []],
             ],
 
@@ -395,23 +405,23 @@ class CoexistenceIngestService
             // payload: guardarlo como "no compatible" era tirar a la basura lo
             // que el cliente contestó ("Aceptar", "Cancelar"…).
             'button' => [
-                'type'     => 'text',
-                'content'  => $mensaje['button']['text'] ?? $mensaje['button']['payload'] ?? 'Botón',
+                'type' => 'text',
+                'content' => $mensaje['button']['text'] ?? $mensaje['button']['payload'] ?? 'Botón',
                 'metadata' => ['button' => $mensaje['button'] ?? []],
             ],
 
             'interactive' => [
-                'type'     => 'text',
-                'content'  => $mensaje['interactive']['button_reply']['title']
+                'type' => 'text',
+                'content' => $mensaje['interactive']['button_reply']['title']
                     ?? $mensaje['interactive']['list_reply']['title']
                     ?? 'Respuesta interactiva',
                 'metadata' => ['interactive' => $mensaje['interactive'] ?? []],
             ],
 
             'order' => [
-                'type'     => 'text',
-                'content'  => trim('🛒 Pedido con ' . count($mensaje['order']['product_items'] ?? []) . ' producto(s)'
-                    . (!empty($mensaje['order']['text']) ? ": {$mensaje['order']['text']}" : '')),
+                'type' => 'text',
+                'content' => trim('🛒 Pedido con '.count($mensaje['order']['product_items'] ?? []).' producto(s)'
+                    .(! empty($mensaje['order']['text']) ? ": {$mensaje['order']['text']}" : '')),
                 'metadata' => ['order' => $mensaje['order'] ?? []],
             ],
 
@@ -433,9 +443,9 @@ class CoexistenceIngestService
     private function aplicarReaccion(WhatsAppConversation $conversacion, array $mensaje): void
     {
         $destino = $mensaje['reaction']['message_id'] ?? null;
-        $emoji   = $mensaje['reaction']['emoji'] ?? null;
+        $emoji = $mensaje['reaction']['emoji'] ?? null;
 
-        if (!$destino) {
+        if (! $destino) {
             return;
         }
 
@@ -443,7 +453,7 @@ class CoexistenceIngestService
             ->where('conversation_id', $conversacion->id)
             ->first();
 
-        if (!$original) {
+        if (! $original) {
             return;
         }
 
@@ -470,7 +480,7 @@ class CoexistenceIngestService
         foreach ($mensajes as $mensaje) {
             $wamid = $mensaje['id'] ?? null;
 
-            if (!$wamid) {
+            if (! $wamid) {
                 continue;
             }
 
@@ -478,7 +488,7 @@ class CoexistenceIngestService
                 ->where('type', 'media_placeholder')
                 ->first();
 
-            if (!$existente) {
+            if (! $existente) {
                 continue;
             }
 
@@ -513,26 +523,50 @@ class CoexistenceIngestService
      */
     private function avanzar(CoexistenceSync $sync, array $meta): void
     {
-        $fase     = (int) ($meta['phase'] ?? $sync->phase);
-        $progreso = (int) ($meta['progress'] ?? 0);
+        $fase = (int) ($meta['phase'] ?? $sync->phase);
 
-        $cambios = ['status' => CoexistenceSync::IMPORTANDO];
+        // Ausente no es cero. Un lote sin `progress` no dice «vamos por 0%»,
+        // dice que no trae el dato: tomarlo por cero es lo que dejaba la
+        // importación de Transintermet en fase 2 al 100 pero con el estado
+        // todavía en «importando» (9-sep-2026).
+        $progreso = array_key_exists('progress', $meta) ? (int) $meta['progress'] : null;
+
+        // `last_chunk_at` se escribe en cada lote, aunque no cambie ni la fase
+        // ni el progreso: es lo que permite distinguir después una importación
+        // que sigue viva de una que se quedó muda a mitad.
+        $cambios = ['last_chunk_at' => now()];
 
         if ($sync->first_chunk_at === null) {
             $cambios['first_chunk_at'] = now();
         }
 
         if ($fase > $sync->phase) {
-            $cambios['phase']    = $fase;
-            $cambios['progress'] = $progreso;
-        } elseif ($fase === $sync->phase && $progreso > $sync->progress) {
+            $cambios['phase'] = $fase;
+            // Fase nueva, cuenta nueva: aquí la ausencia sí es empezar de cero.
+            $cambios['progress'] = $progreso ?? 0;
+        } elseif ($fase === $sync->phase && $progreso !== null && $progreso > $sync->progress) {
             $cambios['progress'] = $progreso;
         }
 
-        // Fase 2 al 100 es el final del historial: no llegan más lotes.
-        if ($fase >= 2 && $progreso >= 100) {
-            $cambios['status']       = CoexistenceSync::COMPLETADA;
-            $cambios['completed_at'] = now();
+        // El estado se decide sobre el resultado acumulado, no sobre el lote que
+        // acaba de llegar. Los lotes vienen desordenados —para eso existe
+        // `chunk_order`— y decidiéndolo con el lote suelto, uno rezagado
+        // reabría una importación que ya había terminado.
+        $faseFinal = $cambios['phase'] ?? $sync->phase;
+        $progresoFinal = $cambios['progress'] ?? $sync->progress;
+
+        if ($faseFinal >= 2 && $progresoFinal >= 100) {
+            // Sin volver a escribir `completed_at`: la importación terminó
+            // cuando terminó, no cada vez que llega un rezagado.
+            if ($sync->status !== CoexistenceSync::COMPLETADA) {
+                $cambios['status'] = CoexistenceSync::COMPLETADA;
+                $cambios['completed_at'] = now();
+            }
+        } elseif (! $sync->terminada()) {
+            // Sólo se marca «importando» lo que no estaba ya cerrado: quien
+            // eligió no compartir su historial no vuelve a estar importando
+            // porque llegue un lote suelto.
+            $cambios['status'] = CoexistenceSync::IMPORTANDO;
         }
 
         $sync->update($cambios);
@@ -554,7 +588,7 @@ class CoexistenceIngestService
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('📡 No se pudo emitir el progreso de coexistencia', [
                 'instance_id' => $sync->instance_id,
-                'error'       => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }

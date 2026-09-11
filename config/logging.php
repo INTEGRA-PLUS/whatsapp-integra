@@ -127,6 +127,17 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        // Canal propio, como el de WhatsApp: los payloads de Instagram traen
+        // conversaciones de clientes finales y mezclarlos con laravel.log —que
+        // no rota y ya acumula ~100 MB— hace imposible diagnosticar nada.
+        'instagram' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/instagram.log'),
+            'level' => 'debug',
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'whatsapp' => [
             'driver' => 'daily',
             'path' => storage_path('logs/whatsapp.log'),
