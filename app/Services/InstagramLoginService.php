@@ -43,6 +43,13 @@ class InstagramLoginService
      * abierta en el navegador. Es lo que se quiere aquí: el asesor que conecta
      * la cuenta de su empresa puede estar en un equipo compartido, y sin esto
      * conectaría sin querer la cuenta de quien se dejó la sesión abierta.
+     *
+     * `enable_fb_login=false` quita el botón de «continuar con Facebook», y no
+     * es una preferencia estética: si el cliente entra por ahí, el token que
+     * sale **no es de la plataforma Instagram** y TODAS las llamadas a
+     * `graph.instagram.com` —`/me` incluido— fallan con «Unsupported request -
+     * method type: get», que no menciona nada de esto. Costó cuatro intentos
+     * descubrirlo (11-sep-2026).
      */
     public function urlDeAutorizacion(string $estado): string
     {
@@ -52,6 +59,7 @@ class InstagramLoginService
             'response_type' => 'code',
             'scope' => implode(',', self::PERMISOS),
             'force_reauth' => 'true',
+            'enable_fb_login' => 'false',
             'state' => $estado,
         ]);
     }
@@ -193,7 +201,8 @@ class InstagramLoginService
         ]);
 
         if ($respuesta->failed() || ! $respuesta->json('username')) {
-            $this->registrarFallo('leer el perfil', $respuesta->json());
+            $this->registrarFallo('leer el perfil', $respuesta->json(), $respuesta, $token);
+            $this->avisarSiElTokenEsDeFacebook($token);
 
             return null;
         }
@@ -203,6 +212,31 @@ class InstagramLoginService
             'username' => (string) $respuesta->json('username'),
             'profile_picture_url' => $respuesta->json('profile_picture_url'),
         ];
+    }
+
+    /**
+     * Distingue el fallo que más despista: un token de Facebook usado contra
+     * Instagram.
+     *
+     * Los dos mundos devuelven «Unsupported request» sin decir por qué, así que
+     * se prueba el mismo token contra Graph de Facebook: si allí SÍ funciona, el
+     * cliente autorizó con «continuar con Facebook» en vez de con las
+     * credenciales de Instagram, y eso se dice con esas palabras en vez de
+     * dejarlo en un error genérico.
+     */
+    private function avisarSiElTokenEsDeFacebook(string $token): void
+    {
+        $prueba = Http::get('https://graph.facebook.com/v21.0/me', [
+            'fields' => 'id',
+            'access_token' => $token,
+        ]);
+
+        if ($prueba->successful()) {
+            Log::channel('instagram')->error(
+                '❌ El token es de Facebook, no de Instagram: se autorizó con «continuar con Facebook». '
+                .'Hay que entrar con el usuario y la contraseña de la cuenta profesional de Instagram.'
+            );
+        }
     }
 
     public function estaConfigurado(): bool
