@@ -462,15 +462,34 @@ const LazyDropdown = memo(function LazyDropdown({ renderTrigger, contentClassNam
     );
 });
 
+// ─── Borde de "esperando respuesta" ─────────────────────────────────────────
+// Un chat abierto cuyo último mensaje es del cliente (`awaiting_reply`, lo marca
+// el backend) va cambiando de color según cuánto lleve esperando. El umbral base
+// lo fija la empresa en la extensión "Seguimiento de conversaciones sin
+// respuesta" (o 30 min por defecto): ámbar al pasarlo, rojo al doble. Es el mismo
+// número que dispara la campana, así el color y el aviso cuentan lo mismo.
+function followUpTier(conv, umbral) {
+    if (!conv?.awaiting_reply || !conv?.last_message_at || !umbral) return null;
+    const mins = (Date.now() - new Date(conv.last_message_at).getTime()) / 60000;
+    if (mins >= umbral * 2) return 'urgent';
+    if (mins >= umbral) return 'warn';
+    return null;
+}
+
+const FOLLOW_UP_BORDER = {
+    warn: 'border-l-warning',
+    urgent: 'border-l-destructive',
+};
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
-    conv, 
-    isActive, 
-    onSelect, 
-    onAttachTag, 
-    onDetachTag, 
-    onNewTag, 
+    conv,
+    isActive,
+    onSelect,
+    onAttachTag,
+    onDetachTag,
+    onNewTag,
     onAssign,
     tags,
     companyUsers,
@@ -479,12 +498,17 @@ const ConversationItem = memo(({
     selectionMode,
     selected,
     onToggleSelect,
+    tier,
 }) => {
     return (
         <div
             onClick={() => selectionMode ? onToggleSelect(conv.id) : onSelect(conv)}
+            title={tier ? 'El cliente lleva un rato esperando respuesta' : undefined}
             className={clsx(
-                "flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-all border-b border-border/5 group/conv",
+                // El borde izquierdo se reserva siempre transparente para que la
+                // fila no se desplace 3px cuando aparece el color.
+                "flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-all border-b border-border/5 border-l-[3px] border-l-transparent group/conv",
+                tier && FOLLOW_UP_BORDER[tier],
                 selected ? 'bg-primary/15 dark:bg-primary/30' : isActive ? 'bg-[#f0f2f5] dark:bg-[#2a3942]' : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]'
             )}
         >
@@ -693,7 +717,18 @@ const ConversationList = memo(function ConversationList({
     selectionMode,
     selectedIds,
     onToggleSelect,
+    umbral,
 }) {
+    // El borde de "esperando respuesta" avanza con el reloj, así que la lista
+    // se recalcula cada 30s aunque no llegue ningún mensaje. Es barato: sólo
+    // vuelven a renderizarse los items cuyo tramo (primitivo) cambió, porque
+    // ConversationItem está memoizado por sus props.
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const id = setInterval(() => setTick(t => t + 1), 30000);
+        return () => clearInterval(id);
+    }, []);
+
     return conversations.map(conv => (
         <div key={conv.id} style={LIST_ITEM_STYLE}>
             <ConversationItem
@@ -712,6 +747,7 @@ const ConversationList = memo(function ConversationList({
                 selectionMode={selectionMode}
                 selected={selectionMode && selectedIds.has(conv.id)}
                 onToggleSelect={onToggleSelect}
+                tier={followUpTier(conv, umbral)}
             />
         </div>
     ));
@@ -1283,7 +1319,7 @@ function PaymentModal({ integration, conversation, onClose }) {
     );
 }
 
-export default function ChatIndex({ instances, integrations = [] }) {
+export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30 }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -4429,6 +4465,7 @@ export default function ChatIndex({ instances, integrations = [] }) {
                                     selectionMode={selectionMode}
                                     selectedIds={selectedIds}
                                     onToggleSelect={toggleSelect}
+                                    umbral={umbral_seguimiento}
                                 />
 
                                 {/* Sentinel for Infinite Scroll — solo cuando hay más por cargar */}

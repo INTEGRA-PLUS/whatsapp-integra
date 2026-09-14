@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\ConversationEvent;
 use App\Events\WhatsAppMessageEvent;
 use App\Jobs\DeliverWhatsAppMessage;
+use App\Models\CompanyExtension;
 use App\Models\CompanyIntegration;
 use App\Models\ConversationDeletionRequest;
 use App\Models\Instance;
@@ -58,7 +59,33 @@ class ChatController extends Controller
         return Inertia::render('Chat/Index', [
             'instances' => $instances,
             'integrations' => $this->activeChatIntegrations($user->company_id),
+            // Umbral (minutos) del borde de "esperando respuesta" en la lista. Es
+            // el mismo número que la empresa configura en la extensión de
+            // seguimiento, para que el color y el aviso de la campana cuenten lo
+            // mismo. Sin la extensión instalada o encendida, 30 por defecto.
+            'umbral_seguimiento' => $this->umbralSeguimiento($user->company_id),
         ]);
+    }
+
+    /**
+     * Minutos que un cliente puede esperar antes de que su chat se marque en la
+     * lista. Sale del ajuste de la extensión de seguimiento si está encendida;
+     * si no, del mismo valor de fábrica que usa la extensión (30).
+     */
+    private function umbralSeguimiento(?int $companyId): int
+    {
+        if (! $companyId) {
+            return 30;
+        }
+
+        $followUp = CompanyExtension::where('company_id', $companyId)
+            ->where('slug', 'follow_up')
+            ->where('enabled', true)
+            ->first();
+
+        return $followUp
+            ? (int) ($followUp->settings()['minutes'] ?? 30)
+            : 30;
     }
 
     /**
@@ -196,6 +223,36 @@ class ChatController extends Controller
             ->paginate(50);
 
         $carga = $this->sanitizeUtf8($conversations->toArray());
+
+        // Marca "esperando respuesta" para el borde de la lista, con la misma
+        // definición que la carpeta "Desatendidas": abierta y con el último
+        // mensaje real (no interno) entrante. Se resuelve en UNA consulta sobre
+        // los ids de la página, no fila a fila.
+        //
+        // Aislamiento: los ids vienen de conversaciones ya acotadas a la
+        // instancia (validada contra la empresa arriba). La tabla de mensajes no
+        // tiene company_id y aquí hereda ese filtro por conversation_id.
+        $idsPagina = collect($carga['data'] ?? [])->pluck('id')->filter()->all();
+
+        if ($idsPagina) {
+            $ultimaDireccion = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
+                ->where('is_internal', false)
+                ->whereIn('id', function ($sub) use ($idsPagina) {
+                    $sub->selectRaw('max(id)')
+                        ->from('whatsapp_messages')
+                        ->where('is_internal', false)
+                        ->whereIn('conversation_id', $idsPagina)
+                        ->groupBy('conversation_id');
+                })
+                ->pluck('direction', 'conversation_id');
+
+            $carga['data'] = collect($carga['data'])->map(function ($fila) use ($ultimaDireccion) {
+                $fila['awaiting_reply'] = ($fila['status'] ?? null) === 'open'
+                    && ($ultimaDireccion[$fila['id']] ?? null) === 'inbound';
+
+                return $fila;
+            })->all();
+        }
 
         // Cuántas encaja la búsqueda si se ignora el estado.
         //
