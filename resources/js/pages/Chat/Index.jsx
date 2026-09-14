@@ -2413,7 +2413,17 @@ export default function ChatIndex({ instances, integrations = [] }) {
             // (deduplicando por id y reconciliando la burbuja optimista por wamid).
             if (selectedConversationRef.current?.id === e.conversation_id) {
                 setMessages(prev => {
-                    if (prev.some(m => m.id === e.message.id)) return prev;
+                    // Un id que ya está en pantalla se PARCHEA, no se descarta.
+                    // Descartarlo dejaba el reloj de "enviando" girando para
+                    // siempre en Instagram: el POST ya deja la burbuja con su id
+                    // real y status "pending", y este evento —emitido por
+                    // DeliverWhatsAppMessage al marcarla "sent"— era el único
+                    // aviso de que ya había salido. En WhatsApp no se veía porque
+                    // el webhook de `statuses` llegaba después y parcheaba; en
+                    // Instagram no existe ese webhook. 14-sep-2026.
+                    if (prev.some(m => m.id === e.message.id)) {
+                        return prev.map(m => (m.id === e.message.id ? { ...m, ...e.message } : m));
+                    }
                     const optimisticIdx = e.message.wamid
                         ? prev.findIndex(m => typeof m.id === 'string' && String(m.id).startsWith('temp-') && m.wamid === e.message.wamid)
                         : -1;
