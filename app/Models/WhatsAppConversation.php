@@ -31,6 +31,12 @@ class WhatsAppConversation extends Model
         'closed_at',
         'unread_count',
         'metadata',
+        'sentiment_level',
+        'sentiment_score',
+        'sentiment_reason',
+        'sentiment_source',
+        'sentiment_at',
+        'sentiment_locked_by',
     ];
 
     protected $casts = [
@@ -38,6 +44,11 @@ class WhatsAppConversation extends Model
         'closed_at' => 'datetime',
         'opt_out_requested_at' => 'datetime',
         'metadata' => 'array',
+        'sentiment_at' => 'datetime',
+        // float y no decimal: el modelo lo compara y lo suaviza en memoria
+        // (Semaforo::suavizar), y un string de MySQL en esa aritmética acaba en
+        // comparaciones que no significan lo que parecen.
+        'sentiment_score' => 'float',
     ];
 
     protected $appends = ['initials'];

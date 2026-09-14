@@ -481,6 +481,24 @@ const FOLLOW_UP_BORDER = {
     urgent: 'border-l-destructive',
 };
 
+// ─── Semáforo de emociones ──────────────────────────────────────────────────
+// Lo escribe la extensión "Semáforo de emociones" en la propia conversación
+// (`sentiment_level`), así que llega sola por los tres caminos: la lista, el poll
+// y el evento de Reverb. Un campo derivado no lo haría —`awaiting_reply` se
+// calcula en el controlador y se pierde en cada evento en vivo—.
+//
+// Va junto al nombre y NO en el borde izquierdo: ése ya es del "esperando
+// respuesta", y los dos se taparían justo cuando ambos tienen algo que decir —un
+// cliente enfadado que además lleva esperando—.
+//
+// Sin extensión instalada la columna es null y no se pinta nada. Un punto gris en
+// cada fila sería ruido permanente para quien no usa esto.
+const SENTIMENT_DOT = {
+    verde: { clase: 'bg-emerald-500', label: 'Tranquilo' },
+    amarillo: { clase: 'bg-amber-500', label: 'Con fricción' },
+    rojo: { clase: 'bg-red-500 ring-2 ring-red-500/25', label: 'Molesto' },
+};
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
@@ -533,6 +551,15 @@ const ConversationItem = memo(({
             <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {SENTIMENT_DOT[conv.sentiment_level] && (
+                            <span
+                                // El título lleva la palabra además del color: un
+                                // punto rojo no le dice nada a quien no distingue
+                                // el rojo del verde, que es bastante gente.
+                                title={`${SENTIMENT_DOT[conv.sentiment_level].label}${conv.sentiment_reason ? ` — ${conv.sentiment_reason}` : ''}`}
+                                className={clsx('shrink-0 size-2 rounded-full', SENTIMENT_DOT[conv.sentiment_level].clase)}
+                            />
+                        )}
                         {conv.status === 'closed' && (
                             <span title="Conversación cerrada" className="shrink-0 text-muted-foreground">
                                 <CheckCircle2 className="size-3.5" />

@@ -85,6 +85,12 @@ class ExtensionMarketplaceTest extends TestCase
         return $user;
     }
 
+    /**
+     * Se cuenta contra `config('extensions.available')` y no contra un número
+     * escrito a mano: lo que se protege es que el catálogo de la pantalla salga
+     * del catálogo del código, no que hoy haya tres. Con la cifra fija, publicar
+     * una extensión rompía este test sin que nada estuviera mal.
+     */
     public function test_el_catalogo_lista_las_extensiones_del_codigo(): void
     {
         $this->actingAs($this->admin)
@@ -92,7 +98,7 @@ class ExtensionMarketplaceTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Extensions/Index')
-                ->has('extensions', 3)
+                ->has('extensions', count(config('extensions.available')))
                 ->where('extensions.0.installed', false));
     }
 
