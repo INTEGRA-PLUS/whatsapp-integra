@@ -252,6 +252,13 @@ services:
       - reverb:start
       - --host=0.0.0.0
       - --port=8080
+    # Publicado SOLO en loopback: nginx lo necesita alcanzable desde el host
+    # para enrutar el websocket del navegador (location /app). Sin esto Reverb
+    # solo existe dentro de la red de Docker: el backend emitia los eventos sin
+    # un solo error y el navegador no recibia nada, asi que la bandeja parecia
+    # ir con minutos de retraso. El 8081 lo ocupa otro stack de la maquina.
+    ports:
+      - "127.0.0.1:8082:8080"
     expose:
       - "8080"
     healthcheck:
