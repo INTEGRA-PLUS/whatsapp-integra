@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CompanyIntegration;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\AiAssistantProfile;
+use App\Support\AiPrompt;
 use App\Support\DefaultAiMenusIntegration;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -115,6 +116,10 @@ class AiFlowSettingsController extends Controller
             'assistant.conocimiento' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_KNOWLEDGE,
             'assistant.limites' => 'sometimes|array|max:' . AiAssistantProfile::MAX_LIMITS,
             'assistant.limites.*' => 'string|max:' . AiAssistantProfile::MAX_LIMIT,
+            // El prompt entrenable. El tope se valida aquí para que el admin vea
+            // "te pasaste de largo" en su formulario en vez de que AiPrompt le
+            // recorte el texto por detrás sin decir nada.
+            'assistant.instrucciones' => 'sometimes|nullable|string|max:' . AiPrompt::MAX_INSTRUCTIONS,
         ]);
 
         // Encender algo que la plataforma no tiene configurado dejaría al admin
@@ -238,7 +243,22 @@ class AiFlowSettingsController extends Controller
                     'conocimiento' => AiAssistantProfile::MAX_KNOWLEDGE,
                     'limites' => AiAssistantProfile::MAX_LIMITS,
                     'limite' => AiAssistantProfile::MAX_LIMIT,
+                    'instrucciones' => AiPrompt::MAX_INSTRUCTIONS,
                 ],
+            ],
+            // Los dos prompts, para que el admin vea a qué le está sumando.
+            //
+            // El base baja entero y de sólo lectura: es de la plataforma y lo
+            // comparten todas las empresas. Enseñarlo no es un adorno —es lo que
+            // evita que un admin escriba en su campo cinco reglas que el base ya
+            // trae, o una que lo contradice y que nunca va a ganar.
+            'prompt' => [
+                'base' => AiPrompt::BASE,
+                'reglas' => AiPrompt::RULES,
+                // Con `puede_ejecutar` en false: es el de chats, el que menos
+                // promete. Enseñar el de menús haría creer que el asistente
+                // siempre tiene herramientas, y en los chats no las tiene.
+                'compuesto' => AiPrompt::compose($company->id, false),
             ],
         ];
     }

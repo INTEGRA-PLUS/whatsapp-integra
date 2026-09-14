@@ -50,6 +50,7 @@ class AiAssistantProfile
         'tono' => 'cordial, claro y profesional',
         'conocimiento' => '',
         'limites' => [],
+        'instrucciones' => '',
     ];
 
     /**
@@ -71,6 +72,14 @@ class AiAssistantProfile
             // anterior de la empresa.
             'empresa' => (string) (Company::where('id', $companyId)->value('name') ?? ''),
             'puede_ejecutar' => $canExecute,
+            // El prompt ya compuesto: base de la plataforma + lo que escribió la
+            // empresa + las reglas repetidas al final. Viaja armado desde aquí y
+            // no en trozos para que el orden de los bloques —del que depende que
+            // la suma no se convierta en una resta— lo decida un solo sitio y no
+            // cada flujo de n8n por su cuenta.
+            'prompt' => [
+                'compuesto' => AiPrompt::compose($companyId, $canExecute),
+            ],
         ];
     }
 
@@ -89,9 +98,11 @@ class AiAssistantProfile
      */
     public static function presentation(int $companyId): string
     {
-        $p = self::payload($companyId, false);
-        $name = $p['nombre_asistente'];
-        $company = $p['empresa'];
+        // Lee de `settings` y de `companies`, NO de `payload()`: payload() compone
+        // el prompt, y componerlo pasa por aquí. Con el atajo cómodo la pareja se
+        // llamaba en círculo hasta agotar la pila.
+        $name = self::settings($companyId)['nombre_asistente'];
+        $company = (string) (Company::where('id', $companyId)->value('name') ?? '');
 
         return match (true) {
             $name !== '' && $company !== '' => "{$name}, el asistente virtual de {$company}",
@@ -148,6 +159,13 @@ class AiAssistantProfile
                 ->take(self::MAX_LIMITS)
                 ->values()
                 ->all(),
+            // El texto entrenable de la empresa. Lo sanea AiPrompt y no `text()`:
+            // es el único campo que entra en el prompt como bloque delimitado, y
+            // lo que hay que quitarle —marcadores de turno, tokens de plantilla,
+            // el propio delimitador— no aplica a los demás.
+            'instrucciones' => AiPrompt::sanitizeInstructions(
+                is_scalar($input['instrucciones'] ?? null) ? (string) $input['instrucciones'] : ''
+            ),
         ];
     }
 

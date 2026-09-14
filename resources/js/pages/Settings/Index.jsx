@@ -12,7 +12,7 @@ import {
     Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
     Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
     Camera, ListChecks, CalendarClock, Plus, Trash2, Pencil,
-    PhoneCall, MessageCircle, ShieldAlert,
+    PhoneCall, MessageCircle, ShieldAlert, ChevronDown,
 } from 'lucide-react';
 
 const TABS = [
@@ -2659,6 +2659,150 @@ function AsistenteCard({ state, busy, save }) {
     );
 }
 
+/**
+ * Los dos prompts: el de la plataforma y el de la empresa.
+ *
+ * Tarjeta aparte de la del perfil a propósito. El perfil son campos cortos con
+ * una forma clara —un nombre, un tono, una lista— y esto es un folio en blanco
+ * que acaba dentro del prompt de un modelo que habla con clientes reales: no se
+ * llenan con la misma cabeza ni se revisan con la misma atención.
+ *
+ * El base se enseña entero y de sólo lectura. Es lo que evita las dos formas de
+ * perder el tiempo escribiendo aquí: repetir una regla que el base ya trae, o
+ * escribir una que lo contradice y que nunca va a ganar —las reglas se repiten
+ * DESPUÉS de este texto justamente para eso—.
+ */
+function PromptCard({ state, busy, save }) {
+    const saved = state.assistant;
+    const base = state.prompt ?? {};
+    const max = saved.limits.instrucciones;
+
+    const [draft, setDraft] = useState(saved.instrucciones ?? '');
+    const [verBase, setVerBase] = useState(false);
+    const [verCompuesto, setVerCompuesto] = useState(false);
+
+    // El backend devuelve el texto saneado —sin marcadores de turno, sin los
+    // delimitadores—: el formulario muestra eso y no lo que se escribió, o el
+    // admin creería que sigue ahí lo que se le quitó.
+    useEffect(() => { setDraft(saved.instrucciones ?? ''); }, [saved.instrucciones]);
+
+    const dirty = draft !== (saved.instrucciones ?? '');
+
+    return (
+        <Card>
+            <div className="p-6 space-y-5">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <FileText className="size-4 text-teal-600 dark:text-teal-400" />
+                        <p className="text-sm font-semibold text-foreground">Instrucciones para la IA</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                        Lo que escribas aquí <span className="font-medium text-foreground">se suma</span> a las
+                        instrucciones de la plataforma; no las reemplaza. Aplica a las dos IA.
+                    </p>
+                </div>
+
+                {/* El prompt base: de la plataforma, igual para todas las empresas */}
+                <div className="rounded-xl border border-border/60 bg-muted/20 overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setVerBase(v => !v)}
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+                    >
+                        <ShieldAlert className="size-4 text-muted-foreground shrink-0" />
+                        <span className="flex-1 min-w-0">
+                            <span className="block text-xs font-medium text-foreground">
+                                Instrucciones de la plataforma
+                            </span>
+                            <span className="block text-[11px] text-muted-foreground mt-0.5">
+                                Las tienen todas las empresas y no se pueden cambiar desde aquí
+                            </span>
+                        </span>
+                        <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${verBase ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {verBase && (
+                        <pre className="border-t border-border/60 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono max-h-80 overflow-y-auto">
+                            {base.base}
+                        </pre>
+                    )}
+                </div>
+
+                {/* Lo que escribe la empresa */}
+                <div className="space-y-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <label className="block text-xs font-medium text-muted-foreground">
+                            Instrucciones de tu empresa
+                        </label>
+                        <span className={`text-[11px] ${draft.length > max * 0.9 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground/70'}`}>
+                            {draft.length}/{max}
+                        </span>
+                    </div>
+                    <textarea
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        maxLength={max}
+                        rows={12}
+                        placeholder={'Cómo quieres que atienda:\n\n- Saluda por el nombre del cliente cuando lo sepas.\n- Si preguntan por garantías, explica que son 12 meses y ofrece pasar con un asesor.\n- Nunca digas "no sé": di qué sí puedes hacer.\n- Despídete preguntando si necesita algo más.'}
+                        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40 resize-y leading-relaxed"
+                    />
+                    <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                        Son preferencias de atención: tono, orden de las respuestas, qué ofrecer y cuándo. Las
+                        reglas de la plataforma —no inventar cifras, no prometer plazos, pasar a un asesor ante
+                        la duda— siguen mandando por encima de lo que escribas.
+                    </p>
+                </div>
+
+                {/* El resultado: lo que de verdad va a recibir el flujo */}
+                <div className="rounded-xl border border-border/60 overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setVerCompuesto(v => !v)}
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+                    >
+                        <Sparkles className="size-4 text-muted-foreground shrink-0" />
+                        <span className="flex-1 min-w-0">
+                            <span className="block text-xs font-medium text-foreground">
+                                Ver el prompt completo
+                            </span>
+                            <span className="block text-[11px] text-muted-foreground mt-0.5">
+                                Tal como quedó guardado: lo que recibe la IA en cada mensaje
+                            </span>
+                        </span>
+                        <ChevronDown className={`size-4 text-muted-foreground shrink-0 transition-transform ${verCompuesto ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {verCompuesto && (
+                        <div className="border-t border-border/60">
+                            {dirty && (
+                                <p className="px-4 pt-3 text-[11px] text-amber-600 dark:text-amber-400">
+                                    Tienes cambios sin guardar: esto todavía no los incluye.
+                                </p>
+                            )}
+                            <pre className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono max-h-96 overflow-y-auto">
+                                {base.compuesto}
+                            </pre>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-5">
+                    {dirty && <span className="text-[11px] text-muted-foreground">Hay cambios sin guardar</span>}
+                    <Button
+                        onClick={() => save({ assistant: { instrucciones: draft } }, 'Instrucciones guardadas.')}
+                        disabled={busy || !dirty}
+                        className="gap-2 bg-teal-600 hover:bg-teal-500 text-white"
+                    >
+                        {busy && <Loader2 className="size-4 animate-spin" />}
+                        <Save className="size-4" />
+                        Guardar
+                    </Button>
+                </div>
+            </div>
+        </Card>
+    );
+}
+
 function TabFlujoIA() {
     const [state, setState] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -2826,6 +2970,9 @@ function TabFlujoIA() {
                 <>
                     {/* Quién es la IA de esta empresa */}
                     <AsistenteCard state={state} busy={busy} save={save} />
+
+                    {/* Con qué instrucciones habla */}
+                    <PromptCard state={state} busy={busy} save={save} />
 
                     {/* IA de los chats */}
                     <Card>
