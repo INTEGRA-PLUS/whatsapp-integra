@@ -129,6 +129,66 @@ class InstanceHealthCheckTest extends TestCase
         Http::assertNothingSent();
     }
 
+    /**
+     * El bug del 14-sep-2026: una cuenta de Instagram sana salía «Sin conexión».
+     *
+     * Instagram no tiene `phone_number_id` y nunca lo tendrá, pero el
+     * health-check se lo exigía a todas las instancias por igual. Resultado:
+     * @integracolombiasas recibía mensajes con un cartel rojo encima diciendo
+     * «Meta no responde por esta cuenta. No entran ni salen mensajes». Se vio
+     * preparando el screencast del App Review, delante de la pantalla que iba a
+     * ver el revisor de Meta.
+     */
+    public function test_una_cuenta_de_instagram_configurada_queda_ok(): void
+    {
+        $instance = $this->instanciaDeInstagram();
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $instance->refresh();
+        $this->assertSame('ok', $instance->health_status);
+        $this->assertNull($instance->health_error);
+    }
+
+    /** Y no se le pregunta a Graph por ella: esa consulta miente demasiado. */
+    public function test_a_instagram_no_se_le_consulta_graph(): void
+    {
+        Http::fake(['*' => Http::response(['error' => ['message' => 'Unsupported request - method type: get']], 400)]);
+
+        $instance = $this->instanciaDeInstagram();
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $instance->refresh();
+        $this->assertSame('ok', $instance->health_status);
+        Http::assertNothingSent();
+    }
+
+    /** Lo que sí la tumba es faltarle el token o el identificador de cuenta. */
+    public function test_una_cuenta_de_instagram_sin_token_se_marca_caida(): void
+    {
+        $instance = $this->instanciaDeInstagram(['access_token' => null]);
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $instance->refresh();
+        $this->assertSame('unreachable', $instance->health_status);
+        $this->assertStringContainsString('Instagram', (string) $instance->health_error);
+    }
+
+    private function instanciaDeInstagram(array $extra = []): Instance
+    {
+        return $this->instancia(array_merge([
+            'channel' => Instance::CANAL_INSTAGRAM,
+            'phone_number_id' => null,
+            'waba_id' => null,
+            'display_phone_number' => null,
+            'external_account_id' => '17841458371253418',
+            'access_token' => 'IGA-token-largo',
+            'name' => 'integracolombiasas',
+        ], $extra));
+    }
+
     private function instancia(array $extra = []): Instance
     {
         $company = Company::create([

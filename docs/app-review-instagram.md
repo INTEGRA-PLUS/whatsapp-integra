@@ -4,7 +4,36 @@ Todo lo que hay que rellenar, con los textos ya escritos y los valores exactos.
 Falta una sola cosa que no se puede adelantar, y está explicada abajo.
 
 App: **Integra CRM** · `865904982715022`
-Estado hoy: última solicitud **aprobada**, ninguna pendiente, `can_submit: true`.
+
+Estado al **14-sep-2026**: borrador `1058246920147493` con los dos permisos
+dentro, descripciones e instrucciones escritas. Faltan el screencast, el Data
+Use Checkup y las casillas de «Uso permitido». `can_submit: false` — y eso es
+normal: el mensaje *«ya hay una en proceso»* se refiere al propio borrador, no a
+una solicitud enviada.
+
+### Instagram nunca se ha enviado a revisión
+
+Conviene dejarlo escrito porque la API engaña. `devtools_app_review privileges`
+devuelve `is_rejected: true` para `instagram_business_basic` y
+`instagram_business_manage_messages`, y **no es un dictamen de rechazo**: es el
+estado «nunca concedido». El historial real del panel sólo tiene dos entradas:
+
+| Fecha | Resultado | Permisos |
+|---|---|---|
+| 5-sep-2026 | Aprobada | `whatsapp_business_messaging`, `whatsapp_business_management` |
+| 11-may-2026 | No aprobada | `whatsapp_business_messaging` |
+
+O sea que **el rechazo del screencast que se cita más abajo fue el de WhatsApp**,
+no uno de Instagram. Vale igual como aviso, pero no es un antecedente de este
+expediente.
+
+### Y al enviar, Meta re-revisa lo de WhatsApp
+
+El borrador arrastra `public_profile`, `whatsapp_business_messaging` y
+`whatsapp_business_management` como **«Acceso existente para revisar»**. Son los
+que están en producción con once clientes. No se puede quitar y es el
+comportamiento normal de Meta, pero significa que esta solicitud no es un
+trámite aislado de Instagram.
 
 ---
 
@@ -17,9 +46,10 @@ grabar lo que no existe, así que la solicitud no va primero: va cuarta.
 2. ~~**Suscribir el webhook**~~ — hecho, en cuanto el endpoint estuvo desplegado
 3. ~~**Construir la integración mínima**~~ — conectar la cuenta, recibir un DM y
    contestarlo desde el CRM: **hecho el 11-sep-2026**
-4. **Probarla con nuestra propia cuenta profesional de Instagram**, que el
-   acceso estándar ya permite sin ninguna aprobación ← *aquí estamos*
-5. **Grabar el screencast** con eso funcionando
+4. ~~**Probarla con nuestra propia cuenta profesional**~~ — `integracolombiasas`
+   (`17841458371253418`) añadida, con «Suscripción al webhook» activada
+5. **Grabar el screencast** ← *aquí estamos*, y bloqueado por el secreto de
+   Instagram (ver «El secreto que falta»)
 6. **Enviar la solicitud** de acceso avanzado
 
 ### Lo que hace falta del lado de la cuenta
@@ -234,6 +264,16 @@ con cada permiso.
 
 ### `instagram_business_basic`
 
+La descripción enviada el 14-sep-2026 **abre con la declaración de dependencia**,
+que Meta exige en el propio formulario y sin la cual rebota:
+
+> Solicitamos instagram_business_basic como permiso dependiente de
+> instagram_business_manage_messages. Lo necesitamos para identificar la cuenta
+> profesional de Instagram cuyos mensajes directos atendemos desde nuestra
+> bandeja.
+
+Y sigue con:
+
 > Lo usamos para identificar la cuenta profesional de Instagram que el usuario
 > conecta: su ID de cuenta, su nombre de usuario y su foto de perfil.
 >
@@ -288,13 +328,49 @@ Así que la grabación tiene que mostrar **cinco tomas, seguidas y sin cortes**:
 5. **El mismo mensaje llegando a Instagram de verdad**, en el teléfono del
    cliente final.
 
-Y lo que **no está en la documentación pública** y nos costó el primer rechazo:
+Y lo que **no está en la documentación pública** y nos costó el rechazo de mayo:
 
-> **Declarar en la solicitud que la app es servidor a servidor y usa token de
-> usuario del sistema.** Si no se dice, el revisor busca un flujo de login de
-> Meta que no existe, no lo encuentra, y rechaza.
+> **Declarar en la solicitud que la app es servidor a servidor.** Si no se dice,
+> el revisor busca un flujo de login de Meta que no existe, no lo encuentra, y
+> rechaza.
 
 Va en las descripciones, abriéndolas con esa frase.
+
+### Cuidado: aquí NO hay token de usuario del sistema
+
+La versión anterior de este documento decía que había que declarar «servidor a
+servidor **y usa token de usuario del sistema**». Eso era cierto para WhatsApp y
+**es falso para Instagram**. El código no hace eso
+(`app/Services/InstagramLoginService.php`):
+
+```
+api.instagram.com/oauth/access_token       código → token corto
+graph.instagram.com/access_token           ig_exchange_token → 60 días
+graph.instagram.com/refresh_access_token   renovación
+```
+
+Es **Business Login for Instagram con token de usuario**. Declarar un system
+user token que no existe es describir mal la app en una App Review, que es
+justo lo que hace que la rechacen. Las descripciones enviadas dicen «servidor a
+servidor» y explican que guardamos el token de larga duración de Business Login.
+
+### Lo que Meta pide de verdad, y sólo se ve dentro del formulario
+
+El modal de cada permiso trae un bloque «Instructions for Developers» que no
+está en la documentación pública. Para `instagram_business_basic`:
+
+- **Screencast**: enseñar cómo una cuenta profesional se conecta a la app, y
+  enseñar después su información de perfil (nombre de usuario, foto) ya dentro
+  de la app.
+- **En la descripción**: dónde ve el revisor esa información de perfil, y las
+  credenciales del CRM para que pueda conectar su propia cuenta.
+- Y el que se olvida: *«If you are requesting instagram_business_basic
+  permission as a dependent permission for either of
+  instagram_business_manage_messages or instagram_business_manage_comments then
+  specify that clearly in your submission»*. **Es nuestro caso**, y va en la
+  primera frase de esa descripción.
+- Prohibición explícita: *«Please don't provide any Instagram account
+  credentials»*. Las del CRM sí; las de Instagram no.
 
 ---
 
@@ -304,18 +380,86 @@ Va en las descripciones, abriéndolas con esa frase.
 - [x] Caso de uso de Instagram añadido y Business Login configurado *(10-sep-2026)*
 - [x] Webhook del tópico `instagram` verificado y guardado *(10-sep-2026)*; los
       campos llegan al conectar la primera cuenta
-- [ ] Instagram App Secret (el de `Integra CRM-IG`) añadido a `META_APP_SECRETS`
+- [ ] **Instagram App Secret (el de `Integra CRM-IG`) añadido a
+      `META_APP_SECRETS`** — comprobado el 14-sep-2026: **sigue sin estar**, ver
+      «El secreto que falta»
 - [x] El código: conectar la cuenta, recibir DM y responder desde el CRM
       *(11-sep-2026)*
-- [ ] Nuestra cuenta profesional de Instagram conectada y funcionando en
-      acceso estándar
-- [ ] Screencast con las cinco tomas, sin cortes
-- [ ] En las descripciones, declarado que es servidor a servidor con token de
-      usuario del sistema
-- [ ] Sólo dos permisos solicitados, ninguno de más
+- [x] Nuestra cuenta profesional conectada en acceso estándar: `integracolombiasas`
+      (`17841458371253418`), con «Suscripción al webhook» activada *(14-sep-2026)*
+- [x] Los dos permisos en el borrador *(14-sep-2026)* — `instagram_business_basic`
+      faltaba y bloqueaba a `manage_messages` por `dependent_permission`
+- [x] Las dos descripciones y las instrucciones para revisores escritas
+      *(14-sep-2026)*: `use_case` en `true` para ambos permisos
+- [x] Usuario del revisor y cuenta de Instagram en la **misma empresa**
+      (`company_id=57`) *(14-sep-2026)*
+- [ ] Screencast con las cinco tomas, sin cortes — **uno por permiso**
+- [x] En las descripciones, declarado que es servidor a servidor *(sin la frase
+      del token de sistema, que aquí sería falsa)*
+- [x] Sólo dos permisos solicitados, ninguno de más
+- [ ] Data Use Checkup («Tratamiento de datos») y las casillas de «Uso permitido»
 - [ ] Verificado por API que la solicitud quedó enviada — el panel a veces dice
       una cosa y la API otra:
       `devtools_app_review action=status` debe mostrar `is_pending: true`
+
+### La trampa del `company_id`, que no da ningún error
+
+Las credenciales que se le dan a Meta tienen que ser de un usuario de la
+**misma empresa** que tiene conectada la cuenta de Instagram. Si no, el revisor
+entra, abre el Chat y **no ve ni una conversación de Instagram**: el aislamiento
+manual por `company_id` las filtra fuera sin lanzar ningún error, y el revisor
+concluye que la función no existe. Es el mismo desenlace que el rechazo de mayo.
+
+Se comprueba así, en el VPS:
+
+```bash
+docker exec -i whatsapp-integra-app-1 php artisan tinker --execute="
+\$u = App\Models\User::where('email','revisor@integracolombia.co')->first();
+echo 'USUARIO: '.(\$u ? \$u->email.'  company_id='.\$u->company_id : 'NO EXISTE').PHP_EOL;
+foreach (App\Models\Instance::where('channel','instagram')->get() as \$i) {
+    echo 'INSTANCIA IG: '.\$i->external_account_id.'  company_id='.\$i->company_id.'  activa='.(\$i->active ? 'si':'no').PHP_EOL;
+}"
+```
+
+Y **no dársela al usuario master**: `Gate::before` le concede todos los permisos,
+así que el revisor de Meta vería las conversaciones reales de los once clientes.
+
+---
+
+## El secreto que falta, y por qué bloquea el screencast
+
+Comprobado el 14-sep-2026: en producción `META_APP_SECRETS` tiene **dos**
+entradas, `1862365350983129` y `865904982715022`. **Falta `28822685693981719`**,
+la de `Integra CRM-IG`.
+
+Mientras falte, `InstagramWebhookController.php:57-60` responde **403 a todos los
+webhooks de Instagram** y no entra ni un DM. Grabar el screencast en ese estado
+es imposible: la toma del mensaje llegando a la bandeja no ocurre.
+
+Se mira sin exponer los secretos, sólo los `app_id`:
+
+```bash
+docker exec -i whatsapp-integra-app-1 sh -c 'echo "$META_APP_SECRETS" | tr "," "\n" | cut -d: -f1'
+```
+
+**Dónde se cambia — y no es el compose.** `docker-compose.yml:79` ya declara
+`META_APP_SECRETS: ${META_APP_SECRETS:-}`; el valor vive en **`.env.docker:65`**,
+en `/root/proyectos/whatsapp-integra`. Como el código no cambia, **no hace falta
+`build`**: basta `docker compose up -d` para recrear el contenedor, y el
+`entrypoint.sh` rehace el `config:cache` con las env vars vivas.
+
+Es una **lista**: hay que añadir la tercera entrada conservando las dos que ya
+están. Sustituirla en vez de ampliarla tumbaría los webhooks de WhatsApp de los
+once clientes en producción.
+
+Después, la prueba de fuego antes de gastar una grabación — mandar un DM a
+`integracolombiasas` y mirar:
+
+```bash
+docker exec -i whatsapp-integra-app-1 tail -20 /var/www/html/storage/logs/instagram.log
+```
+
+Si sale `❌ Webhook de Instagram rechazado: firma inválida`, el secreto no cuadra.
 
 ---
 
@@ -324,8 +468,18 @@ Va en las descripciones, abriéndolas con esa frase.
 ```
 devtools_app_review action=status      → submission_status, is_approved
 devtools_app_review action=privileges  → is_live Y access_level por permiso
-devtools_webhook_list action=list_subscriptions → que el tópico instagram esté
+devtools_app_review action=requirements → los pasos que faltan, permiso a permiso
 ```
+
+`devtools_webhook_list action=list_subscriptions` **no sirve para Instagram**: sólo
+devuelve `whatsapp_business_account`. No es que esté roto — en Instagram Login la
+suscripción vive dentro del producto, en la app `Integra CRM-IG`
+(`28822685693981719`), que ni siquiera aparece en `devtools_app_list`. Para verla
+hay que abrir el panel.
+
+La URL del App Review de esta app tampoco es la clásica: `/app-review/permissions/`
+redirige a `/use_cases/`. La que funciona es
+**`/apps/865904982715022/app-review/submissions/`**.
 
 Lo que hay que mirar al aprobar no es sólo `is_live: true`, sino
 **`access_level: advanced`**. Es la distinción que el panel no destaca y la que

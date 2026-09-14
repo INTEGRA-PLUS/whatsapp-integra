@@ -60,9 +60,9 @@ class CheckInstanceHealth extends Command
             [$estado, $error] = $this->revisar($instance);
 
             $instance->update([
-                'health_status'     => $estado,
+                'health_status' => $estado,
                 'health_checked_at' => now(),
-                'health_error'      => $error,
+                'health_error' => $error,
             ]);
 
             $etiqueta = $instance->company->name ?? "instancia #{$instance->id}";
@@ -85,7 +85,7 @@ class CheckInstanceHealth extends Command
                 $recuperadas++;
                 Log::channel('whatsapp')->info('✅ Instancia recuperada', [
                     'instance_id' => $instance->id,
-                    'company'     => $etiqueta,
+                    'company' => $etiqueta,
                 ]);
             }
         }
@@ -101,6 +101,26 @@ class CheckInstanceHealth extends Command
      */
     private function revisar(Instance $instance): array
     {
+        // Instagram no tiene `phone_number_id` y nunca lo tendrá: se identifica
+        // por la cuenta profesional. Exigírselo marcaba `unreachable` a toda
+        // línea de Instagram sana y pintaba en su tarjeta «Meta no responde por
+        // esta cuenta. No entran ni salen mensajes», mintiendo: el 14-sep-2026
+        // la cuenta @integracolombiasas recibía mensajes con ese cartel rojo
+        // encima. Se descubrió preparando el screencast del App Review, que es
+        // justo donde peor podía verse.
+        //
+        // No se consulta a Graph para comprobarlo, a diferencia de WhatsApp.
+        // `graph.instagram.com` responde «Unsupported request - method type:
+        // get» por causas que no son la salud de la línea —el rol de evaluador
+        // sin aceptar, entre otras— y un health-check que se cree eso apagaría
+        // en verde líneas que funcionan. Con la configuración completa basta:
+        // lo que de verdad falla, el token caducado, ya tiene su propia tarea.
+        if ($instance->esInstagram()) {
+            return $instance->isMetaConfigured()
+                ? ['ok', null]
+                : ['unreachable', 'La cuenta de Instagram no tiene identificador o token configurado.'];
+        }
+
         if (! $instance->access_token || ! $instance->phone_number_id) {
             return ['unreachable', 'La instancia no tiene token o phone_number_id configurado.'];
         }
@@ -126,10 +146,10 @@ class CheckInstanceHealth extends Command
     private function avisar(Instance $instance, ?string $error): void
     {
         Log::channel('whatsapp')->error('❌ Instancia caída contra Meta', [
-            'instance_id'     => $instance->id,
-            'company'         => $instance->company->name ?? null,
+            'instance_id' => $instance->id,
+            'company' => $instance->company->name ?? null,
             'phone_number_id' => $instance->phone_number_id,
-            'error'           => $error,
+            'error' => $error,
         ]);
 
         if ($this->option('quiet-notifications')) {
@@ -148,7 +168,7 @@ class CheckInstanceHealth extends Command
         Notification::send($admins, new SystemNotification(
             'WhatsApp desconectado',
             "La conexión de «{$instance->name}» ({$instance->display_phone_number}) dejó de responder en Meta. "
-                . 'No se están recibiendo ni enviando mensajes. Reconecta la cuenta desde Instancias.',
+                .'No se están recibiendo ni enviando mensajes. Reconecta la cuenta desde Instancias.',
             'Sistema'
         ));
     }
