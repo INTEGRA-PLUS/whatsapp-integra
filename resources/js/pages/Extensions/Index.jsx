@@ -203,9 +203,14 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                        candado en vez del botón: esconderlo haría que nadie
                        supiera que existe, y lo que se quiere es justo que
                        pregunten por ello. */
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-muted-foreground">
-                        <Lock className="size-3.5" /> No incluido en tu plan
-                    </span>
+                    /* Con salida, no un cartel a secas: decirle a alguien que
+                       no puede y no adónde ir es la forma de que no pregunte. */
+                    <Link
+                        href={route('mi-plan')}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                    >
+                        <Lock className="size-3.5" /> No incluido — ver mi plan
+                    </Link>
                 ) : !extension.installed ? (
                     <Button size="sm" className="gap-2" disabled={busy || !canInstall} onClick={onInstall}>
                         {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}

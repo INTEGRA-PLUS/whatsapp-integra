@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\MiPlanController;
 use App\Http\Controllers\ResumenController;
 use App\Http\Controllers\AiFlowSettingsController;
 use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
@@ -471,6 +472,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/contactos', [ContactController::class, 'index'])
         ->middleware('permission:contacts.view')
         ->name('contacts.index');
+
+    // «Mi plan» — lo mismo que ve el master, contado desde el lado del cliente.
+    // Sin permiso propio a propósito: cualquiera que pueda mirar las extensiones
+    // puede ver en qué plan está, y un permiso más sería una casilla que alguien
+    // se deja sin marcar y deja al admin sin saber qué tiene contratado.
+    Route::get('/mi-plan', [MiPlanController::class, 'index'])
+        ->middleware('permission:extensions.view')->name('mi-plan');
 
     // Extensiones — el catálogo y la ficha de cada extensión. Dos rutas para
     // todas: las pantallas se generan a partir del manifiesto de cada una.

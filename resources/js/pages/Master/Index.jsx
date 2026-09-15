@@ -225,9 +225,18 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
         return (
             <div className="relative h-full w-full pt-14">
                 {activeIdx !== null && (
+                    /* Centrado sobre la barra, salvo en las de los extremos:
+                       con `translateX(-50%)` siempre, la primera se salía por la
+                       izquierda de la tarjeta y la última por la derecha, justo
+                       encima del panel de al lado. */
                     <div
                         className="pointer-events-none absolute top-0 z-30"
-                        style={{ left: `${(activeIdx / Math.max(data.length - 1, 1)) * 100}%`, transform: 'translateX(-50%)' }}
+                        style={{
+                            left: `${(activeIdx / Math.max(data.length - 1, 1)) * 100}%`,
+                            transform: `translateX(${
+                                activeIdx === 0 ? '0' : activeIdx === data.length - 1 ? '-100%' : '-50%'
+                            })`,
+                        }}
                     >
                         <div className="min-w-[9rem] rounded-lg border border-border bg-card px-3 py-2 shadow-md">
                             <p className="text-xs text-muted-foreground">{data[activeIdx].date}</p>
@@ -249,19 +258,27 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                     </div>
                 )}
 
-                <div className="flex h-full w-full items-end gap-1 sm:gap-2">
+                {/* `overflow-hidden` y anchos proporcionales, los dos a
+                    propósito. Cada día era un `flex-1` con dos barras de 10px
+                    fijos dentro, y un `flex-1` no encoge por debajo de su
+                    contenido: con más de cuarenta días la fila medía más que la
+                    tarjeta y, sin recorte, las barras sobrantes se pintaban
+                    encima del panel de al lado. Ahora las barras ceden ancho
+                    —con un tope para que con pocos días no salgan gordas— y lo
+                    que aun así se saliera queda cortado dentro de su caja. */}
+                <div className="flex h-full w-full items-end gap-px overflow-hidden sm:gap-0.5">
                     {data.map((d, i) => (
                         <div
                             key={i}
                             onMouseEnter={() => setActiveIdx(i)}
                             onMouseLeave={() => setActiveIdx(null)}
-                            className={`relative flex h-full flex-1 cursor-default flex-col justify-end transition-opacity ${
+                            className={`relative flex h-full min-w-0 flex-1 cursor-default flex-col justify-end transition-opacity ${
                                 activeIdx !== null && activeIdx !== i ? 'opacity-40' : 'opacity-100'
                             }`}
                         >
-                            <div className="flex h-full w-full items-end justify-center gap-0.5">
-                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1.5 rounded-t-sm bg-primary sm:w-2.5" />
-                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1.5 rounded-t-sm bg-success sm:w-2.5" />
+                            <div className="flex h-full w-full items-end justify-center gap-px">
+                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1/2 max-w-[10px] min-w-px rounded-t-sm bg-primary" />
+                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1/2 max-w-[10px] min-w-px rounded-t-sm bg-success" />
                             </div>
                         </div>
                     ))}
