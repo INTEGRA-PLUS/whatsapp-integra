@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import SelectorInstancia from '@/components/selector-instancia';
+import { ResumenDialog } from '@/pages/Chat/ResumenDialog';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import {
@@ -5266,100 +5267,6 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         </div>
                                     )}
 
-                                    {/* Resumen con IA. Encima de los mensajes y no dentro del
-                                        hilo: es una nota sobre la conversación, no un mensaje más,
-                                        y mezclarlo con las burbujas lo haría parecer algo que
-                                        alguien dijo. Se cierra y el hilo queda como estaba. */}
-                                    {resumenAbierto && (
-                                        <div className="shrink-0 border-b border-info/20 bg-info/5 px-4 py-3 sm:px-6">
-                                            <div className="flex items-center gap-2">
-                                                <Sparkles className="size-4 shrink-0 text-info" />
-                                                <span className="text-[12px] font-bold text-foreground">
-                                                    Resumen de la conversación
-                                                </span>
-                                                {resumen?.cacheado && (
-                                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-                                                        ya generado
-                                                    </span>
-                                                )}
-                                                <div className="ml-auto flex items-center gap-1">
-                                                    {resumen && !resumenCargando && (
-                                                        <button
-                                                            onClick={() => pedirResumen(true)}
-                                                            title="Volver a generarlo"
-                                                            className="rounded-md px-2 py-1 text-[11px] font-semibold text-info hover:bg-info/10"
-                                                        >
-                                                            Rehacer
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        onClick={() => setResumenAbierto(false)}
-                                                        title="Cerrar el resumen"
-                                                        aria-label="Cerrar el resumen"
-                                                        className="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                                                    >
-                                                        <X className="size-4" />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {resumenCargando && (
-                                                <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                                                    <Loader2 className="size-3.5 animate-spin" /> Leyendo la conversación…
-                                                </p>
-                                            )}
-
-                                            {resumenError && !resumenCargando && (
-                                                <p className="mt-2 text-xs text-destructive">{resumenError}</p>
-                                            )}
-
-                                            {resumen && !resumenCargando && (
-                                                <div className="mt-2 space-y-2.5">
-                                                    <p className="text-[13px] leading-relaxed text-foreground">
-                                                        {resumen.resumen}
-                                                    </p>
-
-                                                    {resumen.puntos?.length > 0 && (
-                                                        <div>
-                                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                                                                Puntos clave
-                                                            </p>
-                                                            <ul className="mt-1 space-y-0.5">
-                                                                {resumen.puntos.map((p, i) => (
-                                                                    <li key={i} className="flex gap-1.5 text-xs text-muted-foreground">
-                                                                        <span className="text-info">•</span> {p}
-                                                                    </li>
-                                                                ))}
-                                                            </ul>
-                                                        </div>
-                                                    )}
-
-                                                    {resumen.pendientes?.length > 0 && (
-                                                        <div>
-                                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                                                                Queda pendiente
-                                                            </p>
-                                                            <ul className="mt-1 space-y-0.5">
-                                                                {resumen.pendientes.map((p, i) => (
-                                                                    <li key={i} className="flex gap-1.5 text-xs text-foreground">
-                                                                        <span className="text-warning">▸</span> {p}
-                                                                    </li>
-                                                                ))}
-                                                            </ul>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Lo escribió un modelo y el hilo sigue ahí
-                                                        debajo: decirlo evita que se use como si
-                                                        fuera la conversación. */}
-                                                    <p className="text-[10px] text-muted-foreground/60">
-                                                        Generado por IA a partir de los mensajes. Puede tener errores.
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
                                     {/* Messages Area */}
                                     <div
                                         ref={messagesContainerRef}
@@ -6259,6 +6166,19 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                         onClose={() => setPaymentModal(null)}
                     />
                 )}
+
+                {/* El resumen con IA. Va aquí, con los modales, y no encima del
+                    hilo: es una nota SOBRE la conversación, y mientras se lee no
+                    debe mover de sitio los mensajes que se estaban leyendo. */}
+                <ResumenDialog
+                    open={resumenAbierto}
+                    contacto={selectedConversation?.name || selectedConversation?.phone_number}
+                    resumen={resumen}
+                    cargando={resumenCargando}
+                    error={resumenError}
+                    onRehacer={() => pedirResumen(true)}
+                    onCerrar={() => setResumenAbierto(false)}
+                />
 
                 {/* Lightbox / Image Zoom */}
                 {selectedImage && (
