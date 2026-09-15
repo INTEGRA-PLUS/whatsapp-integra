@@ -34,15 +34,21 @@ import {
     ShieldAlert,
     X as XIcon,
     UserCog,
+    CreditCard,
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [] }) {
     // La contraseña temporal viaja por flash: existe una sola vez y no
     // sobrevive a una recarga.
     const { flash } = usePage().props;
     const [activeTab, setActiveTab] = useState('dashboard');
     const [showCreate, setShowCreate] = useState(false);
     const [editingCompany, setEditingCompany] = useState(null);
+    const [planCompany, setPlanCompany] = useState(null);
+    const [planForm, setPlanForm] = useState({
+        plan: 'inteligente', cobro: 'cortesia',
+        contactos_contratados: '', gratis_hasta: '', nota_de_cobro: '',
+    });
     
     // Sync tab with URL
     useEffect(() => {
@@ -113,6 +119,33 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     function handleEdit(e) {
         e.preventDefault();
         router.put(route('master.companies.update', editingCompany.id), editForm, { onSuccess: () => setEditingCompany(null) });
+    }
+
+    function openPlan(company) {
+        const p = company.plan_resumen ?? {};
+        setPlanForm({
+            plan: p.plan ?? 'inteligente',
+            cobro: p.cobro ?? 'cortesia',
+            contactos_contratados: p.contactos_contratados ?? '',
+            gratis_hasta: p.gratis_hasta ?? '',
+            nota_de_cobro: company.nota_de_cobro ?? '',
+        });
+        setPlanCompany(company);
+    }
+
+    function handlePlan(e) {
+        e.preventDefault();
+        router.put(route('master.companies.plan', planCompany.id), planForm, {
+            onSuccess: () => setPlanCompany(null),
+            preserveScroll: true,
+        });
+    }
+
+    function mesGratis() {
+        router.post(route('master.companies.mes-gratis', planCompany.id), {}, {
+            onSuccess: () => setPlanCompany(null),
+            preserveScroll: true,
+        });
     }
 
     function openEdit(company) {
@@ -387,11 +420,15 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                     {company.users?.[0] ? <div className="text-sm font-black text-foreground">{company.users[0].name}</div> : <span className="text-xs opacity-40">Sin Admin</span>}
                                                 </td>
                                                 <td className="px-10 py-7 text-center">
-                                                    <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${company.active ? 'bg-success/10 text-success border border-success/20' : 'bg-muted text-muted-foreground border border-border/40'}`}>{company.active ? 'Activa' : 'Inactiva'}</span>
+                                                    <div className="flex flex-col items-center gap-1.5">
+                                                        <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${company.active ? 'bg-success/10 text-success border border-success/20' : 'bg-muted text-muted-foreground border border-border/40'}`}>{company.active ? 'Activa' : 'Inactiva'}</span>
+                                                        <PastillaDePlan resumen={company.plan_resumen} uso={company.uso_ia} />
+                                                    </div>
                                                 </td>
                                                 <td className="px-10 py-7">
                                                     <div className="flex items-center justify-end gap-3 opacity-20 group-hover:opacity-100 transition-all duration-300">
-                                                        <Button variant="ghost" size="icon" onClick={() => openEdit(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><Pencil className="size-5" /></Button>
+                                                        <Button variant="ghost" size="icon" title="Plan y cobro" onClick={() => openPlan(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><CreditCard className="size-5" /></Button>
+                                                        <Button variant="ghost" size="icon" title="Editar datos" onClick={() => openEdit(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><Pencil className="size-5" /></Button>
                                                         <Button onClick={() => router.post(route('master.impersonate', company.id))} className="h-11 px-6 rounded-xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:bg-primary transition-all"><LogIn className="size-4 mr-2" /> Entrar</Button>
                                                     </div>
                                                 </td>
@@ -525,6 +562,99 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                     </form>
                 </Modal>
             )}
+            {planCompany && (
+                <Modal
+                    title={`Plan de ${planCompany.name}`}
+                    description="Qué puede usar y si se le cobra. Son dos cosas distintas."
+                    onClose={() => setPlanCompany(null)}
+                    footer={
+                        <>
+                            <Button type="button" variant="outline" onClick={() => setPlanCompany(null)}>
+                                Cancelar
+                            </Button>
+                            <Button type="submit" form="form-plan">Guardar</Button>
+                        </>
+                    }
+                >
+                    <form id="form-plan" onSubmit={handlePlan} className="space-y-5">
+
+                        {planCompany.uso_ia?.incluidas > 0 && (
+                            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3">
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <span className="text-xs font-semibold text-foreground">IA este mes</span>
+                                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                                        {planCompany.uso_ia.usadas} / {planCompany.uso_ia.incluidas} conversaciones
+                                    </span>
+                                </div>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border">
+                                    <div
+                                        className={`h-full rounded-full ${planCompany.uso_ia.exceso > 0 ? 'bg-warning' : 'bg-primary'}`}
+                                        style={{ width: `${Math.min(100, planCompany.uso_ia.porcentaje)}%` }}
+                                    />
+                                </div>
+                                <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                                    {planCompany.uso_ia.exceso > 0
+                                        ? `${planCompany.uso_ia.exceso} de exceso para facturar. El servicio sigue funcionando.`
+                                        : `Coste hasta hoy: $${planCompany.uso_ia.coste_usd}`}
+                                </p>
+                            </div>
+                        )}
+
+                        <Selector
+                            label="Plan"
+                            value={planForm.plan}
+                            onChange={v => setPlanForm({ ...planForm, plan: v })}
+                            options={planes}
+                            ayuda="Qué extensiones puede instalar. Bajarlo no desinstala lo que ya tenga."
+                        />
+
+                        <Selector
+                            label="Cobro"
+                            value={planForm.cobro}
+                            onChange={v => setPlanForm({ ...planForm, cobro: v })}
+                            options={cobros.map(c => ({ value: c, label: ETIQUETA_COBRO[c] ?? c }))}
+                            ayuda="Cortesía es el estado de los clientes de siempre: todo encendido y sin factura. Suspendido no apaga nada, solo marca."
+                        />
+
+                        <Field
+                            label="Socios o contactos contratados"
+                            type="number"
+                            value={planForm.contactos_contratados}
+                            onChange={v => setPlanForm({ ...planForm, contactos_contratados: v })}
+                            placeholder="12000"
+                            ayuda="El tramo de la escalera de precios. Decide el crédito de IA incluido. No es un límite: nadie deja de atender por crecer."
+                        />
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-foreground">Gratis hasta</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    id="gratis-hasta"
+                                    type="date"
+                                    value={planForm.gratis_hasta ?? ''}
+                                    onChange={e => setPlanForm({ ...planForm, gratis_hasta: e.target.value })}
+                                    className="h-10 flex-1 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                />
+                                <Button type="button" variant="outline" onClick={mesGratis} className="h-10 whitespace-nowrap">
+                                    + 1 mes
+                                </Button>
+                            </div>
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                                Mientras no pase, no se factura aunque el cobro esté activo. El botón suma un mes al que ya hubiera y guarda al momento.
+                            </p>
+                        </div>
+
+                        <Field
+                            label="Nota"
+                            value={planForm.nota_de_cobro}
+                            onChange={v => setPlanForm({ ...planForm, nota_de_cobro: v })}
+                            placeholder="Cliente desde 2024, cortesía hasta que firmen"
+                            ayuda="Por qué está así. Dentro de un año nadie se va a acordar, y sin esto acaba en un WhatsApp."
+                        />
+                    </form>
+                </Modal>
+            )}
+
             {editingCompany && (
                 <Modal
                     title={editingCompany.name}
@@ -822,6 +952,63 @@ function BloqueAdmin({ titulo, children }) {
             </div>
             <div className="space-y-4">{children}</div>
         </section>
+    );
+}
+
+const ETIQUETA_COBRO = {
+    cortesia: 'Cortesía — no se factura',
+    prueba: 'Prueba',
+    activo: 'Activo — se factura',
+    suspendido: 'Suspendido — no ha pagado',
+};
+
+/**
+ * El plan de una empresa, de un vistazo en la lista.
+ *
+ * Lo que se quiere ver desde el panel sin abrir nada es quién está pagando y
+ * quién no: con quince clientes en cortesía, esa es la única columna que
+ * importa durante la transición.
+ */
+function PastillaDePlan({ resumen, uso }) {
+    if (!resumen) return null;
+
+    const facturando = resumen.se_factura;
+    const gracia = resumen.en_mes_gratis;
+
+    return (
+        <div className="flex flex-col items-center gap-1">
+            <span className="rounded-md bg-muted px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                {resumen.plan_nombre}
+            </span>
+            <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                gracia ? 'text-warning' : facturando ? 'text-success' : 'text-muted-foreground'
+            }`}>
+                {gracia ? 'mes gratis' : facturando ? 'facturando' : resumen.cobro}
+            </span>
+            {uso?.exceso > 0 && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-warning">
+                    +{uso.exceso} IA
+                </span>
+            )}
+        </div>
+    );
+}
+
+function Selector({ label, value, onChange, options, ayuda = '' }) {
+    return (
+        <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-foreground">{label}</label>
+            <select
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+            >
+                {options.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+            </select>
+            {ayuda && <p className="text-[11px] leading-snug text-muted-foreground">{ayuda}</p>}
+        </div>
     );
 }
 
