@@ -115,6 +115,14 @@ class AnalizarSentimiento implements ShouldQueue
             return;
         }
 
+        // Se apunta después de que el modelo respondiera: lo que se factura es
+        // el uso que sirvió para algo. Una llamada que falló ya nos costó, pero
+        // cobrársela al cliente por un fallo nuestro es otra cosa.
+        \App\Support\ContadorDeIa::apuntar(
+            $conversation->instance->company_id,
+            'semaforo'
+        );
+
         SentimentEvent::registrar(
             $conversation,
             $conversation->instance->company_id,

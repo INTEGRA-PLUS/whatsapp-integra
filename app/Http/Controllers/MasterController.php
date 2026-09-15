@@ -7,6 +7,8 @@ use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMessage;
 use Carbon\Carbon;
+use App\Support\ContadorDeIa;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -146,8 +148,29 @@ class MasterController extends Controller
 
         $companies = $query->orderBy('created_at', 'desc')->paginate(10);
 
+        // El plan y el consumo de IA de cada empresa de la página. Se resuelve
+        // aquí y no en el modelo porque depende de configuración, y se hace
+        // sobre las diez de la página —no sobre todas— para que el panel no
+        // pague una consulta por empresa del sistema.
+        $companies->getCollection()->transform(function (Company $company) {
+            $company->setAttribute('plan_resumen', PlanDeLaEmpresa::de($company)->resumen());
+            $company->setAttribute('uso_ia', ContadorDeIa::estado($company));
+
+            return $company;
+        });
+
         return Inertia::render('Master/Index', [
             'stats' => $stats,
+            // El catálogo va al frontend para que los selectores del modal de
+            // plan salgan de la misma fuente que el candado. Si algún día se
+            // añade un plan, aparece solo.
+            'planes' => collect(config('planes.disponibles'))
+                ->map(fn (array $p, string $slug) => [
+                    'value' => $slug,
+                    'label' => $p['nombre'],
+                    'con_ia' => ($p['ia'] ?? null) !== null,
+                ])->values(),
+            'cobros' => config('planes.cobros'),
             'companies_growth' => $companies_growth,
             'messages_volume' => $messages_volume,
             'top_companies' => $top_companies,
@@ -335,6 +358,61 @@ class MasterController extends Controller
         }
 
         return redirect()->route('master.index')->with('success', 'Empresa y administrador actualizados exitosamente.');
+    }
+
+    /**
+     * Cambia el plan y el cobro de una empresa.
+     *
+     * Separado de `update()` a propósito: ese formulario lo usa soporte para
+     * corregir el nombre o el correo del admin, y meter aquí el plan haría que
+     * cualquier corrección tipográfica arrastrara una decisión comercial.
+     *
+     * Es el único sitio donde se conceden meses gratis y cortesías, y por eso
+     * exige una nota: dentro de un año nadie va a recordar por qué esta empresa
+     * no paga, y sin un sitio donde escribirlo acaba en un WhatsApp.
+     */
+    public function updatePlan(Request $request, Company $company)
+    {
+        $this->authorizeMaster();
+
+        $datos = $request->validate([
+            'plan' => 'required|string|in:'.implode(',', array_keys(config('planes.disponibles'))),
+            'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
+            'contactos_contratados' => 'nullable|integer|min:0|max:1000000',
+            'gratis_hasta' => 'nullable|date',
+            'nota_de_cobro' => 'nullable|string|max:300',
+        ]);
+
+        $company->update($datos);
+
+        Log::channel('whatsapp')->info('💳 Plan de empresa cambiado', [
+            'empresa' => $company->id,
+            'plan' => $datos['plan'],
+            'cobro' => $datos['cobro'],
+            'por' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Plan actualizado.');
+    }
+
+    /**
+     * Un mes más de gracia, a partir de hoy o de donde acabara el anterior.
+     *
+     * Atajo de un clic porque es lo que se hace de verdad en una llamada:
+     * «dame un mes más». Se suma al que hubiera en vez de reemplazarlo — dos
+     * clics son dos meses, que es lo que espera quien los da.
+     */
+    public function mesGratis(Company $company)
+    {
+        $this->authorizeMaster();
+
+        $desde = $company->gratis_hasta && $company->gratis_hasta->isFuture()
+            ? $company->gratis_hasta
+            : now();
+
+        $company->update(['gratis_hasta' => $desde->copy()->addMonth()]);
+
+        return back()->with('success', 'Un mes gratis más, hasta el '.$company->gratis_hasta->format('d/m/Y').'.');
     }
 
     public function impersonate($companyId)

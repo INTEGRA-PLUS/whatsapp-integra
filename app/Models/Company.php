@@ -17,6 +17,11 @@ class Company extends Model
         'phone',
         'domain',
         'active',
+        'plan',
+        'cobro',
+        'gratis_hasta',
+        'contactos_contratados',
+        'nota_de_cobro',
         'settings',
         'ai_flow_unlocked_at',
         'ai_flow_unlocked_by',
@@ -24,6 +29,7 @@ class Company extends Model
 
     protected $casts = [
         'active' => 'boolean',
+        'gratis_hasta' => 'date',
         'settings' => 'array',
         'ai_flow_unlocked_at' => 'datetime',
     ];

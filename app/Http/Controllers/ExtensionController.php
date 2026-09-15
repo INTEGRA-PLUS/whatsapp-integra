@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Extensions\Extension;
 use App\Extensions\ExtensionRegistry;
+use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Tag;
 use App\Models\User;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -24,6 +26,11 @@ class ExtensionController extends Controller
     private function companyId(): int
     {
         return (int) auth()->user()->company_id;
+    }
+
+    private function plan(): PlanDeLaEmpresa
+    {
+        return PlanDeLaEmpresa::de(Company::findOrFail($this->companyId()));
     }
 
     /** GET /extensiones — el catálogo. */
@@ -65,6 +72,15 @@ class ExtensionController extends Controller
     public function install(string $slug)
     {
         $extension = $this->requireExtension($slug);
+
+        // El plan se comprueba ANTES que el permiso: un admin con todos los
+        // permisos de su empresa sigue sin poder instalar lo que no contrató.
+        // 402 y no 403 porque no es un problema de permisos sino de plan, y el
+        // frontend tiene que poder distinguirlos para decir «mejora tu plan» en
+        // vez de «no tienes acceso».
+        if (! $this->plan()->permiteExtension($slug)) {
+            abort(402, 'Esta extensión no está incluida en tu plan.');
+        }
 
         // firstOrCreate y no create: un doble clic en "Instalar" chocaría contra
         // el índice único (company_id, slug) y le devolvería un 500 a quien sólo
@@ -124,9 +140,21 @@ class ExtensionController extends Controller
         // qué referencias hay que acotar a la empresa.
         $entrada = $request->input('settings');
 
-        $instalada->update([
-            'settings' => $extension->sanitizeSettings(is_array($entrada) ? $entrada : [], $this->companyId()),
-        ]);
+        $limpios = $extension->sanitizeSettings(is_array($entrada) ? $entrada : [], $this->companyId());
+
+        // Un ajuste puede necesitar un plan superior aunque la extensión no: el
+        // semáforo entra en Automatización pero «afinar con IA» es del plan
+        // Inteligente. Sin esto, el candado de la extensión se saltaría por el
+        // formulario, que es por donde nadie mira.
+        $plan = $this->plan();
+
+        foreach (array_keys($limpios) as $campo) {
+            if (! $plan->permiteAjuste($slug, $campo)) {
+                $limpios[$campo] = $extension->defaultSettings()[$campo] ?? null;
+            }
+        }
+
+        $instalada->update(['settings' => $limpios]);
 
         return response()->json($this->present($extension, $instalada->fresh()));
     }
@@ -158,7 +186,18 @@ class ExtensionController extends Controller
     /** @return array<string, mixed> */
     private function present(Extension $extension, ?CompanyExtension $instalada): array
     {
+        $plan = $this->plan();
+
         return array_merge($extension->manifest(), [
+            // Lo que no entra en el plan se SIGUE enseñando en el catálogo, con
+            // «Mejora tu plan» en vez de «Instalar»: enseñar lo que no tienes
+            // vende mejor que esconderlo, y esconderlo hace que nadie sepa que
+            // existe.
+            'en_plan' => $plan->permiteExtension($extension->slug()),
+            'ajustes_bloqueados' => array_values(array_filter(
+                (array) config("planes.ajustes_con_ia.{$extension->slug()}", []),
+                fn (string $campo) => ! $plan->permiteAjuste($extension->slug(), $campo)
+            )),
             'installed' => $instalada !== null,
             'enabled' => (bool) ($instalada?->enabled ?? false),
             'settings' => $instalada ? $instalada->settings() : $extension->defaultSettings(),

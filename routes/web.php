@@ -499,6 +499,13 @@ Route::middleware('auth')->group(function () {
         Route::put('/companies/{company}', [MasterController::class, 'update'])->name('companies.update');
         Route::post('/impersonate/{company}', [MasterController::class, 'impersonate'])->name('impersonate');
 
+        // Plan y cobro. Aparte del formulario de datos de la empresa: corregir
+        // un correo no debe poder arrastrar un cambio de plan.
+        Route::put('/companies/{company}/plan', [MasterController::class, 'updatePlan'])
+            ->name('companies.plan');
+        Route::post('/companies/{company}/mes-gratis', [MasterController::class, 'mesGratis'])
+            ->name('companies.mes-gratis');
+
         // Restablecer la contraseña de cualquier usuario de cualquier empresa,
         // para cuando quien se ha quedado fuera es el propio admin del cliente
         // y no hay a quién pedírselo.

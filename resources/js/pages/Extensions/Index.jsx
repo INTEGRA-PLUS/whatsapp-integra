@@ -4,7 +4,7 @@ import axios from 'axios';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Blocks, Search, Download, Power, Settings2, Check, Loader2, Info } from 'lucide-react';
+import { Blocks, Search, Download, Power, Settings2, Check, Loader2, Info, Lock } from 'lucide-react';
 import { iconFor, CATEGORIES, categoryLabel } from './icons';
 import { MaquetaMini } from './maquetas';
 
@@ -147,6 +147,7 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
         <div
             className={clsx(
                 'flex flex-col rounded-xl border bg-card p-5 transition-colors',
+                extension.en_plan === false && 'opacity-70',
                 extension.installed && extension.enabled ? 'border-primary/40' : 'hover:border-primary/30'
             )}
         >
@@ -197,7 +198,15 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
             </div>
 
             <div className="mt-4 flex items-center gap-2">
-                {!extension.installed ? (
+                {extension.en_plan === false ? (
+                    /* Lo que no entra en el plan se sigue enseñando, con el
+                       candado en vez del botón: esconderlo haría que nadie
+                       supiera que existe, y lo que se quiere es justo que
+                       pregunten por ello. */
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-muted-foreground">
+                        <Lock className="size-3.5" /> No incluido en tu plan
+                    </span>
+                ) : !extension.installed ? (
                     <Button size="sm" className="gap-2" disabled={busy || !canInstall} onClick={onInstall}>
                         {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                         Instalar

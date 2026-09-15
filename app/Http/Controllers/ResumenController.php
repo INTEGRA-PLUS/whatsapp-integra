@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\ResumenIaClient;
+use App\Support\ContadorDeIa;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -103,6 +104,10 @@ class ResumenController extends Controller
                 'message' => 'No se pudo generar el resumen. Inténtalo de nuevo en un momento.',
             ], 502);
         }
+
+        // Un resumen es una conversación nueva a efectos de crédito: se pide
+        // una vez por hilo y el caché evita que se repita.
+        ContadorDeIa::apuntar($user->company_id, 'resumen', conversacionNueva: true);
 
         $conversation->forceFill([
             'summary' => $resultado['resumen'],
