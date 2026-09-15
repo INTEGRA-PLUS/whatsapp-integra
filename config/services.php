@@ -174,6 +174,33 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Flujo de sentimiento (semáforo de emociones)
+    |--------------------------------------------------------------------------
+    |
+    | La capa 2 del semáforo: un flujo de n8n que lee la conversación y devuelve
+    | el color con su motivo. Es un flujo aparte del de chats y del de menús
+    | porque hace otra cosa —clasifica, no conversa— y porque su coste hay que
+    | poder apagarlo por su cuenta.
+    |
+    | Sin configurar, el semáforo NO se apaga: sigue funcionando con la matriz.
+    | Es toda la razón de que la capa 1 exista y de que corra primero.
+    |
+    | El timeout es bajo a propósito. Esto no le contesta a nadie: si tarda más
+    | que eso, el color que ya puso la matriz es mejor que un worker ocupado.
+    |
+    */
+    'sentimiento' => [
+        'webhook_url' => env('SENTIMIENTO_WEBHOOK_URL'),
+        'api_key' => env('SENTIMIENTO_API_KEY'),
+        'timeout' => (int) env('SENTIMIENTO_TIMEOUT', 45),
+        // Cuántos segundos se deja en paz a una conversación entre inferencias.
+        // Sin esto, una ráfaga de seis mensajes son seis inferencias para
+        // decidir el mismo color.
+        'debounce' => (int) env('SENTIMIENTO_DEBOUNCE', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Secreto que desbloquea el apartado de IA
     |--------------------------------------------------------------------------
     |

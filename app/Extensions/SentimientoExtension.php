@@ -4,12 +4,15 @@ namespace App\Extensions;
 
 use App\Events\ConversationEvent;
 use App\Extensions\Contracts\HandlesInboundMessage;
+use App\Jobs\AnalizarSentimiento;
 use App\Models\CompanyExtension;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Support\Realtime;
 use App\Support\Sentimiento\Lectura;
 use App\Support\Sentimiento\Semaforo;
+use App\Services\SentimientoIaClient;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Un semáforo por conversación: cómo está el cliente, de un vistazo.
@@ -121,6 +124,16 @@ class SentimientoExtension extends Extension implements HandlesInboundMessage
                 ],
             ],
             [
+                'key' => 'usar_ia',
+                'type' => 'boolean',
+                'label' => 'Afinar con IA',
+                'help' => 'El diccionario decide al instante y la IA repasa después las '
+                    .'conversaciones dudosas: entiende frases largas y sarcasmo, que el '
+                    .'diccionario no. Cuesta una consulta al modelo. Si la IA falla o se apaga, '
+                    .'el semáforo sigue funcionando igual.',
+                'default' => false,
+            ],
+            [
                 'key' => 'ventana_mensajes',
                 'type' => 'number',
                 'label' => 'Mensajes que mira',
@@ -151,6 +164,7 @@ class SentimientoExtension extends Extension implements HandlesInboundMessage
             'sensibilidad' => in_array($sensibilidad, ['bajo', 'medio', 'alto'], true)
                 ? $sensibilidad
                 : 'medio',
+            'usar_ia' => (bool) ($input['usar_ia'] ?? false),
             'ventana_mensajes' => max(3, min(20, $ventana)),
             // Se recorta aquí y no sólo en el formulario porque estas filas
             // también se escriben desde tinker, y cada línea acaba siendo una
@@ -198,5 +212,45 @@ class SentimientoExtension extends Extension implements HandlesInboundMessage
         if ($cambio) {
             Realtime::push(ConversationEvent::updated($conversation, 'sentimiento'));
         }
+
+        $this->afinarConIa($conversation, $installed, $lectura);
+    }
+
+    /**
+     * Manda la conversación a la capa 2, si toca.
+     *
+     * Las tres condiciones son de coste, no de corrección: el semáforo ya está
+     * puesto y lo que se decide aquí es si merece la pena gastar una inferencia.
+     *
+     * - **En verde no se pregunta.** Es el caso mayoritario con diferencia y el
+     *   que menos se gana repasando: el coste de equivocarse en un verde
+     *   tranquilo es bajo, y preguntarlo todo multiplicaría la factura por diez
+     *   para cambiar de opinión en una fracción de los casos.
+     * - **Una vez cada `debounce` segundos por conversación.** Sin esto, una
+     *   ráfaga de seis mensajes seguidos —lo normal en WhatsApp cuando alguien
+     *   está molesto— son seis inferencias para decidir el mismo color.
+     * - **Con candado**, no sólo con marca de tiempo: dos mensajes que entran a
+     *   la vez pasarían los dos la comprobación del reloj.
+     */
+    private function afinarConIa(
+        WhatsAppConversation $conversation,
+        CompanyExtension $installed,
+        Lectura $lectura
+    ): void {
+        if (! ($installed->settings()['usar_ia'] ?? false) || ! SentimientoIaClient::configured()) {
+            return;
+        }
+
+        if ($lectura->nivel === Lectura::VERDE) {
+            return;
+        }
+
+        $espera = (int) config('services.sentimiento.debounce', 120);
+
+        if (! Cache::add('sentimiento:conv:'.$conversation->id, true, $espera)) {
+            return;
+        }
+
+        AnalizarSentimiento::dispatch($conversation->id);
     }
 }

@@ -9,8 +9,11 @@ use App\Models\User;
 use App\Models\WhatsAppConversation;
 use App\Support\Sentimiento\Lectura;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Jobs\AnalizarSentimiento;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -45,7 +48,19 @@ class ExtensionSentimientoTest extends TestCase
         parent::setUp();
 
         Notification::fake();
-        Http::fake(fn () => Http::response(['messages' => [['id' => 'wamid.OUT'.Str::random(6)]]], 200));
+        // Acotado al host de Meta y no un comodín: `Http::fake()` ACUMULA stubs
+        // en vez de reemplazarlos, así que un `*` aquí ganaría a cualquier fake
+        // que registre luego un test concreto —y el flujo de sentimiento
+        // recibiría la respuesta de WhatsApp—.
+        Http::fake(['graph.facebook.com/*' => Http::response(
+            ['messages' => [['id' => 'wamid.OUT'.Str::random(6)]]], 200
+        )]);
+
+        // El debounce de la capa 2 vive en caché y la caché NO se limpia entre
+        // tests: con la base recién creada los ids de conversación vuelven a
+        // empezar en 1, así que sin esto el candado de un test silenciaría al
+        // siguiente y los fallos aparecerían según el orden de ejecución.
+        Cache::flush();
 
         $this->company = Company::create(['name' => 'Fibra Sur', 'slug' => 'fibra-sur', 'active' => true]);
 
@@ -338,6 +353,150 @@ class ExtensionSentimientoTest extends TestCase
         $this->assertSame(20, $limpios['ventana_mensajes']);
         $this->assertSame(2000, mb_strlen($limpios['palabras_rojas']));
         $this->assertArrayNotHasKey('campo_inventado', $limpios);
+    }
+
+    // ── La capa de IA ───────────────────────────────────────────────────────
+
+    /** @param array<string, mixed> $respuesta */
+    private function flujoDevuelve(array $respuesta, int $estado = 200): void
+    {
+        config([
+            'services.sentimiento.webhook_url' => 'https://n8n.example.test/webhook/sentimiento',
+            'services.sentimiento.api_key' => 'clave',
+        ]);
+
+        Http::fake(['n8n.example.test/*' => Http::response($respuesta, $estado)]);
+    }
+
+    public function test_con_la_ia_apagada_no_se_gasta_ninguna_inferencia(): void
+    {
+        Queue::fake();
+        $this->instalar(['usar_ia' => false]);
+
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        Queue::assertNotPushed(AnalizarSentimiento::class);
+    }
+
+    /**
+     * El verde es el caso mayoritario con diferencia. Repasarlo multiplicaría la
+     * factura para cambiar de opinión en una fracción de los casos.
+     */
+    public function test_en_verde_no_se_pregunta_a_la_ia(): void
+    {
+        Queue::fake();
+        $this->flujoDevuelve(['color' => 'rojo', 'confianza' => 0.9]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('buenos dias, quisiera saber el valor de mi factura');
+
+        Queue::assertNotPushed(AnalizarSentimiento::class);
+    }
+
+    public function test_una_conversacion_encendida_sube_a_la_cola_de_sentimiento(): void
+    {
+        Queue::fake();
+        $this->flujoDevuelve(['color' => 'rojo', 'confianza' => 0.9]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        Queue::assertPushed(
+            AnalizarSentimiento::class,
+            fn (AnalizarSentimiento $job) => $job->queue === 'sentimiento'
+        );
+    }
+
+    /**
+     * Una ráfaga de mensajes seguidos es lo normal en WhatsApp cuando alguien
+     * está molesto. Sin freno serían cuatro inferencias para el mismo color.
+     */
+    public function test_una_rafaga_de_mensajes_gasta_una_sola_inferencia(): void
+    {
+        Queue::fake();
+        $this->flujoDevuelve(['color' => 'rojo', 'confianza' => 0.9]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones');
+        $this->recibir('esto es una estafa');
+        $this->recibir('quiero cancelar ya');
+
+        Queue::assertPushed(AnalizarSentimiento::class, 1);
+    }
+
+    public function test_la_ia_puede_corregir_a_la_matriz(): void
+    {
+        $this->flujoDevuelve([
+            'color' => 'verde',
+            'confianza' => 0.9,
+            'motivo' => 'Está citando lo que le dijo otro, no se queja',
+        ]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('me dijeron que eran unos ladrones pero yo estoy contento');
+
+        $conversacion = $this->conversacion();
+
+        $this->assertSame(Lectura::VERDE, $conversacion->sentiment_level);
+        $this->assertSame(Lectura::ORIGEN_IA, $conversacion->sentiment_source);
+        $this->assertStringContainsString('citando', $conversacion->sentiment_reason);
+    }
+
+    /**
+     * El caso que más caro sale: un fallo del flujo que acaba pintando de verde
+     * a un cliente furioso. Un color desconocido descarta la respuesta entera.
+     */
+    public function test_una_respuesta_rara_del_flujo_no_borra_el_rojo(): void
+    {
+        $this->flujoDevuelve(['color' => 'azul celeste', 'confianza' => 1]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        $conversacion = $this->conversacion();
+
+        $this->assertSame(Lectura::ROJO, $conversacion->sentiment_level);
+        $this->assertSame(Lectura::ORIGEN_MATRIZ, $conversacion->sentiment_source);
+    }
+
+    public function test_si_el_flujo_se_cae_el_semaforo_sigue_funcionando(): void
+    {
+        $this->flujoDevuelve(['error' => 'boom'], 500);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        $this->assertSame(Lectura::ROJO, $this->conversacion()->sentiment_level);
+    }
+
+    /** Un modelo que duda no aporta sobre un léxico que al menos es explicable. */
+    public function test_la_ia_dudosa_no_pisa_a_la_matriz(): void
+    {
+        $this->flujoDevuelve(['color' => 'verde', 'confianza' => 0.3]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        $this->assertSame(Lectura::ORIGEN_MATRIZ, $this->conversacion()->sentiment_source);
+    }
+
+    public function test_la_ia_tampoco_pisa_la_correccion_a_mano(): void
+    {
+        $this->flujoDevuelve(['color' => 'verde', 'confianza' => 0.95]);
+        $this->instalar(['usar_ia' => true]);
+
+        $this->recibir('son unos ladrones');
+
+        $this->conversacion()->update([
+            'sentiment_level' => Lectura::ROJO,
+            'sentiment_source' => Lectura::ORIGEN_MANUAL,
+            'sentiment_locked_by' => $this->admin->id,
+        ]);
+
+        (new AnalizarSentimiento($this->conversacion()->id))
+            ->handle(app(\App\Services\SentimientoIaClient::class));
+
+        $this->assertSame(Lectura::ORIGEN_MANUAL, $this->conversacion()->sentiment_source);
     }
 
     // ── Aislamiento ─────────────────────────────────────────────────────────
