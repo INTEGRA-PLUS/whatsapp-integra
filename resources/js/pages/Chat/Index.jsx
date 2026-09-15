@@ -862,11 +862,14 @@ const ConversationItem = memo(({
                                 {espera} sin responder
                             </span>
                         )}
-                        {conv.assigned_agent && (
-                            <span className="text-[9px] font-black text-accent-foreground/60 uppercase tracking-tighter whitespace-nowrap">
-                                @{conv.assigned_agent.name.split(' ')[0]}:
-                            </span>
-                        )}
+                        {/* Aquí iba «@jheyson:» delante del último mensaje, con
+                            el nombre del agente ASIGNADO —no el de quien
+                            escribió—. Con formato de autor y pegado al texto
+                            decía justo lo contrario de lo que pasaba: en un
+                            chat asignado a Jheyson, una queja del cliente se
+                            leía como «@JHEYSON: se ve lo lento que está». El
+                            nombre del agente ya está en la línea de arriba, en
+                            su etiqueta, que es donde no se confunde con nadie. */}
                         <p className="text-xs text-muted-foreground truncate leading-relaxed">
                             {conv.last_message || '...'}
                         </p>
