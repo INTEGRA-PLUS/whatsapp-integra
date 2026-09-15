@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Instance;
+use App\Models\SentimentEvent;
 use App\Models\User;
 use App\Models\WhatsAppConversation;
 use App\Support\Sentimiento\Lectura;
@@ -569,6 +570,93 @@ class ExtensionSentimientoTest extends TestCase
             ->all();
 
         $this->assertSame([Lectura::ROJO, Lectura::AMARILLO, Lectura::VERDE, null], $niveles);
+    }
+
+    // ── El histórico y el panel ─────────────────────────────────────────────
+
+    public function test_se_apunta_una_fila_cuando_cambia_el_color(): void
+    {
+        $this->instalar();
+
+        $this->recibir('hola buenos dias');
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        $niveles = SentimentEvent::where('company_id', $this->company->id)
+            ->orderBy('id')
+            ->pluck('nivel')
+            ->all();
+
+        $this->assertSame([Lectura::VERDE, Lectura::ROJO], $niveles);
+    }
+
+    /**
+     * Un hilo de cuarenta mensajes que se mantiene en verde deja una fila, no
+     * cuarenta: lo que se cuenta es cuántas veces se torció una conversación.
+     */
+    public function test_seguir_igual_no_llena_el_historico(): void
+    {
+        $this->instalar();
+
+        $this->recibir('hola');
+        $this->recibir('buenos dias');
+
+        $this->assertSame(1, SentimentEvent::where('company_id', $this->company->id)->count());
+    }
+
+    /**
+     * El agente se copia en el momento del cambio. Si el chat se reasigna
+     * después, atribuirle a quien lo tiene hoy los enfados que ocurrieron con
+     * otro delante sería colgarle algo que no hizo.
+     */
+    public function test_el_historico_congela_al_agente_de_entonces(): void
+    {
+        $this->instalar();
+
+        $otro = User::create([
+            'company_id' => $this->company->id,
+            'name' => 'Segundo',
+            'email' => 'segundo@fibra.test',
+            'password' => 'secret',
+            'active' => true,
+            'role' => 'agent',
+        ]);
+
+        $this->recibir('hola');
+        $this->conversacion()->update(['assigned_to' => $this->admin->id]);
+        $this->recibir('son unos ladrones, esto es una estafa');
+
+        $this->conversacion()->update(['assigned_to' => $otro->id]);
+
+        $rojo = SentimentEvent::where('nivel', Lectura::ROJO)->firstOrFail();
+
+        $this->assertSame($this->admin->id, $rojo->assigned_to);
+    }
+
+    public function test_el_panel_no_ensena_la_seccion_si_no_esta_instalada(): void
+    {
+        $this->admin->givePermissionTo('reports.view');
+
+        $this->actingAs($this->admin)
+            ->get('/reports')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('sentimiento', null));
+    }
+
+    public function test_el_panel_cuenta_la_bandeja_de_ahora(): void
+    {
+        $this->admin->givePermissionTo('reports.view');
+        $this->instalar();
+
+        $this->conversacionCon(Lectura::ROJO, '573001', now()->toDateTimeString());
+        $this->conversacionCon(Lectura::ROJO, '573002', now()->toDateTimeString());
+        $this->conversacionCon(Lectura::VERDE, '573003', now()->toDateTimeString());
+
+        $this->actingAs($this->admin)
+            ->get('/reports')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('sentimiento.ahora.rojo', 2)
+                ->where('sentimiento.ahora.verde', 1));
     }
 
     // ── Aislamiento ─────────────────────────────────────────────────────────

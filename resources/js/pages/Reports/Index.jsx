@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { ArrowUp, Clock, Inbox, MessageCircle, Users, AlertCircle, BarChart3, User as UserIcon, X } from 'lucide-react';
+import { ArrowUp, Clock, Inbox, MessageCircle, Users, AlertCircle, BarChart3, User as UserIcon, X, Gauge, Smile, Meh, Frown, HelpCircle } from 'lucide-react';
 
 export default function ReportsIndex(props) {
     const { mode, filters, agents } = props;
@@ -95,13 +95,13 @@ export default function ReportsIndex(props) {
 
                 {mode === 'agent'
                     ? <AgentReport report={props.agentReport} />
-                    : <CompanyReport report={props.report} />}
+                    : <CompanyReport report={props.report} sentimiento={props.sentimiento} />}
             </div>
         </>
     );
 }
 
-function CompanyReport({ report }) {
+function CompanyReport({ report, sentimiento }) {
     const totals = report.totals;
     return (
         <>
@@ -175,6 +175,8 @@ function CompanyReport({ report }) {
                     </table>
                 )}
             </div>
+
+            {sentimiento && <SentimientoReport data={sentimiento} />}
 
             {totals.unanswered_unassigned > 0 && (
                 <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning flex items-center gap-2 mt-4">
@@ -321,6 +323,144 @@ function formatSeconds(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// ── Semáforo de emociones ───────────────────────────────────────────────────
+// Los colores son de ESTADO, no de categoría: verde/ámbar/rojo significan algo
+// fijo y no se pueden reasignar. Eso trae dos obligaciones, y las dos están
+// resueltas abajo:
+//
+//   1. Rojo y verde es el peor caso posible para quien no distingue esos dos
+//      colores —en torno al 8% de los hombres—. Por eso NUNCA va el color solo:
+//      cada uno lleva su icono y su palabra.
+//   2. El verde y el ámbar quedan por debajo de 3:1 de contraste sobre el fondo
+//      claro (comprobado con el validador de paleta). Un aviso de contraste
+//      obliga a números visibles o a una tabla: aquí están los números.
+const NIVELES = [
+    { key: 'rojo', label: 'Molestos', icon: Frown, barra: 'bg-red-500', texto: 'text-red-600 dark:text-red-400', fondo: 'bg-red-500/15' },
+    { key: 'amarillo', label: 'Con fricción', icon: Meh, barra: 'bg-amber-500', texto: 'text-amber-600 dark:text-amber-400', fondo: 'bg-amber-500/15' },
+    { key: 'verde', label: 'Tranquilos', icon: Smile, barra: 'bg-emerald-500', texto: 'text-emerald-600 dark:text-emerald-400', fondo: 'bg-emerald-500/15' },
+];
+
+function SentimientoReport({ data }) {
+    const { ahora, evolucion, agentes, cambios } = data;
+    const pico = Math.max(1, ...evolucion.map(d => d.rojo + d.amarillo + d.verde));
+    const dia = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+
+    return (
+        <div className="mt-6 space-y-4">
+            <div className="flex items-center gap-2">
+                <Gauge className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-medium text-foreground">Semáforo de emociones</h2>
+            </div>
+
+            {/* Cómo está la bandeja AHORA. No es lo mismo que el periodo: un mes
+                malo con hoy resuelto y un mes bueno con hoy ardiendo se leen
+                igual si sólo hay un número. */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {NIVELES.map(n => (
+                    <Tile
+                        key={n.key}
+                        icon={n.icon}
+                        label={n.label}
+                        value={ahora[n.key]}
+                        sub="conversaciones abiertas"
+                        tone={n.key === 'rojo' ? 'red' : n.key === 'amarillo' ? 'amber' : 'green'}
+                    />
+                ))}
+                {/* Aparte de los verdes a propósito: "lo miré y está bien" no es
+                    lo mismo que "no lo he mirado", y sumarlos convertiría esto en
+                    el tipo de informe tranquilizador que no sirve para decidir. */}
+                <Tile icon={HelpCircle} label="Sin analizar" value={ahora.sin_analizar} sub="sin mensajes de texto" tone="blue" />
+            </div>
+
+            <div className="rounded-xl border bg-card overflow-hidden">
+                <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between gap-4 flex-wrap">
+                    <span className="text-sm font-medium">Conversaciones que cambiaron de color</span>
+                    {/* Leyenda siempre, por ser más de una serie. */}
+                    <div className="flex items-center gap-3">
+                        {NIVELES.map(n => (
+                            <span key={n.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className={`size-2 rounded-full ${n.barra}`} />
+                                {n.label}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {cambios === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <BarChart3 className="size-12 text-muted-foreground/40 mb-4" />
+                        <p className="text-sm text-muted-foreground">Ninguna conversación cambió de color en este rango.</p>
+                    </div>
+                ) : (
+                    <div className="p-4">
+                        <div className="flex items-end gap-[2px] h-28" role="img" aria-label={`Evolución diaria: ${cambios} cambios de color en el periodo`}>
+                            {evolucion.map(d => {
+                                const total = d.rojo + d.amarillo + d.verde;
+                                return (
+                                    <div
+                                        key={d.dia}
+                                        title={`${dia(d.dia)} · ${d.rojo} molestos, ${d.amarillo} con fricción, ${d.verde} tranquilos`}
+                                        className="flex-1 min-w-[3px] flex flex-col justify-end gap-[2px] h-full"
+                                    >
+                                        {/* El rojo abajo, pegado al eje: comparar
+                                            entre días exige una base común, y es
+                                            el dato que se viene a buscar. */}
+                                        {['verde', 'amarillo', 'rojo'].map(k => d[k] > 0 && (
+                                            <div
+                                                key={k}
+                                                className={`${NIVELES.find(n => n.key === k).barra} ${k === 'rojo' ? 'rounded-b-[3px]' : ''}`}
+                                                style={{ height: `${(d[k] / pico) * 100}%` }}
+                                            />
+                                        ))}
+                                        {total === 0 && <div className="h-[2px] bg-muted rounded-full" />}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="flex justify-between mt-2 text-[11px] text-muted-foreground">
+                            <span>{dia(evolucion[0]?.dia ?? '')}</span>
+                            <span>{cambios} cambios en total</span>
+                            <span>{dia(evolucion[evolucion.length - 1]?.dia ?? '')}</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {agentes.length > 0 && (
+                <div className="rounded-xl border bg-card overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-muted/30 text-sm font-medium flex items-center gap-2">
+                        <Users className="size-4" /> Conversaciones que se pusieron en rojo, por agente
+                    </div>
+                    <table className="w-full text-sm">
+                        <thead className="bg-muted/30 text-xs uppercase text-muted-foreground">
+                            <tr>
+                                <th className="text-left px-4 py-2 font-medium">Agente</th>
+                                <th className="text-right px-4 py-2 font-medium">Veces</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {agentes.map(a => (
+                                <tr key={a.id} className="border-t">
+                                    <td className="px-4 py-2">{a.nombre}</td>
+                                    <td className="px-4 py-2 text-right font-mono">{a.rojos}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {/* Dicho en la propia pantalla y no sólo en el código: sin
+                        esta frase, la tabla se lee como un ranking a los cinco
+                        segundos de abrirla. */}
+                    <p className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground border-t bg-muted/10">
+                        Esto <strong>no mide la calidad del agente</strong>: al que mejor atiende se le asignan
+                        los casos difíciles, así que leerlo como un ranking premiaría a quien lleva lo fácil.
+                        Sirve para repartir carga y para ver a quién conviene echarle una mano.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function Tile({ icon: Icon, label, value, sub, tone = 'blue' }) {

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationEvent;
 use App\Models\CompanyExtension;
+use App\Models\SentimentEvent;
 use App\Models\WhatsAppConversation;
 use App\Services\SentimientoIaClient;
 use App\Support\Realtime;
@@ -113,6 +114,15 @@ class AnalizarSentimiento implements ShouldQueue
         if (! $lectura) {
             return;
         }
+
+        SentimentEvent::registrar(
+            $conversation,
+            $conversation->instance->company_id,
+            $lectura->nivel,
+            $lectura->score,
+            $lectura->origen,
+            $anterior
+        );
 
         $conversation->update([
             'sentiment_level' => $lectura->nivel,

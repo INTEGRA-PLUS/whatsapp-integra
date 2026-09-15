@@ -4,13 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\AgentReportService;
+use App\Services\SentimientoReportService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class ReportsController extends Controller
 {
-    public function index(Request $request, AgentReportService $service)
+    public function index(Request $request, AgentReportService $service, SentimientoReportService $sentimiento)
     {
         $user = auth()->user();
 
@@ -54,6 +55,10 @@ class ReportsController extends Controller
         } else {
             $payload['mode'] = 'company';
             $payload['report'] = $service->build($user->company_id, $from, $to);
+            // Null si la empresa no tiene el semáforo instalado: el panel se
+            // calla en vez de enseñar una sección a cero, que se lee como "todo
+            // va bien" cuando lo que pasa es que nadie mide.
+            $payload['sentimiento'] = $sentimiento->build($user->company_id, $from, $to);
         }
 
         return Inertia::render('Reports/Index', $payload);

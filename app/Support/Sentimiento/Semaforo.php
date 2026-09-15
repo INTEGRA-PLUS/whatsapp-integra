@@ -129,8 +129,22 @@ class Semaforo
         $peso = 1.0;
 
         foreach ($puntuaciones as $p) {
-            $suma += $p->score * $peso;
-            $pesos += $peso;
+            // Los mensajes que no dicen nada —"ok", "hola", "listo"— NO votan,
+            // pero sí consumen su posición en el decaimiento.
+            //
+            // Las dos mitades importan. Si votaran, un "hola" anterior partiría
+            // por la mitad un mensaje de insultos y lo dejaría en amarillo: un
+            // cliente que te llama ladrón es rojo, venga de donde venga. Y si
+            // además no consumieran posición, el enfado de hace ocho mensajes
+            // pesaría como si fuera el último.
+            //
+            // El silencio no es calma: una conversación sólo sale del rojo con
+            // mensajes que digan algo bueno, no dejando de quejarse.
+            if ($p->score !== 0.0) {
+                $suma += $p->score * $peso;
+                $pesos += $peso;
+            }
+
             $peso *= self::DECAIMIENTO;
         }
 

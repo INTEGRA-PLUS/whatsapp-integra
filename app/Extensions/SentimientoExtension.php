@@ -6,6 +6,7 @@ use App\Events\ConversationEvent;
 use App\Extensions\Contracts\HandlesInboundMessage;
 use App\Jobs\AnalizarSentimiento;
 use App\Models\CompanyExtension;
+use App\Models\SentimentEvent;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Support\Realtime;
@@ -195,7 +196,17 @@ class SentimientoExtension extends Extension implements HandlesInboundMessage
             return;
         }
 
-        $cambio = $lectura->cambiaRespectoA($conversation->sentiment_level);
+        $anterior = $conversation->sentiment_level;
+        $cambio = $lectura->cambiaRespectoA($anterior);
+
+        SentimentEvent::registrar(
+            $conversation,
+            $installed->company_id,
+            $lectura->nivel,
+            $lectura->score,
+            $lectura->origen,
+            $anterior
+        );
 
         $conversation->update([
             'sentiment_level' => $lectura->nivel,
