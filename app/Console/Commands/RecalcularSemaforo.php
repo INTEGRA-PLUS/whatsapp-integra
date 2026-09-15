@@ -116,12 +116,24 @@ class RecalcularSemaforo extends Command
         $this->newLine();
 
         $this->line(sprintf(
-            '  <info>%s</info>  <fg=green>● %d</> <fg=yellow>● %d</> <fg=red>● %d</>  <fg=gray>%d sin color</>',
+            '  <info>%s</info>  <fg=green>● %d</> <fg=yellow>● %d</> <fg=red>● %d</>  <fg=gray>%d sin analizar</>',
             $nombre,
             $cuenta['verde'],
             $cuenta['amarillo'],
             $cuenta['rojo'],
             $cuenta['sin_color']
         ));
+
+        // Decir "sin color" y callar el porqué deja a quien lo corre adivinando:
+        // parece que la herramienta falló cuando lo que pasa es que no hay nada
+        // que leer. Es la primera pregunta que se hace al verlo.
+        if ($cuenta['sin_color'] > 0) {
+            $this->line(sprintf(
+                '  <fg=gray>%s no tiene ningún mensaje de texto del cliente (sólo avisos del',
+                $cuenta['sin_color'] === 1 ? 'Una conversación' : "{$cuenta['sin_color']} conversaciones"
+            ));
+            $this->line('  sistema, audios o imágenes), así que no hay nada que analizar. Se quedan');
+            $this->line('  en gris a propósito: «no lo he mirado» no es lo mismo que «está bien».</>');
+        }
     }
 }
