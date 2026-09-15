@@ -70,7 +70,16 @@ return [
         // único (se usa para armar el app access token "app_id|app_secret").
         //
         // Formato: uno o varios secretos separados por coma.
-        'webhook_app_secrets' => env('META_APP_SECRETS', env('META_APP_SECRET')),
+        //
+        // `?:` y NO el segundo argumento de env(): el compose declara
+        // `META_APP_SECRETS: ${META_APP_SECRETS:-}`, así que la variable llega
+        // al contenedor **definida y vacía**, no ausente — y env() sólo aplica
+        // su valor por defecto cuando la clave no existe. Escrito como
+        // `env('META_APP_SECRETS', env('META_APP_SECRET'))` el respaldo parecía
+        // estar y nunca se activaba: una instalación que configurara sólo el
+        // singular se quedaba sin secretos y respondía 403 a TODOS los webhooks.
+        // Es el mismo fallo que costó el token de verificación de Instagram.
+        'webhook_app_secrets' => env('META_APP_SECRETS') ?: env('META_APP_SECRET'),
         // Instagram. El caso de uso «API con inicio de sesión con Instagram»
         // hace que Meta cree una app APARTE —«Integra CRM-IG»— con identidad
         // propia: su App ID es el client_id del OAuth y su clave secreta es la
