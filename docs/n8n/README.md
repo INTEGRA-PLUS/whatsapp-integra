@@ -38,3 +38,28 @@ de reemplazar, cambia el `id` antes.
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.
+
+## Ollama Cloud ignora `format`, así que el prompt nombra las claves
+
+*15-sep-2026.* El primer resumen que se pidió en producción volvió vacío, con
+`"error": "el modelo no devolvió resumen"`. La petición llevaba su `format` con
+el esquema JSON y `required: ['resumen','puntos','pendientes']`, pero el modelo
+devolvió esto:
+
+```json
+{ "pedido": [...], "promesa": [...], "pendientes": [...] }
+```
+
+Claves inventadas a partir de los conceptos del prompt —que hablaba de «lo que
+el cliente pidió» y «lo que se le prometió»— porque el prompt **no nombraba los
+campos** y confiaba en el esquema. En `gpt-oss:120b-cloud` sobre `ollama.com`
+ese `format` **no se aplica**; en la misma respuesta se ve que tampoco se
+respeta `think: false`, porque vuelve un campo `thinking` lleno.
+
+Por eso el bloque de las tres claves está escrito a mano en el prompt del
+sistema. El `format` se deja puesto —no estorba y otros back-ends sí lo
+honran—, pero **no es lo que sostiene el contrato**.
+
+La pista para diagnosticarlo está en el `thinking` de la ejecución: el modelo
+razonaba en voz alta sobre qué campos debía sacar. Cuando un flujo devuelva
+vacío, mirar ahí antes que en el código.
