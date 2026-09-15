@@ -487,6 +487,38 @@ const FOLLOW_UP_BORDER = {
     urgent: 'border-l-destructive',
 };
 
+// Una franja de color no dice qué significa. La barra ámbar de la lista quería
+// decir «este cliente lleva rato esperando», y para averiguarlo había que pasar
+// el ratón por encima y esperar al tooltip del navegador —o preguntar—. Quien
+// entra nuevo a la bandeja no hace ni una cosa ni la otra: ve un adorno.
+//
+// Así que el aviso pasa a llevar palabras y el tiempo concreto, y la barra se
+// queda como lo que sirve de verdad: poder barrer la lista de un vistazo. De
+// paso deja de depender del color, que para quien no distingue el ámbar del
+// rojo no era ninguna señal.
+function tiempoEsperando(desde) {
+    const minutos = Math.floor((Date.now() - new Date(desde).getTime()) / 60000);
+
+    if (minutos < 60) return `${Math.max(minutos, 1)} min`;
+
+    const horas = Math.floor(minutos / 60);
+
+    if (horas < 24) {
+        const resto = minutos % 60;
+
+        return resto ? `${horas} h ${resto} min` : `${horas} h`;
+    }
+
+    const dias = Math.floor(horas / 24);
+
+    return dias === 1 ? '1 día' : `${dias} días`;
+}
+
+const FOLLOW_UP_AVISO = {
+    warn: 'text-warning',
+    urgent: 'text-destructive',
+};
+
 // ─── Semáforo de emociones ──────────────────────────────────────────────────
 // Lo escribe la extensión "Semáforo de emociones" en la propia conversación
 // (`sentiment_level`), así que llega sola por los tres caminos: la lista, el poll
@@ -616,11 +648,12 @@ const ConversationItem = memo(({
     selected,
     onToggleSelect,
     tier,
+    espera,
 }) => {
     return (
         <div
             onClick={() => selectionMode ? onToggleSelect(conv.id) : onSelect(conv)}
-            title={tier ? 'El cliente lleva un rato esperando respuesta' : undefined}
+            title={tier ? `El cliente lleva ${espera} esperando respuesta` : undefined}
             className={clsx(
                 // El borde izquierdo se reserva siempre transparente para que la
                 // fila no se desplace 3px cuando aparece el color.
@@ -817,6 +850,18 @@ const ConversationItem = memo(({
                 <div className="flex items-center gap-1 mt-0.5">
                     {isActive && <StatusIcons status="read" />}
                     <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                        {/* Delante del último mensaje y no detrás: detrás lo
+                            habría tapado el truncado del texto justo en las
+                            conversaciones largas, que son las que más esperan. */}
+                        {tier && (
+                            <span className={clsx(
+                                'shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold whitespace-nowrap',
+                                FOLLOW_UP_AVISO[tier]
+                            )}>
+                                <Clock className="size-3" />
+                                {espera} sin responder
+                            </span>
+                        )}
                         {conv.assigned_agent && (
                             <span className="text-[9px] font-black text-accent-foreground/60 uppercase tracking-tighter whitespace-nowrap">
                                 @{conv.assigned_agent.name.split(' ')[0]}:
@@ -867,28 +912,40 @@ const ConversationList = memo(function ConversationList({
         return () => clearInterval(id);
     }, []);
 
-    return conversations.map(conv => (
-        <div key={conv.id} style={LIST_ITEM_STYLE}>
-            <ConversationItem
-                conv={conv}
-                isActive={selectedId === conv.id}
-                onSelect={onSelect}
-                onAttachTag={onAttachTag}
-                onDetachTag={onDetachTag}
-                onNewTag={onNewTag}
-                onAssign={onAssign}
-                tags={tags}
-                companyUsers={companyUsers}
-                isAdmin={isAdmin}
-                formatTime={formatTime}
-                StatusIcons={StatusIcons}
-                selectionMode={selectionMode}
-                selected={selectionMode && selectedIds.has(conv.id)}
-                onToggleSelect={onToggleSelect}
-                tier={followUpTier(conv, umbral)}
-            />
-        </div>
-    ));
+    return conversations.map(conv => {
+        const tier = followUpTier(conv, umbral);
+
+        // El tiempo sólo se calcula —y sólo viaja— si hay aviso que dar. Pasarlo
+        // siempre volvería a renderizar TODAS las filas cada 30 segundos, porque
+        // el texto cambia cada minuto y ConversationItem está memoizado por sus
+        // props: sería cambiar una franja de color por una bandeja que parpadea
+        // con mil conversaciones abiertas.
+        const espera = tier ? tiempoEsperando(conv.last_message_at) : null;
+
+        return (
+            <div key={conv.id} style={LIST_ITEM_STYLE}>
+                <ConversationItem
+                    conv={conv}
+                    isActive={selectedId === conv.id}
+                    onSelect={onSelect}
+                    onAttachTag={onAttachTag}
+                    onDetachTag={onDetachTag}
+                    onNewTag={onNewTag}
+                    onAssign={onAssign}
+                    tags={tags}
+                    companyUsers={companyUsers}
+                    isAdmin={isAdmin}
+                    formatTime={formatTime}
+                    StatusIcons={StatusIcons}
+                    selectionMode={selectionMode}
+                    selected={selectionMode && selectedIds.has(conv.id)}
+                    onToggleSelect={onToggleSelect}
+                    tier={tier}
+                    espera={espera}
+                />
+            </div>
+        );
+    });
 });
 
 // ─── Main Component ──────────────────────────────────────────────────────────
