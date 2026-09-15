@@ -239,10 +239,34 @@ class ExtensionSentimientoTest extends TestCase
 
         $this->recibir('Es la tercera vez que escribo y nadie me responde');
 
-        $conversacion = $this->conversacion();
+        $this->assertSame(Lectura::AMARILLO, $this->conversacion()->sentiment_level);
+    }
 
-        $this->assertContains($conversacion->sentiment_level, [Lectura::AMARILLO, Lectura::ROJO]);
-        $this->assertNotSame(Lectura::VERDE, $conversacion->sentiment_level);
+    /**
+     * Amarillo y no rojo, por muchas veces que lo repita: eso está escrito con
+     * toda educación y es fricción, no enfado. El rojo se reserva para insultos,
+     * enfado explícito, hablar de irse o nombrar a un ente de control.
+     *
+     * Antes se sumaba una frase de esfuerzo con otra hasta cruzar el umbral del
+     * rojo, que es la forma de inflar los rojos hasta que nadie los mira.
+     */
+    public function test_el_esfuerzo_solo_no_llega_a_rojo(): void
+    {
+        $this->instalar();
+
+        $this->recibir('Es la segunda vez que escribo, sigo esperando, nadie me responde, llevo dias');
+
+        $this->assertSame(Lectura::AMARILLO, $this->conversacion()->sentiment_level);
+    }
+
+    /** Pero acompañado de enfado real, sí. */
+    public function test_el_esfuerzo_con_enfado_si_llega_a_rojo(): void
+    {
+        $this->instalar();
+
+        $this->recibir('Es la tercera vez que escribo, esto es una verguenza');
+
+        $this->assertSame(Lectura::ROJO, $this->conversacion()->sentiment_level);
     }
 
     /**

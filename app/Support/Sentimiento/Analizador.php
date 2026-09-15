@@ -84,6 +84,21 @@ class Analizador
                 $categorias[] = $categoria;
             }
 
+            // El esfuerzo SOLO no llega a rojo, por muchas veces que se repita.
+            //
+            // "Es la tercera vez que escribo y nadie me responde" son dos frases
+            // de esfuerzo y se iban sumando hasta cruzar el umbral del rojo. Pero
+            // eso está escrito con toda educación: es fricción, no enfado. El
+            // rojo se reserva para lo que de verdad es rojo —insultos, enfado,
+            // hablar de irse, nombrar a un ente de control—, y el esfuerzo llega
+            // a rojo sólo acompañado de alguno de ésos.
+            //
+            // Con sensibilidad ALTA sí llega solo, y es lo que debe significar
+            // «avisa antes»: el umbral se mueve, no el peso.
+            if ($categoria === 'esfuerzo') {
+                $aporte = max($aporte, $peso);
+            }
+
             if ($aporte > 0) {
                 $positivo += $aporte;
             } else {

@@ -204,7 +204,15 @@ class Semaforo
         };
     }
 
-    private function nivel(float $score, string $sensibilidad): string
+    /**
+     * El color que le corresponde a una puntuación.
+     *
+     * Público para que `wa:semaforo-probar` use estos mismos umbrales. Una copia
+     * en el comando se desincronizaría en la primera calibración y entonces la
+     * herramienta de diagnóstico diría algo distinto de lo que hace el sistema,
+     * que es la peor clase de herramienta de diagnóstico.
+     */
+    public function nivel(float $score, string $sensibilidad = 'medio'): string
     {
         [$rojo, $amarillo] = self::UMBRALES[$sensibilidad] ?? self::UMBRALES['medio'];
 
