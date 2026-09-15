@@ -670,9 +670,20 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             <section className="overflow-hidden rounded-xl border border-border bg-card">
                                 <div className="border-b border-border px-5 py-4">
                                     <h3 className="font-heading text-sm font-semibold text-foreground">
-                                        Precio por tramo de socios
+                                        Precio por tramo de contactos
                                     </h3>
+                                    {/* Decía «socios», que es como lo llama el cliente
+                                        —una cooperativa o un ISP hablan de socios y de
+                                        suscriptores— pero no dice qué se cuenta. Lo que
+                                        cuenta el sistema son contactos, y en un panel
+                                        donde se decide cuánto cobrar eso no se puede
+                                        quedar a la interpretación de cada uno. */}
                                     <p className="mt-0.5 text-xs text-muted-foreground">
+                                        Un contacto es cada persona distinta que le ha escrito a la empresa por
+                                        WhatsApp; el CRM los guarda solo. En una cooperativa o un ISP son sus socios o
+                                        suscriptores, que es la palabra de la propuesta comercial.
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
                                         USD al mes de plataforma. No incluye los mensajes: esos se los paga el cliente
                                         a Meta directamente y nosotros no cobramos margen encima.
                                     </p>
@@ -688,13 +699,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                     </th>
                                                 ))}
                                                 <th className="px-5 py-2.5 text-right font-medium">IA incluida</th>
+                                                <th className="px-5 py-2.5 text-right font-medium">Empresas ahí</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {planes_resumen.tramos.map(tramo => (
                                                 <tr key={tramo.hasta} className="border-b border-border/60 last:border-0">
                                                     <td className="whitespace-nowrap px-5 py-2.5 tabular-nums text-foreground">
-                                                        {tramo.hasta.toLocaleString('es-CO')} socios
+                                                        {tramo.hasta.toLocaleString('es-CO')} contactos
                                                     </td>
                                                     {planes_resumen.planes.map(plan => (
                                                         <td key={plan.slug} className="px-5 py-2.5 text-right tabular-nums text-foreground">
@@ -703,6 +715,13 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                     ))}
                                                     <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
                                                         {tramo.ia.toLocaleString('es-CO')}
+                                                    </td>
+                                                    {/* Por contactos de verdad, no por el
+                                                        tramo que alguien tecleó: es lo que
+                                                        dice si la escalera está donde están
+                                                        los clientes. */}
+                                                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
+                                                        {tramo.empresas}
                                                     </td>
                                                 </tr>
                                             ))}

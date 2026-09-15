@@ -6,6 +6,7 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Company;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -144,6 +145,58 @@ class PanelDePlanesTest extends TestCase
         }
     }
 
+    /**
+     * Cada tramo dice cuántas empresas caen hoy dentro, por sus contactos de
+     * verdad y no por el tramo que alguien tecleó en la ficha.
+     *
+     * Es lo que responde si la escalera está donde están los clientes. Y la
+     * suma tiene que dar todas las empresas mientras ninguna se salga del
+     * último tramo: una empresa sin un solo contacto es un cliente recién
+     * conectado, no un cliente que no existe, y cuenta en el primero.
+     */
+    public function test_cada_tramo_cuenta_las_empresas_por_contactos_reales(): void
+    {
+        $sinContactos = $this->empresa('Recién conectada');
+        $conPocos = $this->empresa('Pequeña');
+        $mediana = $this->empresa('Mediana');
+
+        $this->contactos($conPocos, 3);
+        $this->contactos($mediana, 600);
+
+        $escalera = $this->resumen()['tramos'];
+        $tramos = collect($escalera)->keyBy('hasta');
+
+        // La del master y las dos de arriba de 500 o menos: 3 en el primero.
+        $this->assertSame(3, $tramos[500]['empresas']);
+        $this->assertSame(1, $tramos[2000]['empresas']);
+        $this->assertSame(0, $tramos[5000]['empresas']);
+
+        $this->assertSame(
+            Company::count(),
+            collect($escalera)->sum('empresas'),
+            'Ninguna empresa puede quedarse fuera de la escalera.'
+        );
+    }
+
+    private function contactos(Company $company, int $cuantos): void
+    {
+        $filas = [];
+
+        for ($i = 0; $i < $cuantos; $i++) {
+            $filas[] = [
+                'company_id' => $company->id,
+                'name' => 'Contacto '.$i,
+                'phone_number' => '57300'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        foreach (array_chunk($filas, 200) as $lote) {
+            DB::table('contacts')->insert($lote);
+        }
+    }
+
     /** Y los dos meses del pago anual, que son parte del precio. */
     public function test_el_descuento_anual_llega_a_la_pantalla(): void
     {
@@ -208,7 +261,14 @@ class PanelDePlanesTest extends TestCase
 
     private function master(): User
     {
-        $company = Company::create(['name' => 'Integra', 'slug' => 'integra', 'active' => true]);
+        $company = Company::firstOrCreate(
+            ['slug' => 'integra'],
+            ['name' => 'Integra', 'active' => true]
+        );
+
+        if ($existente = User::where('email', 'master@example.test')->first()) {
+            return $existente;
+        }
 
         $user = User::create([
             'company_id' => $company->id,

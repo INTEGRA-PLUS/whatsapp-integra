@@ -234,6 +234,55 @@ class MasterController extends Controller
     }
 
     /**
+     * La escalera de precios, con cuántas empresas caen hoy en cada tramo.
+     *
+     * El tramo se mide en contactos: cada persona distinta que le ha escrito a
+     * la empresa por WhatsApp, que es lo que `contacts` va guardando sola. En
+     * una cooperativa o un ISP a esas personas las llaman socios o suscriptores,
+     * y de ahí sale la palabra en la propuesta comercial — pero lo que el
+     * sistema cuenta son contactos, y conviene que la pantalla lo diga con esa
+     * palabra para que nadie tenga que adivinar qué se le está cobrando.
+     *
+     * El reparto sale de UNA consulta agrupada y no de `contactosReales()` por
+     * empresa, que serían cincuenta y cuatro.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function escaleraDePrecios(): array
+    {
+        $contactosPorEmpresa = DB::table('contacts')
+            ->selectRaw('company_id, count(*) as total')
+            ->groupBy('company_id')
+            ->pluck('total', 'company_id');
+
+        // Las empresas sin un solo contacto también ocupan un tramo —el
+        // primero—: son clientes recién conectados, no clientes que no existen.
+        $totales = Company::pluck('id')
+            ->map(fn (int $id) => (int) ($contactosPorEmpresa[$id] ?? 0));
+
+        $topes = array_keys(config('planes.precios', []));
+        $anterior = 0;
+        $escalera = [];
+
+        foreach ($topes as $hasta) {
+            $escalera[] = [
+                'hasta' => (int) $hasta,
+                'ia' => (int) config("planes.credito_ia.{$hasta}", 0),
+                'precios' => collect(config('planes.disponibles'))
+                    ->map(fn (array $plan, string $slug) => config("planes.precios.{$hasta}.{$slug}"))
+                    ->all(),
+                'empresas' => $totales
+                    ->filter(fn (int $t) => ($t > $anterior && $t <= $hasta) || ($anterior === 0 && $t === 0))
+                    ->count(),
+            ];
+
+            $anterior = (int) $hasta;
+        }
+
+        return $escalera;
+    }
+
+    /**
      * El catálogo de planes con lo que de verdad hay detrás de cada uno.
      *
      * La pestaña de planes del panel llevaba tres tarjetas y una tabla escritas
@@ -296,15 +345,7 @@ class MasterController extends Controller
             // El crédito de IA va en la misma fila porque es el mismo tramo: son
             // dos columnas de una misma escalera, y separarlas obligaba a
             // cruzarlas de cabeza.
-            'tramos' => collect(config('planes.credito_ia', []))
-                ->map(fn (int $credito, int $hasta) => [
-                    'hasta' => $hasta,
-                    'ia' => $credito,
-                    'precios' => collect(config('planes.disponibles'))
-                        ->map(fn (array $plan, string $slug) => config("planes.precios.{$hasta}.{$slug}"))
-                        ->all(),
-                ])
-                ->values(),
+            'tramos' => $this->escaleraDePrecios(),
 
             // Dos meses gratis pagando el año: es parte del precio, no una
             // promoción, y es lo que ancla los 250 USD de Cootramed.
