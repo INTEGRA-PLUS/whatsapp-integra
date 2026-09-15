@@ -512,6 +512,91 @@ const SENTIMENT_DOT = {
     rojo: { clase: 'bg-red-500 ring-2 ring-red-500/25', label: 'Molesto' },
 };
 
+// Las caritas del semáforo, dibujadas y no en emoji: un 😊 cambia de cara en
+// cada sistema operativo, no hereda el color del nivel y a 14 px se ve sucio.
+// El círculo va con `currentColor`, así que el color del estado se pone con una
+// clase de texto y los rasgos quedan siempre oscuros sobre él.
+const CARITAS = {
+    verde: {
+        color: 'text-emerald-500',
+        // Tinte oscuro del propio color en vez de negro: un negro puro sobre el
+        // verde se ve como un agujero a tamaño pequeño.
+        rasgos: '#064e3b',
+        boca: <path d="M7.6 14.4c1.3 2.1 7.5 2.1 8.8 0" />,
+    },
+    amarillo: {
+        color: 'text-amber-500',
+        rasgos: '#451a03',
+        boca: <path d="M8.2 15.2h7.6" />,
+    },
+    rojo: {
+        color: 'text-red-500',
+        rasgos: '#4c0519',
+        // El enojado es el único con cejas: es lo que hace que se lea como
+        // enfado y no como tristeza cuando la carita mide 14 px.
+        cejas: <path d="M6.9 8.1 10.6 9.7M17.1 8.1 13.4 9.7" />,
+        boca: <path d="M8.2 16.6c1.2-1.7 6.4-1.7 7.6 0" />,
+    },
+};
+
+/**
+ * La carita de un nivel del semáforo.
+ *
+ * `size-*` viene de fuera para poder usarla grande en el filtro y pequeña en
+ * cada fila sin duplicar el dibujo.
+ */
+function CaritaSemaforo({ nivel, className }) {
+    const c = CARITAS[nivel];
+
+    if (!c) return null;
+
+    const ojoY = nivel === 'rojo' ? 12 : 10.2;
+
+    return (
+        <svg viewBox="0 0 24 24" className={clsx(c.color, className)} aria-hidden="true">
+            <circle cx="12" cy="12" r="11" fill="currentColor" />
+            <g fill={c.rasgos}>
+                <circle cx="8.6" cy={ojoY} r="1.45" />
+                <circle cx="15.4" cy={ojoY} r="1.45" />
+            </g>
+            <g stroke={c.rasgos} strokeWidth="1.7" strokeLinecap="round" fill="none">
+                {c.cejas}
+                {c.boca}
+            </g>
+        </svg>
+    );
+}
+
+// Tooltip del color del propio semáforo. Los tonos no son los mismos que los de
+// la carita a propósito: emerald-500 con texto blanco da 2.5:1 de contraste y no
+// se lee. Verde y rojo bajan un par de pasos para aguantar el blanco, y el
+// amarillo se queda claro con la letra oscura, que es como sí se lee.
+const TOOLTIP_SEMAFORO = {
+    verde: { fondo: 'bg-emerald-700 text-white', flecha: 'bg-emerald-700 fill-emerald-700' },
+    amarillo: { fondo: 'bg-amber-400 text-amber-950', flecha: 'bg-amber-400 fill-amber-400' },
+    rojo: { fondo: 'bg-red-600 text-white', flecha: 'bg-red-600 fill-red-600' },
+};
+
+function TooltipSemaforo({ nivel, texto, lado = 'top', children }) {
+    const t = TOOLTIP_SEMAFORO[nivel];
+
+    if (!t) return children;
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent
+                side={lado}
+                align="center"
+                className={clsx('font-medium', t.fondo)}
+                arrowClassName={t.flecha}
+            >
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
@@ -565,13 +650,25 @@ const ConversationItem = memo(({
                 <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                         {SENTIMENT_DOT[conv.sentiment_level] && (
-                            <span
-                                // El título lleva la palabra además del color: un
-                                // punto rojo no le dice nada a quien no distingue
+                            <TooltipSemaforo
+                                nivel={conv.sentiment_level}
+                                // El texto lleva la palabra además del color: una
+                                // carita roja no le dice nada a quien no distingue
                                 // el rojo del verde, que es bastante gente.
-                                title={`${SENTIMENT_DOT[conv.sentiment_level].label}${conv.sentiment_reason ? ` — ${conv.sentiment_reason}` : ''}`}
-                                className={clsx('shrink-0 size-2 rounded-full', SENTIMENT_DOT[conv.sentiment_level].clase)}
-                            />
+                                texto={`${SENTIMENT_DOT[conv.sentiment_level].label}${conv.sentiment_reason ? ` — ${conv.sentiment_reason}` : ''}`}
+                            >
+                                {/* El `span` existe para que el tooltip tenga a
+                                    quién agarrarse sin robarle el clic a la fila. */}
+                                <span
+                                    className="shrink-0 leading-none"
+                                    aria-label={SENTIMENT_DOT[conv.sentiment_level].label}
+                                >
+                                    {/* Más grande que el punto que había aquí: a
+                                        8 px una carita es indistinguible de un
+                                        punto y no valdría la pena dibujarla. */}
+                                    <CaritaSemaforo nivel={conv.sentiment_level} className="size-3.5" />
+                                </span>
+                            </TooltipSemaforo>
                         )}
                         {conv.status === 'closed' && (
                             <span title="Conversación cerrada" className="shrink-0 text-muted-foreground">
@@ -4497,21 +4594,29 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 {SENTIMENT_FILTERS.map(o => {
                                                     const activo = sentimentFilter.includes(o.value);
                                                     return (
-                                                        <button
+                                                        <TooltipSemaforo
                                                             key={o.value}
-                                                            type="button"
-                                                            title={activo ? `Quitar filtro: ${o.label}` : `Ver sólo: ${o.label}`}
-                                                            aria-pressed={activo}
-                                                            onClick={() => setSentimentFilter(prev => prev.includes(o.value)
-                                                                ? prev.filter(v => v !== o.value)
-                                                                : [...prev, o.value])}
-                                                            className={clsx(
-                                                                'size-5 flex items-center justify-center rounded-md transition-colors',
-                                                                activo ? 'bg-muted' : 'opacity-40 hover:opacity-100'
-                                                            )}
+                                                            nivel={o.value}
+                                                            texto={activo ? `Quitar filtro: ${o.label}` : `Ver sólo: ${o.label}`}
+                                                            lado="bottom"
                                                         >
-                                                            <span className={clsx('size-2 rounded-full', o.clase)} />
-                                                        </button>
+                                                            <button
+                                                                type="button"
+                                                                aria-label={activo ? `Quitar filtro: ${o.label}` : `Ver sólo: ${o.label}`}
+                                                                aria-pressed={activo}
+                                                                onClick={() => setSentimentFilter(prev => prev.includes(o.value)
+                                                                    ? prev.filter(v => v !== o.value)
+                                                                    : [...prev, o.value])}
+                                                                className={clsx(
+                                                                    'size-6 flex items-center justify-center rounded-md transition-all',
+                                                                    activo
+                                                                        ? 'bg-muted scale-110'
+                                                                        : 'opacity-45 hover:opacity-100 hover:scale-110'
+                                                                )}
+                                                            >
+                                                                <CaritaSemaforo nivel={o.value} className="size-4" />
+                                                            </button>
+                                                        </TooltipSemaforo>
                                                     );
                                                 })}
                                             </div>
