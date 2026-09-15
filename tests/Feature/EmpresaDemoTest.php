@@ -41,7 +41,7 @@ class EmpresaDemoTest extends TestCase
         $instancia = Instance::where('company_id', $company->id)->firstOrFail();
         $conversaciones = WhatsAppConversation::where('instance_id', $instancia->id)->get();
 
-        $this->assertCount(5, $conversaciones);
+        $this->assertCount(8, $conversaciones);
         $this->assertGreaterThan(20, WhatsAppMessage::whereIn('conversation_id', $conversaciones->pluck('id'))->count());
 
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
@@ -50,6 +50,51 @@ class EmpresaDemoTest extends TestCase
         $this->assertSame('completed', $campana->status);
         $this->assertSame(10, $campana->recipients()->count());
         $this->assertSame(1, $campana->recipients()->where('status', 'failed')->count());
+    }
+
+    /**
+     * La demo tiene que poder enseñar las funciones que se están vendiendo.
+     *
+     * Las tres cosas que se comprueban aquí se rompieron de verdad la víspera
+     * de una presentación:
+     *
+     * 1. **Extensiones encendidas.** El catálogo salía lleno de botones de
+     *    «Instalar», que es enseñar la promesa en vez de la función.
+     * 2. **Hilos de 8 mensajes o más.** El botón «Resumir» se esconde por
+     *    debajo de ese número —en un hilo de tres estorba— así que con las
+     *    cinco conversaciones cortas originales la función estrella no
+     *    aparecía en pantalla.
+     * 3. **Semáforo pintado.** La extensión sólo colorea lo que llega después
+     *    de encenderse, y en una demo todo llegó antes: sin el repintado, las
+     *    caritas salen todas en gris.
+     */
+    public function test_la_demo_puede_ensenar_las_funciones_que_se_venden(): void
+    {
+        $this->artisan('demo:montar')->assertSuccessful();
+
+        $company = Company::where('slug', 'cootramed-demo')->firstOrFail();
+
+        $this->assertSame(
+            count(config('extensions.available')),
+            \App\Models\CompanyExtension::where('company_id', $company->id)->where('enabled', true)->count(),
+            'Las extensiones tienen que quedar instaladas Y encendidas.'
+        );
+
+        $instancia = Instance::where('company_id', $company->id)->firstOrFail();
+        $conversaciones = WhatsAppConversation::where('instance_id', $instancia->id)->get();
+
+        $largas = $conversaciones->filter(
+            fn (WhatsAppConversation $c) => WhatsAppMessage::where('conversation_id', $c->id)->count() >= 8
+        );
+
+        $this->assertGreaterThanOrEqual(3, $largas->count(), 'Hacen falta hilos donde el botón «Resumir» se vea.');
+
+        $this->assertGreaterThan(0, $conversaciones->whereNotNull('sentiment_level')->count(),
+            'El semáforo tiene que quedar pintado, no en gris.');
+
+        // Y no se factura: es una demo, y la lista de cobro del panel se
+        // exporta y se la lleva alguien a facturación.
+        $this->assertTrue((bool) $company->interna);
     }
 
     /**

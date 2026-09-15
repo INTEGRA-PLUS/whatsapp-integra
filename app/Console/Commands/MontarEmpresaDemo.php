@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\AutoResponse;
 use App\Models\BusinessHour;
 use App\Models\Company;
+use App\Models\CompanyExtension;
 use App\Models\Contact;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
@@ -66,6 +67,16 @@ class MontarEmpresaDemo extends Command
 
         $company = DB::transaction(fn () => $this->montar($slug));
 
+        // Fuera de la transacción: el semáforo lee las conversaciones que
+        // acaban de crearse, y dentro de la transacción no existen todavía para
+        // nadie más. Va aquí y no a mano porque una demo con las caritas en
+        // gris enseña la función apagada — la extensión sólo colorea lo que
+        // llega DESPUÉS de encenderse, y aquí todo llegó antes.
+        $this->call('wa:semaforo-recalcular', [
+            '--empresa' => $company->id,
+            '--todas' => true,
+        ]);
+
         $this->newLine();
         $this->info('Empresa de demostración lista.');
         $this->table(['Dato', 'Valor'], [
@@ -74,6 +85,20 @@ class MontarEmpresaDemo extends Command
             ['Contraseña', (string) $this->option('password')],
             ['Agentes', 'ana@, carlos@, lucia@ '."{$slug}.demo"],
         ]);
+        $instancia = Instance::where('company_id', $company->id)->first();
+        $conversaciones = WhatsAppConversation::where('instance_id', $instancia?->id)->get();
+        $largas = $conversaciones->filter(
+            fn (WhatsAppConversation $c) => WhatsAppMessage::where('conversation_id', $c->id)->count() >= 8
+        );
+
+        $this->newLine();
+        $this->line('  Extensiones encendidas: <fg=green>'
+            .CompanyExtension::where('company_id', $company->id)->where('enabled', true)->count().' de 5</>');
+        $this->line('  Conversaciones: <fg=green>'.$conversaciones->count().'</>'
+            .', de ellas <fg=green>'.$largas->count().'</> con 8+ mensajes (botón «Resumir» visible)');
+        $this->line('  Semáforo pintado en: <fg=green>'
+            .$conversaciones->whereNotNull('sentiment_level')->count().'</> conversaciones');
+
         $this->newLine();
         $this->warn('La línea no tiene token: se puede navegar y abrir el chat, pero la demo no puede enviarle nada a nadie.');
 
@@ -86,6 +111,17 @@ class MontarEmpresaDemo extends Command
             'name' => (string) $this->option('nombre'),
             'slug' => $slug,
             'active' => true,
+
+            // Interna y en cortesía: una demo no se factura nunca, y sin esta
+            // marca aparecería en la lista de cobro del panel maestro el día
+            // que se exporte. Plan Inteligente porque la demo tiene que poder
+            // enseñar TODO, incluidas las extensiones con IA — que es
+            // justamente lo que se va a vender.
+            'interna' => true,
+            'plan' => 'inteligente',
+            'cobro' => 'cortesia',
+            'contactos_contratados' => 500,
+            'nota_de_cobro' => 'Cuenta de demostración. No facturar.',
         ]);
 
         // Activa para que aparezca en el selector —una demo con la línea
@@ -115,11 +151,51 @@ class MontarEmpresaDemo extends Command
         $this->autorespuesta($company, $instance);
         $this->menus($company, $instance);
 
+        $this->extensiones($company, $admin);
+
         $socios = $this->socios($company);
         $this->conversaciones($instance, $socios, $agentes, $etiquetas);
         $this->campana($company, $instance, $admin, $socios);
 
         return $company;
+    }
+
+
+    /**
+     * Las cinco extensiones instaladas y encendidas.
+     *
+     * Sin esto la demo enseña un catálogo lleno de botones de «Instalar», que es
+     * exactamente lo contrario de lo que se quiere mostrar: el cliente tiene que
+     * ver las funciones funcionando sobre sus propias conversaciones, no la
+     * promesa de que existen.
+     *
+     * Importa el orden respecto a `conversaciones()`: el semáforo sólo colorea
+     * lo que llega después de encenderse, así que se instala primero y luego se
+     * repinta la bandeja con `wa:semaforo-recalcular`, que es lo que hace el
+     * comando al terminar.
+     */
+    private function extensiones(Company $company, User $admin): void
+    {
+        foreach (app(\App\Extensions\ExtensionRegistry::class)->all() as $extension) {
+            $ajustes = $extension->defaultSettings();
+
+            // El semáforo con IA encendido: el plan de la demo es Inteligente y
+            // el flujo de n8n responde en un par de segundos. Es la diferencia
+            // entre enseñar caritas de colores y enseñar por qué están puestas.
+            if ($extension->slug() === 'sentiment_traffic_light') {
+                $ajustes['usar_ia'] = true;
+            }
+
+            CompanyExtension::updateOrCreate(
+                ['company_id' => $company->id, 'slug' => $extension->slug()],
+                [
+                    'enabled' => true,
+                    'settings' => $ajustes,
+                    'installed_by' => $admin->id,
+                    'installed_at' => now(),
+                ]
+            );
+        }
     }
 
     /** @return array{0: User, 1: array<int, User>} */
@@ -473,6 +549,80 @@ class MontarEmpresaDemo extends Command
                     ['out', 'Hola Luz Dary. Con gusto te paso las tasas vigentes. ¿Qué monto tienes pensado?', 90],
                     ['in', 'Unos 12 millones', 86],
                     ['out', 'Perfecto, para ese monto a 180 días te puedo ofrecer una tasa preferencial. Te paso la simulación en un momento.', 84],
+                ],
+            ],
+
+            // ── Los tres hilos largos ───────────────────────────────────────
+            //
+            // Los cinco de arriba tienen entre 3 y 6 mensajes, que es lo normal
+            // en una bandeja real pero deja fuera la función que más vende: el
+            // botón «Resumir» sólo aparece a partir de 8 mensajes, a propósito
+            // —en un hilo de tres estorba más de lo que ayuda—.
+            //
+            // Estos tres están escritos para que el resumen tenga algo que
+            // decir: en los tres se le PROMETE algo al socio y en los tres
+            // queda algo pendiente. Un hilo largo donde no pasa nada produce un
+            // resumen correcto y aburrido, que es la peor demostración posible.
+            //
+            // Y llevan emoción distinta a propósito, para que el semáforo se
+            // vea en sus tres colores sobre datos de verdad: Óscar acaba
+            // molesto, Gloria acaba contenta, Héctor va neutro.
+            [
+                'socio' => 5, 'agente' => 0, 'estado' => 'open', 'etiqueta' => 'PQRSF', 'minutos' => 6,
+                'mensajes' => [
+                    ['in', 'Buenos días, necesito ayuda con un descuento que me hicieron mal en la nómina', 240],
+                    ['out', 'Buenos días Óscar Iván. Con gusto lo reviso. ¿Me confirmas tu cédula y de qué mes hablamos?', 236],
+                    ['in', '70998123, el descuento de agosto', 232],
+                    ['out', 'Gracias. Veo un descuento de $486.200 por libranza en agosto. ¿Cuál es el valor que esperabas?', 225],
+                    ['in', 'La cuota mía es de 312 mil, no 486. Me descontaron 174 mil de más', 220],
+                    ['out', 'Tienes razón, la diferencia está. Voy a pedir la revisión al área de cartera hoy mismo.', 214],
+                    ['in', 'Es que ya van dos meses seguidos con lo mismo, en julio también pasó', 208],
+                    ['out', 'Entiendo la molestia y me disculpo. Radico la solicitud como reclamo formal para que quede el soporte.', 200],
+                    ['in', 'Por favor, porque necesito ese dinero. Tengo el arriendo pendiente', 196],
+                    ['out', "Radicado con el número PQR-4471. El área de cartera responde en máximo 5 días hábiles.\n\nSi procede la devolución, se abona a tu cuenta de ahorros.", 188],
+                    ['in', 'Cinco días es mucho, yo necesito saber ya si me lo devuelven', 182],
+                    ['out', 'Voy a marcarlo como prioritario y te escribo por acá apenas cartera me confirme. No tienes que volver a llamar.', 175],
+                    ['in', 'Bueno, quedo pendiente entonces. Pero si en julio también pasó, ¿no van a revisar ese también?', 168],
+                    ['out', 'Sí, pido la revisión de los dos meses en el mismo radicado. Te confirmo el total apenas lo tenga.', 160],
+                    ['in', 'Listo, gracias. Espero que esta vez sí se solucione', 155],
+                ],
+            ],
+            [
+                'socio' => 6, 'agente' => 2, 'estado' => 'open', 'etiqueta' => 'Crédito', 'minutos' => 21,
+                'mensajes' => [
+                    ['in', 'Buenas tardes, quiero pedir un crédito para la universidad de mi hijo', 320],
+                    ['out', 'Buenas tardes Gloria Patricia. ¡Qué buena noticia! ¿Ya tienes el valor de la matrícula?', 315],
+                    ['in', 'Son 4 millones 800 por semestre, en la de Medellín', 310],
+                    ['out', '¿Trabajas con alguna entidad que tenga convenio de libranza con nosotros?', 305],
+                    ['in', 'Sí, en el hospital de La Pintada, llevo 9 años', 300],
+                    ['out', "Perfecto, ahí sí aplica libranza, que es la mejor tasa que tenemos: 1,1% mensual.\n\nA 24 meses la cuota quedaría en unos $228.000.", 292],
+                    ['in', '¿Y eso incluye el seguro?', 288],
+                    ['out', 'Sí, incluye seguro de vida deudores. No hay costos adicionales ni estudio de crédito.', 283],
+                    ['in', 'Me sirve mucho. ¿Qué papeles necesito llevar?', 278],
+                    ['out', "Certificado laboral no mayor a 30 días, los últimos 3 desprendibles y cédula ampliada al 150%.\n\nEn la agencia de La Pintada te reciben todo.", 270],
+                    ['in', 'Los desprendibles los tengo en PDF, ¿sirven impresos?', 265],
+                    ['out', 'Sí, impresos sirven perfectamente. También los puedes enviar por acá y adelantamos el estudio.', 258],
+                    ['in', 'Ah buenísimo, se los mando esta noche entonces', 252],
+                    ['out', "Quedo atenta. Apenas los reciba te doy respuesta del preaprobado en 24 horas.\n\nMatrículas cierran el 30, así que vamos con tiempo.", 245],
+                    ['in', 'Mil gracias, me quitas un peso de encima 🙏 Excelente atención de verdad', 240],
+                    ['out', 'Con muchísimo gusto, Gloria. Para eso estamos. ¡Que le vaya muy bien a tu hijo!', 236],
+                ],
+            ],
+            [
+                'socio' => 7, 'agente' => null, 'estado' => 'open', 'etiqueta' => 'Ahorro', 'minutos' => 2,
+                'mensajes' => [
+                    ['in', 'Buenas, tengo una duda con el CDAT que abrí en marzo', 95],
+                    ['out', '¡Hola! Soy el asistente de Cootramed. Cuéntame tu duda y te ayudo o te paso con un asesor.', 94],
+                    ['in', 'Quiero saber cuándo se vence y si se renueva solo', 90],
+                    ['out', 'Para consultar tu CDAT necesito pasarte con un asesor. ¿Me confirmas tu número de cédula?', 89],
+                    ['in', '71556644', 85],
+                    ['out', 'Gracias Héctor Mario. Un asesor toma tu caso en un momento.', 84],
+                    ['in', 'Ok. Y de una vez, si lo renuevo, ¿me mantienen la misma tasa?', 78],
+                    ['in', 'Es que la abrí al 9,2% y vi que ahora están dando menos', 76],
+                    ['out', 'Buena pregunta. La renovación toma la tasa vigente del día, no la anterior. Un asesor te confirma la de hoy.', 70],
+                    ['in', '¿Y si prefiero no renovar, en cuánto me consignan?', 65],
+                    ['out', 'Al vencimiento se abona a tu cuenta de ahorros el mismo día, capital más rendimientos.', 60],
+                    ['in', 'Perfecto. Entonces quedo esperando que me digan la fecha exacta y la tasa', 55],
                 ],
             ],
         ];
