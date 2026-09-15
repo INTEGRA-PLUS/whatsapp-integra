@@ -5,9 +5,10 @@ import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
-    ArrowLeft, Download, Power, Trash2, Loader2, Save, ShieldCheck, Zap, Check,
+    ArrowLeft, Download, Power, Trash2, Loader2, Save, ShieldCheck, Zap, Check, Eye,
 } from 'lucide-react';
 import { iconFor, categoryLabel } from './icons';
+import { Maqueta, tieneMaqueta } from './maquetas';
 import SettingsForm from './SettingsForm';
 
 export default function ExtensionShow({ extension: initial }) {
@@ -141,6 +142,22 @@ export default function ExtensionShow({ extension: initial }) {
                 {extension.installed && !extension.enabled && (
                     <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
                         Está instalada pero apagada: no hará nada hasta que la enciendas.
+                    </div>
+                )}
+
+                {/* La maqueta va ANTES del texto, no después: la pregunta que
+                    trae a quien abre esta pantalla es «¿qué va a cambiar en mi
+                    bandeja?», y se responde antes con una imagen que con tres
+                    párrafos. El texto queda para el detalle y los límites. */}
+                {tieneMaqueta(extension.slug) && (
+                    <div className="rounded-xl border bg-card p-5">
+                        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                            <Eye className="size-4 text-primary" /> Así se ve
+                        </h2>
+                        <p className="mt-1 mb-4 text-xs text-muted-foreground">
+                            Un ejemplo con datos inventados, para que se entienda antes de encenderla.
+                        </p>
+                        <Maqueta slug={extension.slug} />
                     </div>
                 )}
 
