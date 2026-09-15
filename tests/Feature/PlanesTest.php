@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\CompanyExtension;
+use App\Models\Contact;
 use App\Models\User;
 use App\Support\ContadorDeIa;
 use App\Support\PlanDeLaEmpresa;
@@ -360,6 +361,65 @@ class PlanesTest extends TestCase
                 $this->assertArrayHasKey($plan, $fila, "Falta el precio de {$plan} en el tramo {$tope}");
             }
         }
+    }
+
+    // ─── Contactos reales contra tramo contratado ────────────────────────────
+
+    private function contactos(Company $company, int $cuantos): void
+    {
+        for ($i = 0; $i < $cuantos; $i++) {
+            Contact::create([
+                'company_id' => $company->id,
+                'phone_number' => '5730'.str_pad((string) $i, 8, '0', STR_PAD_LEFT),
+                'name' => 'Cliente '.$i,
+            ]);
+        }
+    }
+
+    public function test_cuenta_los_contactos_que_hay_de_verdad(): void
+    {
+        $company = $this->empresa(['contactos_contratados' => 2000]);
+        $this->contactos($company, 5);
+
+        $plan = PlanDeLaEmpresa::de($company);
+
+        $this->assertSame(5, $plan->contactosReales());
+        $this->assertFalse($plan->sePasoDelTramo());
+    }
+
+    /**
+     * La razón de contar: saber cuándo toca renegociar. No cobra ni bloquea —
+     * sale en el panel para que alguien llame, que es una conversación
+     * comercial y no una factura automática por crecer.
+     */
+    public function test_avisa_cuando_la_empresa_se_paso_de_lo_contratado(): void
+    {
+        $company = $this->empresa(['contactos_contratados' => 3]);
+        $this->contactos($company, 7);
+
+        $plan = PlanDeLaEmpresa::de($company);
+
+        $this->assertTrue($plan->sePasoDelTramo());
+        // Y sigue funcionándole todo.
+        $this->assertTrue($plan->permiteExtension('conversation_summary'));
+    }
+
+    /** Sin tramo asignado no se puede decir que alguien se pasó. */
+    public function test_sin_tramo_nadie_se_pasa(): void
+    {
+        $company = $this->empresa();
+        $this->contactos($company, 50);
+
+        $this->assertFalse(PlanDeLaEmpresa::de($company)->sePasoDelTramo());
+    }
+
+    public function test_sugiere_el_tramo_por_los_contactos_que_ya_tiene(): void
+    {
+        $company = $this->empresa();
+        $this->contactos($company, 12);
+
+        // 12 contactos caen en el primer tramo.
+        $this->assertSame(500, PlanDeLaEmpresa::de($company)->tramoSugerido());
     }
 
     // ─── Lo que NO debe pasar nunca ──────────────────────────────────────────

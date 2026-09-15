@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Company;
+use App\Models\Contact;
 
 /**
  * Qué puede usar una empresa según su plan, y si se le cobra.
@@ -145,6 +146,55 @@ class PlanDeLaEmpresa
         return (int) round($lista * (12 - $gratis) / 12);
     }
 
+    /**
+     * Cuántos contactos tiene de verdad.
+     *
+     * Se cuentan de `contacts`, que es donde acaban solos: cada persona nueva
+     * que escribe queda registrada por `ensureContactRegistered`. No es lo mismo
+     * que `contactos_contratados` —eso es lo que se vendió— y la gracia está
+     * justo en la diferencia: es lo que dice cuándo toca renegociar el tramo.
+     */
+    public function contactosReales(): int
+    {
+        return Contact::where('company_id', $this->company->id)->count();
+    }
+
+    /**
+     * El tramo que le tocaría por sus contactos reales.
+     *
+     * Para proponerlo al asignar el plan en vez de que alguien lo escriba a ojo.
+     * `null` si se sale de la escalera, que es cuando hay que cotizar a mano.
+     */
+    public function tramoSugerido(): ?int
+    {
+        $reales = $this->contactosReales();
+
+        foreach (array_keys(config('planes.precios', [])) as $tope) {
+            if ($reales <= $tope) {
+                return (int) $tope;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * ¿Tiene más contactos de los que contrató?
+     *
+     * Devuelve `false` mientras no haya tramo asignado: a quien todavía no se le
+     * ha puesto precio no se le puede decir que se pasó.
+     *
+     * **Esto no cobra ni bloquea nada.** Sale en el panel para que alguien
+     * llame y renegocie el tramo, que es una conversación comercial, no una
+     * factura automática por crecer.
+     */
+    public function sePasoDelTramo(): bool
+    {
+        $contratado = (int) $this->company->contactos_contratados;
+
+        return $contratado > 0 && $this->contactosReales() > $contratado;
+    }
+
     // ─── Cobro ───────────────────────────────────────────────────────────────
 
     public function cobro(): string
@@ -191,6 +241,9 @@ class PlanDeLaEmpresa
             'tiene_ia' => $this->tieneIa(),
             'precio_usd' => $this->precioMensual(),
             'precio_usd_anual' => $this->precioMensualAnual(),
+            'contactos_reales' => $this->contactosReales(),
+            'tramo_sugerido' => $this->tramoSugerido(),
+            'se_paso_del_tramo' => $this->sePasoDelTramo(),
         ];
     }
 }

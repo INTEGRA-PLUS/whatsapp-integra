@@ -70,6 +70,13 @@ class BandejaDeInstagram
             'last_message_at' => now(),
         ]);
 
+        // Quien escribe por primera vez queda como contacto, igual que en
+        // WhatsApp (`ensureContactRegistered`). Sin esto, los clientes que
+        // llegan por Instagram no salían en Contactos ni contaban para el tramo
+        // contratado, así que una empresa podía crecer por Instagram y no
+        // notarse en ninguna parte.
+        $this->registrarContacto($linea, $conversacion, $cliente, $evento);
+
         [$tipo, $contenido, $media] = $this->contenido($evento['message'] ?? []);
 
         $mensaje = WhatsAppMessage::create(array_filter([
@@ -174,6 +181,52 @@ class BandejaDeInstagram
      * feo pero honesto, y se sustituye cuando el asesor abre el chat y pedimos
      * el perfil.
      */
+    /**
+     * Deja ficha del cliente de Instagram si no la había.
+     *
+     * Se busca por `username` y no por teléfono: en Instagram no hay número, y
+     * desde que Meta permite ocultarlo el identificador que llega puede ser un
+     * BSUID. El `username` es lo único estable y legible que tenemos.
+     *
+     * **Nunca lanza.** Un fallo registrando el contacto no puede costar el
+     * mensaje: el contacto es para contar y para la ficha; el mensaje es lo que
+     * el cliente espera ver contestado.
+     */
+    private function registrarContacto(
+        Instance $linea,
+        WhatsAppConversation $conversacion,
+        string $cliente,
+        array $evento
+    ): void {
+        if ($conversacion->contact_id) {
+            return;
+        }
+
+        try {
+            $username = $evento['sender']['username'] ?? null;
+
+            $contacto = $username
+                ? Contact::where('company_id', $linea->company_id)->where('username', $username)->first()
+                : null;
+
+            $contacto ??= Contact::create([
+                'company_id' => $linea->company_id,
+                // Sin teléfono a propósito: inventarse uno con el id de
+                // Instagram rompería `normalizePhone` y acabaría mandando
+                // mensajes a un número que no existe.
+                'username' => $username,
+                'name' => $this->nombreDelCliente($evento, $cliente),
+            ]);
+
+            $conversacion->update(['contact_id' => $contacto->id]);
+        } catch (\Throwable $e) {
+            Log::channel('instagram')->warning('⚠️ No se pudo registrar el contacto de Instagram', [
+                'cuenta' => $linea->external_account_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function nombreDelCliente(array $evento, string $cliente): string
     {
         return $evento['sender']['username'] ?? 'Instagram · '.substr($cliente, -6);

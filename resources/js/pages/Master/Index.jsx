@@ -819,6 +819,20 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             ayuda="Qué extensiones puede instalar. Bajarlo no desinstala lo que ya tenga."
                         />
 
+                        {planCompany.plan_resumen?.precio_usd && (
+                            <p className="-mt-2 text-xs text-muted-foreground">
+                                Con su tramo actual le corresponden{' '}
+                                <span className="font-mono font-semibold text-foreground">
+                                    ${planCompany.plan_resumen.precio_usd}
+                                </span>{' '}
+                                al mes, o{' '}
+                                <span className="font-mono font-semibold text-foreground">
+                                    ${planCompany.plan_resumen.precio_usd_anual}
+                                </span>{' '}
+                                pagando el año.
+                            </p>
+                        )}
+
                         <Selector
                             label="Cobro"
                             value={planForm.cobro}
@@ -827,14 +841,53 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             ayuda="Cortesía es el estado de los clientes de siempre: todo encendido y sin factura. Suspendido no apaga nada, solo marca."
                         />
 
-                        <Field
-                            label="Socios o contactos contratados"
-                            type="number"
-                            value={planForm.contactos_contratados}
-                            onChange={v => setPlanForm({ ...planForm, contactos_contratados: v })}
-                            placeholder="12000"
-                            ayuda="El tramo de la escalera de precios. Decide el crédito de IA incluido. No es un límite: nadie deja de atender por crecer."
-                        />
+                        <div className="space-y-1.5">
+                            <Field
+                                label="Socios o contactos contratados"
+                                type="number"
+                                value={planForm.contactos_contratados}
+                                onChange={v => setPlanForm({ ...planForm, contactos_contratados: v })}
+                                placeholder="12000"
+                                ayuda="El tramo de la escalera. Decide el precio y el crédito de IA. No es un límite: nadie deja de atender por crecer."
+                            />
+
+                            {/* Lo que tiene de verdad, al lado de lo que contrató.
+                                El dato está ahí desde siempre —cada persona que
+                                escribe queda como contacto— pero nadie lo miraba al
+                                poner el tramo, así que se ponía a ojo. */}
+                            {planCompany.plan_resumen?.contactos_reales > 0 && (
+                                <div className={`rounded-lg border px-3 py-2 text-xs ${
+                                    planCompany.plan_resumen.se_paso_del_tramo
+                                        ? 'border-warning/40 bg-warning/10'
+                                        : 'border-border bg-muted/40'
+                                }`}>
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <span className="text-foreground">Tiene ahora mismo</span>
+                                        <span className="font-mono tabular-nums font-semibold text-foreground">
+                                            {planCompany.plan_resumen.contactos_reales.toLocaleString('es-CO')}
+                                        </span>
+                                    </div>
+                                    {planCompany.plan_resumen.se_paso_del_tramo ? (
+                                        <p className="mt-1 leading-snug text-muted-foreground">
+                                            Se pasó de lo contratado. Toca renegociar el tramo — no se le
+                                            corta nada mientras tanto.
+                                        </p>
+                                    ) : planCompany.plan_resumen.tramo_sugerido && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setPlanForm({
+                                                ...planForm,
+                                                contactos_contratados: planCompany.plan_resumen.tramo_sugerido,
+                                            })}
+                                            className="mt-1 text-primary hover:underline"
+                                        >
+                                            Usar el tramo que le corresponde
+                                            ({planCompany.plan_resumen.tramo_sugerido.toLocaleString('es-CO')})
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-foreground">Gratis hasta</label>
@@ -1189,6 +1242,11 @@ function PastillaDePlan({ resumen, uso }) {
             }`}>
                 {gracia ? 'mes gratis' : facturando ? 'facturando' : resumen.cobro}
             </span>
+            {resumen.se_paso_del_tramo && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-warning">
+                    +contactos
+                </span>
+            )}
             {uso?.exceso > 0 && (
                 <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
                     +{uso.exceso} IA
