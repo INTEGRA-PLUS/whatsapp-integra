@@ -11,6 +11,7 @@ use App\Models\WhatsAppMessage;
 use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
+use App\Support\ContadorDeIa;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -113,7 +114,22 @@ class WhatsAppAiClient
             return null;
         }
 
-        return $this->translate($response->json() ?? [], $conversation);
+        $decision = $this->translate($response->json() ?? [], $conversation);
+
+        // Se apunta sólo si el flujo se hizo cargo, igual que el semáforo: una
+        // llamada que devolvió «no me encargo» ya nos costó, pero cargársela al
+        // crédito del cliente por una decisión nuestra es otra cosa.
+        //
+        // Faltaba desde el principio: el contador nació con el semáforo y el
+        // resumen, y estas dos funciones se quedaron fuera sin que se notara
+        // porque ninguna empresa las tenía encendidas. `eventos_menu` habría
+        // seguido en cero para siempre, y el coste del panel por debajo del
+        // real. 15-sep-2026.
+        if ($decision !== null) {
+            ContadorDeIa::apuntar($instance->company_id, 'menu');
+        }
+
+        return $decision;
     }
 
     /**

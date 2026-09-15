@@ -8,6 +8,7 @@ use App\Models\WhatsAppConversation;
 use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
+use App\Support\ContadorDeIa;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -104,7 +105,14 @@ class WhatsAppChatAiClient
             return null;
         }
 
-        return $this->translate($response->json() ?? [], $conversation);
+        $decision = $this->translate($response->json() ?? [], $conversation);
+
+        // Mismo criterio que en menús y semáforo: se apunta lo que sirvió.
+        if ($decision !== null) {
+            ContadorDeIa::apuntar($instance->company_id, 'chat');
+        }
+
+        return $decision;
     }
 
     /**
