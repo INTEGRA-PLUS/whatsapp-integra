@@ -4,7 +4,7 @@ import axios from 'axios';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Blocks, Search, Download, Power, Settings2, Check, Loader2, Info, Lock } from 'lucide-react';
+import { Blocks, Search, Download, Power, Settings2, Loader2, Info, Lock } from 'lucide-react';
 import { iconFor, CATEGORIES, categoryLabel } from './icons';
 import { MaquetaMini } from './maquetas';
 
@@ -197,7 +197,7 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                 <MaquetaMini slug={extension.slug} />
             </div>
 
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-2">
                 {extension.en_plan === false ? (
                     /* Lo que no entra en el plan se sigue enseñando, con el
                        candado en vez del botón: esconderlo haría que nadie
@@ -212,32 +212,38 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                         Instalar
                     </Button>
                 ) : (
-                    <>
-                        <Button
-                            size="sm"
-                            variant={extension.enabled ? 'outline' : 'default'}
-                            className="gap-2"
-                            disabled={busy || !canUpdate}
-                            onClick={onToggle}
-                        >
-                            {busy ? <Loader2 className="size-4 animate-spin" /> : <Power className="size-4" />}
-                            {extension.enabled ? 'Apagar' : 'Encender'}
-                        </Button>
-                        <Button size="sm" variant="ghost" className="gap-2" asChild>
-                            <Link href={route('extensions.show', extension.slug)}>
+                    <Button
+                        size="sm"
+                        variant={extension.enabled ? 'outline' : 'default'}
+                        className="gap-2"
+                        disabled={busy || !canUpdate}
+                        onClick={onToggle}
+                    >
+                        {busy ? <Loader2 className="size-4 animate-spin" /> : <Power className="size-4" />}
+                        {extension.enabled ? 'Apagar' : 'Encender'}
+                    </Button>
+                )}
+
+                {/* La puerta a la ficha va en TODAS las tarjetas, esté instalada
+                    o no. Antes sólo salía junto a los ajustes de lo instalado, y
+                    lo único que llevaba al detalle de lo demás era el nombre: un
+                    enlace que sólo se distingue al pasar el ratón por encima. El
+                    que más necesita leer la ficha —quien aún no la ha instalado,
+                    o no la tiene en su plan— era justo el que no tenía botón.
+                    El estado no se repite aquí abajo: ya está en la cabecera. */}
+                <Button size="sm" variant="ghost" className="ml-auto gap-2" asChild>
+                    <Link href={route('extensions.show', extension.slug)}>
+                        {extension.installed ? (
+                            <>
                                 <Settings2 className="size-4" /> Ajustes
-                            </Link>
-                        </Button>
-                    </>
-                )}
-                {extension.installed && !extension.enabled && (
-                    <span className="ml-auto text-[11px] text-muted-foreground">Instalada</span>
-                )}
-                {extension.installed && extension.enabled && (
-                    <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-success">
-                        <Check className="size-3" /> Activa
-                    </span>
-                )}
+                            </>
+                        ) : (
+                            <>
+                                <Info className="size-4" /> Ver detalles
+                            </>
+                        )}
+                    </Link>
+                </Button>
             </div>
         </div>
     );

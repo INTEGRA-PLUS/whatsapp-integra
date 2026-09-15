@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
-    ArrowLeft, Download, Power, Trash2, Loader2, Save, ShieldCheck, Zap, Check, Eye,
+    ArrowLeft, Download, Power, Trash2, Loader2, Save, ShieldCheck, Zap, Check, Eye, Lock,
 } from 'lucide-react';
 import { iconFor, categoryLabel } from './icons';
 import { Maqueta, tieneMaqueta } from './maquetas';
@@ -102,7 +102,16 @@ export default function ExtensionShow({ extension: initial }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {!extension.installed ? (
+                        {/* Fuera de plan, el candado en vez del botón. Antes
+                            aquí salía «Instalar» igual que en cualquier otra, y
+                            quien lo pulsaba se comía el 402 del servidor: la
+                            ficha se puede leer entera sin tenerla contratada
+                            —para eso se enseña—, pero instalarla no. */}
+                        {extension.en_plan === false ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-2 text-sm font-semibold text-muted-foreground">
+                                <Lock className="size-4" /> No incluido en tu plan
+                            </span>
+                        ) : !extension.installed ? (
                             <Button className="gap-2" disabled={busy || !can('extensions.create')} onClick={install}>
                                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                                 Instalar
