@@ -146,7 +146,10 @@ class MasterController extends Controller
             }
         }
 
-        $companies = $query->orderBy('created_at', 'desc')->paginate(10);
+        // withQueryString() y no paginate() a secas: sin él los enlaces de
+        // página salen limpios y pasar a la segunda página pierde la búsqueda
+        // y el filtro de estado que se acababan de aplicar.
+        $companies = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
         // El plan y el consumo de IA de cada empresa de la página. Se resuelve
         // aquí y no en el modelo porque depende de configuración, y se hace

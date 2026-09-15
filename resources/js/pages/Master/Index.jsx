@@ -16,12 +16,10 @@ import {
     Activity,
     CheckCircle2,
     Briefcase,
-    Zap,
     ArrowUpRight,
     ArrowDownRight,
     Calendar,
     Filter,
-    Download,
     ChevronRight,
     SearchCheck,
     Package,
@@ -58,6 +56,26 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             setActiveTab(tab);
         }
     }, [filters]);
+
+    // La pestaña se queda en la URL para que recargar no te devuelva al
+    // dashboard, pero cambiarla no es una visita: las tres llegan en la misma
+    // respuesta. Hasta ahora no había ni un solo sitio donde pulsar para
+    // cambiar de pestaña —a «empresas» sólo se llegaba escribiendo `?tab=` a
+    // mano en la barra del navegador.
+    function cambiarPestana(tab) {
+        setActiveTab(tab);
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tab);
+        window.history.replaceState({}, '', url);
+    }
+
+    // Ir a otra página de la lista sin recalcular el dashboard, igual que el
+    // buscador. El enlace ya trae el filtro puesto porque el paginador del
+    // servidor conserva la query.
+    function irAPagina(url) {
+        if (!url) return;
+        router.get(url, {}, { preserveState: true, replace: true, only: LIST_ONLY });
+    }
 
     // Filters State
     const [search, setSearch] = useState(filters?.search ?? '');
@@ -109,7 +127,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
         applyFilters({ range: val });
     }
 
-    const { data: list, links } = companies;
+    const { data: list } = companies;
 
     function handleCreate(e) {
         e.preventDefault();
@@ -248,45 +266,53 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             <Head title="Panel Master Ultra" />
             <div className="flex flex-col min-h-screen bg-muted/10 selection:bg-primary selection:text-primary-foreground">
                 
-                {/* Master Header Pulido & Profesional */}
-                <div className="bg-card/40 backdrop-blur-3xl px-8 py-8 sticky top-0 z-40 border-b border-border/20 shadow-sm">
-                    <div className="max-w-[1700px] mx-auto flex flex-col xl:flex-row items-center justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                            <div className="size-14 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/20 transform transition-all hover:scale-105 active:scale-95 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
-                                <Zap className="size-8 group-hover:animate-pulse" />
-                            </div>
-                            <div className="h-10 w-px bg-border/40 hidden md:block" />
-                            <div>
-                                <h1 className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-3">
-                                    {activeTab === 'dashboard' ? 'Centro de Analítica' : activeTab === 'companies' ? 'Directorio de Empresas' : 'Gestión de Planes'}
-                                    <span className="text-[10px] font-black bg-primary/10 text-accent-foreground px-2 py-0.5 rounded-full border border-primary/20 tracking-widest hidden sm:inline-block">MASTER</span>
+                {/* La cabecera era un cartel: el rayo sobre un cuadrado de 56px
+                    con sombra de color, el título en versales negras, un punto
+                    verde palpitante con «Integra Cluster Online», un «v2.4.0
+                    PRO» que no corresponde a ninguna versión real y dos botones
+                    —«Exportar Datos» y «Búsqueda Global»— que no hacían nada al
+                    pulsarlos. Un panel interno no tiene a quién impresionar:
+                    tiene que decir dónde estás, dejarte cambiar de sitio y
+                    quitarse de en medio. */}
+                <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-6 py-4 backdrop-blur">
+                    <div className="mx-auto flex max-w-[1500px] flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <h1 className="font-heading text-lg font-semibold tracking-tight text-foreground">
+                                    Panel master
                                 </h1>
-                                <div className="flex items-center gap-3 mt-1.5">
-                                    <div className="flex items-center gap-2 group cursor-help">
-                                        <div className="size-2 rounded-full bg-success animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-                                        <span className="text-[10px] font-black text-success/80 tracking-widest uppercase">Integra Cluster Online</span>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-muted-foreground/30 uppercase tracking-[0.2em]">• v2.4.0 PRO</span>
-                                </div>
+                                <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                    Interno
+                                </span>
                             </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{SUBTITULO[activeTab]}</p>
                         </div>
 
-                        <div className="flex items-center gap-3 bg-muted/20 p-1.5 rounded-2xl border border-border/40 backdrop-blur-sm">
-                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-accent-foreground uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
-                                <Download className="size-4" /> Exportar Datos
-                            </Button>
-                            <Button variant="ghost" className="rounded-xl h-11 px-5 text-muted-foreground font-black hover:bg-card hover:text-accent-foreground uppercase tracking-widest text-[10px] gap-2 hidden lg:flex transition-all">
-                                <Search className="size-4" /> Búsqueda Global
-                            </Button>
-                            <div className="w-px h-6 bg-border/40 mx-2 hidden lg:block" />
-                            <Button onClick={() => setShowCreate(true)} className="rounded-xl h-11 px-8 font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary/10 bg-primary hover:bg-primary text-primary-foreground gap-2 transition-all active:scale-95">
-                                <Plus className="size-4" /> Nueva Organización
+                        <div className="flex flex-wrap items-center gap-3">
+                            <nav className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+                                {PESTANAS.map(({ value, label }) => (
+                                    <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() => cambiarPestana(value)}
+                                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                                            activeTab === value
+                                                ? 'bg-card text-foreground shadow-sm'
+                                                : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </nav>
+                            <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
+                                <Plus className="size-4" /> Nueva empresa
                             </Button>
                         </div>
                     </div>
-                </div>
+                </header>
 
-                <div className="p-8 max-w-[1700px] mx-auto w-full space-y-10">
+                <div className="mx-auto w-full max-w-[1500px] space-y-8 p-6">
 
                     {/* Dashboard Analytics Tab */}
                     {activeTab === 'dashboard' && (
@@ -379,65 +405,142 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         </>
                     )}
 
-                    {/* Companies Tab */}
+                    {/* El directorio era una tarjeta de esquinas de 2.5rem con
+                        40px de relleno, cabeceras en versales negras con cuatro
+                        décimas de interletraje y filas de 112px de alto: seis
+                        empresas llenaban la pantalla de un portátil. Las
+                        acciones, además, vivían a `opacity-20` hasta pasar el
+                        ratón por encima, así que la fila parecía no tener
+                        ninguna. Ahora es una tabla: densidad normal, jerarquía
+                        por peso y color en vez de por tamaño, y los botones
+                        siempre visibles. */}
                     {activeTab === 'companies' && (
-                        <div className="bg-card border border-border/40 rounded-[2.5rem] shadow-xl overflow-hidden animate-in slide-in-from-bottom-8 duration-700">
-                            <div className="p-10 border-b bg-muted/20">
-                                <div className="flex flex-col lg:flex-row gap-6">
-                                    <div className="relative flex-1 group">
-                                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 size-6 text-muted-foreground group-focus-within:text-accent-foreground transition-all" />
-                                        <input type="text" placeholder="Auditar empresas, emails o administradores activos..." value={search} onChange={handleSearchChange} className="w-full h-14 pl-14 pr-6 bg-background border border-border/40 focus:border-primary/60 rounded-2xl text-base transition-all focus:ring-8 focus:ring-primary/5 outline-none font-medium shadow-inner" />
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <select value={status} onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }, { only: LIST_ONLY }); }} className="h-14 rounded-2xl border border-border/40 bg-background px-8 text-sm outline-none font-black uppercase tracking-widest cursor-pointer hover:border-primary/40 transition-all shadow-sm">
-                                            <option value="">Todos los Estados</option>
-                                            <option value="active">Activas</option>
-                                            <option value="inactive">Inactivas</option>
-                                        </select>
+                        <section className="overflow-hidden rounded-xl border border-border bg-card">
+                            <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center">
+                                <div className="relative flex-1 sm:max-w-md">
+                                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar por empresa, correo o administrador"
+                                        value={search}
+                                        onChange={handleSearchChange}
+                                        className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                    />
+                                </div>
+                                <select
+                                    value={status}
+                                    onChange={e => { setStatus(e.target.value); applyFilters({ status: e.target.value }, { only: LIST_ONLY }); }}
+                                    className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                >
+                                    <option value="">Todos los estados</option>
+                                    <option value="active">Activas</option>
+                                    <option value="inactive">Inactivas</option>
+                                </select>
+                                <span className="text-xs tabular-nums text-muted-foreground sm:ml-auto">
+                                    {companies.total} {companies.total === 1 ? 'empresa' : 'empresas'}
+                                </span>
+                            </div>
+
+                            {list.length === 0 ? (
+                                <div className="px-5 py-16 text-center">
+                                    <p className="text-sm text-muted-foreground">
+                                        {search || status
+                                            ? 'Ninguna empresa coincide con lo que buscas.'
+                                            : 'Todavía no hay empresas.'}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+                                                <th className="px-5 py-2.5 text-left font-medium">Empresa</th>
+                                                <th className="hidden px-5 py-2.5 text-left font-medium lg:table-cell">Administrador</th>
+                                                <th className="hidden px-5 py-2.5 text-left font-medium md:table-cell">Plan y cobro</th>
+                                                <th className="px-5 py-2.5 text-left font-medium">Estado</th>
+                                                <th className="px-5 py-2.5 text-right font-medium">Acciones</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {list.map(company => (
+                                                <tr key={company.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
+                                                    <td className="px-5 py-3">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-sm font-semibold text-muted-foreground">
+                                                                {company.name.charAt(0).toUpperCase()}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="truncate font-medium text-foreground">{company.name}</p>
+                                                                <p className="truncate text-xs text-muted-foreground">{company.email}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="hidden px-5 py-3 lg:table-cell">
+                                                        {company.users?.[0] ? (
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-foreground">{company.users[0].name}</p>
+                                                                <p className="truncate text-xs text-muted-foreground">{company.users[0].email}</p>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">Sin administrador</span>
+                                                        )}
+                                                        <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                                                            {company.instances_count} inst. · {company.users_count} usuarios
+                                                        </p>
+                                                    </td>
+                                                    <td className="hidden px-5 py-3 md:table-cell">
+                                                        <PastillaDePlan resumen={company.plan_resumen} uso={company.uso_ia} />
+                                                    </td>
+                                                    <td className="px-5 py-3">
+                                                        <span className={`inline-flex items-center gap-1.5 text-xs ${company.active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                                                            <span className={`size-1.5 rounded-full ${company.active ? 'bg-success' : 'bg-muted-foreground/40'}`} />
+                                                            {company.active ? 'Activa' : 'Inactiva'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                            <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" title="Plan y cobro" onClick={() => openPlan(company)}>
+                                                                <CreditCard className="size-4" />
+                                                            </Button>
+                                                            <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground" title="Editar datos" onClick={() => openEdit(company)}>
+                                                                <Pencil className="size-4" />
+                                                            </Button>
+                                                            <Button variant="outline" size="sm" className="ml-1 gap-1.5" title={`Entrar como ${company.name}`} onClick={() => router.post(route('master.impersonate', company.id))}>
+                                                                <LogIn className="size-3.5" /> Entrar
+                                                            </Button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* El paginador faltaba entero: el servidor manda las
+                                empresas de diez en diez y la pantalla sólo pintaba
+                                la primera página, así que a partir de la undécima
+                                empresa la única forma de llegar a una era buscarla
+                                por nombre. */}
+                            {companies.last_page > 1 && (
+                                <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+                                    <p className="text-xs tabular-nums text-muted-foreground">
+                                        {companies.from}–{companies.to} de {companies.total}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <Button variant="outline" size="sm" disabled={!companies.prev_page_url} onClick={() => irAPagina(companies.prev_page_url)}>
+                                            Anterior
+                                        </Button>
+                                        <span className="text-xs tabular-nums text-muted-foreground">
+                                            {companies.current_page} / {companies.last_page}
+                                        </span>
+                                        <Button variant="outline" size="sm" disabled={!companies.next_page_url} onClick={() => irAPagina(companies.next_page_url)}>
+                                            Siguiente
+                                        </Button>
                                     </div>
                                 </div>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="bg-muted/30 border-b border-border/40">
-                                            <th className="px-10 py-6 text-left text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Entidad / Despliegue</th>
-                                            <th className="px-10 py-6 text-left text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] hidden md:table-cell">Admin</th>
-                                            <th className="px-10 py-6 text-center text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Estado</th>
-                                            <th className="px-10 py-6 text-right text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em]">Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/30">
-                                        {list.map(company => (
-                                            <tr key={company.id} className="hover:bg-primary/[0.02] transition-colors group">
-                                                <td className="px-10 py-7">
-                                                    <div className="flex items-center gap-5">
-                                                        <div className="size-14 rounded-[1.25rem] bg-primary/5 border border-primary/20 flex items-center justify-center text-accent-foreground font-black text-xl group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300 shadow-sm">{company.name.charAt(0)}</div>
-                                                        <div className="min-w-0"><p className="font-bold text-lg text-foreground truncate group-hover:text-accent-foreground transition-colors uppercase tracking-tight">{company.name}</p><p className="text-xs font-bold text-muted-foreground/60">{company.email}</p></div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-10 py-7 hidden md:table-cell">
-                                                    {company.users?.[0] ? <div className="text-sm font-black text-foreground">{company.users[0].name}</div> : <span className="text-xs opacity-40">Sin Admin</span>}
-                                                </td>
-                                                <td className="px-10 py-7 text-center">
-                                                    <div className="flex flex-col items-center gap-1.5">
-                                                        <span className={`inline-flex px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm ${company.active ? 'bg-success/10 text-success border border-success/20' : 'bg-muted text-muted-foreground border border-border/40'}`}>{company.active ? 'Activa' : 'Inactiva'}</span>
-                                                        <PastillaDePlan resumen={company.plan_resumen} uso={company.uso_ia} />
-                                                    </div>
-                                                </td>
-                                                <td className="px-10 py-7">
-                                                    <div className="flex items-center justify-end gap-3 opacity-20 group-hover:opacity-100 transition-all duration-300">
-                                                        <Button variant="ghost" size="icon" title="Plan y cobro" onClick={() => openPlan(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><CreditCard className="size-5" /></Button>
-                                                        <Button variant="ghost" size="icon" title="Editar datos" onClick={() => openEdit(company)} className="size-11 rounded-xl bg-muted/40 hover:bg-primary hover:text-primary-foreground transition-all"><Pencil className="size-5" /></Button>
-                                                        <Button onClick={() => router.post(route('master.impersonate', company.id))} className="h-11 px-6 rounded-xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-widest shadow-xl shadow-primary/20 hover:bg-primary transition-all"><LogIn className="size-4 mr-2" /> Entrar</Button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                            )}
+                        </section>
                     )}
 
                     {/* Plans Tab */}
@@ -491,9 +594,6 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                     )}
                 </div>
                 
-                <div className="mt-auto py-12 text-center">
-                    <p className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-[0.5em]">Integra Plus Corporate · WhatsApp Management Engine</p>
-                </div>
             </div>
 
             {/* Modals for Create/Edit Company */}
@@ -853,33 +953,32 @@ function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
     };
 
     return (
-        <div className="mt-10 pt-8 border-t border-border/40 space-y-5">
+        /* El modal que lo contiene ya se pasó a un diálogo sobrio, pero esta
+           sección se quedó atrás: rótulo en versales negras, la contraseña en
+           un recuadro de esquinas de 1rem y cada usuario en una tarjeta de
+           56px con tres pastillas. Dentro del mismo formulario se notaba que
+           eran de dos épocas. Ahora es una lista. */
+        <div className="space-y-4">
             <div className="flex items-center gap-2">
-                <KeyRound className="size-4 text-muted-foreground" />
-                <h3 className="text-[11px] font-black text-muted-foreground uppercase tracking-widest">
-                    Usuarios de la empresa
-                </h3>
+                <KeyRound className="size-3.5 text-muted-foreground" />
+                <h3 className="text-xs font-semibold text-foreground">Usuarios de la empresa</h3>
             </div>
 
             {flash?.temp_password && (
-                <div className="rounded-2xl border border-warning/30 bg-warning/[0.06] p-5 space-y-3">
-                    <div className="flex items-start gap-2.5">
-                        <ShieldAlert className="size-4 mt-0.5 shrink-0 text-warning" />
-                        <p className="text-xs font-bold leading-relaxed text-foreground">
-                            Contraseña temporal de <span className="font-mono">{flash.temp_password_for}</span>.
+                <div className="space-y-3 rounded-xl border border-warning/40 bg-warning/[0.06] p-4">
+                    <div className="flex items-start gap-2">
+                        <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                        <p className="text-xs leading-relaxed text-foreground">
+                            Contraseña temporal de <span className="font-medium">{flash.temp_password_for}</span>.
                             Se muestra una sola vez: cópiala y pide que la cambien al entrar.
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <code className="flex-1 rounded-xl bg-background border border-border/40 px-4 py-3 text-sm font-black font-mono tracking-wider select-all">
+                        <code className="flex-1 select-all rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm tracking-wide text-foreground">
                             {flash.temp_password}
                         </code>
-                        <Button
-                            type="button"
-                            onClick={copiar}
-                            className="h-11 px-4 rounded-xl bg-foreground text-background font-black text-[10px] uppercase tracking-widest"
-                        >
-                            <Copy className="size-3.5 mr-1.5" />
+                        <Button type="button" variant="outline" size="sm" onClick={copiar} className="gap-1.5">
+                            <Copy className="size-3.5" />
                             {copiada ? 'Copiada' : 'Copiar'}
                         </Button>
                     </div>
@@ -887,34 +986,31 @@ function UsuariosDeLaEmpresa({ usuarios, flash, onRestablecer }) {
             )}
 
             {!usuarios || usuarios.length === 0 ? (
-                <p className="text-xs font-bold text-muted-foreground italic opacity-60">
-                    Esta empresa no tiene usuarios.
-                </p>
+                <p className="text-xs text-muted-foreground">Esta empresa no tiene usuarios.</p>
             ) : (
-                <ul className="space-y-2">
+                <ul className="divide-y divide-border rounded-xl border border-border">
                     {usuarios.map(u => (
-                        <li
-                            key={u.id}
-                            className="flex items-center justify-between gap-4 rounded-2xl border border-border/40 bg-background px-5 py-3.5"
-                        >
+                        <li key={u.id} className="flex items-center justify-between gap-3 px-4 py-3">
                             <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm font-black truncate">{u.name}</span>
-                                    <span className="shrink-0 rounded-lg bg-muted/50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                                    <span className="truncate text-sm font-medium text-foreground">{u.name}</span>
+                                    <span className="shrink-0 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                                         {u.role}
                                     </span>
                                     {!u.active && (
-                                        <span className="shrink-0 rounded-lg bg-destructive/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-destructive">
+                                        <span className="shrink-0 rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
                                             Inactivo
                                         </span>
                                     )}
                                 </div>
-                                <p className="text-[11px] font-bold text-muted-foreground truncate font-mono">{u.email}</p>
+                                <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                             </div>
                             <Button
                                 type="button"
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0"
                                 onClick={() => onRestablecer(u)}
-                                className="h-10 shrink-0 px-4 rounded-xl bg-muted/40 text-foreground font-black text-[10px] uppercase tracking-widest hover:bg-muted"
                             >
                                 Restablecer
                             </Button>
@@ -955,6 +1051,18 @@ function BloqueAdmin({ titulo, children }) {
     );
 }
 
+const PESTANAS = [
+    { value: 'dashboard', label: 'Resumen' },
+    { value: 'companies', label: 'Empresas' },
+    { value: 'plans', label: 'Planes' },
+];
+
+const SUBTITULO = {
+    dashboard: 'Actividad de toda la plataforma.',
+    companies: 'Las empresas del sistema, su plan y su administrador.',
+    plans: 'Catálogo comercial y suscripciones.',
+};
+
 const ETIQUETA_COBRO = {
     cortesia: 'Cortesía — no se factura',
     prueba: 'Prueba',
@@ -976,17 +1084,17 @@ function PastillaDePlan({ resumen, uso }) {
     const gracia = resumen.en_mes_gratis;
 
     return (
-        <div className="flex flex-col items-center gap-1">
-            <span className="rounded-md bg-muted px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-1.5">
+            <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
                 {resumen.plan_nombre}
             </span>
-            <span className={`text-[9px] font-bold uppercase tracking-wider ${
+            <span className={`text-xs ${
                 gracia ? 'text-warning' : facturando ? 'text-success' : 'text-muted-foreground'
             }`}>
                 {gracia ? 'mes gratis' : facturando ? 'facturando' : resumen.cobro}
             </span>
             {uso?.exceso > 0 && (
-                <span className="text-[9px] font-bold uppercase tracking-wider text-warning">
+                <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-xs text-warning">
                     +{uso.exceso} IA
                 </span>
             )}
