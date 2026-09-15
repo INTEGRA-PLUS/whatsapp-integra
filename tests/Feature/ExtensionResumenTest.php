@@ -114,6 +114,155 @@ class ExtensionResumenTest extends TestCase
         ], 200)]);
     }
 
+    /**
+     * El resumen empieza donde empezó la atención de ahora.
+     *
+     * Un cliente al que se le atendió en marzo, en julio y hoy tiene un hilo de
+     * meses. Resumirlo entero devuelve un resumen de cosas ya resueltas, y
+     * obliga a leer conversaciones viejas para encontrar la de ahora: lo que se
+     * necesita al abrir el chat es qué está pasando esta vez.
+     */
+    public function test_resume_solo_desde_el_ultimo_cierre(): void
+    {
+        $this->instalar();
+        $this->fakeIa();
+
+        $conv = $this->conversacionCon(6);
+        $this->cierre($conv);
+        $nuevos = $this->mensajes($conv, 2, 'Lo de ahora');
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/chat/conversations/{$conv->id}/resumen")
+            ->assertOk()
+            ->assertJsonPath('mensajes', 2)
+            ->assertJsonPath('desde_la_reapertura', true);
+
+        $enviados = $this->mensajesEnviadosALaIa();
+
+        $this->assertCount(2, $enviados, 'Sólo los de después del cierre.');
+        $this->assertStringContainsString('Lo de ahora', json_encode($enviados));
+        $this->assertStringNotContainsString('Mensaje 0', json_encode($enviados));
+        $this->assertNotEmpty($nuevos);
+    }
+
+    /** Sin cierres de por medio se resume el hilo entero, como siempre. */
+    public function test_sin_cierres_resume_toda_la_conversacion(): void
+    {
+        $this->instalar();
+        $this->fakeIa();
+
+        $conv = $this->conversacionCon(5);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/chat/conversations/{$conv->id}/resumen")
+            ->assertOk()
+            ->assertJsonPath('mensajes', 5)
+            ->assertJsonPath('desde_la_reapertura', false);
+    }
+
+    /**
+     * Un hilo cerrado ahora mismo se resume igual: el corte es el cierre
+     * anterior, no el de arriba del todo.
+     *
+     * Es justo cuando más falta hace leerlo de un vistazo, y cortando por el
+     * último cierre no habría quedado nada que resumir.
+     */
+    public function test_una_conversacion_cerrada_resume_el_ciclo_que_acaba_de_terminar(): void
+    {
+        $this->instalar();
+        $this->fakeIa();
+
+        $conv = $this->conversacionCon(4);
+        $this->cierre($conv);
+        $this->mensajes($conv, 3, 'La segunda vez');
+        $this->cierre($conv);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/chat/conversations/{$conv->id}/resumen")
+            ->assertOk()
+            ->assertJsonPath('mensajes', 3);
+    }
+
+    /** Los avisos del hilo no son parte de la charla y no se le mandan al modelo. */
+    public function test_los_avisos_de_sistema_no_entran_en_el_resumen(): void
+    {
+        $this->instalar();
+        $this->fakeIa();
+
+        $conv = $this->conversacionCon(3);
+        WhatsAppMessage::create([
+            'conversation_id' => $conv->id,
+            'wamid' => 'wamid.'.Str::random(12),
+            'type' => 'system',
+            'content' => 'Conversación reabierta: el cliente volvió a escribir',
+            'direction' => 'internal',
+            'is_internal' => false,
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->postJson("/api/chat/conversations/{$conv->id}/resumen")
+            ->assertOk()
+            ->assertJsonPath('mensajes', 3);
+
+        $this->assertStringNotContainsString(
+            'Conversación reabierta',
+            json_encode($this->mensajesEnviadosALaIa())
+        );
+    }
+
+    /** Un cierre en el hilo, con el marcador que pone ConversationNotice. */
+    private function cierre(WhatsAppConversation $conv): WhatsAppMessage
+    {
+        return WhatsAppMessage::create([
+            'conversation_id' => $conv->id,
+            'wamid' => 'wamid.'.Str::random(12),
+            'type' => 'system',
+            'content' => 'Conversación cerrada por Yohan',
+            'direction' => 'internal',
+            'is_internal' => false,
+            'status' => 'sent',
+            'metadata' => ['evento' => 'cierre'],
+            'sent_at' => now(),
+        ]);
+    }
+
+    /** @return list<WhatsAppMessage> */
+    private function mensajes(WhatsAppConversation $conv, int $cuantos, string $texto): array
+    {
+        $creados = [];
+
+        for ($i = 0; $i < $cuantos; $i++) {
+            $creados[] = WhatsAppMessage::create([
+                'conversation_id' => $conv->id,
+                'wamid' => 'wamid.'.Str::random(12),
+                'type' => 'text',
+                'content' => $texto.' '.$i,
+                'direction' => $i % 2 === 0 ? 'inbound' : 'outbound',
+                'status' => 'delivered',
+                'sent_at' => now(),
+            ]);
+        }
+
+        return $creados;
+    }
+
+    /** Lo que de verdad viajó al modelo, leído de la petición capturada. */
+    private function mensajesEnviadosALaIa(): array
+    {
+        $enviados = [];
+
+        Http::assertSent(function ($request) use (&$enviados) {
+            $cuerpo = $request->data();
+            $enviados = $cuerpo['mensajes'] ?? $cuerpo['messages'] ?? [];
+
+            return true;
+        });
+
+        return $enviados;
+    }
+
     public function test_resume_una_conversacion_y_la_guarda(): void
     {
         $this->instalar();

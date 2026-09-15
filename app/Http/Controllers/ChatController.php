@@ -1410,7 +1410,7 @@ class ChatController extends Controller
             'closed_at' => now(),
         ]);
 
-        $notice = $this->recordConversationNotice($conversation, "Conversación cerrada por {$user->name}");
+        $notice = $this->recordConversationNotice($conversation, "Conversación cerrada por {$user->name}", 'cierre');
         $this->notifyAdminsOfClosure($user, $conversation);
 
         WebhookDispatcher::emit(
@@ -1445,9 +1445,12 @@ class ChatController extends Controller
      * (scopeUndelivered mira los salientes sin confirmar). Nunca sale a
      * WhatsApp: el cliente no lo ve.
      */
-    private function recordConversationNotice(WhatsAppConversation $conversation, string $text): ?WhatsAppMessage
-    {
-        return ConversationNotice::record($conversation, $text);
+    private function recordConversationNotice(
+        WhatsAppConversation $conversation,
+        string $text,
+        ?string $evento = null,
+    ): ?WhatsAppMessage {
+        return ConversationNotice::record($conversation, $text, $evento);
     }
 
     /**
@@ -1541,6 +1544,10 @@ class ChatController extends Controller
                 'direction' => 'internal',
                 'is_internal' => false,
                 'status' => 'sent',
+                // El mismo marcador que pone ConversationNotice: este insert va
+                // en crudo por el volumen, pero parte el hilo en dos igual que
+                // un cierre de uno en uno, y el resumen lo tiene que ver.
+                'metadata' => json_encode(['evento' => 'cierre']),
                 'sent_at' => $now,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -1898,7 +1905,7 @@ class ChatController extends Controller
 
         // Sin este aviso el hilo mostraría dos "cerrada" seguidas sin nada en
         // medio cuando un chat se cierra, se reabre y se vuelve a cerrar.
-        $notice = $this->recordConversationNotice($conversation, "Conversación reabierta por {$user->name}");
+        $notice = $this->recordConversationNotice($conversation, "Conversación reabierta por {$user->name}", 'reapertura');
 
         WebhookDispatcher::emit(
             $user->company_id,

@@ -19,8 +19,19 @@ use Illuminate\Support\Facades\Log;
  */
 class ConversationNotice
 {
-    public static function record(WhatsAppConversation $conversation, string $text): ?WhatsAppMessage
-    {
+    /**
+     * `$evento` marca los avisos que parten el hilo en ciclos de atención:
+     * 'cierre' y 'reapertura'. Va en `metadata` y no se deduce del texto —que
+     * lleva el nombre de quien cerró, o el motivo— porque de ese texto ya
+     * dependía algo: el resumen con IA tiene que empezar donde empezó la
+     * atención de ahora, y buscar «Conversación cerrada%» habría hecho que
+     * cambiar una palabra del aviso rompiera el corte sin que nada fallara.
+     */
+    public static function record(
+        WhatsAppConversation $conversation,
+        string $text,
+        ?string $evento = null,
+    ): ?WhatsAppMessage {
         try {
             $notice = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
@@ -30,6 +41,7 @@ class ConversationNotice
                 'is_internal'     => false,
                 'status'          => 'sent',
                 'sent_at'         => now(),
+                'metadata'        => $evento ? ['evento' => $evento] : null,
             ]);
 
             // Quien tenga el hilo abierto ve la pastilla al instante. Sin esto,

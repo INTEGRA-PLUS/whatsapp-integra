@@ -74,9 +74,23 @@ class ResumenController extends Controller
             ], 503);
         }
 
+        // Desde que se reabrió, no desde el principio de los tiempos.
+        //
+        // Un cliente al que se le atendió en marzo, en julio y hoy tiene un hilo
+        // de meses: resumirlo entero devuelve un resumen de cosas ya resueltas y
+        // obliga a leer conversaciones viejas para encontrar la de ahora. El
+        // corte es el último cierre; `inicioDelCicloActual()` explica los bordes.
+        $desde = $conversation->inicioDelCicloActual();
+
         // Los últimos N por id y luego del derecho: al modelo hay que darle la
         // conversación en el orden en que ocurrió, no al revés.
+        //
+        // Sólo lo que se dijeron de verdad: los avisos de sistema —«conversación
+        // cerrada por Yohan»— son `internal` y se colaban en el texto que se le
+        // manda al modelo, que los resumía como si fueran parte de la charla.
         $mensajes = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->when($desde, fn ($q) => $q->where('id', '>', $desde))
+            ->whereIn('direction', ['inbound', 'outbound'])
             ->whereNotNull('content')
             ->where('content', '!=', '')
             ->orderByDesc('id')
@@ -114,6 +128,8 @@ class ResumenController extends Controller
             'summary_highlights' => [
                 'puntos' => $resultado['puntos'],
                 'pendientes' => $resultado['pendientes'],
+                'mensajes' => count($mensajes),
+                'desde_la_reapertura' => $desde !== null,
             ],
             'summary_at' => now(),
             'summary_until_message_id' => $ultimo,
@@ -133,6 +149,11 @@ class ResumenController extends Controller
             'puntos' => $highlights['puntos'] ?? [],
             'pendientes' => $highlights['pendientes'] ?? [],
             'generado_en' => optional($conversation->summary_at)->toIso8601String(),
+            // Cuántos mensajes entraron y si se dejó algo fuera: sin esto, un
+            // resumen corto de un hilo largo parece que se ha comido la mitad,
+            // cuando lo que pasa es que la otra mitad ya se atendió y se cerró.
+            'mensajes' => $highlights['mensajes'] ?? null,
+            'desde_la_reapertura' => $highlights['desde_la_reapertura'] ?? false,
             // Para que el frontend pueda decir «ya lo tenías» en vez de fingir
             // que acaba de pensarlo.
             'cacheado' => $cacheado,

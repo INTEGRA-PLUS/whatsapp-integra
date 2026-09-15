@@ -842,7 +842,7 @@ class WhatsAppWebhookController extends Controller
             // abierto. El botón "Reabrir" sí dejaba rastro; esta rama, no.
             ConversationNotice::record($conversation, $isSystemNotice
                 ? 'Conversación reabierta: llegó un aviso de WhatsApp en este chat'
-                : 'Conversación reabierta: el cliente volvió a escribir');
+                : 'Conversación reabierta: el cliente volvió a escribir', 'reapertura');
         }
 
         $savedMessage = WhatsAppMessage::create($messageData);

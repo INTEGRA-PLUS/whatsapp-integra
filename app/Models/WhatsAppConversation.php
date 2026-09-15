@@ -366,6 +366,48 @@ class WhatsAppConversation extends Model
         return null;
     }
 
+    /**
+     * Dónde empieza la atención de ahora.
+     *
+     * Devuelve el id del aviso de cierre que parte el hilo: todo lo que vino
+     * después es el ciclo vigente. `null` si nunca se cerró, y entonces el ciclo
+     * es la conversación entera.
+     *
+     * La regla la pidió el uso real: un cliente al que se le atendió en marzo,
+     * en julio y hoy tiene un hilo de meses, y resumirlo entero devuelve un
+     * resumen de cosas ya resueltas. Lo que necesita quien abre el chat es qué
+     * está pasando ESTA vez.
+     *
+     * Se ignoran los cierres que no tienen ningún mensaje real después —el de
+     * una conversación que está cerrada ahora mismo—: si no, abrir un hilo
+     * cerrado y pulsar «Resumir» no tendría nada que resumir, que es justo
+     * cuando más falta hace leerlo de un vistazo. En ese caso el corte es el
+     * cierre anterior, o sea el ciclo que acaba de terminar.
+     *
+     * El marcador es `metadata->evento`, que pone `ConversationNotice`. El
+     * respaldo por texto cubre los avisos de antes de que existiera ese
+     * marcador —unos quince mil en producción— y se puede quitar el día que
+     * dejen de importar.
+     */
+    public function inicioDelCicloActual(): ?int
+    {
+        $ultimoReal = WhatsAppMessage::where('conversation_id', $this->id)
+            ->whereIn('direction', ['inbound', 'outbound'])
+            ->max('id');
+
+        if (! $ultimoReal) {
+            return null;
+        }
+
+        return WhatsAppMessage::where('conversation_id', $this->id)
+            ->where('type', 'system')
+            ->where('id', '<', $ultimoReal)
+            ->where(fn ($q) => $q
+                ->where('metadata->evento', 'cierre')
+                ->orWhere('content', 'like', 'Conversación cerrada%'))
+            ->max('id');
+    }
+
     public function instance()
     {
         return $this->belongsTo(Instance::class);

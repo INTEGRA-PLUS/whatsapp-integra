@@ -108,6 +108,17 @@ export function ResumenDialog({
                                 </span>
                             )}
                         </p>
+                        {/* Decir qué se ha resumido y qué no. Un hilo de meses
+                            con un resumen de cuatro líneas parece un resumen a
+                            medias; lo que pasa es que lo de antes ya se atendió
+                            y se cerró, y esto es la atención de ahora. */}
+                        {resumen?.mensajes > 0 && (
+                            <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                                {resumen.desde_la_reapertura
+                                    ? `Desde que se reabrió: ${resumen.mensajes} mensajes`
+                                    : `Toda la conversación: ${resumen.mensajes} mensajes`}
+                            </p>
+                        )}
                     </div>
 
                     <button
