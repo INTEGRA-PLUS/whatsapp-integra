@@ -3,6 +3,7 @@
 use App\Extensions\AgentSignatureExtension;
 use App\Extensions\FollowUpExtension;
 use App\Extensions\KeywordRoutingExtension;
+use App\Extensions\SentimientoExtension;
 
 return [
 
@@ -31,6 +32,7 @@ return [
         FollowUpExtension::class,
         KeywordRoutingExtension::class,
         AgentSignatureExtension::class,
+        SentimientoExtension::class,
     ],
 
 ];

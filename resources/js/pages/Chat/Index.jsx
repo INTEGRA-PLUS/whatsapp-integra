@@ -176,6 +176,11 @@ const SORT_OPTIONS = [
     { value: 'last_activity', label: 'Última actividad' },
     { value: 'newest', label: 'Más recientes' },
     { value: 'oldest', label: 'Más antiguas' },
+    // Éste lo resuelve el SERVIDOR, a diferencia de los tres de arriba, que
+    // reordenan lo que ya está cargado. Tiene que ser así: ordenar por urgencia
+    // sólo la página cargada dejaría al cliente más enfadado en la página tres,
+    // que es justo donde nadie va a mirar.
+    { value: 'urgencia', label: 'Urgencia del cliente' },
 ];
 
 function escapeRegExp(str) {
@@ -481,6 +486,32 @@ const FOLLOW_UP_BORDER = {
     urgent: 'border-l-destructive',
 };
 
+// ─── Semáforo de emociones ──────────────────────────────────────────────────
+// Lo escribe la extensión "Semáforo de emociones" en la propia conversación
+// (`sentiment_level`), así que llega sola por los tres caminos: la lista, el poll
+// y el evento de Reverb. Un campo derivado no lo haría —`awaiting_reply` se
+// calcula en el controlador y se pierde en cada evento en vivo—.
+//
+// Va junto al nombre y NO en el borde izquierdo: ése ya es del "esperando
+// respuesta", y los dos se taparían justo cuando ambos tienen algo que decir —un
+// cliente enfadado que además lleva esperando—.
+//
+// Sin extensión instalada la columna es null y no se pinta nada. Un punto gris en
+// cada fila sería ruido permanente para quien no usa esto.
+// Los tres del filtro de la cabecera. Mismo orden que en la bandeja: primero lo
+// que hay que mirar.
+const SENTIMENT_FILTERS = [
+    { value: 'rojo', label: 'clientes molestos', clase: 'bg-red-500' },
+    { value: 'amarillo', label: 'clientes con fricción', clase: 'bg-amber-500' },
+    { value: 'verde', label: 'clientes tranquilos', clase: 'bg-emerald-500' },
+];
+
+const SENTIMENT_DOT = {
+    verde: { clase: 'bg-emerald-500', label: 'Tranquilo' },
+    amarillo: { clase: 'bg-amber-500', label: 'Con fricción' },
+    rojo: { clase: 'bg-red-500 ring-2 ring-red-500/25', label: 'Molesto' },
+};
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
@@ -533,6 +564,15 @@ const ConversationItem = memo(({
             <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {SENTIMENT_DOT[conv.sentiment_level] && (
+                            <span
+                                // El título lleva la palabra además del color: un
+                                // punto rojo no le dice nada a quien no distingue
+                                // el rojo del verde, que es bastante gente.
+                                title={`${SENTIMENT_DOT[conv.sentiment_level].label}${conv.sentiment_reason ? ` — ${conv.sentiment_reason}` : ''}`}
+                                className={clsx('shrink-0 size-2 rounded-full', SENTIMENT_DOT[conv.sentiment_level].clase)}
+                            />
+                        )}
                         {conv.status === 'closed' && (
                             <span title="Conversación cerrada" className="shrink-0 text-muted-foreground">
                                 <CheckCircle2 className="size-3.5" />
@@ -1434,6 +1474,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const [templateHeader, setTemplateHeader] = useState(null);
     const [tags, setTags] = useState([]);
     const [selectedTagIds, setSelectedTagIds] = useState([]); // ids (string) de etiquetas filtradas (OR)
+    // Colores del semáforo de emociones por los que filtrar (vacío = todos).
+    const [sentimentFilter, setSentimentFilter] = useState([]);
     const [editingTag, setEditingTag] = useState(null); // {id, name, color} cuando se edita una etiqueta
     const [selectedAgentId, setSelectedAgentId] = useState('');
     const [agentFilterQuery, setAgentFilterQuery] = useState('');
@@ -2623,6 +2665,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         setAgentFilterQuery('');
         setSearchQuery('');
         setStatusFilter('open');
+        setSentimentFilter([]);
         setSortBy('last_activity');
     }, []);
 
@@ -2754,6 +2797,14 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         unassigned: statusConversations.filter(c => !c.assigned_to).length,
     }), [statusConversations, auth.user.id]);
 
+    // ¿Tiene sentido enseñar el filtro? Sin la extensión instalada ninguna
+    // conversación tiene color y el control filtraría a cero, que es peor que no
+    // estar. Se mira sobre lo cargado, que basta: si hay colores, aparece.
+    const hayColores = useMemo(
+        () => conversations.some(c => c.sentiment_level),
+        [conversations]
+    );
+
     const filteredConversations = useMemo(() => {
         let items = statusConversations;
         if (assignmentTab === 'mine') {
@@ -2763,6 +2814,9 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         }
         const ts = (v) => { const t = v ? new Date(v).getTime() : 0; return Number.isNaN(t) ? 0 : t; };
         const sorted = [...items];
+        // 'urgencia' no se toca: lo ordenó el servidor y volver a ordenarlo aquí
+        // por fecha desharía exactamente lo que se pidió.
+        if (sortBy === 'urgencia') return sorted;
         if (sortBy === 'newest') sorted.sort((a, b) => ts(b.created_at) - ts(a.created_at));
         else if (sortBy === 'oldest') sorted.sort((a, b) => ts(a.created_at) - ts(b.created_at));
         else sorted.sort((a, b) => ts(b.last_message_at) - ts(a.last_message_at));
@@ -2886,7 +2940,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         setPage(1);
         setConversations([]);
         setHasMore(true);
-    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, sentimentFilter, sortBy]);
 
     const loadConversations = useCallback(async (pageNum = 1) => {
         if (!selectedInstanceId || loadingMore) return;
@@ -2903,6 +2957,11 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
             if (filterMyAssignments) params.assigned_to = auth.user.id;
             if (folder !== 'all') params.filter = folder;
+            // Semáforo de emociones: los dos van al servidor porque el color
+            // vive en una columna y filtrar u ordenar aquí sólo alcanzaría a la
+            // página cargada.
+            if (sentimentFilter.length) params.sentiment = sentimentFilter.join(',');
+            if (sortBy === 'urgencia') params.sort = 'urgencia';
             // El estado se filtra en el backend para que la paginación (hasMore)
             // coincida con lo que se ve: "Abiertas" = open+pending, "Cerradas" = closed.
             // "Todas" no envía estado. Evita paginar cientos de cerradas ocultas.
@@ -4411,6 +4470,38 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 ))}
                                             </DropdownMenuContent>
                                         </DropdownMenu>
+
+                                        {/* Semáforo de emociones. Tres puntos que se
+                                            encienden y se apagan: es el mismo lenguaje
+                                            que el punto de cada fila, así que no hay
+                                            nada que aprender. Sólo se pinta si alguna
+                                            conversación tiene color —sin la extensión
+                                            instalada sería un control que no filtra
+                                            nada—. */}
+                                        {hayColores && (
+                                            <div className="flex items-center gap-1 pl-1 border-l border-border/10">
+                                                {SENTIMENT_FILTERS.map(o => {
+                                                    const activo = sentimentFilter.includes(o.value);
+                                                    return (
+                                                        <button
+                                                            key={o.value}
+                                                            type="button"
+                                                            title={activo ? `Quitar filtro: ${o.label}` : `Ver sólo: ${o.label}`}
+                                                            aria-pressed={activo}
+                                                            onClick={() => setSentimentFilter(prev => prev.includes(o.value)
+                                                                ? prev.filter(v => v !== o.value)
+                                                                : [...prev, o.value])}
+                                                            className={clsx(
+                                                                'size-5 flex items-center justify-center rounded-md transition-colors',
+                                                                activo ? 'bg-muted' : 'opacity-40 hover:opacity-100'
+                                                            )}
+                                                        >
+                                                            <span className={clsx('size-2 rounded-full', o.clase)} />
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

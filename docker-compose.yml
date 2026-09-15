@@ -117,6 +117,12 @@ x-app-env: &app-env
   AI_MENUS_TIMEOUT: ${AI_MENUS_TIMEOUT:-180}
   AI_MENUS_DEBOUNCE: ${AI_MENUS_DEBOUNCE:-6}
   AI_CHAT_TIMEOUT: ${AI_CHAT_TIMEOUT:-180}
+  # Semáforo de emociones. Si faltan, el semáforo NO se apaga: se queda con la
+  # matriz, que es justo para lo que está.
+  SENTIMIENTO_WEBHOOK_URL: ${SENTIMIENTO_WEBHOOK_URL:-}
+  SENTIMIENTO_API_KEY: ${SENTIMIENTO_API_KEY:-}
+  SENTIMIENTO_TIMEOUT: ${SENTIMIENTO_TIMEOUT:-45}
+  SENTIMIENTO_DEBOUNCE: ${SENTIMIENTO_DEBOUNCE:-120}
 
   # Correo. Lo usa la recuperación de contraseña ("¿Olvidaste tu contraseña?"):
   # con `MAIL_MAILER=log` el enlace no sale del servidor, se escribe en el log,
@@ -203,6 +209,10 @@ services:
       - php
       - artisan
       - queue:work
+      # `default` explícito desde que hay una segunda cola: sin --queue este
+      # worker atiende sólo `default` de todas formas, pero escrito se ve, y lo
+      # que no se ve es lo que un día alguien "arregla" añadiendo aquí la otra.
+      - --queue=default
       - --sleep=3
       - --tries=3
       - --max-time=3600
@@ -211,6 +221,42 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f 'queue:work' >/dev/null"]
       interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # El semáforo de emociones tiene cola propia, y no es una preferencia de
+  # estilo: la cola `default` ya la monopoliza la IA de menús —dos workers y
+  # hasta 210 s por inferencia—, así que un análisis de sentimiento por mensaje
+  # entrante dejaría los envíos de WhatsApp esperando detrás de una fila de
+  # clasificaciones. Un mensaje que sale tarde es un problema; un semáforo que
+  # tarda en afinarse no lo es, porque el color de la matriz ya está puesto.
+  #
+  # Un solo proceso a propósito: estos jobs son cortos y el coste real está al
+  # otro lado, en el modelo. Escalar aquí sólo serviría para pedirle más deprisa
+  # a n8n de lo que n8n puede responder.
+  queue-sentimiento:
+    <<: *app-defaults
+    environment:
+      <<: *app-env
+      RUN_MIGRATIONS: "false"
+      WARM_CACHES: "true"
+      SKIP_FPM_PING: "true"
+    command:
+      - php
+      - artisan
+      - queue:work
+      - --queue=sentimiento
+      - --sleep=5
+      - --tries=1
+      - --max-time=3600
+      - --timeout=60
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'queue:work --queue=sentimiento' >/dev/null"]
+      interval: 60s
       timeout: 5s
       retries: 3
       start_period: 20s

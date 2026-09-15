@@ -70,7 +70,16 @@ return [
         // único (se usa para armar el app access token "app_id|app_secret").
         //
         // Formato: uno o varios secretos separados por coma.
-        'webhook_app_secrets' => env('META_APP_SECRETS', env('META_APP_SECRET')),
+        //
+        // `?:` y NO el segundo argumento de env(): el compose declara
+        // `META_APP_SECRETS: ${META_APP_SECRETS:-}`, así que la variable llega
+        // al contenedor **definida y vacía**, no ausente — y env() sólo aplica
+        // su valor por defecto cuando la clave no existe. Escrito como
+        // `env('META_APP_SECRETS', env('META_APP_SECRET'))` el respaldo parecía
+        // estar y nunca se activaba: una instalación que configurara sólo el
+        // singular se quedaba sin secretos y respondía 403 a TODOS los webhooks.
+        // Es el mismo fallo que costó el token de verificación de Instagram.
+        'webhook_app_secrets' => env('META_APP_SECRETS') ?: env('META_APP_SECRET'),
         // Instagram. El caso de uso «API con inicio de sesión con Instagram»
         // hace que Meta cree una app APARTE —«Integra CRM-IG»— con identidad
         // propia: su App ID es el client_id del OAuth y su clave secreta es la
@@ -170,6 +179,33 @@ return [
         // ProcessWhatsAppChatAi se da esto + 30 s y ese total tiene que caber
         // en el `retry_after` de la cola.
         'timeout' => (int) env('AI_CHAT_TIMEOUT', 180),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Flujo de sentimiento (semáforo de emociones)
+    |--------------------------------------------------------------------------
+    |
+    | La capa 2 del semáforo: un flujo de n8n que lee la conversación y devuelve
+    | el color con su motivo. Es un flujo aparte del de chats y del de menús
+    | porque hace otra cosa —clasifica, no conversa— y porque su coste hay que
+    | poder apagarlo por su cuenta.
+    |
+    | Sin configurar, el semáforo NO se apaga: sigue funcionando con la matriz.
+    | Es toda la razón de que la capa 1 exista y de que corra primero.
+    |
+    | El timeout es bajo a propósito. Esto no le contesta a nadie: si tarda más
+    | que eso, el color que ya puso la matriz es mejor que un worker ocupado.
+    |
+    */
+    'sentimiento' => [
+        'webhook_url' => env('SENTIMIENTO_WEBHOOK_URL'),
+        'api_key' => env('SENTIMIENTO_API_KEY'),
+        'timeout' => (int) env('SENTIMIENTO_TIMEOUT', 45),
+        // Cuántos segundos se deja en paz a una conversación entre inferencias.
+        // Sin esto, una ráfaga de seis mensajes son seis inferencias para
+        // decidir el mismo color.
+        'debounce' => (int) env('SENTIMIENTO_DEBOUNCE', 120),
     ],
 
     /*

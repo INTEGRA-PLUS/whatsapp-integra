@@ -22,6 +22,7 @@ use App\Services\TemplateParameterGuard;
 use App\Services\WebhookDispatcher;
 use App\Support\ConversationNotice;
 use App\Support\Realtime;
+use App\Support\Sentimiento\Lectura;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -219,7 +220,37 @@ class ChatController extends Controller
             ->when($request->filter, function ($query, $filter) use ($user) {
                 $this->applyFolderFilter($query, $filter, $user);
             })
-            ->orderByDesc('last_message_at')
+            // Semáforo de emociones. Lo escribe la extensión del mismo nombre en
+            // columnas de la conversación, y por eso se puede filtrar aquí en
+            // SQL: si viviera en `metadata` esto sería un escaneo de la tabla.
+            ->when($request->sentiment, function ($query, $sentiment) {
+                $niveles = collect(is_array($sentiment) ? $sentiment : explode(',', (string) $sentiment))
+                    ->map(fn ($v) => trim((string) $v))
+                    ->filter(fn ($v) => in_array($v, Lectura::NIVELES, true))
+                    ->values()
+                    ->all();
+
+                if ($niveles !== []) {
+                    $query->whereIn('sentiment_level', $niveles);
+                }
+            })
+            ->when(
+                $request->sort === 'urgencia',
+                // Primero los rojos, luego los amarillos, y dentro de cada color
+                // el que lleva más tiempo esperando.
+                //
+                // Los que no tienen color van al final y NO se mezclan con los
+                // verdes: no analizado no es lo mismo que tranquilo, y ponerlos
+                // juntos sería dar por bueno lo que nadie ha mirado.
+                fn ($query) => $query
+                    // FIELD() numera por posición: verde=1, amarillo=2, rojo=3
+                    // y 0 para NULL. En DESC salen rojo, amarillo, verde y al
+                    // final los que nadie ha analizado, que es el orden que
+                    // queremos. Escrito al revés ordenaría por tranquilidad.
+                    ->orderByRaw("FIELD(sentiment_level, 'verde', 'amarillo', 'rojo') DESC")
+                    ->orderBy('last_message_at'),
+                fn ($query) => $query->orderByDesc('last_message_at')
+            )
             ->paginate(50);
 
         $carga = $this->sanitizeUtf8($conversations->toArray());
