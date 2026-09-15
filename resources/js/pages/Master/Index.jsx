@@ -634,10 +634,10 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                         <span className="text-xs text-muted-foreground">USD al mes</span>
                                                     </p>
                                                     {/* El rango y no un número: el precio depende del tramo de
-                                                        clientes, y dar uno solo obligaría a elegir un tramo
+                                                        contactos, y dar uno solo obligaría a elegir un tramo
                                                         arbitrario y llamarlo «el precio». */}
                                                     <p className="mt-1 text-[11px] text-muted-foreground">
-                                                        Según cuántos clientes tenga. Pagando el año, dos meses gratis.
+                                                        Según cuántos contactos tenga. Pagando el año, dos meses gratis.
                                                     </p>
                                                 </>
                                             )}
@@ -665,26 +665,27 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 —«35 a 259»—, y un rango se lee como un «depende» o
                                 como algo negociable. No lo es: son quince precios
                                 fijos, cinco tramos por tres planes. La pregunta que
-                                se hace delante de un cliente es «¿cuánto le cobro a
-                                uno que atiende a 5.000 clientes?». */}
+                                se hace delante de una empresa es «¿cuánto le cobro a
+                                una de 5.000 contactos?». */}
                             <section className="overflow-hidden rounded-xl border border-border bg-card">
                                 <div className="border-b border-border px-5 py-4">
                                     <h3 className="font-heading text-sm font-semibold text-foreground">
-                                        Precio por número de clientes
+                                        Precio por número de contactos
                                     </h3>
-                                    {/* Los dos nombres del producto son empresas y clientes:
-                                        la empresa es la que usa el CRM y el cliente es la
-                                        persona que le escribe. Aquí decía «socios», que es
-                                        la palabra de una cooperativa y no la del producto,
-                                        y que obligaba a preguntar qué se estaba contando. */}
+                                    {/* Los dos nombres del producto son empresa y contacto,
+                                        y son los que usa el resto del CRM: la empresa es la
+                                        que lo usa, el contacto es la persona que le escribe.
+                                        Aquí decía «socios» —la palabra de una cooperativa,
+                                        un ISP dice suscriptores— y había que preguntar qué
+                                        se estaba contando. */}
                                     <p className="mt-0.5 text-xs text-muted-foreground">
-                                        Cada persona distinta que le ha escrito a la empresa por WhatsApp; el CRM los
-                                        guarda solo. Una cooperativa los llama socios y un ISP suscriptores: en la
-                                        propuesta comercial se usa su palabra, aquí la nuestra.
+                                        Los mismos de la pantalla de Contactos: cada persona distinta que le ha escrito
+                                        a la empresa por WhatsApp, que el CRM va guardando sola. Una cooperativa los
+                                        llama socios y un ISP suscriptores; en la propuesta se usa su palabra.
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                        USD al mes de plataforma. No incluye los mensajes: esos se los paga el cliente
-                                        a Meta directamente y nosotros no cobramos margen encima.
+                                        USD al mes de plataforma. No incluye los mensajes: esos se los paga la
+                                        empresa a Meta directamente y nosotros no cobramos margen encima.
                                     </p>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -705,7 +706,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             {planes_resumen.tramos.map(tramo => (
                                                 <tr key={tramo.hasta} className="border-b border-border/60 last:border-0">
                                                     <td className="whitespace-nowrap px-5 py-2.5 tabular-nums text-foreground">
-                                                        {tramo.hasta.toLocaleString('es-CO')} clientes
+                                                        {tramo.hasta.toLocaleString('es-CO')} contactos
                                                     </td>
                                                     {planes_resumen.planes.map(plan => (
                                                         <td key={plan.slug} className="px-5 py-2.5 text-right tabular-nums text-foreground">
@@ -718,7 +719,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                     {/* Por contactos de verdad, no por el
                                                         tramo que alguien tecleó: es lo que
                                                         dice si la escalera está donde están
-                                                        los clientes. */}
+                                                        las empresas. */}
                                                     <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
                                                         {tramo.empresas}
                                                     </td>
@@ -731,7 +732,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <p>
                                         Pagando el año por adelantado, {planes_resumen.meses_gratis_al_pagar_anual} meses
                                         gratis: son {12 - planes_resumen.meses_gratis_al_pagar_anual} mensualidades por
-                                        doce. Una empresa con 15.000 clientes, en Inteligente, paga $
+                                        doce. Una empresa con 15.000 contactos, en Inteligente, paga $
                                         {planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? '—'} al
                                         mes, o el equivalente a $
                                         {Math.round(((planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? 0)
@@ -740,9 +741,9 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <p>
                                         Por encima del último tramo el precio es a cotizar, y la columna de IA es el
                                         crédito del plan Inteligente: pasarse de ahí no corta nada, se factura el exceso.
-                                        Agentes y líneas van ilimitados en los tres planes: se cobra por clientes, que
-                                        es como cuenta la empresa su propio tamaño, y cobrar por agente castigaría justo
-                                        a quien más usa la herramienta.
+                                        Agentes y líneas van ilimitados en los tres planes: se cobra por contactos,
+                                        que es como cuenta la empresa su propio tamaño, y cobrar por agente castigaría
+                                        justo a quien más usa la herramienta.
                                     </p>
                                 </div>
                             </section>
@@ -913,12 +914,12 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
 
                         <div className="space-y-1.5">
                             <Field
-                                label="Clientes contratados"
+                                label="Contactos contratados"
                                 type="number"
                                 value={planForm.contactos_contratados}
                                 onChange={v => setPlanForm({ ...planForm, contactos_contratados: v })}
                                 placeholder="12000"
-                                ayuda="Cuántos clientes suyos atiende por WhatsApp. Es el tramo de la escalera: decide el precio y el crédito de IA. No es un límite, nadie deja de atender por crecer."
+                                ayuda="Cuántos contactos atiende por WhatsApp. Es el tramo de la escalera: decide el precio y el crédito de IA. No es un límite, nadie deja de atender por crecer."
                             />
 
                             {/* Lo que tiene de verdad, al lado de lo que contrató.

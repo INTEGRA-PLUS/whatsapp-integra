@@ -20,9 +20,9 @@ return [
     | `ia` son las conversaciones con IA incluidas al mes. `null` = sin IA.
     |
     | El precio NO vive aquí dentro, sino en `precios`, más abajo: un plan no
-    | tiene un precio, tiene uno por cada tramo de socios. Meterlo en el plan
+    | tiene un precio, tiene uno por cada tramo de contactos. Meterlo en el plan
     | obligaría a inventar «el precio de Inteligente», que no existe — va de 65
-    | a 419 USD según cuántos clientes atienda la empresa.
+    | a 419 USD según cuántos contactos atienda la empresa.
     |
     | Antes hubo escritos 49,99 / 129,99 / 499,99 USD a pelo en el JSX, que no
     | salían de ningún sitio y no correspondían a nada cobrado nunca. La
@@ -73,14 +73,20 @@ return [
     | La escalera de precios
     |--------------------------------------------------------------------------
     |
-    | USD al mes de tarifa de plataforma, por tramo de socios o contactos
-    | activos. **No incluye los mensajes**: esos se los paga el cliente a Meta
+    | USD al mes de tarifa de plataforma, por tramo de contactos: las personas
+    | que le escriben a la empresa por WhatsApp, las mismas de la pantalla de
+    | Contactos. Empresa y contacto son los dos nombres del producto y se usan
+    | en todas partes; «socios» es la palabra de una cooperativa y
+    | «suscriptores» la de un ISP, y ésas se quedan para la propuesta comercial.
+    |
+    | **No incluye los mensajes**: esos se los paga la empresa a Meta
     | directamente y nosotros no cobramos margen encima — es un argumento de
     | venta, y es verificable en su propia factura.
     |
-    | Se cobra por socios y no por agentes porque es como piensa el cliente
-    | («tengo 12.000 socios») y porque cobrar por agente castiga justo a quien
-    | más usa la herramienta. Agentes y líneas van ilimitados en los tres.
+    | Se cobra por contactos y no por agentes porque es como cuenta la empresa
+    | su propio tamaño («tengo 12.000 socios») y porque cobrar por agente
+    | castiga justo a quien más usa la herramienta. Agentes y líneas van
+    | ilimitados en los tres.
     |
     | Los topes son los mismos que en `credito_ia`, y tienen que seguir
     | siéndolo: son el mismo tramo mirado desde dos sitios.
@@ -124,7 +130,7 @@ return [
     | nadie conversa con el bot todos los meses.
     |
     | Al agotarse **no se corta nada**: se factura el exceso. Cortar a mitad de
-    | una conversación con un socio no compensa lo que se ahorra.
+    | una conversación con un contacto no compensa lo que se ahorra.
     |
     */
 
