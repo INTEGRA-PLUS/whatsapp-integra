@@ -65,6 +65,11 @@ class ChatController extends Controller
             // seguimiento, para que el color y el aviso de la campana cuenten lo
             // mismo. Sin la extensión instalada o encendida, 30 por defecto.
             'umbral_seguimiento' => $this->umbralSeguimiento($user->company_id),
+            // Ajustes del botón «Resumir». Van como prop y no se consultan
+            // desde el frontend porque la cabecera del chat decide si pinta
+            // el botón en el primer render: pedirlos aparte lo haría
+            // aparecer medio segundo después, que es peor que no tenerlo.
+            'resumen_ia' => $this->ajustesResumen($user->company_id),
         ]);
     }
 
@@ -87,6 +92,32 @@ class ChatController extends Controller
         return $followUp
             ? (int) ($followUp->settings()['minutes'] ?? 30)
             : 30;
+    }
+
+    /**
+     * Si el botón «Resumir» se pinta, y a partir de cuántos mensajes.
+     *
+     * `activa` es false —y no se manda nada más— cuando la extensión no está
+     * encendida: así el frontend no tiene que saber nada de extensiones para
+     * decidir si hay botón.
+     *
+     * @return array{activa: bool, minimo: int}
+     */
+    private function ajustesResumen(?int $companyId): array
+    {
+        if (! $companyId) {
+            return ['activa' => false, 'minimo' => 8];
+        }
+
+        $resumen = CompanyExtension::where('company_id', $companyId)
+            ->where('slug', 'conversation_summary')
+            ->where('enabled', true)
+            ->first();
+
+        return [
+            'activa' => (bool) $resumen,
+            'minimo' => $resumen ? max(2, (int) ($resumen->settings()['minimo'] ?? 8)) : 8,
+        ];
     }
 
     /**

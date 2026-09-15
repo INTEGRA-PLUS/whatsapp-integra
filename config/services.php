@@ -198,6 +198,14 @@ return [
     | que eso, el color que ya puso la matriz es mejor que un worker ocupado.
     |
     */
+    'resumen' => [
+        'webhook_url' => env('RESUMEN_WEBHOOK_URL'),
+        'api_key' => env('RESUMEN_API_KEY'),
+        // Más corto que el del semáforo a propósito: aquí hay una persona
+        // esperando delante de un botón, no un job en segundo plano.
+        'timeout' => (int) env('RESUMEN_TIMEOUT', 30),
+    ],
+
     'sentimiento' => [
         'webhook_url' => env('SENTIMIENTO_WEBHOOK_URL'),
         'api_key' => env('SENTIMIENTO_API_KEY'),

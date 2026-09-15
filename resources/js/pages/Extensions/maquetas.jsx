@@ -1,4 +1,4 @@
-import { Bell, Clock, UserRound } from 'lucide-react';
+import { Bell, Clock, Sparkles, UserRound } from 'lucide-react';
 import clsx from 'clsx';
 
 /**
@@ -252,6 +252,54 @@ function FirmaDelAgente() {
     );
 }
 
+function ResumenConIa() {
+    return (
+        <>
+            <Pantalla titulo="Cabecera del chat">
+                <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
+                    <div className="size-7 shrink-0 rounded-full bg-muted" />
+                    <span className="text-[13px] font-semibold text-foreground">Camilo R.</span>
+                    <span className="ml-auto flex items-center gap-1.5 rounded-lg bg-info px-2.5 py-1 text-[11px] font-bold text-info-foreground">
+                        <Sparkles className="size-3" /> Resumir
+                    </span>
+                </div>
+
+                <div className="border-b border-info/20 bg-info/5 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                        <Sparkles className="size-3 shrink-0 text-info" />
+                        <span className="text-[11px] font-bold text-foreground">Resumen de la conversación</span>
+                    </div>
+                    <p className="mt-1.5 text-xs leading-relaxed text-foreground">
+                        Sin servicio desde el martes. Ya reinició el router y cambió el cable. Se le
+                        prometió visita técnica para el jueves y nadie fue.
+                    </p>
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                        Queda pendiente
+                    </p>
+                    <ul className="mt-0.5 space-y-0.5">
+                        <li className="flex gap-1.5 text-xs text-foreground">
+                            <span className="text-warning">▸</span> Reagendar la visita y avisarle
+                        </li>
+                        <li className="flex gap-1.5 text-xs text-foreground">
+                            <span className="text-warning">▸</span> Revisar si le corresponde descuento
+                        </li>
+                    </ul>
+                </div>
+
+                <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                    …y debajo, la conversación completa de siempre
+                </div>
+            </Pantalla>
+            <Pie>
+                lee el hilo y lo cuenta en cinco líneas. Es para los traspasos: el turno que entra, el
+                compañero que libra, el cliente que vuelve tras una semana. Se guarda, así que abrirlo
+                dos veces no cuesta dos consultas al modelo — sólo se rehace cuando alguien escribe.
+                No le responde nada al cliente ni decide por el asesor: el hilo sigue justo debajo.
+            </Pie>
+        </>
+    );
+}
+
 // ─── Versiones mini, para las tarjetas del catálogo ──────────────────────────
 // Las tarjetas van en rejilla de hasta tres columnas, así que la maqueta entera
 // no cabe. Estas son un resumen, no una versión encogida: enseñan UNA cosa —la
@@ -280,6 +328,22 @@ function MiniFila({ antes, nombre, texto, className }) {
 }
 
 const MINIS = {
+    conversation_summary: () => (
+        <Mini>
+            <div className="flex items-center gap-1.5">
+                <Sparkles className="size-3 shrink-0 text-info" />
+                <span className="text-[11px] font-bold text-foreground">Resumen</span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                Sin servicio desde el martes. Ya reinició el router. Se le prometió visita y nadie fue.
+            </p>
+            <div className="mt-1 flex gap-1.5 text-[11px] text-foreground">
+                <span className="text-warning">▸</span>
+                <span className="truncate">Reagendar la visita</span>
+            </div>
+        </Mini>
+    ),
+
     sentiment_traffic_light: () => (
         <Mini>
             <MiniFila antes={<Carita nivel="rojo" className="size-3" />} nombre="Pedro G." texto="voy a cancelar…" />
@@ -335,6 +399,7 @@ const MAQUETAS = {
     follow_up: SeguimientoSinRespuesta,
     keyword_routing: EnrutadoPorPalabra,
     agent_signature: FirmaDelAgente,
+    conversation_summary: ResumenConIa,
 };
 
 export function tieneMaqueta(slug) {

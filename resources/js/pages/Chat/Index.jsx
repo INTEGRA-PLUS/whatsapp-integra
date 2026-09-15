@@ -97,7 +97,8 @@ import {
     EyeOff,
     PanelLeftClose,
     PanelLeftOpen,
-    Bot
+    Bot,
+    Sparkles
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -1456,7 +1457,7 @@ function PaymentModal({ integration, conversation, onClose }) {
     );
 }
 
-export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30 }) {
+export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 } }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -1573,6 +1574,14 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const [selectedTagIds, setSelectedTagIds] = useState([]); // ids (string) de etiquetas filtradas (OR)
     // Colores del semáforo de emociones por los que filtrar (vacío = todos).
     const [sentimentFilter, setSentimentFilter] = useState([]);
+
+    // Resumen con IA (extensión `conversation_summary`). `null` es "no se ha
+    // pedido"; el panel sólo existe cuando hay algo que enseñar o algo que
+    // esperar, para no dejar un bloque vacío sobre el chat.
+    const [resumen, setResumen] = useState(null);
+    const [resumenAbierto, setResumenAbierto] = useState(false);
+    const [resumenCargando, setResumenCargando] = useState(false);
+    const [resumenError, setResumenError] = useState(null);
     const [editingTag, setEditingTag] = useState(null); // {id, name, color} cuando se edita una etiqueta
     const [selectedAgentId, setSelectedAgentId] = useState('');
     const [agentFilterQuery, setAgentFilterQuery] = useState('');
@@ -2440,9 +2449,44 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         setNewTagName('');
     }, []);
 
+    /**
+     * Pide el resumen de la conversación abierta.
+     *
+     * El backend decide si hace falta molestar al modelo: si el resumen que ya
+     * hay cubre hasta el último mensaje lo devuelve tal cual, y sólo con
+     * `refrescar` se rehace a la fuerza.
+     */
+    const pedirResumen = useCallback(async (refrescar = false) => {
+        const conv = selectedConversationRef.current;
+        if (!conv || resumenCargando) return;
+
+        setResumenAbierto(true);
+        setResumenCargando(true);
+        setResumenError(null);
+
+        try {
+            const { data } = await axios.post(
+                `/api/chat/conversations/${conv.id}/resumen`,
+                refrescar ? { refrescar: true } : {}
+            );
+            setResumen(data);
+        } catch (err) {
+            setResumenError(
+                err?.response?.data?.message ?? 'No se pudo generar el resumen. Inténtalo de nuevo.'
+            );
+        } finally {
+            setResumenCargando(false);
+        }
+    }, [resumenCargando]);
+
     const selectConversation = useCallback(async (conv) => {
         setSelectedConversation(conv);
         setReplyingTo(null);
+        // El resumen es de la conversación que se deja atrás: arrastrarlo al
+        // siguiente chat sería enseñar el resumen de otro cliente.
+        setResumen(null);
+        setResumenAbierto(false);
+        setResumenError(null);
         // El adjunto pertenece a la nota de este chat: arrastrarlo al siguiente
         // haría que se guardara en la conversación equivocada.
         clearNoteImage();
@@ -5056,6 +5100,29 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 </button>
                                             )}
 
+                                            {/* Resumir. Sólo si la extensión está encendida y el
+                                                hilo es lo bastante largo: en un chat de tres
+                                                mensajes el botón estorba más de lo que ayuda. */}
+                                            {resumen_ia.activa && messages.length >= resumen_ia.minimo && (
+                                                <button
+                                                    onClick={() => (resumenAbierto ? setResumenAbierto(false) : pedirResumen())}
+                                                    title="Resumir la conversación con IA"
+                                                    aria-label="Resumir la conversación con IA"
+                                                    aria-expanded={resumenAbierto}
+                                                    className={clsx(
+                                                        'flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold transition-colors',
+                                                        resumenAbierto
+                                                            ? 'bg-info text-info-foreground'
+                                                            : 'text-info hover:bg-info/10'
+                                                    )}
+                                                >
+                                                    {resumenCargando
+                                                        ? <Loader2 className="size-4 animate-spin" />
+                                                        : <Sparkles className="size-4" />}
+                                                    <span className="hidden md:inline">Resumir</span>
+                                                </button>
+                                            )}
+
                                             {/* Separador entre la acción principal y las utilidades */}
                                             <span className="w-px h-5 bg-border/40 mx-0.5" />
 
@@ -5121,6 +5188,100 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     → Asignar a mí
                                                 </button>
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* Resumen con IA. Encima de los mensajes y no dentro del
+                                        hilo: es una nota sobre la conversación, no un mensaje más,
+                                        y mezclarlo con las burbujas lo haría parecer algo que
+                                        alguien dijo. Se cierra y el hilo queda como estaba. */}
+                                    {resumenAbierto && (
+                                        <div className="shrink-0 border-b border-info/20 bg-info/5 px-4 py-3 sm:px-6">
+                                            <div className="flex items-center gap-2">
+                                                <Sparkles className="size-4 shrink-0 text-info" />
+                                                <span className="text-[12px] font-bold text-foreground">
+                                                    Resumen de la conversación
+                                                </span>
+                                                {resumen?.cacheado && (
+                                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                                                        ya generado
+                                                    </span>
+                                                )}
+                                                <div className="ml-auto flex items-center gap-1">
+                                                    {resumen && !resumenCargando && (
+                                                        <button
+                                                            onClick={() => pedirResumen(true)}
+                                                            title="Volver a generarlo"
+                                                            className="rounded-md px-2 py-1 text-[11px] font-semibold text-info hover:bg-info/10"
+                                                        >
+                                                            Rehacer
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => setResumenAbierto(false)}
+                                                        title="Cerrar el resumen"
+                                                        aria-label="Cerrar el resumen"
+                                                        className="size-7 flex items-center justify-center rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                    >
+                                                        <X className="size-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {resumenCargando && (
+                                                <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                                                    <Loader2 className="size-3.5 animate-spin" /> Leyendo la conversación…
+                                                </p>
+                                            )}
+
+                                            {resumenError && !resumenCargando && (
+                                                <p className="mt-2 text-xs text-destructive">{resumenError}</p>
+                                            )}
+
+                                            {resumen && !resumenCargando && (
+                                                <div className="mt-2 space-y-2.5">
+                                                    <p className="text-[13px] leading-relaxed text-foreground">
+                                                        {resumen.resumen}
+                                                    </p>
+
+                                                    {resumen.puntos?.length > 0 && (
+                                                        <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                                                                Puntos clave
+                                                            </p>
+                                                            <ul className="mt-1 space-y-0.5">
+                                                                {resumen.puntos.map((p, i) => (
+                                                                    <li key={i} className="flex gap-1.5 text-xs text-muted-foreground">
+                                                                        <span className="text-info">•</span> {p}
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+
+                                                    {resumen.pendientes?.length > 0 && (
+                                                        <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                                                                Queda pendiente
+                                                            </p>
+                                                            <ul className="mt-1 space-y-0.5">
+                                                                {resumen.pendientes.map((p, i) => (
+                                                                    <li key={i} className="flex gap-1.5 text-xs text-foreground">
+                                                                        <span className="text-warning">▸</span> {p}
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Lo escribió un modelo y el hilo sigue ahí
+                                                        debajo: decirlo evita que se use como si
+                                                        fuera la conversación. */}
+                                                    <p className="text-[10px] text-muted-foreground/60">
+                                                        Generado por IA a partir de los mensajes. Puede tener errores.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

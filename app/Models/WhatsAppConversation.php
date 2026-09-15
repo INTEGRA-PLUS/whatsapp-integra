@@ -37,6 +37,11 @@ class WhatsAppConversation extends Model
         'sentiment_source',
         'sentiment_at',
         'sentiment_locked_by',
+        'summary',
+        'summary_highlights',
+        'summary_at',
+        'summary_until_message_id',
+        'summary_by',
     ];
 
     protected $casts = [
@@ -49,6 +54,8 @@ class WhatsAppConversation extends Model
         // (Semaforo::suavizar), y un string de MySQL en esa aritmética acaba en
         // comparaciones que no significan lo que parecen.
         'sentiment_score' => 'float',
+        'summary_at' => 'datetime',
+        'summary_highlights' => 'array',
     ];
 
     protected $appends = ['initials'];

@@ -1,4 +1,4 @@
-import { AlarmClock, Blocks, Gauge, PenLine, Route } from 'lucide-react';
+import { AlarmClock, Blocks, Gauge, PenLine, Route, Sparkles } from 'lucide-react';
 
 // El manifiesto viaja con el NOMBRE del icono, no con el componente: el catálogo
 // vive en PHP y no puede mandar un componente de React. Este mapa es el único
@@ -10,6 +10,7 @@ const ICONS = {
     Gauge,
     PenLine,
     Route,
+    Sparkles,
 };
 
 export function iconFor(name) {

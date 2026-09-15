@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ResumenController;
 use App\Http\Controllers\AiFlowSettingsController;
 use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
 use App\Http\Controllers\AutoResponseController;
@@ -611,6 +612,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/templates', [ChatController::class, 'templates']);
         Route::post('/templates/ensure-resume', [ChatController::class, 'ensureResumeTemplate']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
+        Route::post('/conversations/{conversationId}/resumen', [ResumenController::class, 'resumir'])
+            ->middleware('permission:chat.view');
         Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
 
         // Vista imprimible del hilo: se abre en pestaña nueva y el navegador

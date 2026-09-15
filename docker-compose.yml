@@ -122,6 +122,13 @@ x-app-env: &app-env
   SENTIMIENTO_WEBHOOK_URL: ${SENTIMIENTO_WEBHOOK_URL:-}
   SENTIMIENTO_API_KEY: ${SENTIMIENTO_API_KEY:-}
   SENTIMIENTO_TIMEOUT: ${SENTIMIENTO_TIMEOUT:-45}
+
+  # Resumen de conversación con IA (extensión `conversation_summary`). Sin
+  # estas dos, el botón «Resumir» responde 503 y lo dice: la extensión se
+  # puede encender igual, pero no resume.
+  RESUMEN_WEBHOOK_URL: ${RESUMEN_WEBHOOK_URL:-}
+  RESUMEN_API_KEY: ${RESUMEN_API_KEY:-}
+  RESUMEN_TIMEOUT: ${RESUMEN_TIMEOUT:-30}
   SENTIMIENTO_DEBOUNCE: ${SENTIMIENTO_DEBOUNCE:-120}
 
   # Correo. Lo usa la recuperación de contraseña ("¿Olvidaste tu contraseña?"):
