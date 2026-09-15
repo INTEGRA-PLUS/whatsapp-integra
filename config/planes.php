@@ -22,7 +22,7 @@ return [
     | El precio NO vive aquí dentro, sino en `precios`, más abajo: un plan no
     | tiene un precio, tiene uno por cada tramo de socios. Meterlo en el plan
     | obligaría a inventar «el precio de Inteligente», que no existe — va de 65
-    | a 419 USD según el tamaño del cliente.
+    | a 419 USD según cuántos clientes atienda la empresa.
     |
     | Antes hubo escritos 49,99 / 129,99 / 499,99 USD a pelo en el JSX, que no
     | salían de ningún sitio y no correspondían a nada cobrado nunca. La
