@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Instance;
 use App\Models\SentimentEvent;
+use App\Models\WhatsAppMessage;
 use App\Models\User;
 use App\Models\WhatsAppConversation;
 use App\Support\Sentimiento\Lectura;
@@ -681,6 +682,175 @@ class ExtensionSentimientoTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->where('sentimiento.ahora.rojo', 2)
                 ->where('sentimiento.ahora.verde', 1));
+    }
+
+    // ── Poner al día lo que ya existía ──────────────────────────────────────
+
+    /**
+     * Una conversación con mensajes, creada como si la extensión no hubiera
+     * existido cuando llegaron: es la situación de cualquiera que la instale hoy.
+     */
+    private function conversacionVieja(string $texto, string $telefono = '573009999999'): WhatsAppConversation
+    {
+        $conversacion = WhatsAppConversation::create([
+            'instance_id' => $this->instance->id,
+            'wa_id' => $telefono,
+            'phone_number' => $telefono,
+            'name' => 'Cliente antiguo',
+            'status' => 'open',
+            'last_message_at' => now()->subDays(3),
+        ]);
+
+        WhatsAppMessage::create([
+            'conversation_id' => $conversacion->id,
+            'wamid' => 'wamid.OLD'.Str::random(8),
+            'type' => 'text',
+            'content' => $texto,
+            'direction' => 'inbound',
+            'status' => 'delivered',
+            'is_internal' => false,
+            'sent_at' => now()->subDays(3),
+        ]);
+
+        return $conversacion;
+    }
+
+    private function correrProgramada(): void
+    {
+        $this->artisan('extensions:run')->assertExitCode(0);
+    }
+
+    /**
+     * Sin esto, instalar la extensión dejaba la bandeja entera en gris hasta que
+     * cada cliente volviera a escribir — al revés de lo que espera cualquiera que
+     * acaba de encender algo llamado «semáforo».
+     */
+    public function test_la_pasada_programada_pinta_lo_que_ya_existia(): void
+    {
+        $vieja = $this->conversacionVieja('son unos ladrones, esto es una estafa');
+        $this->instalar();
+
+        $this->assertNull($vieja->fresh()->sentiment_level);
+
+        $this->correrProgramada();
+
+        $this->assertSame(Lectura::ROJO, $vieja->fresh()->sentiment_level);
+    }
+
+    /**
+     * Una conversación sin mensajes de texto del cliente no tiene color y nunca
+     * lo va a tener. Se sella `sentiment_at` igual, o el gancho programado
+     * volvería a por ella cada cinco minutos para siempre.
+     */
+    public function test_no_vuelve_a_mirar_lo_que_ya_miro(): void
+    {
+        $muda = WhatsAppConversation::create([
+            'instance_id' => $this->instance->id,
+            'wa_id' => '573008888888',
+            'phone_number' => '573008888888',
+            'name' => 'Sin texto',
+            'status' => 'open',
+            'last_message_at' => now()->subDay(),
+        ]);
+
+        $this->instalar();
+        $this->correrProgramada();
+
+        $muda->refresh();
+
+        $this->assertNull($muda->sentiment_level);
+        $this->assertNotNull($muda->sentiment_at, 'Hay que sellar «ya lo miré» aunque no haya color.');
+    }
+
+    /**
+     * Poner al día mil conversaciones serían mil inferencias de golpe, y afinar
+     * una conversación de hace tres semanas no vale casi nada.
+     */
+    public function test_la_pasada_programada_no_gasta_inferencias(): void
+    {
+        Queue::fake();
+        $this->flujoDevuelve(['color' => 'verde', 'confianza' => 0.9]);
+        $this->conversacionVieja('son unos ladrones, esto es una estafa');
+        $this->instalar(['usar_ia' => true]);
+
+        $this->correrProgramada();
+
+        Queue::assertNotPushed(AnalizarSentimiento::class);
+    }
+
+    public function test_la_pasada_programada_respeta_la_correccion_a_mano(): void
+    {
+        $vieja = $this->conversacionVieja('son unos ladrones, esto es una estafa');
+        $vieja->update([
+            'sentiment_level' => Lectura::VERDE,
+            'sentiment_source' => Lectura::ORIGEN_MANUAL,
+            'sentiment_locked_by' => $this->admin->id,
+        ]);
+
+        $this->instalar();
+        $this->correrProgramada();
+
+        $this->assertSame(Lectura::VERDE, $vieja->fresh()->sentiment_level);
+    }
+
+    /**
+     * Subir la sensibilidad no repinta nada por su cuenta: los colores ya
+     * escritos se quedan. `--todas` es lo que hace visible el cambio.
+     */
+    public function test_recalcular_todas_repinta_tras_cambiar_la_sensibilidad(): void
+    {
+        $vieja = $this->conversacionVieja('Es la tercera vez que escribo y nadie me responde');
+        $instalada = $this->instalar();
+
+        $this->correrProgramada();
+        $this->assertSame(Lectura::AMARILLO, $vieja->fresh()->sentiment_level);
+
+        $instalada->update(['settings' => array_merge($instalada->settings(), ['sensibilidad' => 'alto'])]);
+
+        $this->artisan('wa:semaforo-recalcular --todas')->assertExitCode(0);
+
+        $this->assertSame(Lectura::ROJO, $vieja->fresh()->sentiment_level);
+    }
+
+    public function test_recalcular_no_alcanza_a_otra_empresa(): void
+    {
+        $this->instalar();
+
+        $otra = Company::create(['name' => 'Otra', 'slug' => 'otra-rec', 'active' => true]);
+        $suya = Instance::create([
+            'company_id' => $otra->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'Suya',
+            'phone_number_id' => '7777777777',
+            'waba_id' => '6666666666',
+            'type' => 'meta',
+            'active' => true,
+            'access_token' => 'token-otra',
+        ]);
+
+        $ajena = WhatsAppConversation::create([
+            'instance_id' => $suya->id,
+            'wa_id' => '573001111111',
+            'phone_number' => '573001111111',
+            'name' => 'Ajena',
+            'status' => 'open',
+            'last_message_at' => now(),
+        ]);
+
+        WhatsAppMessage::create([
+            'conversation_id' => $ajena->id,
+            'wamid' => 'wamid.AJ'.Str::random(8),
+            'type' => 'text',
+            'content' => 'son unos ladrones',
+            'direction' => 'inbound',
+            'status' => 'delivered',
+            'is_internal' => false,
+            'sent_at' => now(),
+        ]);
+
+        $this->artisan('wa:semaforo-recalcular --todas')->assertExitCode(0);
+
+        $this->assertNull($ajena->fresh()->sentiment_at);
     }
 
     // ── Aislamiento ─────────────────────────────────────────────────────────
