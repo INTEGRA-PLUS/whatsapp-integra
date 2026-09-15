@@ -1,0 +1,238 @@
+{
+  "id": "YXuMvQnyvL1JOjis",
+  "active": false,
+  "name": "WhatsApp · Resumen de conversación",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-resumen",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "res-webhook",
+      "name": "Webhook resumen",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "whatsapp-resumen",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "7blLL66WxPX3kl14",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===========================================================================\n//  CONFIGURACIÓN — el único sitio que hay que editar.\n// ===========================================================================\nconst CONFIG = {\n  // El mismo Ollama del semáforo y de los menús.\n  ollama_url: 'https://ollama.com',\n  modelo: 'gpt-oss:120b-cloud',\n\n  // Más corto que el del semáforo a propósito: allí el color ya está puesto por\n  // la matriz y esperar no le cuesta nada a nadie. Aquí hay una persona mirando\n  // un botón, y Laravel corta a los 30 s.\n  timeout_ms: 25000,\n\n  // Tope de seguridad. Laravel ya manda sólo los que la empresa configuró (40\n  // por defecto), pero esto evita que un ajuste a 200 mande un hilo enorme al\n  // modelo y agote el worker.\n  max_mensajes: 60,\n\n  // Cuánto texto de cada mensaje. Un audio transcrito o un correo pegado pueden\n  // traer miles de caracteres y el resumen no mejora por verlos enteros.\n  max_chars_mensaje: 1200,\n};\n\nconst body = $input.first().json.body ?? $input.first().json;\n\nconst empresa = body.empresa ?? {};\nconst conversacion = body.conversacion ?? {};\nconst tono = ['telegrama', 'neutro', 'informe'].includes(body.tono) ? body.tono : 'telegrama';\nconst mensajes = Array.isArray(body.mensajes) ? body.mensajes : [];\n\nconst problemas = [];\nif (!conversacion.id) problemas.push('falta conversacion.id');\nif (mensajes.length === 0) problemas.push('no llegaron mensajes');\nif (!String(CONFIG.ollama_url).trim()) problemas.push('falta CONFIG.ollama_url');\n\nif (problemas.length) {\n  return [{ json: { guard: { ok: false, problemas }, conversacion_id: conversacion.id ?? null } }];\n}\n\n// EL ENCUADRE. El caso de uso es el traspaso: alguien coge un chat que no ha\n// leído y tiene que contestar ya. El error que hay que evitar no es un resumen\n// pobre —eso se nota y se abre el hilo— sino uno que CONTRADIGA lo que ya se le\n// dijo al cliente. De ahí que lo prometido sea obligatorio y que inventar esté\n// prohibido en dos sitios distintos.\nconst ESTILO = {\n  telegrama: 'Máximo 3 frases cortas. Sin adornos, sin conectores largos.',\n  neutro: '4 o 5 frases naturales.',\n  informe: 'Redactado y completo, para dejar constancia escrita.',\n};\n\nconst sistema = [\n  'Resumes una conversación de atención al cliente por WhatsApp para un asesor que acaba de',\n  'recibirla de un compañero y tiene que contestar ahora mismo.',\n  'Tu única salida es un JSON. No le hablas al cliente y no redactas respuestas para él.',\n  '',\n  'REGLAS:',\n  '1. SÓLO lo que está en la conversación. Si algo no se dijo, no lo inventes ni lo deduzcas.',\n  '2. Lo que el cliente pidió y lo que se le prometió van SIEMPRE. Si se le dio una fecha o un',\n  '   compromiso, dilo con esas mismas palabras: el asesor va a contestar encima de eso.',\n  '3. Lo que quede sin resolver va en \"pendientes\". Si no queda nada, devuelve la lista vacía;',\n  '   inventar un pendiente hace que el asesor busque algo que no existe.',\n  '4. No juzgues al cliente ni al agente, y no opines sobre la calidad de la atención.',\n  '5. Español de Colombia, tercera persona, sin saludos ni despedidas.',\n  '',\n  'TONO: ' + tono + '. ' + ESTILO[tono],\n].join('\\n');\n\nconst hilo = mensajes\n  .slice(-CONFIG.max_mensajes)\n  .map((m) => (m.de === 'asesor' ? 'ASESOR: ' : 'CLIENTE: ')\n    + String(m.texto ?? '').slice(0, CONFIG.max_chars_mensaje))\n  .join('\\n');\n\nconst usuario = [\n  'Empresa: ' + (empresa.nombre || 'un proveedor de servicios'),\n  'Contacto: ' + (conversacion.contacto || 'sin nombre'),\n  '',\n  'CONVERSACIÓN (de más antiguo a más reciente):',\n  hilo,\n].join('\\n');\n\nconst ollamaRequest = {\n  model: CONFIG.modelo,\n  stream: false,\n  think: false,\n  // Algo más de temperatura que en el semáforo: aquí se redacta, y a cero salen\n  // resúmenes cortados y telegráficos aunque se pida el tono largo. Pero baja,\n  // porque lo que se resume son hechos.\n  options: { temperature: 0.2, num_predict: 900 },\n  // Salida estructurada: sin esto el modelo envuelve el JSON en una explicación\n  // y Laravel lo descarta por no encontrar el campo `resumen`.\n  format: {\n    type: 'object',\n    properties: {\n      resumen: { type: 'string' },\n      puntos: { type: 'array', items: { type: 'string' } },\n      pendientes: { type: 'array', items: { type: 'string' } },\n    },\n    required: ['resumen', 'puntos', 'pendientes'],\n    additionalProperties: false,\n  },\n  messages: [\n    { role: 'system', content: sistema },\n    { role: 'user', content: usuario },\n  ],\n};\n\nreturn [{\n  json: {\n    guard: { ok: true, problemas: [] },\n    conversacion_id: conversacion.id,\n    ollama: { base_url: CONFIG.ollama_url, timeout_ms: CONFIG.timeout_ms },\n    ollamaRequest,\n  },\n}];\n"
+      },
+      "id": "res-preparar",
+      "name": "Preparar resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "guard-ok",
+              "leftValue": "={{ $json.guard.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "res-if",
+      "name": "¿Puede seguir?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.ollama.base_url }}/api/chat",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.ollamaRequest) }}",
+        "options": {
+          "timeout": "={{ $json.ollama.timeout_ms }}"
+        }
+      },
+      "id": "res-ollama",
+      "name": "Ollama · Resumen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -80
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "eqAu6SjzPN7nRdaF",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Saca el JSON de donde lo haya dejado Ollama y lo deja en la forma exacta que\n// espera `ResumenIaClient`.\n//\n// Laravel tolera bastante —acepta `output`, `data`, alias en inglés y listas en\n// texto— pero cuanto más limpio salga de aquí, menos hay que adivinar allí.\nconst entrada = $input.first().json;\nconst conversacion_id = $('Preparar resumen').first().json.conversacion_id ?? null;\n\nlet datos = null;\n\ntry {\n  const crudo = entrada?.message?.content ?? entrada?.content ?? '';\n  datos = typeof crudo === 'string' ? JSON.parse(crudo) : crudo;\n} catch (e) {\n  datos = null;\n}\n\nconst lista = (v) => {\n  if (typeof v === 'string') v = v.split(/\\r?\\n/);\n  if (!Array.isArray(v)) return [];\n  return v\n    .map((x) => String(x ?? '').replace(/^\\s*[-*•·]\\s*/, '').trim())\n    .filter(Boolean)\n    .slice(0, 8);\n};\n\nconst resumen = String(datos?.resumen ?? '').trim();\n\n// Un resumen vacío es tan inútil como ninguna respuesta, y Laravel lo trata\n// como fallo. Mejor decirlo aquí que mandar un objeto a medias.\nif (!resumen) {\n  return [{ json: { resumen: '', puntos: [], pendientes: [], conversacion_id, error: 'el modelo no devolvió resumen' } }];\n}\n\nreturn [{\n  json: {\n    resumen: resumen.slice(0, 2000),\n    puntos: lista(datos?.puntos),\n    pendientes: lista(datos?.pendientes),\n    conversacion_id,\n  },\n}];\n"
+      },
+      "id": "res-verificar",
+      "name": "Verificar resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "res-responder",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// La rama de fallo. Devuelve la forma correcta con el resumen vacío: Laravel lo\n// lee como «no se pudo» y le enseña al asesor un error claro en vez de un panel\n// en blanco que parece una avería.\nconst g = $input.first().json.guard ?? {};\n\nreturn [{\n  json: {\n    resumen: '',\n    puntos: [],\n    pendientes: [],\n    conversacion_id: $input.first().json.conversacion_id ?? null,\n    error: (g.problemas ?? ['no se pudo preparar el resumen']).join('; '),\n  },\n}];\n"
+      },
+      "id": "res-sin",
+      "name": "Sin resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "res-responder-sin",
+      "name": "Responder sin resumen",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        880,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook resumen": {
+      "main": [
+        [
+          {
+            "node": "Preparar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar resumen": {
+      "main": [
+        [
+          {
+            "node": "¿Puede seguir?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Puede seguir?": {
+      "main": [
+        [
+          {
+            "node": "Ollama · Resumen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama · Resumen": {
+      "main": [
+        [
+          {
+            "node": "Verificar resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar resumen": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sin resumen": {
+      "main": [
+        [
+          {
+            "node": "Responder sin resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
