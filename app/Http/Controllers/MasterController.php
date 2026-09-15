@@ -112,24 +112,34 @@ class MasterController extends Controller
         // anidados— y, como el orden depende de ella, MySQL la resolvía para
         // cada empresa de la tabla, no para las seis que se devuelven.
         $top_companies = function () use ($startDate, $endDate) {
-            $messagesPerCompany = DB::table('whatsapp_messages as wm')
-                ->join('whatsapp_conversations as c', 'c.id', '=', 'wm.conversation_id')
-                ->join('instances as i', 'i.id', '=', 'c.instance_id')
-                // Acotado al rango que se está mirando. Sumaba TODA la historia
-                // de cada empresa mientras la pantalla decía «mensajes en el
-                // rango elegido», así que cambiar el selector de fechas no movía
-                // el ranking ni un número: NovaLink salía con 115.344 mensajes
-                // cuando en el último mes llevaba 15.858.
-                //
-                // Y de paso es lo que lo hace viable: sin el rango, filtrar por
-                // dirección dejaba esta subconsulta en 69 segundos y tumbaba el
-                // panel entero. Ver la migración del índice
-                // `msg_created_direction_conv_idx`.
-                ->whereBetween('wm.created_at', [$startDate, $endDate])
+            // Se cuenta por conversación PRIMERO y se sube a empresa después,
+            // y no de un tirón con los dos joins, porque el plan que elegía
+            // MySQL con la consulta directa era el del revés: recorría las 52
+            // instancias, de cada una sus ~1.163 conversaciones y de cada
+            // conversación sus mensajes. Sesenta mil búsquedas por índice, una
+            // por conversación —6,2 s—, en vez de un solo barrido del rango de
+            // fechas —2,8 s—. Medido en producción el 15-sep-2026.
+            //
+            // El rango, además de ser lo que la pantalla promete, es lo que hace
+            // viable la consulta: sin él, filtrar por dirección la dejaba en 69
+            // segundos y tumbaba el panel entero. Antes sumaba TODA la historia
+            // de cada empresa mientras la pantalla decía «mensajes en el rango
+            // elegido», así que mover el selector de fechas no cambiaba el
+            // ranking ni un número: NovaLink salía con 115.344 mensajes cuando
+            // en el último mes llevaba 15.858.
+            $porConversacion = DB::table('whatsapp_messages')
+                ->selectRaw('conversation_id, count(*) as c')
+                ->whereBetween('created_at', [$startDate, $endDate])
                 // Mismo criterio que la tarjeta y el gráfico: los avisos de
                 // sistema del hilo no son actividad de la empresa.
-                ->whereIn('wm.direction', ['inbound', 'outbound'])
-                ->selectRaw('i.company_id, count(*) as total')
+                ->whereIn('direction', ['inbound', 'outbound'])
+                ->groupBy('conversation_id');
+
+            $messagesPerCompany = DB::query()
+                ->fromSub($porConversacion, 't')
+                ->join('whatsapp_conversations as c', 'c.id', '=', 't.conversation_id')
+                ->join('instances as i', 'i.id', '=', 'c.instance_id')
+                ->selectRaw('i.company_id, sum(t.c) as total')
                 ->groupBy('i.company_id');
 
             return Company::query()
