@@ -19,15 +19,17 @@ return [
     |
     | `ia` son las conversaciones con IA incluidas al mes. `null` = sin IA.
     |
-    | `precio_usd` es la tarifa mensual de plataforma, sin los mensajes —esos se
-    | los paga el cliente a Meta directamente, sin margen nuestro. Va a `null`
-    | en los tres porque **todavía no hay cifras decididas**:
-    | `docs/producto-y-precios.md` fija la estrategia (cobrar por tramo de
-    | socios y no por agentes, tres niveles, facturar por trimestre adelantado)
-    | y el suelo de la competencia en la liga ISP, pero no el número. El panel
-    | maestro lo enseña como «precio sin definir» a propósito: durante un tiempo
-    | tuvo escritos 49,99 / 129,99 / 499,99 USD a pelo en el JSX, que no salían
-    | de ningún sitio y no correspondían a nada que se hubiera cobrado nunca.
+    | El precio NO vive aquí dentro, sino en `precios`, más abajo: un plan no
+    | tiene un precio, tiene uno por cada tramo de socios. Meterlo en el plan
+    | obligaría a inventar «el precio de Inteligente», que no existe — va de 65
+    | a 419 USD según el tamaño del cliente.
+    |
+    | Antes hubo escritos 49,99 / 129,99 / 499,99 USD a pelo en el JSX, que no
+    | salían de ningún sitio y no correspondían a nada cobrado nunca. La
+    | escalera de ahora sí: sale de `docs/producto-y-precios.md`, está anclada a
+    | los 250 USD que se le propusieron a Cootramed —299 de lista menos los dos
+    | meses del pago anual— y se fijó contra el suelo de la competencia en la
+    | liga ISP (CRM Inbox, 257 USD sin IA a 12.000 contactos).
     |
     */
 
@@ -39,7 +41,6 @@ return [
                 'agent_signature',
             ],
             'ia' => null,
-            'precio_usd' => null,
         ],
 
         'automatizacion' => [
@@ -55,7 +56,6 @@ return [
                 'sentiment_traffic_light',
             ],
             'ia' => null,
-            'precio_usd' => null,
         ],
 
         'inteligente' => [
@@ -64,10 +64,55 @@ return [
             // Se lleva al tramo contratado en `PlanDeLaEmpresa`; esto es el
             // suelo para una empresa sin tramo asignado.
             'ia' => 1200,
-            'precio_usd' => null,
         ],
 
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | La escalera de precios
+    |--------------------------------------------------------------------------
+    |
+    | USD al mes de tarifa de plataforma, por tramo de socios o contactos
+    | activos. **No incluye los mensajes**: esos se los paga el cliente a Meta
+    | directamente y nosotros no cobramos margen encima — es un argumento de
+    | venta, y es verificable en su propia factura.
+    |
+    | Se cobra por socios y no por agentes porque es como piensa el cliente
+    | («tengo 12.000 socios») y porque cobrar por agente castiga justo a quien
+    | más usa la herramienta. Agentes y líneas van ilimitados en los tres.
+    |
+    | Los topes son los mismos que en `credito_ia`, y tienen que seguir
+    | siéndolo: son el mismo tramo mirado desde dos sitios.
+    |
+    | Precio de lista, que es el trimestral. El anual lleva dos meses gratis, o
+    | sea diez mensualidades: 299 de lista son 249 al mes pagando el año.
+    |
+    | Por encima del último tramo es «a cotizar» a propósito — y conviene, que
+    | es donde el margen da para negociar.
+    |
+    */
+
+    'precios' => [
+        500 => ['esencial' => 35, 'automatizacion' => 49, 'inteligente' => 65],
+        2000 => ['esencial' => 65, 'automatizacion' => 89, 'inteligente' => 119],
+        5000 => ['esencial' => 109, 'automatizacion' => 149, 'inteligente' => 195],
+        15000 => ['esencial' => 179, 'automatizacion' => 235, 'inteligente' => 299],
+        30000 => ['esencial' => 259, 'automatizacion' => 339, 'inteligente' => 419],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Descuento por pago anual
+    |--------------------------------------------------------------------------
+    |
+    | Dos meses gratis. Todos en el nicho facturan por trimestre o año
+    | adelantado, y con razón: el montaje —conectar el número, armar plantillas,
+    | entrenar al equipo— no se recupera en un mes.
+    |
+    */
+
+    'meses_gratis_al_pagar_anual' => 2,
 
     /*
     |--------------------------------------------------------------------------

@@ -291,6 +291,77 @@ class PlanesTest extends TestCase
         $this->assertDatabaseCount('company_ai_usage', 0);
     }
 
+    // ─── La escalera de precios ──────────────────────────────────────────────
+
+    public function test_el_precio_sale_del_tramo_y_del_plan(): void
+    {
+        $this->assertSame(35, PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'esencial', 'contactos_contratados' => 300,
+        ]))->precioMensual());
+
+        $this->assertSame(299, PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'inteligente', 'contactos_contratados' => 12000,
+        ]))->precioMensual());
+
+        $this->assertSame(149, PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'automatizacion', 'contactos_contratados' => 4500,
+        ]))->precioMensual());
+    }
+
+    /**
+     * El número que se dijo en la mesa. 299 de lista menos los dos meses del
+     * pago anual son los 250 USD que se le propusieron a Cootramed: si esto se
+     * rompe, el panel contradice una cotización ya entregada.
+     */
+    public function test_el_anual_da_los_249_de_cootramed(): void
+    {
+        $plan = PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'inteligente', 'contactos_contratados' => 12000,
+        ]));
+
+        $this->assertSame(299, $plan->precioMensual());
+        $this->assertSame(249, $plan->precioMensualAnual());
+    }
+
+    /** Sin tramo no se inventa un precio: se dice que falta ponerlo. */
+    public function test_sin_tramo_no_hay_precio(): void
+    {
+        $this->assertNull(PlanDeLaEmpresa::de($this->empresa())->precioMensual());
+        $this->assertNull(PlanDeLaEmpresa::de($this->empresa())->precioMensualAnual());
+    }
+
+    /** Por encima del último tramo es «a cotizar», y ahí tampoco se inventa. */
+    public function test_por_encima_del_ultimo_tramo_se_cotiza_a_mano(): void
+    {
+        $this->assertNull(PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'inteligente', 'contactos_contratados' => 80000,
+        ]))->precioMensual());
+    }
+
+    /**
+     * Los dos mapas son el mismo tramo mirado desde dos sitios. Si alguien
+     * añade un tramo de precio y se olvida del crédito, una empresa acabaría
+     * pagando un escalón y recibiendo el crédito de otro.
+     */
+    public function test_los_tramos_de_precio_y_de_credito_no_se_separan(): void
+    {
+        $this->assertSame(
+            array_keys(config('planes.credito_ia')),
+            array_keys(config('planes.precios')),
+            'Los tramos de precio y de crédito de IA dejaron de coincidir'
+        );
+    }
+
+    /** Cada plan tiene precio en todos los tramos: un hueco sería un «sin definir» falso. */
+    public function test_ningun_plan_se_queda_sin_precio_en_un_tramo(): void
+    {
+        foreach (config('planes.precios') as $tope => $fila) {
+            foreach (array_keys(config('planes.disponibles')) as $plan) {
+                $this->assertArrayHasKey($plan, $fila, "Falta el precio de {$plan} en el tramo {$tope}");
+            }
+        }
+    }
+
     // ─── Lo que NO debe pasar nunca ──────────────────────────────────────────
 
     /**

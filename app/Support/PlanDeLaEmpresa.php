@@ -101,6 +101,50 @@ class PlanDeLaEmpresa
         return (int) max(config('planes.credito_ia', [0]));
     }
 
+    /**
+     * Lo que le toca pagar al mes, según su plan y su tramo.
+     *
+     * `null` significa «hay que cotizarlo a mano», y son dos casos distintos:
+     * una empresa sin tramo asignado —a la que todavía nadie le puso precio— y
+     * una por encima del último tramo, donde el precio es a cotizar a propósito.
+     * En los dos, el panel enseña «sin definir» en vez de inventarse una cifra.
+     */
+    public function precioMensual(): ?int
+    {
+        $contactos = (int) $this->company->contactos_contratados;
+
+        if ($contactos <= 0) {
+            return null;
+        }
+
+        foreach (config('planes.precios', []) as $tope => $fila) {
+            if ($contactos <= $tope) {
+                return $fila[$this->slug()] ?? null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * El mismo precio pagando el año por adelantado.
+     *
+     * Dos meses gratis, o sea diez mensualidades repartidas en doce. Es el
+     * número que se dice en la mesa: «299 de lista, 249 si pagas el año».
+     */
+    public function precioMensualAnual(): ?int
+    {
+        $lista = $this->precioMensual();
+
+        if ($lista === null) {
+            return null;
+        }
+
+        $gratis = (int) config('planes.meses_gratis_al_pagar_anual', 0);
+
+        return (int) round($lista * (12 - $gratis) / 12);
+    }
+
     // ─── Cobro ───────────────────────────────────────────────────────────────
 
     public function cobro(): string
@@ -145,6 +189,8 @@ class PlanDeLaEmpresa
             'contactos_contratados' => $this->company->contactos_contratados,
             'credito_ia' => $this->creditoIa(),
             'tiene_ia' => $this->tieneIa(),
+            'precio_usd' => $this->precioMensual(),
+            'precio_usd_anual' => $this->precioMensualAnual(),
         ];
     }
 }

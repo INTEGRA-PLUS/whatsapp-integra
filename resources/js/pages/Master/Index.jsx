@@ -569,19 +569,28 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                         </div>
 
                                         <div className="mt-4 border-y border-border py-3">
-                                            {plan.precio_usd === null ? (
+                                            {plan.precio_desde === null ? (
                                                 <p className="text-sm text-muted-foreground">Precio sin definir</p>
                                             ) : (
-                                                <p className="flex items-baseline gap-1.5">
-                                                    <span className="text-2xl font-semibold tabular-nums text-foreground">
-                                                        ${plan.precio_usd}
-                                                    </span>
-                                                    <span className="text-xs text-muted-foreground">USD al mes</span>
-                                                </p>
+                                                <>
+                                                    <p className="flex items-baseline gap-1.5">
+                                                        <span className="text-2xl font-semibold tabular-nums text-foreground">
+                                                            ${plan.precio_desde}
+                                                        </span>
+                                                        <span className="text-sm text-muted-foreground">–</span>
+                                                        <span className="text-2xl font-semibold tabular-nums text-foreground">
+                                                            ${plan.precio_hasta}
+                                                        </span>
+                                                        <span className="text-xs text-muted-foreground">USD al mes</span>
+                                                    </p>
+                                                    {/* El rango y no un número: el precio depende del tramo de
+                                                        socios, y dar uno solo obligaría a elegir un tramo
+                                                        arbitrario y llamarlo «el precio». */}
+                                                    <p className="mt-1 text-[11px] text-muted-foreground">
+                                                        Según el tramo de socios. Pagando el año, dos meses gratis.
+                                                    </p>
+                                                </>
                                             )}
-                                            <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                                                {plan.facturando} facturando
-                                            </p>
                                         </div>
 
                                         <p className="mt-4 text-xs font-medium text-foreground">

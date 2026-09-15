@@ -234,7 +234,11 @@ class MasterController extends Controller
                     return [
                         'slug' => $slug,
                         'nombre' => $plan['nombre'],
-                        'precio_usd' => $plan['precio_usd'] ?? null,
+                        // Un plan no tiene «un» precio: tiene uno por tramo.
+                        // Se manda el rango, que es lo que se puede decir sin
+                        // mentir — «Inteligente va de 65 a 419 según el tamaño».
+                        'precio_desde' => collect(config('planes.precios'))->min(fn (array $f) => $f[$slug] ?? null),
+                        'precio_hasta' => collect(config('planes.precios'))->max(fn (array $f) => $f[$slug] ?? null),
                         'ia' => $plan['ia'],
                         'todas_las_extensiones' => $todas,
                         'extensiones' => $todas

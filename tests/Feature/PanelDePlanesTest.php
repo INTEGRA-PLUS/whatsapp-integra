@@ -55,8 +55,13 @@ class PanelDePlanesTest extends TestCase
         // La empresa del master también es Inteligente: no tiene plan puesto.
         $this->assertSame(2, $porSlug['inteligente']['empresas']);
 
-        // Y el precio no se lo inventa nadie mientras no esté decidido.
-        $this->assertNull($porSlug['esencial']['precio_usd']);
+        // El precio va como rango y no como número suelto: un plan cuesta
+        // distinto según el tramo de socios, y dar uno solo obligaría a elegir
+        // un tramo arbitrario y llamarlo «el precio».
+        $this->assertSame(35, $porSlug['esencial']['precio_desde']);
+        $this->assertSame(259, $porSlug['esencial']['precio_hasta']);
+        $this->assertSame(65, $porSlug['inteligente']['precio_desde']);
+        $this->assertSame(419, $porSlug['inteligente']['precio_hasta']);
     }
 
     /**
