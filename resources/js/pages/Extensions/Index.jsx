@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Blocks, Search, Download, Power, Settings2, Check, Loader2, Info } from 'lucide-react';
 import { iconFor, CATEGORIES, categoryLabel } from './icons';
+import { MaquetaMini } from './maquetas';
 
 export default function ExtensionsIndex({ extensions: initial }) {
     const { auth } = usePage().props;
@@ -185,7 +186,15 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                 </div>
             </div>
 
-            <p className="mt-3 flex-1 text-sm text-muted-foreground leading-relaxed">{extension.description}</p>
+            <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{extension.description}</p>
+
+            {/* El `flex-1` se mueve de la descripción a esta fila: con la mini
+                debajo, el hueco que estira la tarjeta hasta la altura de la
+                rejilla tiene que quedar entre la maqueta y los botones, o las
+                descripciones cortas dejaban la maqueta flotando a media altura. */}
+            <div className="flex-1">
+                <MaquetaMini slug={extension.slug} />
+            </div>
 
             <div className="mt-4 flex items-center gap-2">
                 {!extension.installed ? (

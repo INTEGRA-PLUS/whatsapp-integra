@@ -252,6 +252,82 @@ function FirmaDelAgente() {
     );
 }
 
+// ─── Versiones mini, para las tarjetas del catálogo ──────────────────────────
+// Las tarjetas van en rejilla de hasta tres columnas, así que la maqueta entera
+// no cabe. Estas son un resumen, no una versión encogida: enseñan UNA cosa —la
+// que distingue a esa extensión de las demás— y se callan el resto, que para eso
+// está la página de detalle. Sin pie de texto: la tarjeta ya tiene su
+// descripción justo encima y repetirla sería ruido.
+
+/** Marco común de las mini: alto fijo para que la rejilla no quede escalonada. */
+function Mini({ children }) {
+    return (
+        <div className="mt-3 h-[76px] overflow-hidden rounded-lg border bg-background/60 px-2.5 py-2">
+            {children}
+        </div>
+    );
+}
+
+/** Línea de chat reducida a lo imprescindible: marca, nombre y un retazo. */
+function MiniFila({ antes, nombre, texto, className }) {
+    return (
+        <div className={clsx('flex items-center gap-1.5 py-[3px]', className)}>
+            {antes}
+            <span className="shrink-0 text-[11px] font-semibold text-foreground">{nombre}</span>
+            <span className="truncate text-[11px] text-muted-foreground">{texto}</span>
+        </div>
+    );
+}
+
+const MINIS = {
+    sentiment_traffic_light: () => (
+        <Mini>
+            <MiniFila antes={<Carita nivel="rojo" className="size-3" />} nombre="Pedro G." texto="voy a cancelar…" />
+            <MiniFila antes={<Carita nivel="amarillo" className="size-3" />} nombre="Nivaldo R." texto="¿alguna novedad?" />
+            <MiniFila antes={<Carita nivel="verde" className="size-3" />} nombre="Marta L." texto="gracias por la ayuda" />
+        </Mini>
+    ),
+
+    follow_up: () => (
+        <Mini>
+            <MiniFila nombre="Camilo R." texto="¿quedó agendada la visita?"
+                antes={<Clock className="size-3 shrink-0 text-muted-foreground" />} />
+            <div className="mt-1 flex items-center gap-1.5 rounded border border-warning/30 bg-warning/10 px-1.5 py-1">
+                <Bell className="size-3 shrink-0 text-warning" />
+                <span className="truncate text-[11px] font-semibold text-foreground">
+                    Lleva 1 h 28 min esperando
+                </span>
+            </div>
+        </Mini>
+    ),
+
+    keyword_routing: () => (
+        <Mini>
+            <div className="rounded rounded-tl-none bg-muted px-1.5 py-1 text-[11px] leading-tight">
+                quiero <span className="rounded bg-amber-300/70 px-1 font-semibold text-amber-950">cancelar</span> mi plan
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="shrink-0">↳</span>
+                <Etiqueta color="#be123c">Retención</Etiqueta>
+                <UserRound className="size-3 shrink-0" />
+                <span className="truncate font-semibold text-foreground">Laura</span>
+            </div>
+        </Mini>
+    ),
+
+    agent_signature: () => (
+        <Mini>
+            <div className="flex h-full items-center justify-end rounded bg-[#efeae2] px-2 dark:bg-[#0b141a]">
+                <div className="max-w-full rounded rounded-tr-none bg-[#d9fdd3] px-2 py-1 text-[11px] leading-tight text-[#111b21] dark:bg-[#005c4b] dark:text-white">
+                    Ya quedó agendada su visita.
+                    <br />
+                    <span className="text-[#667781] dark:text-white/70">— Ana, Integra Colombia</span>
+                </div>
+            </div>
+        </Mini>
+    ),
+};
+
 // ─── El mapa ─────────────────────────────────────────────────────────────────
 
 const MAQUETAS = {
@@ -267,6 +343,12 @@ export function tieneMaqueta(slug) {
 
 export function Maqueta({ slug }) {
     const Componente = MAQUETAS[slug];
+
+    return Componente ? <Componente /> : null;
+}
+
+export function MaquetaMini({ slug }) {
+    const Componente = MINIS[slug];
 
     return Componente ? <Componente /> : null;
 }
