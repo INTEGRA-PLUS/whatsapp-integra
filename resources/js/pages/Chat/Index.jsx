@@ -152,6 +152,32 @@ function ConTooltip({ texto, children }) {
     );
 }
 
+/**
+ * Tooltip de la barra de acciones de la conversación.
+ *
+ * Mismo motivo que `ConTooltip`: el `title` del navegador sale tarde, con la
+ * caja gris del sistema operativo y pegado al cursor, tapando el icono de al
+ * lado. Aquí encima son nueve botones seguidos y varios sin etiqueta, así que
+ * el del sistema era justo donde peor se comportaba.
+ *
+ * Va `side="bottom"` porque esta barra está arriba del todo: un tooltip hacia
+ * arriba se sale del contenedor o tapa el nombre del contacto.
+ *
+ * Se queda con el verde de la marca (el `bg-primary` que trae `TooltipContent`)
+ * y no con el azul de `ConTooltip`: ese azul distingue la columna de navegación
+ * del chat, y esta barra pertenece a la conversación, no a la navegación.
+ */
+function TooltipAccion({ texto, children }) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{children}</TooltipTrigger>
+            <TooltipContent side="bottom" align="center">
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
 // El chat ya no tiene barra propia: sus controles viven en la barra superior
 // del layout para no gastar alto de pantalla.
 function TopBarActions({ children }) {
@@ -4999,9 +5025,10 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             {/* Admin Assignment Button */}
                                             {isAdmin && (
                                                 <DropdownMenu>
+                                                    <TooltipAccion texto={selectedConversation.assigned_agent ? `Asignado a ${selectedConversation.assigned_agent.name}` : 'Asignar agente'}>
                                                     <DropdownMenuTrigger asChild>
                                                         <button
-                                                            title={selectedConversation.assigned_agent ? `Asignado a ${selectedConversation.assigned_agent.name}` : 'Asignar agente'}
+                                                            aria-label={selectedConversation.assigned_agent ? `Asignado a ${selectedConversation.assigned_agent.name}` : 'Asignar agente'}
                                                             className={clsx(
                                                                 "size-9 flex items-center justify-center rounded-lg transition-colors",
                                                                 selectedConversation.assigned_to
@@ -5012,6 +5039,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                             <UserPlus className="size-[18px]" />
                                                         </button>
                                                     </DropdownMenuTrigger>
+                                                    </TooltipAccion>
                                                     <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
                                                         <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar Agente</DropdownMenuLabel>
                                                         <DropdownMenuSeparator className="bg-border/5" />
@@ -5059,9 +5087,10 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
                                             {/* Etiquetas de la conversación */}
                                             <DropdownMenu>
+                                                <TooltipAccion texto={selectedConversation.tags?.length ? `${selectedConversation.tags.length} etiqueta(s)` : 'Etiquetas'}>
                                                 <DropdownMenuTrigger asChild>
                                                     <button
-                                                        title={selectedConversation.tags?.length ? `${selectedConversation.tags.length} etiqueta(s)` : 'Etiquetas'}
+                                                        aria-label={selectedConversation.tags?.length ? `${selectedConversation.tags.length} etiqueta(s)` : 'Etiquetas'}
                                                         className={clsx(
                                                             "relative size-9 flex items-center justify-center rounded-lg transition-colors",
                                                             selectedConversation.tags?.length
@@ -5077,6 +5106,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         )}
                                                     </button>
                                                 </DropdownMenuTrigger>
+                                                </TooltipAccion>
                                                 <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
                                                     <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar etiquetas</DropdownMenuLabel>
                                                     <DropdownMenuSeparator className="bg-border/5" />
@@ -5120,14 +5150,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             {/* Macros: ejecuta una secuencia de acciones sobre la conversación */}
                                             {macros.length > 0 && (
                                                 <DropdownMenu>
+                                                    <TooltipAccion texto="Ejecutar macro">
                                                     <DropdownMenuTrigger asChild>
                                                         <button
-                                                            title="Ejecutar macro"
+                                                            aria-label="Ejecutar macro"
                                                             className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                                         >
                                                             {runningMacroId ? <Loader2 className="size-[18px] animate-spin" /> : <Wand2 className="size-[18px]" />}
                                                         </button>
                                                     </DropdownMenuTrigger>
+                                                    </TooltipAccion>
                                                     <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
                                                         <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Macros</DropdownMenuLabel>
                                                         <DropdownMenuSeparator className="bg-border/5" />
@@ -5157,32 +5189,36 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
                                             {/* Cerrar / Reabrir conversación */}
                                             {selectedConversation.status === 'closed' ? (
+                                                <TooltipAccion texto="Volver a abrir esta conversación">
                                                 <button
                                                     onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}
-                                                    title="Reabrir conversación"
+                                                    aria-label="Reabrir conversación"
                                                     className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-primary-foreground bg-warning hover:bg-warning shadow-sm shadow-warning/25 transition-colors"
                                                 >
                                                     <RotateCcw className="size-4" />
                                                     <span className="hidden md:inline">Reabrir</span>
                                                 </button>
+                                                </TooltipAccion>
                                             ) : (
+                                                <TooltipAccion texto="Marcar la conversación como atendida">
                                                 <button
                                                     onClick={() => confirmCloseConversation(selectedConversation.id)}
-                                                    title="Cerrar conversación"
+                                                    aria-label="Cerrar conversación"
                                                     className="flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold text-primary-foreground bg-success hover:bg-success shadow-sm shadow-success/25 transition-colors"
                                                 >
                                                     <CheckCircle2 className="size-4" />
                                                     <span className="hidden md:inline">Cerrar</span>
                                                 </button>
+                                                </TooltipAccion>
                                             )}
 
                                             {/* Resumir. Sólo si la extensión está encendida y el
                                                 hilo es lo bastante largo: en un chat de tres
                                                 mensajes el botón estorba más de lo que ayuda. */}
                                             {resumen_ia.activa && messages.length >= resumen_ia.minimo && (
+                                                <TooltipAccion texto={resumenAbierto ? 'Ocultar el resumen' : 'Resumir la conversación con IA'}>
                                                 <button
                                                     onClick={() => (resumenAbierto ? setResumenAbierto(false) : pedirResumen())}
-                                                    title="Resumir la conversación con IA"
                                                     aria-label="Resumir la conversación con IA"
                                                     aria-expanded={resumenAbierto}
                                                     className={clsx(
@@ -5197,17 +5233,24 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         : <Sparkles className="size-4" />}
                                                     <span className="hidden md:inline">Resumir</span>
                                                 </button>
+                                                </TooltipAccion>
                                             )}
 
                                             {/* Separador entre la acción principal y las utilidades */}
                                             <span className="w-px h-5 bg-border/40 mx-0.5" />
 
-                                            <button onClick={() => setShowCallHistory(true)} title="Historial de llamadas" aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
-                                            <button title="Buscar en conversación" aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
+                                            <TooltipAccion texto="Historial de llamadas">
+                                                <button onClick={() => setShowCallHistory(true)} aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
+                                            </TooltipAccion>
+                                            <TooltipAccion texto="Buscar en esta conversación">
+                                                <button aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
+                                            </TooltipAccion>
                                             <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <button title="Más opciones" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="size-[18px]" /></button>
-                                                </DropdownMenuTrigger>
+                                                <TooltipAccion texto="Más opciones">
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button aria-label="Más opciones" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="size-[18px]" /></button>
+                                                    </DropdownMenuTrigger>
+                                                </TooltipAccion>
                                                 <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
                                                     <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones</DropdownMenuLabel>
                                                     <DropdownMenuSeparator className="bg-border/5" />
