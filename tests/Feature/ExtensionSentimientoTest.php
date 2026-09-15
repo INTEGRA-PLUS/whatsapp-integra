@@ -499,6 +499,78 @@ class ExtensionSentimientoTest extends TestCase
         $this->assertSame(Lectura::ORIGEN_MANUAL, $this->conversacion()->sentiment_source);
     }
 
+    // ── La bandeja: filtrar y ordenar ───────────────────────────────────────
+
+    private function conversacionCon(string $nivel, string $telefono, string $cuando): WhatsAppConversation
+    {
+        return WhatsAppConversation::create([
+            'instance_id' => $this->instance->id,
+            'wa_id' => $telefono,
+            'phone_number' => $telefono,
+            'name' => 'Cliente '.$nivel,
+            'status' => 'open',
+            'last_message_at' => $cuando,
+            'sentiment_level' => $nivel,
+        ]);
+    }
+
+    public function test_la_bandeja_filtra_por_color(): void
+    {
+        $this->conversacionCon(Lectura::ROJO, '573001', now()->subMinutes(5)->toDateTimeString());
+        $this->conversacionCon(Lectura::VERDE, '573002', now()->subMinutes(3)->toDateTimeString());
+
+        $respuesta = $this->actingAs($this->admin)
+            ->getJson('/api/chat/conversations?instance_id='.$this->instance->id.'&sentiment=rojo')
+            ->assertOk();
+
+        $this->assertCount(1, $respuesta->json('data'));
+        $this->assertSame(Lectura::ROJO, $respuesta->json('data.0.sentiment_level'));
+    }
+
+    public function test_un_color_inventado_no_filtra_nada(): void
+    {
+        $this->conversacionCon(Lectura::ROJO, '573001', now()->toDateTimeString());
+        $this->conversacionCon(Lectura::VERDE, '573002', now()->toDateTimeString());
+
+        $respuesta = $this->actingAs($this->admin)
+            ->getJson('/api/chat/conversations?instance_id='.$this->instance->id.'&sentiment=morado')
+            ->assertOk();
+
+        $this->assertCount(2, $respuesta->json('data'));
+    }
+
+    /**
+     * El que no tiene color va al FINAL, no mezclado con los verdes: "no
+     * analizado" no es lo mismo que "tranquilo", y juntarlos sería dar por bueno
+     * lo que nadie ha mirado.
+     */
+    public function test_ordenar_por_urgencia_pone_los_rojos_primero(): void
+    {
+        // A propósito con el verde como el más reciente: por actividad saldría
+        // el primero, y es lo que este orden tiene que invertir.
+        $this->conversacionCon(Lectura::VERDE, '573002', now()->toDateTimeString());
+        $this->conversacionCon(Lectura::AMARILLO, '573003', now()->subMinutes(10)->toDateTimeString());
+        $this->conversacionCon(Lectura::ROJO, '573001', now()->subMinutes(20)->toDateTimeString());
+
+        WhatsAppConversation::create([
+            'instance_id' => $this->instance->id,
+            'wa_id' => '573004',
+            'phone_number' => '573004',
+            'name' => 'Sin analizar',
+            'status' => 'open',
+            'last_message_at' => now()->toDateTimeString(),
+        ]);
+
+        $niveles = collect($this->actingAs($this->admin)
+            ->getJson('/api/chat/conversations?instance_id='.$this->instance->id.'&sort=urgencia')
+            ->assertOk()
+            ->json('data'))
+            ->pluck('sentiment_level')
+            ->all();
+
+        $this->assertSame([Lectura::ROJO, Lectura::AMARILLO, Lectura::VERDE, null], $niveles);
+    }
+
     // ── Aislamiento ─────────────────────────────────────────────────────────
 
     public function test_no_toca_las_conversaciones_de_otra_empresa(): void
