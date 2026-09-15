@@ -23,9 +23,6 @@ import {
     ChevronRight,
     SearchCheck,
     Package,
-    Rocket,
-    Crown,
-    ShieldCheck,
     BarChart as BarChartIcon,
     KeyRound,
     Copy,
@@ -35,7 +32,7 @@ import {
     CreditCard,
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [] }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [], planes_resumen }) {
     // La contraseña temporal viaja por flash: existe una sola vez y no
     // sobrevive a una recarga.
     const { flash } = usePage().props;
@@ -543,53 +540,125 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         </section>
                     )}
 
-                    {/* Plans Tab */}
+                    {/* La pestaña llevaba tres tarjetas y una tabla escritas a
+                        pelo aquí mismo: «Startup 49,99 USD, 12 suscripciones»,
+                        «Business Pro», «Enterprise». Ni los planes eran los del
+                        producto —Esencial, Automatización, Inteligente— ni esas
+                        cifras se habían cobrado nunca, ni los conteos venían de
+                        la base de datos. El botón «Nuevo Plan» tampoco hacía
+                        nada, y no puede hacerlo: los planes viven en
+                        `config/planes.php` a propósito, para que una fila no
+                        pueda quedar desincronizada del catálogo de extensiones. */}
                     {activeTab === 'plans' && (
-                        <div className="bg-card border border-border/40 rounded-[2.5rem] shadow-xl overflow-hidden animate-in slide-in-from-right-8 duration-700">
-                            <div className="p-10 border-b bg-muted/20 flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-2xl font-black tracking-tight uppercase">Gestión de Planes</h3>
-                                    <p className="text-sm font-medium text-muted-foreground mt-1 text-xs uppercase tracking-widest opacity-60">Configuración comercial y suscripciones corporativas</p>
-                                </div>
-                                <Button className="rounded-2xl h-12 px-6 font-black uppercase tracking-widest text-[11px] bg-primary shadow-xl shadow-primary/20">
-                                    <Plus className="size-4 mr-2" /> Nuevo Plan
-                                </Button>
+                        <div className="space-y-6">
+                            <div className="grid gap-4 md:grid-cols-3">
+                                {planes_resumen.planes.map(plan => (
+                                    <section key={plan.slug} className="flex flex-col rounded-xl border border-border bg-card p-5">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <h3 className="font-heading text-base font-semibold text-foreground">{plan.nombre}</h3>
+                                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                                    {plan.ia
+                                                        ? `Desde ${plan.ia.toLocaleString('es-CO')} conversaciones con IA al mes`
+                                                        : 'Sin IA'}
+                                                </p>
+                                            </div>
+                                            <span className="shrink-0 rounded-md border border-border bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+                                                {plan.empresas} {plan.empresas === 1 ? 'empresa' : 'empresas'}
+                                            </span>
+                                        </div>
+
+                                        <div className="mt-4 border-y border-border py-3">
+                                            {plan.precio_usd === null ? (
+                                                <p className="text-sm text-muted-foreground">Precio sin definir</p>
+                                            ) : (
+                                                <p className="flex items-baseline gap-1.5">
+                                                    <span className="text-2xl font-semibold tabular-nums text-foreground">
+                                                        ${plan.precio_usd}
+                                                    </span>
+                                                    <span className="text-xs text-muted-foreground">USD al mes</span>
+                                                </p>
+                                            )}
+                                            <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                                                {plan.facturando} facturando
+                                            </p>
+                                        </div>
+
+                                        <p className="mt-4 text-xs font-medium text-foreground">
+                                            {plan.todas_las_extensiones
+                                                ? 'Todas las extensiones'
+                                                : `${plan.extensiones.length} extensiones`}
+                                        </p>
+                                        <ul className="mt-2 space-y-1.5">
+                                            {plan.extensiones.map(nombre => (
+                                                <li key={nombre} className="flex items-start gap-2 text-xs text-muted-foreground">
+                                                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" />
+                                                    {nombre}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </section>
+                                ))}
                             </div>
-                            <div className="p-10">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    <PlanCard icon={<Rocket className="size-10 text-info" />} name="Startup" price="49.99" color="blue" features={["5 Instancias", "Usuarios Ilimitados", "Reportes Básicos"]} />
-                                    <PlanCard icon={<Crown className="size-10 text-accent-foreground" />} name="Business Pro" price="129.99" color="indigo" features={["20 Instancias", "Soporte Prioritario", "API Access", "Reportes Avanzados"]} popular />
-                                    <PlanCard icon={<ShieldCheck className="size-10 text-success" />} name="Enterprise" price="499.99" color="emerald" features={["Instancias Ilimitadas", "Dedicated Manager", "SLA 99.99%", "Custom Integrations"]} />
-                                </div>
-                                <div className="mt-12 overflow-x-auto rounded-[2rem] border border-border/20 shadow-inner">
-                                    <table className="w-full">
+
+                            <div className="grid gap-6 lg:grid-cols-2">
+                                <section className="overflow-hidden rounded-xl border border-border bg-card">
+                                    <div className="border-b border-border px-5 py-4">
+                                        <h3 className="font-heading text-sm font-semibold text-foreground">
+                                            Crédito de IA por tramo de contactos
+                                        </h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                            El tramo contratado decide las conversaciones incluidas. Al agotarse no se
+                                            corta nada: se factura el exceso.
+                                        </p>
+                                    </div>
+                                    <table className="w-full text-sm">
                                         <thead>
-                                            <tr className="bg-muted/30 border-b border-border/20">
-                                                <th className="px-8 py-5 text-left text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Plan</th>
-                                                <th className="px-8 py-5 text-center text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Suscripciones</th>
-                                                <th className="px-8 py-5 text-center text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Costo Mensual</th>
-                                                <th className="px-8 py-5 text-right text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Acciones</th>
+                                            <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+                                                <th className="px-5 py-2.5 text-left font-medium">Hasta</th>
+                                                <th className="px-5 py-2.5 text-right font-medium">Conversaciones con IA</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-border/10">
-                                            {[
-                                                { name: 'Startup', subs: 12, cost: '$49.99' },
-                                                { name: 'Business Pro', subs: 45, cost: '$129.99' },
-                                                { name: 'Enterprise', subs: 4, cost: '$499.99' }
-                                            ].map((plan, i) => (
-                                                <tr key={i} className="hover:bg-muted/10 transition-colors">
-                                                    <td className="px-8 py-6 font-black text-foreground uppercase tracking-tight">{plan.name}</td>
-                                                    <td className="px-8 py-6 text-center font-bold">{plan.subs}</td>
-                                                    <td className="px-8 py-6 text-center font-black text-accent-foreground">{plan.cost}</td>
-                                                    <td className="px-8 py-6 text-right">
-                                                        <Button variant="ghost" size="sm" className="font-black text-[10px] uppercase tracking-widest hover:bg-primary/15">Configurar</Button>
+                                        <tbody>
+                                            {planes_resumen.tramos.map(tramo => (
+                                                <tr key={tramo.hasta} className="border-b border-border/60 last:border-0">
+                                                    <td className="px-5 py-2.5 tabular-nums text-foreground">
+                                                        {tramo.hasta.toLocaleString('es-CO')} contactos
+                                                    </td>
+                                                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
+                                                        {tramo.ia.toLocaleString('es-CO')}
                                                     </td>
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
-                                </div>
+                                </section>
+
+                                <section className="rounded-xl border border-border bg-card">
+                                    <div className="border-b border-border px-5 py-4">
+                                        <h3 className="font-heading text-sm font-semibold text-foreground">Estado de cobro</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                            {planes_resumen.total_empresas} empresas en total. Suspendido no apaga nada:
+                                            sólo marca a quien no ha pagado.
+                                        </p>
+                                    </div>
+                                    <ul className="divide-y divide-border">
+                                        {Object.entries(planes_resumen.cobros).map(([cobro, total]) => (
+                                            <li key={cobro} className="flex items-center justify-between gap-3 px-5 py-3">
+                                                <span className="text-sm text-foreground">{ETIQUETA_COBRO[cobro] ?? cobro}</span>
+                                                <span className="text-sm tabular-nums text-muted-foreground">{total}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
                             </div>
+
+                            <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
+                                Los planes y sus tramos viven en <code className="font-mono">config/planes.php</code>, no
+                                en la base de datos: son una regla de producto, y una fila que pueda quedar
+                                desincronizada del catálogo de extensiones sólo añade formas de fallar. Lo que sí se
+                                cambia desde aquí es el plan de cada empresa, en su ficha.
+                            </p>
                         </div>
                     )}
                 </div>
@@ -830,28 +899,6 @@ function StatLabel({ label, value, border, color = "text-foreground" }) {
         <div className={`text-center flex-1 px-4 ${border ? 'border-r border-border/40' : ''}`}>
             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60">{label}</p>
             <p className={`font-black text-xl tracking-tight ${color}`}>{value}</p>
-        </div>
-    );
-}
-
-function PlanCard({ icon, name, price, color, features, popular }) {
-    return (
-        <div className={`relative p-8 rounded-[2.5rem] border transition-all duration-500 hover:-translate-y-3 ${popular ? 'border-primary/30 bg-primary/[0.03] scale-105 shadow-2xl shadow-primary/10' : 'border-border/40 bg-card'} overflow-hidden`}>
-            {popular && <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-6 py-2 rounded-bl-[2rem] text-[10px] font-black uppercase tracking-widest shadow-xl">Más Seleccionado</div>}
-            <div className="mb-6 transform transition-transform group-hover:scale-110">{icon}</div>
-            <h4 className="text-xl font-black tracking-tight mb-2 uppercase">{name}</h4>
-            <div className="flex items-baseline gap-1 mb-8">
-                <span className="text-3xl font-black tracking-tighter">${price}</span>
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">/ mes</span>
-            </div>
-            <ul className="space-y-4 mb-10">
-                {features.map((f, i) => (
-                    <li key={i} className="flex items-center gap-3 text-xs font-bold opacity-80 uppercase tracking-wide">
-                        <CheckCircle2 className={`size-4 ${popular ? 'text-accent-foreground' : 'text-success'}`} /> {f}
-                    </li>
-                ))}
-            </ul>
-            <Button className={`w-full rounded-2xl font-black uppercase tracking-widest text-[10px] h-12 shadow-xl transition-all active:scale-95 ${popular ? 'bg-primary hover:bg-primary text-primary-foreground shadow-primary/20' : 'bg-foreground hover:bg-foreground/90 text-background'}`}>Suscripción Corporate</Button>
         </div>
     );
 }

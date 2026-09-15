@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Extensions\Extension;
+use App\Extensions\ExtensionRegistry;
 use App\Models\Company;
 use App\Models\Instance;
 use App\Models\User;
@@ -174,6 +176,10 @@ class MasterController extends Controller
                     'con_ia' => ($p['ia'] ?? null) !== null,
                 ])->values(),
             'cobros' => config('planes.cobros'),
+            // Va en closure por lo mismo que los bloques del dashboard: teclear
+            // en el buscador de empresas es una visita a esta acción, y esto
+            // recorre todas las empresas del sistema.
+            'planes_resumen' => fn () => $this->resumenDePlanes(),
             'companies_growth' => $companies_growth,
             'messages_volume' => $messages_volume,
             'top_companies' => $top_companies,
@@ -192,6 +198,70 @@ class MasterController extends Controller
                 'end_date' => $endDate->format('Y-m-d'),
             ],
         ]);
+    }
+
+    /**
+     * El catálogo de planes con lo que de verdad hay detrás de cada uno.
+     *
+     * La pestaña de planes del panel llevaba tres tarjetas y una tabla escritas
+     * a pelo en el JSX —"Startup 49,99 USD, 12 suscripciones"— que no salían de
+     * ninguna parte: ni los planes eran los del producto (Esencial,
+     * Automatización, Inteligente) ni esas cifras se habían cobrado nunca.
+     *
+     * Las empresas se normalizan con `PlanDeLaEmpresa` y no con un `group by`
+     * de la columna: una empresa con `plan` a null cuenta como Inteligente
+     * —que es lo que el candado de las extensiones le aplica—, y agrupando por
+     * la columna a pelo se quedaría fuera de todos los planes y los números no
+     * sumarían el total de empresas.
+     *
+     * @return array<string, mixed>
+     */
+    private function resumenDePlanes(): array
+    {
+        $nombresDeExtension = collect(app(ExtensionRegistry::class)->all())
+            ->mapWithKeys(fn (Extension $extension) => [$extension->slug() => $extension->name()]);
+
+        $empresas = Company::query()
+            ->get(['id', 'plan', 'cobro', 'gratis_hasta', 'contactos_contratados'])
+            ->map(fn (Company $company) => PlanDeLaEmpresa::de($company));
+
+        return [
+            'planes' => collect(config('planes.disponibles'))
+                ->map(function (array $plan, string $slug) use ($empresas, $nombresDeExtension) {
+                    $suyas = $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->slug() === $slug);
+                    $todas = ($plan['extensiones'] ?? []) === '*';
+
+                    return [
+                        'slug' => $slug,
+                        'nombre' => $plan['nombre'],
+                        'precio_usd' => $plan['precio_usd'] ?? null,
+                        'ia' => $plan['ia'],
+                        'todas_las_extensiones' => $todas,
+                        'extensiones' => $todas
+                            ? $nombresDeExtension->values()->all()
+                            : collect($plan['extensiones'])
+                                ->map(fn (string $s) => $nombresDeExtension[$s] ?? $s)
+                                ->all(),
+                        'empresas' => $suyas->count(),
+                        'facturando' => $suyas->filter(fn (PlanDeLaEmpresa $p) => $p->seFactura())->count(),
+                    ];
+                })
+                ->values(),
+
+            // La escalera de contactos no se veía en ninguna pantalla, y es la
+            // que decide el crédito de IA que el modal de plan da por sabido al
+            // pedir «socios o contactos contratados».
+            'tramos' => collect(config('planes.credito_ia', []))
+                ->map(fn (int $credito, int $hasta) => ['hasta' => $hasta, 'ia' => $credito])
+                ->values(),
+
+            'cobros' => collect(config('planes.cobros', []))
+                ->mapWithKeys(fn (string $cobro) => [
+                    $cobro => $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->cobro() === $cobro)->count(),
+                ]),
+
+            'total_empresas' => $empresas->count(),
+        ];
     }
 
     /**

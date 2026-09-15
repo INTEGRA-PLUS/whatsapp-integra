@@ -19,6 +19,16 @@ return [
     |
     | `ia` son las conversaciones con IA incluidas al mes. `null` = sin IA.
     |
+    | `precio_usd` es la tarifa mensual de plataforma, sin los mensajes —esos se
+    | los paga el cliente a Meta directamente, sin margen nuestro. Va a `null`
+    | en los tres porque **todavía no hay cifras decididas**:
+    | `docs/producto-y-precios.md` fija la estrategia (cobrar por tramo de
+    | socios y no por agentes, tres niveles, facturar por trimestre adelantado)
+    | y el suelo de la competencia en la liga ISP, pero no el número. El panel
+    | maestro lo enseña como «precio sin definir» a propósito: durante un tiempo
+    | tuvo escritos 49,99 / 129,99 / 499,99 USD a pelo en el JSX, que no salían
+    | de ningún sitio y no correspondían a nada que se hubiera cobrado nunca.
+    |
     */
 
     'disponibles' => [
@@ -29,6 +39,7 @@ return [
                 'agent_signature',
             ],
             'ia' => null,
+            'precio_usd' => null,
         ],
 
         'automatizacion' => [
@@ -44,6 +55,7 @@ return [
                 'sentiment_traffic_light',
             ],
             'ia' => null,
+            'precio_usd' => null,
         ],
 
         'inteligente' => [
@@ -52,6 +64,7 @@ return [
             // Se lleva al tramo contratado en `PlanDeLaEmpresa`; esto es el
             // suelo para una empresa sin tramo asignado.
             'ia' => 1200,
+            'precio_usd' => null,
         ],
 
     ],
