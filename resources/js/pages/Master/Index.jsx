@@ -30,9 +30,10 @@ import {
     X as XIcon,
     UserCog,
     CreditCard,
+    Download,
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [], planes_resumen }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [], planes_resumen, cobro_del_mes }) {
     // La contraseña temporal viaja por flash: existe una sola vez y no
     // sobrevive a una recarga.
     const { flash } = usePage().props;
@@ -748,6 +749,11 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 </div>
                             </section>
 
+                            {/* A quién cobrarle este mes. Va antes del resumen
+                                de estados porque es lo único accionable de esta
+                                pestaña: lo demás es catálogo. */}
+                            <CobroDelMes datos={cobro_del_mes} />
+
                             <section className="rounded-xl border border-border bg-card lg:max-w-md">
                                     <div className="border-b border-border px-5 py-4">
                                         <h3 className="font-heading text-sm font-semibold text-foreground">Estado de cobro</h3>
@@ -1281,6 +1287,139 @@ const SUBTITULO = {
     dashboard: 'Actividad de toda la plataforma.',
     companies: 'Las empresas del sistema, su plan y su administrador.',
     plans: 'Catálogo comercial y suscripciones.',
+};
+
+/**
+ * A quién hay que cobrarle este mes.
+ *
+ * Es lo único accionable de esta pestaña: el resto es catálogo. Enseña la lista
+ * y, al lado, por qué los demás no entran — que mientras dure la transición son
+ * casi todos, y es el número que dice si la transición avanza o está parada.
+ *
+ * La factura se emite fuera del CRM, así que el botón que importa es el de
+ * descargar: lo que sale de aquí se lo lleva quien factura.
+ */
+function CobroDelMes({ datos }) {
+    if (!datos) return null;
+
+    const { cobrar = [], fuera = [], total_usd = 0, sin_tramo = 0 } = datos;
+
+    const porMotivo = fuera.reduce((acc, f) => {
+        acc[f.motivo] = (acc[f.motivo] ?? 0) + 1;
+        return acc;
+    }, {});
+
+    return (
+        <section className="rounded-xl border border-border bg-card">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
+                <div className="min-w-0">
+                    <h3 className="font-heading text-sm font-semibold text-foreground">A cobrar este mes</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                        La factura se emite fuera del CRM. Esto dice a quién y cuánto.
+                    </p>
+                </div>
+
+                {cobrar.length > 0 && (
+                    <Button asChild variant="outline" size="sm" className="shrink-0 gap-2">
+                        <a href={route('master.cobro.csv')} download>
+                            <Download className="size-3.5" /> Descargar CSV
+                        </a>
+                    </Button>
+                )}
+            </div>
+
+            {cobrar.length === 0 ? (
+                /* El caso de hoy, y no es un error: enseñarlo vacío sin explicar
+                   por qué haría pensar que el cálculo está roto. */
+                <div className="px-5 py-6">
+                    <p className="text-sm font-semibold text-foreground">Nadie, todavía.</p>
+                    <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                        Ninguna empresa tiene el cobro en «Activo». Es lo esperado durante la
+                        transición: se va pasando a activo una a una, desde la ficha de cada
+                        empresa, según se vayan cerrando los acuerdos.
+                    </p>
+                </div>
+            ) : (
+                <>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="border-b border-border text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                                <tr>
+                                    <th className="px-5 py-2.5 text-left font-black">Empresa</th>
+                                    <th className="px-3 py-2.5 text-left font-black">Plan</th>
+                                    <th className="px-3 py-2.5 text-right font-black">Tramo</th>
+                                    <th className="px-3 py-2.5 text-right font-black">Reales</th>
+                                    <th className="px-5 py-2.5 text-right font-black">USD/mes</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {cobrar.map(f => (
+                                    <tr key={f.id}>
+                                        <td className="px-5 py-2.5 text-foreground">
+                                            {f.empresa}
+                                            {f.se_paso && (
+                                                <span className="ml-2 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold text-warning">
+                                                    pasado del tramo
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-muted-foreground">{f.plan}</td>
+                                        <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                                            {f.tramo ? f.tramo.toLocaleString('es-CO') : '—'}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                                            {f.contactos_reales.toLocaleString('es-CO')}
+                                        </td>
+                                        <td className="px-5 py-2.5 text-right font-semibold tabular-nums text-foreground">
+                                            {f.usd ? `$${f.usd}` : 'a cotizar'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot className="border-t-2 border-border">
+                                <tr>
+                                    <td colSpan={4} className="px-5 py-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                        {cobrar.length} empresas
+                                    </td>
+                                    <td className="px-5 py-3 text-right text-base font-bold tabular-nums text-foreground">
+                                        ${total_usd.toLocaleString('es-CO')}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    {sin_tramo > 0 && (
+                        <p className="border-t border-border bg-warning/5 px-5 py-2.5 text-xs text-foreground">
+                            {sin_tramo} sin tramo asignado: salen como «a cotizar» y no suman al total.
+                            Desaparecer sería peor — así es como se deja de cobrarle a alguien un año sin notarlo.
+                        </p>
+                    )}
+                </>
+            )}
+
+            {Object.keys(porMotivo).length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border px-5 py-3">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
+                        Fuera de facturación
+                    </span>
+                    {Object.entries(porMotivo).map(([motivo, cuantas]) => (
+                        <span key={motivo} className="text-xs text-muted-foreground">
+                            <span className="font-semibold tabular-nums text-foreground">{cuantas}</span>
+                            {' '}{MOTIVO_FUERA[motivo] ?? motivo}
+                        </span>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
+const MOTIVO_FUERA = {
+    interna: 'internas nuestras',
+    cortesia: 'en cortesía',
+    prueba: 'en prueba',
+    mes_gratis: 'con mes gratis',
 };
 
 const ETIQUETA_COBRO = {

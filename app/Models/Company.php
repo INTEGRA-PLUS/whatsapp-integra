@@ -19,6 +19,7 @@ class Company extends Model
         'active',
         'plan',
         'cobro',
+        'interna',
         'gratis_hasta',
         'contactos_contratados',
         'nota_de_cobro',
@@ -29,6 +30,7 @@ class Company extends Model
 
     protected $casts = [
         'active' => 'boolean',
+        'interna' => 'boolean',
         'gratis_hasta' => 'date',
         'settings' => 'array',
         'ai_flow_unlocked_at' => 'datetime',

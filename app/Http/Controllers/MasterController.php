@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\WhatsAppMessage;
 use Carbon\Carbon;
 use App\Support\ContadorDeIa;
+use App\Support\CobroDelMes;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -213,6 +214,11 @@ class MasterController extends Controller
             // en el buscador de empresas es una visita a esta acción, y esto
             // recorre todas las empresas del sistema.
             'planes_resumen' => fn () => $this->resumenDePlanes(),
+
+            // A quién cobrarle este mes. En un closure como los demás bloques:
+            // recorre las 55 empresas contando contactos, y buscar una empresa
+            // no tiene por qué pagar eso.
+            'cobro_del_mes' => fn () => CobroDelMes::calcular(),
             'companies_growth' => $companies_growth,
             'messages_volume' => $messages_volume,
             'top_companies' => $top_companies,
@@ -298,6 +304,23 @@ class MasterController extends Controller
      *
      * @return array<string, mixed>
      */
+    /**
+     * La lista de cobro en CSV, para el que emite las facturas.
+     *
+     * Se genera en memoria y se manda: son 55 filas, no hace falta un fichero
+     * temporal ni una cola. El nombre lleva el mes porque estos archivos acaban
+     * todos en la misma carpeta de Descargas.
+     */
+    public function cobroCsv(): \Symfony\Component\HttpFoundation\Response
+    {
+        $nombre = 'cobro-'.now()->format('Y-m').'.csv';
+
+        return response(CobroDelMes::csv(), 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$nombre.'"',
+        ]);
+    }
+
     private function resumenDePlanes(): array
     {
         $nombresDeExtension = collect(app(ExtensionRegistry::class)->all())

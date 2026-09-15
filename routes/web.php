@@ -514,6 +514,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/companies/{company}/mes-gratis', [MasterController::class, 'mesGratis'])
             ->name('companies.mes-gratis');
 
+        // La lista de cobro como CSV, para llevársela a facturación. La factura
+        // se emite fuera del CRM a propósito: aquí sólo se decide a quién y
+        // cuánto.
+        Route::get('/cobro.csv', [MasterController::class, 'cobroCsv'])->name('cobro.csv');
+
         // Restablecer la contraseña de cualquier usuario de cualquier empresa,
         // para cuando quien se ha quedado fuera es el propio admin del cliente
         // y no hay a quién pedírselo.
