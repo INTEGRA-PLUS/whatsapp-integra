@@ -70,7 +70,16 @@ class MasterController extends Controller
             'active_companies' => Company::where('active', true)->count(),
             'total_instances' => Instance::count(),
             'active_instances' => Instance::where('status', 'active')->count(),
-            'total_messages_range' => WhatsAppMessage::whereBetween('created_at', [$startDate, $endDate])->count(),
+            // Sólo lo que entró o salió de verdad. `whatsapp_messages` guarda
+            // también los avisos de sistema del hilo —«conversación reabierta»,
+            // «cerrada»— con `direction = 'internal'`: nunca viajaron a Meta y
+            // el cliente no los ve. Contándolos, esta tarjeta decía 327.795
+            // mientras el gráfico de justo debajo sumaba 313.837, porque la
+            // serie sí separa por dirección. Dos totales del mismo dato en la
+            // misma pantalla, y el bueno era el de abajo.
+            'total_messages_range' => WhatsAppMessage::whereBetween('created_at', [$startDate, $endDate])
+                ->whereIn('direction', ['inbound', 'outbound'])
+                ->count(),
             'total_users' => User::count(),
         ];
 
@@ -106,6 +115,9 @@ class MasterController extends Controller
             $messagesPerCompany = DB::table('whatsapp_messages as wm')
                 ->join('whatsapp_conversations as c', 'c.id', '=', 'wm.conversation_id')
                 ->join('instances as i', 'i.id', '=', 'c.instance_id')
+                // Mismo criterio que la tarjeta y el gráfico: los avisos de
+                // sistema del hilo no son actividad de la empresa.
+                ->whereIn('wm.direction', ['inbound', 'outbound'])
                 ->selectRaw('i.company_id, count(*) as total')
                 ->groupBy('i.company_id');
 

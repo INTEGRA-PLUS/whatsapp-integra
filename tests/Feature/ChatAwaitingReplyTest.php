@@ -131,6 +131,45 @@ class ChatAwaitingReplyTest extends TestCase
         $this->assertTrue($this->awaitingDe($this->pedirLista(), $conv->id));
     }
 
+    /**
+     * Un aviso de sistema tampoco cuenta como respuesta.
+     *
+     * Son las pastillas del hilo —«conversación reabierta», «cerrada»— y
+     * `ConversationNotice` las graba con `direction = 'internal'` pero con
+     * `is_internal` en **false** a propósito. Filtrando sólo por `is_internal`,
+     * como se hacía, un aviso quedaba de "último mensaje" y apagaba el borde de
+     * una conversación en la que el cliente seguía esperando. En producción son
+     * 14.603 mensajes así, frente a 367 notas privadas de verdad.
+     */
+    public function test_un_aviso_de_sistema_no_cuenta_como_respuesta(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'inbound', ['sent_at' => now()->subMinutes(50)]);
+        $this->mensaje($conv, 'internal', [
+            'type' => 'system',
+            'content' => 'Conversación reabierta: el cliente volvió a escribir',
+            'is_internal' => false,
+            'sent_at' => now()->subMinutes(40),
+        ]);
+
+        $this->assertTrue($this->awaitingDe($this->pedirLista(), $conv->id));
+    }
+
+    /** Y el estado de los chulitos tampoco se lee de un aviso de sistema. */
+    public function test_el_estado_ignora_los_avisos_de_sistema(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'outbound', ['status' => 'read', 'sent_at' => now()->subMinutes(50)]);
+        $this->mensaje($conv, 'internal', [
+            'type' => 'system',
+            'content' => 'Conversación cerrada',
+            'is_internal' => false,
+            'sent_at' => now()->subMinutes(40),
+        ]);
+
+        $this->assertSame('read', $this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
+    }
+
     /** Un chat cerrado no espera respuesta aunque el último mensaje sea del cliente. */
     public function test_un_chat_cerrado_no_espera(): void
     {

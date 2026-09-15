@@ -313,12 +313,25 @@ class ChatController extends Controller
             // escrito a mano en el JSX —siempre "leído", y sólo en la fila
             // seleccionada—, así que la lista decía que el cliente había leído
             // un mensaje que en la conversación aparecía como recién enviado.
+            // Ojo con las dos marcas de "esto no lo ve el cliente", que no son
+            // la misma: `is_internal` son las notas privadas que escribe un
+            // agente (367 en producción), y `direction = 'internal'` son además
+            // los avisos de sistema del hilo —«conversación reabierta»,
+            // «cerrada»—, que `ConversationNotice` graba con `is_internal` a
+            // false a propósito (14.603). Filtrando sólo por `is_internal`, un
+            // aviso de sistema podía quedar como "último mensaje" y apagar el
+            // "esperando respuesta" de una conversación en la que el cliente
+            // sigue esperando: exactamente lo que este filtro existe para
+            // evitar. Hoy no pasa en ninguna conversación abierta, pero basta
+            // con que alguien reabra un hilo a mano para que empiece.
             $ultimoMensaje = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
                 ->where('is_internal', false)
+                ->whereIn('direction', ['inbound', 'outbound'])
                 ->whereIn('id', function ($sub) use ($idsPagina) {
                     $sub->selectRaw('max(id)')
                         ->from('whatsapp_messages')
                         ->where('is_internal', false)
+                        ->whereIn('direction', ['inbound', 'outbound'])
                         ->whereIn('conversation_id', $idsPagina)
                         ->groupBy('conversation_id');
                 })
