@@ -141,6 +141,13 @@ return [
     */
     'ai_menus' => [
         'webhook_url' => env('AI_MENUS_WEBHOOK_URL'),
+        // La misma cabecera `X-Api-Key` que el chat, el semáforo y el resumen:
+        // los cuatro flujos viven en el mismo n8n y comparten credencial. Se
+        // añadió tarde —el webhook de menús nació abierto a internet, y con
+        // Ollama detrás eso es crédito que cualquiera puede gastar—. Si se
+        // deja vacía el envío sigue saliendo sin cabecera, para no tumbar a
+        // quien todavía tenga el flujo sin autenticar.
+        'api_key' => env('AI_MENUS_API_KEY'),
         // Margen sobre el timeout que la empresa le da a Ollama: si n8n espera
         // 120 s por el modelo, cortar a los 30 s aquí tiraría respuestas buenas.
         //

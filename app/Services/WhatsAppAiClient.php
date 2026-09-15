@@ -89,6 +89,9 @@ class WhatsAppAiClient
 
         try {
             $response = Http::acceptJson()
+                ->withHeaders(array_filter([
+                    'X-Api-Key' => (string) config('services.ai_menus.api_key'),
+                ]))
                 ->timeout((int) config('services.ai_menus.timeout', 180))
                 ->post($url, $payload);
         } catch (\Throwable $e) {

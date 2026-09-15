@@ -106,6 +106,7 @@ x-app-env: &app-env
   # configurado" y no hay nada que investigar. Es lo mismo que ya pasó con
   # META_APP_SECRETS unas líneas más arriba.
   AI_MENUS_WEBHOOK_URL: ${AI_MENUS_WEBHOOK_URL:-}
+  AI_MENUS_API_KEY: ${AI_MENUS_API_KEY:-}
   AI_CHAT_WEBHOOK_URL: ${AI_CHAT_WEBHOOK_URL:-}
   AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-}
   # Sin secreto el apartado queda cerrado para todos, que es lo correcto: es
