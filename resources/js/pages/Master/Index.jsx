@@ -660,30 +660,47 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 ))}
                             </div>
 
-                            <div className="grid gap-6 lg:grid-cols-2">
-                                <section className="overflow-hidden rounded-xl border border-border bg-card">
-                                    <div className="border-b border-border px-5 py-4">
-                                        <h3 className="font-heading text-sm font-semibold text-foreground">
-                                            Crédito de IA por tramo de contactos
-                                        </h3>
-                                        <p className="mt-0.5 text-xs text-muted-foreground">
-                                            El tramo contratado decide las conversaciones incluidas. Al agotarse no se
-                                            corta nada: se factura el exceso.
-                                        </p>
-                                    </div>
+                            {/* La tabla de precios entera, que es lo que faltaba.
+                                Arriba, cada plan enseña su precio menor y su mayor
+                                —«35 a 259»—, y un rango se lee como un «depende» o
+                                como algo negociable. No lo es: son quince precios
+                                fijos, cinco tramos por tres planes. La pregunta que
+                                se hace delante de un cliente es «¿cuánto le cobro a
+                                uno de 5.000 socios?». */}
+                            <section className="overflow-hidden rounded-xl border border-border bg-card">
+                                <div className="border-b border-border px-5 py-4">
+                                    <h3 className="font-heading text-sm font-semibold text-foreground">
+                                        Precio por tramo de socios
+                                    </h3>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                        USD al mes de plataforma. No incluye los mensajes: esos se los paga el cliente
+                                        a Meta directamente y nosotros no cobramos margen encima.
+                                    </p>
+                                </div>
+                                <div className="overflow-x-auto">
                                     <table className="w-full text-sm">
                                         <thead>
                                             <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
                                                 <th className="px-5 py-2.5 text-left font-medium">Hasta</th>
-                                                <th className="px-5 py-2.5 text-right font-medium">Conversaciones con IA</th>
+                                                {planes_resumen.planes.map(plan => (
+                                                    <th key={plan.slug} className="px-5 py-2.5 text-right font-medium">
+                                                        {plan.nombre}
+                                                    </th>
+                                                ))}
+                                                <th className="px-5 py-2.5 text-right font-medium">IA incluida</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {planes_resumen.tramos.map(tramo => (
                                                 <tr key={tramo.hasta} className="border-b border-border/60 last:border-0">
-                                                    <td className="px-5 py-2.5 tabular-nums text-foreground">
-                                                        {tramo.hasta.toLocaleString('es-CO')} contactos
+                                                    <td className="whitespace-nowrap px-5 py-2.5 tabular-nums text-foreground">
+                                                        {tramo.hasta.toLocaleString('es-CO')} socios
                                                     </td>
+                                                    {planes_resumen.planes.map(plan => (
+                                                        <td key={plan.slug} className="px-5 py-2.5 text-right tabular-nums text-foreground">
+                                                            {tramo.precios[plan.slug] != null ? `$${tramo.precios[plan.slug]}` : '—'}
+                                                        </td>
+                                                    ))}
                                                     <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
                                                         {tramo.ia.toLocaleString('es-CO')}
                                                     </td>
@@ -691,9 +708,27 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             ))}
                                         </tbody>
                                     </table>
-                                </section>
+                                </div>
+                                <div className="space-y-1 border-t border-border px-5 py-3 text-xs text-muted-foreground">
+                                    <p>
+                                        Pagando el año por adelantado, {planes_resumen.meses_gratis_al_pagar_anual} meses
+                                        gratis: son {12 - planes_resumen.meses_gratis_al_pagar_anual} mensualidades por
+                                        doce. Un cliente de 15.000 socios en Inteligente paga $
+                                        {planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? '—'} al
+                                        mes, o el equivalente a $
+                                        {Math.round(((planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? 0)
+                                            * (12 - planes_resumen.meses_gratis_al_pagar_anual)) / 12)} pagando el año.
+                                    </p>
+                                    <p>
+                                        Por encima del último tramo el precio es a cotizar, y la columna de IA es el
+                                        crédito del plan Inteligente: pasarse de ahí no corta nada, se factura el exceso.
+                                        Agentes y líneas van ilimitados en los tres planes — se cobra por socios porque es
+                                        como cuenta el cliente, y cobrar por agente castiga justo a quien más lo usa.
+                                    </p>
+                                </div>
+                            </section>
 
-                                <section className="rounded-xl border border-border bg-card">
+                            <section className="rounded-xl border border-border bg-card lg:max-w-md">
                                     <div className="border-b border-border px-5 py-4">
                                         <h3 className="font-heading text-sm font-semibold text-foreground">Estado de cobro</h3>
                                         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -709,8 +744,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             </li>
                                         ))}
                                     </ul>
-                                </section>
-                            </div>
+                            </section>
 
                             <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
                                 Los planes y sus tramos viven en <code className="font-mono">config/planes.php</code>, no

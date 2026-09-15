@@ -122,6 +122,38 @@ class PanelDePlanesTest extends TestCase
     }
 
     /**
+     * Cada tramo lleva el precio de los tres planes.
+     *
+     * La pantalla enseñaba de cada plan sólo su precio menor y su mayor —«35 a
+     * 259»—, y un rango se lee como un «depende» o como algo negociable. Son
+     * quince precios fijos, y el que hace falta delante de un cliente es el de
+     * su tramo, no el rango.
+     */
+    public function test_cada_tramo_trae_el_precio_de_cada_plan(): void
+    {
+        $tramos = collect($this->resumen()['tramos'])->keyBy('hasta');
+
+        foreach (config('planes.precios') as $hasta => $porPlan) {
+            foreach ($porPlan as $slug => $precio) {
+                $this->assertSame(
+                    $precio,
+                    $tramos[$hasta]['precios'][$slug] ?? null,
+                    "El precio de {$slug} en el tramo de {$hasta} no llega a la pantalla."
+                );
+            }
+        }
+    }
+
+    /** Y los dos meses del pago anual, que son parte del precio. */
+    public function test_el_descuento_anual_llega_a_la_pantalla(): void
+    {
+        $this->assertSame(
+            (int) config('planes.meses_gratis_al_pagar_anual'),
+            $this->resumen()['meses_gratis_al_pagar_anual']
+        );
+    }
+
+    /**
      * Y buscar una empresa no debe recalcular todo esto.
      *
      * El resumen recorre todas las empresas del sistema; va en un closure por

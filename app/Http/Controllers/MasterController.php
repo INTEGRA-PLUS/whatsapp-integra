@@ -285,12 +285,30 @@ class MasterController extends Controller
                 })
                 ->values(),
 
-            // La escalera de contactos no se veía en ninguna pantalla, y es la
-            // que decide el crédito de IA que el modal de plan da por sabido al
-            // pedir «socios o contactos contratados».
+            // La escalera entera, tramo por tramo y plan por plan. La pantalla
+            // enseñaba de cada plan sólo su precio menor y su mayor —«35 a
+            // 259»— y eso se lee como un precio negociable o un «depende»,
+            // cuando son quince precios fijos: cinco tramos por tres planes. La
+            // pregunta que se hace delante de un cliente es «¿cuánto le cobro a
+            // uno de 5.000 socios?», y esa se responde con la tabla, no con el
+            // rango.
+            //
+            // El crédito de IA va en la misma fila porque es el mismo tramo: son
+            // dos columnas de una misma escalera, y separarlas obligaba a
+            // cruzarlas de cabeza.
             'tramos' => collect(config('planes.credito_ia', []))
-                ->map(fn (int $credito, int $hasta) => ['hasta' => $hasta, 'ia' => $credito])
+                ->map(fn (int $credito, int $hasta) => [
+                    'hasta' => $hasta,
+                    'ia' => $credito,
+                    'precios' => collect(config('planes.disponibles'))
+                        ->map(fn (array $plan, string $slug) => config("planes.precios.{$hasta}.{$slug}"))
+                        ->all(),
+                ])
                 ->values(),
+
+            // Dos meses gratis pagando el año: es parte del precio, no una
+            // promoción, y es lo que ancla los 250 USD de Cootramed.
+            'meses_gratis_al_pagar_anual' => (int) config('planes.meses_gratis_al_pagar_anual', 0),
 
             'cobros' => collect(config('planes.cobros', []))
                 ->mapWithKeys(fn (string $cobro) => [
