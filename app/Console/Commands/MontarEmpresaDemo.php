@@ -753,7 +753,15 @@ class MontarEmpresaDemo extends Command
             $conversaciones = WhatsAppConversation::whereIn('instance_id', $instancias)->pluck('id');
 
             WhatsAppMessage::whereIn('conversation_id', $conversaciones)->delete();
-            DB::table('whatsapp_conversation_tag')->whereIn('conversation_id', $conversaciones)->delete();
+
+            // `whatsapp_conversation_id`, no `conversation_id`: la pivote lleva
+            // el nombre largo del modelo. Con el nombre corto, `--rehacer`
+            // reventaba con un «Unknown column» en cuanto la demo tenía alguna
+            // conversación etiquetada — o sea, siempre.
+            DB::table('whatsapp_conversation_tag')
+                ->whereIn('whatsapp_conversation_id', $conversaciones)
+                ->delete();
+
             WhatsAppConversation::whereIn('id', $conversaciones)->delete();
 
             $campanas = WhatsAppCampaign::where('company_id', $company->id)->pluck('id');
@@ -763,6 +771,12 @@ class MontarEmpresaDemo extends Command
             $menus = WhatsAppMenu::where('company_id', $company->id)->pluck('id');
             WhatsAppMenuOption::whereIn('menu_id', $menus)->delete();
             WhatsAppMenu::whereIn('id', $menus)->delete();
+
+            // Desde que la demo instala las cinco extensiones, estas filas
+            // quedaban apuntando a una empresa borrada.
+            CompanyExtension::where('company_id', $company->id)->delete();
+            DB::table('company_ai_usage')->where('company_id', $company->id)->delete();
+            DB::table('conversation_sentiment_events')->where('company_id', $company->id)->delete();
 
             AutoResponse::where('company_id', $company->id)->delete();
             BusinessHour::where('company_id', $company->id)->delete();

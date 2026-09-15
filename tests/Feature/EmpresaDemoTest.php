@@ -151,5 +151,37 @@ class EmpresaDemoTest extends TestCase
             'company_id',
             Company::where('slug', 'cootramed-demo')->pluck('id')
         )->count());
+
+        // Y que no quede nada apuntando a la empresa anterior.
+        //
+        // Esto no lo miraba nadie, y el borrado llevaba dos fallos: la pivote
+        // de etiquetas se borraba por `conversation_id` cuando la columna se
+        // llama `whatsapp_conversation_id` —así que `--rehacer` reventaba en
+        // producción en cuanto había una conversación etiquetada— y las filas
+        // de extensiones no se borraban en absoluto, porque cuando se escribió
+        // el borrado la demo todavía no instalaba ninguna.
+        //
+        // Contar filas de la empresa nueva no habría detectado ninguno de los
+        // dos: hay que contar las que quedaron de la vieja.
+        $viva = Company::where('slug', 'cootramed-demo')->value('id');
+
+        $this->assertSame(
+            0,
+            \App\Models\CompanyExtension::where('company_id', '!=', $viva)->count(),
+            'Quedaron extensiones de la empresa borrada.'
+        );
+
+        $conversacionesVivas = WhatsAppConversation::whereIn(
+            'instance_id',
+            Instance::where('company_id', $viva)->pluck('id')
+        )->pluck('id');
+
+        $this->assertSame(
+            0,
+            \Illuminate\Support\Facades\DB::table('whatsapp_conversation_tag')
+                ->whereNotIn('whatsapp_conversation_id', $conversacionesVivas)
+                ->count(),
+            'Quedaron etiquetas colgando de conversaciones borradas.'
+        );
     }
 }
