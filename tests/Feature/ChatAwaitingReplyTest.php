@@ -139,4 +139,53 @@ class ChatAwaitingReplyTest extends TestCase
 
         $this->assertFalse($this->awaitingDe($this->pedirLista(), $conv->id));
     }
+
+    /**
+     * Los chulitos de la lista son los del último mensaje, no un adorno.
+     *
+     * Iban con `status="read"` escrito a mano en el JSX y pintados sólo en la
+     * fila seleccionada: la lista enseñaba el doble chulito azul —leído— sobre
+     * un mensaje que en la conversación aparecía como recién enviado. Es el
+     * dato por el que se abre esa pantalla, así que enseñarlo mal es peor que
+     * no enseñarlo.
+     */
+    public function test_el_estado_de_la_lista_es_el_del_ultimo_mensaje(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'outbound', ['status' => 'sent']);
+
+        $this->assertSame('sent', $this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
+    }
+
+    /** Y sigue al mensaje: si Meta confirma la lectura, la lista lo dice. */
+    public function test_el_estado_sigue_al_mensaje(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'outbound', ['status' => 'read']);
+
+        $this->assertSame('read', $this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
+    }
+
+    /**
+     * Sobre un mensaje del cliente no se pinta nada: en WhatsApp los chulitos
+     * son de quien envía, y sobre lo que llega no significarían nada.
+     */
+    public function test_sin_estado_cuando_el_ultimo_mensaje_es_del_cliente(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'inbound', ['status' => 'read']);
+
+        $this->assertNull($this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
+    }
+
+    private function campoDe(array $data, int $conversationId, string $campo): mixed
+    {
+        foreach ($data as $fila) {
+            if ($fila['id'] === $conversationId) {
+                return $fila[$campo] ?? null;
+            }
+        }
+
+        return null;
+    }
 }

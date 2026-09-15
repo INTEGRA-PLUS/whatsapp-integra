@@ -431,10 +431,15 @@ const StatusIcons = memo(({ status, onFailedClick }) => {
     // spinner que el optimista 'sending' para que se lea como "enviando".
     if (status === 'sending' || status === 'pending') return <Loader2 className="size-3 text-muted-foreground/40 animate-spin" />;
     if (status === 'failed') {
+        // Sin `onFailedClick` —en la lista de conversaciones— se pinta el icono
+        // a secas: un botón ahí sería un trozo de la fila que se traga el clic
+        // y no abre el chat ni enseña el error.
+        if (! onFailedClick) return <AlertTriangle className="size-3 text-destructive" />;
+
         return (
             <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onFailedClick?.(); }}
+                onClick={(e) => { e.stopPropagation(); onFailedClick(); }}
                 className="cursor-pointer rounded-sm hover:bg-destructive/10"
                 title="Ver motivo del error"
             >
@@ -848,7 +853,17 @@ const ConversationItem = memo(({
                 )}
 
                 <div className="flex items-center gap-1 mt-0.5">
-                    {isActive && <StatusIcons status="read" />}
+                    {/* Aquí iba `status="read"` escrito a mano, y pintado sólo
+                        si la fila estaba seleccionada: el doble chulito azul no
+                        salía de ningún dato, salía de tener el chat abierto. La
+                        lista daba por leído lo que la conversación enseñaba como
+                        recién enviado, que es justo el dato por el que se mira.
+
+                        Ahora es el estado real del último mensaje, y sólo si lo
+                        mandamos nosotros. Un evento en vivo no trae el campo, así
+                        que hasta la siguiente carga la fila se queda sin chulito:
+                        no enseñar nada es correcto, enseñar "leído" no. */}
+                    {conv.last_message_status && <StatusIcons status={conv.last_message_status} />}
                     <div className="flex-1 flex items-center gap-1.5 min-w-0">
                         {/* Delante del último mensaje y no detrás: detrás lo
                             habría tapado el truncado del texto justo en las

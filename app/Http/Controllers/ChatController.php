@@ -308,7 +308,12 @@ class ChatController extends Controller
         $idsPagina = collect($carga['data'] ?? [])->pluck('id')->filter()->all();
 
         if ($idsPagina) {
-            $ultimaDireccion = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
+            // La misma consulta trae ahora el estado del mensaje además de su
+            // dirección: los chulitos de la lista se pintaban con un `status`
+            // escrito a mano en el JSX —siempre "leído", y sólo en la fila
+            // seleccionada—, así que la lista decía que el cliente había leído
+            // un mensaje que en la conversación aparecía como recién enviado.
+            $ultimoMensaje = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
                 ->where('is_internal', false)
                 ->whereIn('id', function ($sub) use ($idsPagina) {
                     $sub->selectRaw('max(id)')
@@ -317,11 +322,23 @@ class ChatController extends Controller
                         ->whereIn('conversation_id', $idsPagina)
                         ->groupBy('conversation_id');
                 })
-                ->pluck('direction', 'conversation_id');
+                ->get(['conversation_id', 'direction', 'status'])
+                ->keyBy('conversation_id');
 
-            $carga['data'] = collect($carga['data'])->map(function ($fila) use ($ultimaDireccion) {
+            $carga['data'] = collect($carga['data'])->map(function ($fila) use ($ultimoMensaje) {
+                $ultimo = $ultimoMensaje[$fila['id']] ?? null;
+
+                // Ojo con los dos `status` de esta línea: el de `$fila` es el de
+                // la conversación (abierta o cerrada) y el de `$ultimo`, el del
+                // mensaje (enviado, entregado, leído).
                 $fila['awaiting_reply'] = ($fila['status'] ?? null) === 'open'
-                    && ($ultimaDireccion[$fila['id']] ?? null) === 'inbound';
+                    && $ultimo?->direction === 'inbound';
+
+                // Sólo en los salientes: en WhatsApp los chulitos son de quien
+                // envía, y sobre un mensaje del cliente no significan nada.
+                $fila['last_message_status'] = $ultimo?->direction === 'outbound'
+                    ? $ultimo->status
+                    : null;
 
                 return $fila;
             })->all();
