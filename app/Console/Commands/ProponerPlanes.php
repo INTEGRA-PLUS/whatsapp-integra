@@ -52,6 +52,25 @@ class ProponerPlanes extends Command
         foreach ($empresas as $company) {
             $plan = PlanDeLaEmpresa::de($company);
 
+            // Las nuestras se quedan como están, con todo desbloqueado. No es
+            // una excepción cosmética: `Meta App Review` necesita las cinco
+            // extensiones encendidas para grabar los vídeos de las revisiones
+            // de Meta, y bajarla a Esencial porque hoy no las tiene activas le
+            // apagaría el permiso que estamos pidiendo. `PRUEBAS` y
+            // `Master Admin` existen justo para probar lo que aún no vendemos.
+            if ($company->interna) {
+                $filas[] = [
+                    $company->name,
+                    number_format($plan->contactosReales()),
+                    '—',
+                    '—',
+                    '<fg=gray>interna · sin tocar</>',
+                    '—',
+                ];
+
+                continue;
+            }
+
             $encendidas = CompanyExtension::where('company_id', $company->id)
                 ->where('enabled', true)
                 ->pluck('slug')
