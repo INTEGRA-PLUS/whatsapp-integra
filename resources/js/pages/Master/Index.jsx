@@ -183,8 +183,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     }
 
     // --- CHART COMPONENTS ---
-    const LineChart = ({ data, color = "#6366f1", height = 180 }) => {
-        if (!data || data.length === 0) return <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">Sin datos en este rango</div>;
+    /**
+     * El color iba clavado a `#6366f1` —un índigo que no es el de la marca y
+     * que en modo oscuro desentona— con un degradado y un `drop-shadow`
+     * encima. Ahora hereda `currentColor` del contenedor, así que es el mismo
+     * primary que el resto del panel y cambia con el tema.
+     */
+    const LineChart = ({ data, height = 180 }) => {
+        if (!data || data.length === 0) return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Sin datos en este rango</div>;
         const countData = data.length === 1 ? [{...data[0], x: 0}, {...data[0], x: 100}] : data;
         const max = Math.max(...countData.map(d => Number(d.count)), 2);
         const width = 1000;
@@ -194,62 +200,68 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             return `${x},${y}`;
         }).join(' ');
         return (
-            <div className="relative w-full overflow-visible group/chart">
-                <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible drop-shadow-sm" preserveAspectRatio="none">
-                    <path d={`M ${points}`} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="transition-all duration-700" />
-                    <path d={`M 0,${height} L ${points} L ${width},${height} Z`} fill={`url(#line-grad-${color.replace('#', '')})`} className="opacity-10 group-hover/chart:opacity-20 transition-opacity" />
-                    <defs>
-                        <linearGradient id={`line-grad-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient>
-                    </defs>
+            <div className="h-full w-full text-primary">
+                <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none">
+                    <path d={`M ${points}`} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+                    <path d={`M 0,${height} L ${points} L ${width},${height} Z`} fill="currentColor" className="opacity-[0.08]" />
                 </svg>
             </div>
         );
     };
 
+    /**
+     * El globo del gráfico era una tarjeta con borde de 2px, sombra de 50px y
+     * los rótulos «Inbound» y «Outbound» en versales negras de 8px, dentro de
+     * un producto que está entero en español. Y al pasar el ratón las barras
+     * vecinas se encogían (`scale-x-95`), así que la serie se movía sola
+     * mientras se leía.
+     */
     const BarChart = ({ data, height = 240 }) => {
         const [activeIdx, setActiveIdx] = useState(null);
-        if (!data || data.length === 0) return <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">Sin actividad reportada</div>;
-        
+        if (!data || data.length === 0) return <div className="flex h-full items-center justify-center text-xs text-muted-foreground">Sin actividad en este rango</div>;
+
         const max = Math.max(...data.map(d => Math.max(d.inbound, d.outbound)), 5);
-        const totalMaxInPeriod = Math.max(...data.map(d => d.inbound + d.outbound), 1);
 
         return (
-            <div className="relative h-full w-full pt-12 group/chart-container">
-                {/* Single Floating Tooltip */}
+            <div className="relative h-full w-full pt-14">
                 {activeIdx !== null && (
-                    <div 
-                        className="absolute top-0 z-30 transition-all duration-75 pointer-events-none"
-                        style={{ left: `${(activeIdx / (data.length - 1)) * 100}%`, transform: 'translateX(-50%)' }}
+                    <div
+                        className="pointer-events-none absolute top-0 z-30"
+                        style={{ left: `${(activeIdx / Math.max(data.length - 1, 1)) * 100}%`, transform: 'translateX(-50%)' }}
                     >
-                        <div className="bg-card border-2 border-primary/20 px-4 py-3 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col items-center gap-1 min-w-[120px] animate-in zoom-in-95 duration-200">
-                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest border-b border-border/40 pb-1 mb-1 w-full text-center">{data[activeIdx].date}</p>
-                            <div className="flex gap-4">
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-black text-accent-foreground/60 uppercase">Inbound</span>
-                                    <span className="text-sm font-black text-accent-foreground">{data[activeIdx].inbound.toLocaleString()}</span>
+                        <div className="min-w-[9rem] rounded-lg border border-border bg-card px-3 py-2 shadow-md">
+                            <p className="text-xs text-muted-foreground">{data[activeIdx].date}</p>
+                            <dl className="mt-1.5 space-y-0.5">
+                                <div className="flex items-center justify-between gap-4">
+                                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <span className="size-2 rounded-sm bg-primary" /> Entrantes
+                                    </dt>
+                                    <dd className="text-xs tabular-nums text-foreground">{data[activeIdx].inbound.toLocaleString('es-CO')}</dd>
                                 </div>
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[8px] font-black text-success/60 uppercase">Outbound</span>
-                                    <span className="text-sm font-black text-success">{data[activeIdx].outbound.toLocaleString()}</span>
+                                <div className="flex items-center justify-between gap-4">
+                                    <dt className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <span className="size-2 rounded-sm bg-success" /> Salientes
+                                    </dt>
+                                    <dd className="text-xs tabular-nums text-foreground">{data[activeIdx].outbound.toLocaleString('es-CO')}</dd>
                                 </div>
-                            </div>
+                            </dl>
                         </div>
-                        {/* Guideline */}
-                        <div className="w-px h-64 bg-primary/10 absolute top-12 left-1/2 -translate-x-1/2 -z-10" />
                     </div>
                 )}
 
-                <div className="flex items-end gap-1 sm:gap-2 h-full w-full">
+                <div className="flex h-full w-full items-end gap-1 sm:gap-2">
                     {data.map((d, i) => (
-                        <div 
-                            key={i} 
+                        <div
+                            key={i}
                             onMouseEnter={() => setActiveIdx(i)}
                             onMouseLeave={() => setActiveIdx(null)}
-                            className={`flex-1 flex flex-col items-center gap-1 relative h-full justify-end cursor-pointer group transition-all duration-300 ${activeIdx !== null && activeIdx !== i ? 'opacity-30 scale-x-95' : 'opacity-100'}`}
+                            className={`relative flex h-full flex-1 cursor-default flex-col justify-end transition-opacity ${
+                                activeIdx !== null && activeIdx !== i ? 'opacity-40' : 'opacity-100'
+                            }`}
                         >
-                            <div className="flex gap-0.5 w-full items-end justify-center h-full">
-                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-primary/80 rounded-t-sm transition-all group-hover:bg-primary group-hover:scale-y-105 origin-bottom" />
-                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1.5 sm:w-3 bg-success/80 rounded-t-sm transition-all group-hover:bg-success group-hover:scale-y-105 origin-bottom" />
+                            <div className="flex h-full w-full items-end justify-center gap-0.5">
+                                <div style={{ height: `${(d.inbound / max) * 100}%` }} className="w-1.5 rounded-t-sm bg-primary sm:w-2.5" />
+                                <div style={{ height: `${(d.outbound / max) * 100}%` }} className="w-1.5 rounded-t-sm bg-success sm:w-2.5" />
                             </div>
                         </div>
                     ))}
@@ -260,7 +272,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
 
     return (
         <>
-            <Head title="Panel Master Ultra" />
+            <Head title="Panel master" />
             <div className="flex flex-col min-h-screen bg-muted/10 selection:bg-primary selection:text-primary-foreground">
                 
                 {/* La cabecera era un cartel: el rayo sobre un cuadrado de 56px
@@ -311,94 +323,115 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
 
                 <div className="mx-auto w-full max-w-[1500px] space-y-8 p-6">
 
-                    {/* Dashboard Analytics Tab */}
+                    {/* El dashboard hablaba como un folleto: «Reporte de
+                        Inteligencia», «Crecimiento de RED», «Métricas Globales»
+                        —que eran los usuarios—, cifras en 48px negras dentro de
+                        tarjetas de esquinas de 2.5rem que se levantaban al pasar
+                        el ratón, y un «+12%» escrito a pelo en el JSX que no se
+                        calculaba con nada. Lo que se mira aquí son cuatro
+                        números y dos series: eso es lo que tiene que verse. */}
                     {activeTab === 'dashboard' && (
                         <>
-                            <div className="bg-card border border-border/40 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6 animate-in slide-in-from-top-4 duration-500">
-                                <div className="flex items-center gap-4">
-                                    <div className="size-12 rounded-2xl bg-primary/15 flex items-center justify-center text-accent-foreground shadow-inner">
-                                        <Calendar className="size-6" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-black text-lg">Reporte de Inteligencia</h3>
-                                        <p className="text-sm font-medium text-muted-foreground">Analizando datos del {filters.start_date} al {filters.end_date}</p>
-                                    </div>
+                            <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h2 className="font-heading text-sm font-semibold text-foreground">Actividad</h2>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">
+                                        Del {filters.start_date} al {filters.end_date}
+                                    </p>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-3 bg-muted/20 p-2 rounded-2xl border border-border/40">
-                                    <select value={range} onChange={handleRangeChange} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs uppercase tracking-widest focus:ring-4 focus:ring-primary/10 transition-all outline-none">
-                                        <option value="week">Última Semana</option>
-                                        <option value="month">Último Mes</option>
-                                        <option value="year">Último Año</option>
-                                        <option value="custom">Rango Personalizado</option>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                        value={range}
+                                        onChange={handleRangeChange}
+                                        className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                    >
+                                        <option value="week">Última semana</option>
+                                        <option value="month">Último mes</option>
+                                        <option value="year">Último año</option>
+                                        <option value="custom">Rango a medida</option>
                                     </select>
                                     {range === 'custom' && (
                                         <div className="flex items-center gap-2">
-                                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs" />
-                                            <span className="text-muted-foreground font-bold">al</span>
-                                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-11 px-4 rounded-xl bg-background border border-border/40 font-bold text-xs" />
-                                            <Button onClick={() => applyFilters()} size="icon" className="h-11 w-11 rounded-xl bg-primary hover:bg-primary"><SearchCheck className="size-5" /></Button>
+                                            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
+                                            <span className="text-xs text-muted-foreground">al</span>
+                                            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
+                                            <Button size="sm" variant="outline" onClick={() => applyFilters()}>Aplicar</Button>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                                <KPICard label="Empresas Totales" value={stats.total_companies} sub={`Activas: ${stats.active_companies}`} icon={<Briefcase className="size-5" />} color="indigo" />
-                                <KPICard label="Instancias Meta" value={stats.total_instances} sub={`Online: ${stats.active_instances}`} icon={<Layers className="size-5" />} color="blue" />
-                                <KPICard label="Tráfico en Rango" value={stats.total_messages_range.toLocaleString()} trend="+12%" icon={<MessageSquare className="size-5" />} color="emerald" sub="Mensajes procesados" />
-                                <KPICard label="Métricas Globales" value={stats.total_users} icon={<Users className="size-5" />} color="purple" sub="Usuarios del sistema" />
-                            </div>
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                                <div className="lg:col-span-8 bg-card border border-border/40 rounded-[2.5rem] p-10 shadow-sm relative group">
-                                    <div className="flex flex-col md:flex-row items-center justify-between mb-12">
-                                        <h3 className="text-2xl font-black tracking-tight">Volumen de Actividad</h3>
-                                        <div className="flex gap-6 mt-4 md:mt-0 bg-muted/30 px-5 py-2.5 rounded-2xl border border-border/40">
-                                            <div className="flex items-center gap-2 text-xs font-black text-accent-foreground uppercase tracking-widest"><span className="size-3 rounded-full bg-primary shadow-[0_0_10px_rgba(99,102,241,0.5)]" /> Inbound</div>
-                                            <div className="flex items-center gap-2 text-xs font-black text-success uppercase tracking-widest"><span className="size-3 rounded-full bg-success shadow-[0_0_10px_rgba(16,185,129,0.5)]" /> Outbound</div>
-                                        </div>
-                                    </div>
-                                    <div className="h-80"><BarChart data={cleanVolume} height={280} /></div>
-                                    <div className="mt-8 flex flex-wrap gap-4 items-center justify-between bg-muted/10 p-6 rounded-3xl border border-border/10">
-                                        <StatLabel label="PICO MÁXIMO" value={Math.max(...cleanVolume.map(m => m.inbound + m.outbound), 0).toLocaleString()} border />
-                                        <StatLabel label="PROMEDIO DIARIO" value={Math.round(cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0) / (cleanVolume.length || 1)).toLocaleString()} border />
-                                        <StatLabel label="TOTAL PERIODO" value={cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0).toLocaleString()} color="text-accent-foreground" />
-                                    </div>
-                                </div>
-                                <div className="lg:col-span-4 bg-card border border-border/40 rounded-[2.5rem] p-10 shadow-sm relative group">
-                                    <div className="flex items-center justify-between mb-10">
-                                        <h3 className="text-xl font-black tracking-tight">Top Clientes</h3>
-                                        <div className="size-12 rounded-2xl bg-primary/15 flex items-center justify-center text-accent-foreground"><TrendingUp className="size-6" /></div>
-                                    </div>
-                                    <div className="space-y-8">
-                                        {top_companies.map((co) => (
-                                            <div key={co.id} className="group/item">
-                                                <div className="flex items-center justify-between mb-2.5">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="size-10 rounded-2xl bg-primary/10 flex items-center justify-center text-accent-foreground font-black text-sm">{co.name.charAt(0)}</div>
-                                                        <span className="text-sm font-black truncate max-w-[120px]">{co.name}</span>
-                                                    </div>
-                                                    <span className="text-sm font-black text-foreground">{Number(co.messages_count || 0).toLocaleString()} <span className="text-[8px] opacity-40 uppercase ml-1">MSG</span></span>
-                                                </div>
-                                                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{ width: `${Math.max((Number(co.messages_count || 1) / (Number(top_companies[0].messages_count || 1))) * 100, 2)}%` }} /></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+
+                            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                                <KPICard label="Empresas" value={stats.total_companies} sub={`${stats.active_companies} activas`} icon={<Briefcase className="size-4" />} />
+                                <KPICard label="Instancias" value={stats.total_instances} sub={`${stats.active_instances} activas`} icon={<Layers className="size-4" />} />
+                                <KPICard label="Mensajes en el rango" value={stats.total_messages_range.toLocaleString('es-CO')} sub="Entrantes y salientes" icon={<MessageSquare className="size-4" />} />
+                                <KPICard label="Usuarios" value={stats.total_users} sub="De todas las empresas" icon={<Users className="size-4" />} />
                             </div>
 
-                            {/* Network Growth */}
-                            <div className="bg-card border border-border/40 rounded-[2.5rem] p-10 shadow-sm overflow-hidden group">
-                                <div className="flex flex-col md:flex-row items-center justify-between mb-10">
-                                    <div>
-                                        <h3 className="text-2xl font-black tracking-tight mb-2 uppercase">Crecimiento de RED</h3>
-                                        <p className="text-sm font-medium text-muted-foreground">Histórico de expansión y nuevas integraciones corporativas</p>
+                            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+                                <section className="rounded-xl border border-border bg-card p-5 lg:col-span-8">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <h3 className="font-heading text-sm font-semibold text-foreground">Volumen de mensajes</h3>
+                                        {/* «Inbound» y «Outbound» en un producto que
+                                            está entero en español, y en la pantalla
+                                            de quien lo vende. */}
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="size-2 rounded-sm bg-primary" /> Entrantes
+                                            </span>
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="size-2 rounded-sm bg-success" /> Salientes
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="size-10 rounded-2xl bg-primary/10 flex items-center justify-center text-accent-foreground"><TrendingUp className="size-5" /></div>
-                                        <span className="text-[11px] font-black text-muted-foreground uppercase tracking-widest">Global +{companies_growth.reduce((a, b) => a + Number(b.count), 0)}</span>
+                                    <div className="mt-6 h-64"><BarChart data={cleanVolume} height={240} /></div>
+                                    <div className="mt-5 grid grid-cols-3 divide-x divide-border border-t border-border pt-4">
+                                        <StatLabel label="Pico máximo" value={Math.max(...cleanVolume.map(m => m.inbound + m.outbound), 0).toLocaleString('es-CO')} />
+                                        <StatLabel label="Promedio diario" value={Math.round(cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0) / (cleanVolume.length || 1)).toLocaleString('es-CO')} />
+                                        <StatLabel label="Total del periodo" value={cleanVolume.reduce((a, b) => a + (b.inbound + b.outbound), 0).toLocaleString('es-CO')} />
                                     </div>
-                                </div>
-                                <div className="h-44 px-4"><LineChart data={companies_growth} color="#6366f1" height={160} /></div>
+                                </section>
+
+                                <section className="rounded-xl border border-border bg-card p-5 lg:col-span-4">
+                                    <h3 className="font-heading text-sm font-semibold text-foreground">Empresas con más actividad</h3>
+                                    <p className="mt-0.5 text-xs text-muted-foreground">Mensajes en el rango elegido.</p>
+                                    {top_companies.length === 0 ? (
+                                        <p className="mt-6 text-xs text-muted-foreground">Sin actividad en este rango.</p>
+                                    ) : (
+                                        <ul className="mt-5 space-y-4">
+                                            {top_companies.map((co) => (
+                                                <li key={co.id}>
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="truncate text-sm text-foreground">{co.name}</span>
+                                                        <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+                                                            {Number(co.messages_count || 0).toLocaleString('es-CO')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+                                                        <div
+                                                            className="h-full rounded-full bg-primary"
+                                                            style={{ width: `${Math.max((Number(co.messages_count || 1) / (Number(top_companies[0].messages_count || 1))) * 100, 2)}%` }}
+                                                        />
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </section>
                             </div>
+
+                            <section className="rounded-xl border border-border bg-card p-5">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <h3 className="font-heading text-sm font-semibold text-foreground">Empresas nuevas</h3>
+                                        <p className="mt-0.5 text-xs text-muted-foreground">Altas en el rango elegido.</p>
+                                    </div>
+                                    <span className="text-xs tabular-nums text-muted-foreground">
+                                        {companies_growth.reduce((a, b) => a + Number(b.count), 0)} en total
+                                    </span>
+                                </div>
+                                <div className="mt-6 h-40"><LineChart data={companies_growth} height={160} /></div>
+                            </section>
                         </>
                     )}
 
@@ -903,28 +936,35 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     );
 }
 
-function StatLabel({ label, value, border, color = "text-foreground" }) {
+/** Los tres totales bajo el gráfico. El separador lo pone la rejilla. */
+function StatLabel({ label, value }) {
     return (
-        <div className={`text-center flex-1 px-4 ${border ? 'border-r border-border/40' : ''}`}>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5 opacity-60">{label}</p>
-            <p className={`font-black text-xl tracking-tight ${color}`}>{value}</p>
+        <div className="px-4 first:pl-0 last:pr-0">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-foreground">{value}</p>
         </div>
     );
 }
 
-function KPICard({ label, value, sub, icon, trend, color }) {
-    const colors = { indigo: "text-accent-foreground", blue: "text-info", emerald: "text-success", purple: "text-accent-foreground" };
+/**
+ * Un número del resumen.
+ *
+ * Era una tarjeta de 36px de relleno con esquinas de 2.5rem, un icono de 56px
+ * arriba, la cifra en 48px negras y la etiqueta en versales con dos décimas de
+ * interletraje; cuatro de ellas no cabían en una fila sin scroll. Y aceptaba un
+ * `trend` que sólo se usaba una vez, con un «+12%» escrito a mano que no salía
+ * de ningún cálculo: se ha quitado el parámetro para que no vuelva a colarse
+ * una cifra inventada por la puerta de atrás.
+ */
+function KPICard({ label, value, sub, icon }) {
     return (
-        <div className={`bg-card border border-border/40 rounded-[2.5rem] p-9 shadow-sm transition-all hover:shadow-2xl hover:-translate-y-2 group relative overflow-hidden`}>
-            <div className="flex justify-between items-start mb-8">
-                <div className={`size-14 rounded-2xl flex items-center justify-center bg-muted/30 shadow-inner ${colors[color]}`}>{icon}</div>
-                {trend && <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest bg-success/10 text-success border border-success/10 animate-in fade-in duration-700">{trend}</span>}
+        <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
+                {icon}
+                <span className="text-xs font-medium">{label}</span>
             </div>
-            <h4 className="text-[11px] font-black text-muted-foreground uppercase tracking-[0.2em] mb-4 opacity-60">{label}</h4>
-            <div className="flex flex-col gap-1.5">
-                <span className="text-5xl font-black tracking-tighter leading-none text-foreground">{value}</span>
-                <span className="text-[11px] font-bold text-muted-foreground opacity-60 uppercase tracking-widest mt-1">{sub}</span>
-            </div>
+            <p className="mt-3 text-2xl font-semibold tabular-nums tracking-tight text-foreground">{value}</p>
+            {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
         </div>
     );
 }
