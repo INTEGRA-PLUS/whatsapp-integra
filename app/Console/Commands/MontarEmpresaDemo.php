@@ -582,9 +582,9 @@ class MontarEmpresaDemo extends Command
                     ['out', "Radicado con el número PQR-4471. El área de cartera responde en máximo 5 días hábiles.\n\nSi procede la devolución, se abona a tu cuenta de ahorros.", 188],
                     ['in', 'Cinco días es mucho, yo necesito saber ya si me lo devuelven', 182],
                     ['out', 'Voy a marcarlo como prioritario y te escribo por acá apenas cartera me confirme. No tienes que volver a llamar.', 175],
-                    ['in', 'Bueno, quedo pendiente entonces. Pero si en julio también pasó, ¿no van a revisar ese también?', 168],
-                    ['out', 'Sí, pido la revisión de los dos meses en el mismo radicado. Te confirmo el total apenas lo tenga.', 160],
-                    ['in', 'Listo, gracias. Espero que esta vez sí se solucione', 155],
+                    ['in', 'Es que ya me tienen cansado, es el segundo mes seguido con lo mismo. Esto es el colmo', 168],
+                    ['out', 'Tiene toda la razón y lo lamento. Pido la revisión de los dos meses en el mismo radicado.', 160],
+                    ['in', 'Si mañana no tengo respuesta pongo una queja formal en la Superintendencia, porque esto ya es una falta de respeto', 155],
                 ],
             ],
             [
