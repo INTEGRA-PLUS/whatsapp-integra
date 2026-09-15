@@ -63,3 +63,30 @@ honran—, pero **no es lo que sostiene el contrato**.
 La pista para diagnosticarlo está en el `thinking` de la ejecución: el modelo
 razonaba en voz alta sobre qué campos debía sacar. Cuando un flujo devuelva
 vacío, mirar ahí antes que en el código.
+
+## `num_predict` tiene que cubrir el razonamiento, no sólo la respuesta
+
+*15-sep-2026, el mismo día.* Con el prompt ya arreglado, el resumen funcionaba
+en conversaciones de 19 y 32 mensajes y **fallaba en las de 40**, devolviendo
+`null` sin un solo aviso en el log. En la ejecución de n8n:
+
+```
+done_reason: "length"
+eval_count:  900          ← justo el tope de num_predict
+thinking:    4212 caracteres, cortado a media frase
+content:     0 caracteres
+```
+
+Como Ollama Cloud **ignora `think: false`** (ver arriba), el modelo razona en
+voz alta y esos tokens salen del mismo presupuesto que la respuesta. En una
+conversación larga se gastaba los 900 pensando y no llegaba a escribir ni un
+carácter del JSON. En otra de 32 mensajes sí respondía, pero con el último
+`punto` cortado a mitad de palabra —el mismo tope, un poco menos apretado—.
+
+Subido a 3000. La regla: **el presupuesto se reparte entre pensar y responder**,
+así que hay que dimensionarlo para lo largo del razonamiento, que crece con la
+conversación, no para lo largo del resumen, que es corto y fijo.
+
+El síntoma engaña: desde fuera parece que el flujo no responde o que la
+plataforma no está configurada. Las dos pistas están en la ejecución de n8n,
+`done_reason` y `eval_count`, no en el CRM.

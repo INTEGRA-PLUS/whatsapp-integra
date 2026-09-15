@@ -109,7 +109,17 @@ class ResumenIaClient
 
         $resumen = trim((string) ($datos['resumen'] ?? $datos['summary'] ?? ''));
 
+        // Este es el único fallo del resumen que no dejaba rastro: el flujo
+        // respondía 200, el cliente devolvía null y la pantalla decía «no se
+        // pudo resumir» sin que hubiera nada que mirar. Pasó de verdad —el
+        // modelo agotaba `num_predict` razonando y mandaba `content` vacío— y
+        // costó media hora encontrarlo leyendo ejecuciones de n8n a mano.
         if ($resumen === '') {
+            Log::channel('whatsapp')->warning('⚠️ El resumen con IA llegó sin texto', [
+                'claves' => array_keys($datos),
+                'muestra' => mb_substr(json_encode($datos, JSON_UNESCAPED_UNICODE) ?: '', 0, 300),
+            ]);
+
             return null;
         }
 
