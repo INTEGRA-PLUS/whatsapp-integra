@@ -243,11 +243,22 @@ class ChatController extends Controller
                 // verdes: no analizado no es lo mismo que tranquilo, y ponerlos
                 // juntos sería dar por bueno lo que nadie ha mirado.
                 fn ($query) => $query
-                    // FIELD() numera por posición: verde=1, amarillo=2, rojo=3
-                    // y 0 para NULL. En DESC salen rojo, amarillo, verde y al
-                    // final los que nadie ha analizado, que es el orden que
-                    // queremos. Escrito al revés ordenaría por tranquilidad.
-                    ->orderByRaw("FIELD(sentiment_level, 'verde', 'amarillo', 'rojo') DESC")
+                    // Un CASE y no el FIELD() de MySQL: FIELD no existe en
+                    // sqlite, donde corren los tests, así que este orden no se
+                    // podía probar —el test reventaba con «no such function:
+                    // FIELD» y llevaba roto desde que se escribió—. Mismo motivo
+                    // que en `MasterController::usuariosDeLaEmpresa()`.
+                    //
+                    // Numera por urgencia: rojo=3, amarillo=2, verde=1. Los que
+                    // no tienen color caen en el ELSE y se quedan en 0, así que
+                    // en DESC salen al final y NO se mezclan con los verdes: no
+                    // analizado no es lo mismo que tranquilo, y ponerlos juntos
+                    // sería dar por bueno lo que nadie ha mirado.
+                    ->orderByRaw("CASE sentiment_level
+                        WHEN 'rojo' THEN 3
+                        WHEN 'amarillo' THEN 2
+                        WHEN 'verde' THEN 1
+                        ELSE 0 END DESC")
                     ->orderBy('last_message_at'),
                 fn ($query) => $query->orderByDesc('last_message_at')
             )
