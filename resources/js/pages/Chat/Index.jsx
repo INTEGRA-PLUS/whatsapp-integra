@@ -2647,8 +2647,12 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
     // ── Logic ──────────────────────────────────────────────────────────────
 
+    // El semáforo cuenta como filtro en los dos, o el botón de «limpiar» no
+    // aparece cuando es lo único puesto y la bandeja se queda vacía sin que nada
+    // explique por qué.
     const hasActiveFilters = Boolean(
-        filterMyAssignments || selectedTagIds.length || selectedAgentId || searchQuery.trim() || statusFilter !== 'open'
+        filterMyAssignments || selectedTagIds.length || selectedAgentId || searchQuery.trim()
+        || statusFilter !== 'open' || sentimentFilter.length
     );
 
     const activeFilterCount =
@@ -2656,7 +2660,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         selectedTagIds.length +
         (selectedAgentId ? 1 : 0) +
         (searchQuery.trim() ? 1 : 0) +
-        (statusFilter !== 'open' ? 1 : 0);
+        (statusFilter !== 'open' ? 1 : 0) +
+        sentimentFilter.length;
 
     const resetFilters = useCallback(() => {
         setFilterMyAssignments(false);
@@ -2801,8 +2806,13 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     // conversación tiene color y el control filtraría a cero, que es peor que no
     // estar. Se mira sobre lo cargado, que basta: si hay colores, aparece.
     const hayColores = useMemo(
-        () => conversations.some(c => c.sentiment_level),
-        [conversations]
+        // El `sentimentFilter.length` NO es un extra: sin él, filtrar por un
+        // color que no tiene ninguna conversación vacía la lista, el control se
+        // esconde por falta de colores y el filtro queda puesto SIN forma de
+        // quitarlo. Un control que se borra a sí mismo deja la bandeja en un
+        // callejón del que sólo se sale recargando.
+        () => sentimentFilter.length > 0 || conversations.some(c => c.sentiment_level),
+        [conversations, sentimentFilter]
     );
 
     const filteredConversations = useMemo(() => {
@@ -2982,7 +2992,11 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         } finally {
             setLoadingMore(false);
         }
-    }, [selectedInstanceId, debouncedSearch, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, auth.user.id]);
+        // `sentimentFilter` y `sortBy` van aquí obligatoriamente: el efecto de
+        // reinicio de arriba los tiene y vacía la lista al cambiarlos, así que
+        // si esta función no se rehace con ellos, la lista se queda vacía y
+        // nadie la vuelve a cargar. Se veía como «el filtro no encuentra nada».
+    }, [selectedInstanceId, debouncedSearch, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, sentimentFilter, sortBy, auth.user.id]);
 
     useEffect(() => {
         loadFolderCounts();
@@ -2990,7 +3004,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
     useEffect(() => {
         loadConversations(1);
-    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, loadConversations]);
+    }, [debouncedSearch, selectedInstanceId, selectedTagIds, selectedAgentId, filterMyAssignments, folder, statusFilter, sentimentFilter, sortBy, loadConversations]);
 
     const sidebarScrollRef = useRef(null);
     const observerTarget = useRef(null);
