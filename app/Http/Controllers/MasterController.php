@@ -111,10 +111,21 @@ class MasterController extends Controller
         // SELECT —mensajes → conversaciones → instancias, con dos whereIn
         // anidados— y, como el orden depende de ella, MySQL la resolvía para
         // cada empresa de la tabla, no para las seis que se devuelven.
-        $top_companies = function () {
+        $top_companies = function () use ($startDate, $endDate) {
             $messagesPerCompany = DB::table('whatsapp_messages as wm')
                 ->join('whatsapp_conversations as c', 'c.id', '=', 'wm.conversation_id')
                 ->join('instances as i', 'i.id', '=', 'c.instance_id')
+                // Acotado al rango que se está mirando. Sumaba TODA la historia
+                // de cada empresa mientras la pantalla decía «mensajes en el
+                // rango elegido», así que cambiar el selector de fechas no movía
+                // el ranking ni un número: NovaLink salía con 115.344 mensajes
+                // cuando en el último mes llevaba 15.858.
+                //
+                // Y de paso es lo que lo hace viable: sin el rango, filtrar por
+                // dirección dejaba esta subconsulta en 69 segundos y tumbaba el
+                // panel entero. Ver la migración del índice
+                // `msg_created_direction_conv_idx`.
+                ->whereBetween('wm.created_at', [$startDate, $endDate])
                 // Mismo criterio que la tarjeta y el gráfico: los avisos de
                 // sistema del hilo no son actividad de la empresa.
                 ->whereIn('wm.direction', ['inbound', 'outbound'])
