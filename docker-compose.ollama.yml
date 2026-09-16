@@ -12,7 +12,7 @@
 #
 #   scp docker-compose.ollama.yml root@178.238.224.239:/root/ollama/docker-compose.yml
 #   ssh root@178.238.224.239 'cd /root/ollama && docker compose up -d'
-#   ssh root@178.238.224.239 'docker exec ollama ollama pull bge-m3'
+#   ssh root@178.238.224.239 'docker exec ollama ollama pull paraphrase-multilingual'
 #
 # ## Por qué NO publica ningún puerto
 #
@@ -48,8 +48,9 @@ services:
     deploy:
       resources:
         limits:
-          # bge-m3 son ~1,2 GB cargado. El tope es para que un modelo grande
-          # subido por error no se lleve la memoria de la base de datos.
+          # `paraphrase-multilingual` son ~600 MB cargado. El tope es para que
+          # un modelo grande descargado por error no se lleve la memoria de la
+          # base de datos.
           memory: 3g
     healthcheck:
       test: ["CMD", "ollama", "list"]

@@ -366,3 +366,40 @@ Como efecto lateral: **un documento recortado lo dice**. Si se pasa del tope de
 partes, el aviso se queda visible en la pantalla aunque el documento haya salido
 bien. Un tarifario del que sólo se leyó la mitad contesta con total seguridad
 sobre los planes que entraron y jura no conocer los que se quedaron fuera.
+
+### El modelo se eligió midiendo, no leyendo
+
+*16-sep-2026.* El plan decía `bge-m3` «si la memoria lo permite». Medido en el
+servidor de verdad, con la pregunta «quiero pedir un préstamo» contra un párrafo
+sobre créditos y otro sobre internet:
+
+| modelo | dim | 1 pregunta | lote de 16 | separación |
+|---|---:|---:|---:|---:|
+| `all-minilm` | 384 | 0,62 s | 14,2 s | **−0,013** |
+| `paraphrase-multilingual` | 768 | **0,42 s** | 62,6 s | **0,183** |
+| `bge-m3` | 1024 | 4,19 s | 54,4 s | 0,142 |
+
+«Separación» es cuánto más se parece el párrafo del sinónimo que el que no viene
+a cuento — o sea, si el modelo sabe que «préstamo» y «crédito» son lo mismo, que
+es la razón entera de usar vectores.
+
+Tres cosas que no se sabían antes de medir:
+
+**`all-minilm` no sirve en español.** Su separación sale **negativa**: puntúa más
+alto el párrafo equivocado. Es el más rápido de los tres y da igual.
+
+**`bge-m3` es diez veces más lento en lo que importa.** Esos 4,19 s corren **en
+cada mensaje entrante**, con el cliente esperando al otro lado de WhatsApp — y a
+cambio separa peor que el modelo diez veces más rápido.
+
+**Y el umbral de parecido depende del modelo.** Con `paraphrase-multilingual` el
+sinónimo puntúa 0,401 y el ajeno 0,218, así que el corte va en 0,30. El 0,35 que
+llevaba escrito de antes habría **descartado el acierto**. Por eso el umbral está
+en `config/services.php` junto a la tabla, y no como una constante suelta:
+cambiar de modelo obliga a volver a medirlo, y uno heredado deja entrar basura o
+no deja pasar nada, sin fallar ni avisar.
+
+Queda una cifra incómoda y conviene tenerla a la vista: **~4 segundos por
+fragmento al indexar**. Un PDF de 600 fragmentos son unos 40 minutos de trabajo
+en segundo plano. Se aguanta —es una vez por documento y va en cola— pero es el
+número a vigilar si un cliente sube cinco documentos gordos el mismo día.

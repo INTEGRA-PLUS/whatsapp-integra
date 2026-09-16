@@ -41,8 +41,15 @@ class BuscarFragmentos
      * tiene nada que ver con lo que hay en los documentos —un «hola» devuelve
      * los cinco párrafos menos malos— y el modelo acaba contestando con el
      * reglamento a quien sólo saludaba.
+     *
+     * Va en la configuración y no aquí porque **el número depende del modelo**:
+     * ver la tabla medida en `config/services.php`. Cambiar de modelo sin
+     * volver a medir esto deja entrar basura, o no deja pasar nada.
      */
-    private const MINIMO_PARECIDO = 0.35;
+    private static function minimoParecido(): float
+    {
+        return (float) config('services.embeddings.minimo_parecido', 0.30);
+    }
 
     /**
      * Cuántos fragmentos se comparan de una vez, como mucho.
@@ -124,7 +131,7 @@ class BuscarFragmentos
                 'origen' => $f->origen,
                 'parecido' => Embeddings::parecido($vector, $f->vector ?? []),
             ])
-            ->filter(fn ($f) => $f['parecido'] >= self::MINIMO_PARECIDO)
+            ->filter(fn ($f) => $f['parecido'] >= self::minimoParecido())
             ->sortByDesc('parecido')
             ->take($cuantos)
             ->map(fn ($f) => ['texto' => $f['texto'], 'origen' => $f['origen']])

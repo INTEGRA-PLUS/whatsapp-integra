@@ -42,8 +42,12 @@ class VectorizarDocumentoDeIa implements ShouldQueue
      * Son varios lotes de `Embeddings::LOTE` por job: bastantes para no pagar
      * el arranque de un job por cada dieciséis textos, y pocos para que una
      * caída no se lleve medio documento.
+     *
+     * 64 y no más porque está medido: en este servidor el modelo tarda unos
+     * 4 segundos por fragmento, así que una tanda son ~4 minutos y el
+     * `timeout` de 10 tiene margen. Con 96 se quedaba a un suspiro.
      */
-    private const POR_TANDA = 96;
+    private const POR_TANDA = 64;
 
     public function __construct(public int $documentoId) {}
 
