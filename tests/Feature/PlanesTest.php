@@ -245,6 +245,38 @@ class PlanesTest extends TestCase
     }
 
     /**
+     * El catálogo sabe decir «la tienes, pero su parte con IA no».
+     *
+     * Es el estado del semáforo y el que más confusión causó: se instala y
+     * colorea con un diccionario sin llamar a ningún modelo, y lo único que
+     * exige complemento es «afinar con IA». Sin este dato, la tarjeta enseñaba
+     * un «Instalar» a secas y la pregunta «¿el semáforo no es con IA?» salía una
+     * y otra vez.
+     *
+     * Y protege un fallo que ya ocurrió: el controlador leía los ajustes
+     * bloqueados de `planes.ajustes_con_ia`, una clave que dejó de existir al
+     * separar el CRM de la IA. Devolvía siempre una lista vacía — el candado
+     * seguía cerrado, pero la pantalla no lo decía, que es la peor combinación.
+     */
+    public function test_el_catalogo_distingue_la_extension_de_su_ajuste_con_ia(): void
+    {
+        $sin = PlanDeLaEmpresa::de($this->empresa(['ia' => 'ninguno']));
+
+        // La extensión es suya...
+        $this->assertTrue($sin->permiteExtension('sentiment_traffic_light'));
+
+        // ...pero su ajuste con IA no, y el catálogo tiene que poder decirlo.
+        $this->assertSame(['usar_ia'], $sin->ajustesDeIaBloqueados('sentiment_traffic_light'));
+
+        // Con complemento no queda ninguno bloqueado.
+        $con = PlanDeLaEmpresa::de($this->empresa(['ia' => 'esencial']));
+        $this->assertSame([], $con->ajustesDeIaBloqueados('sentiment_traffic_light'));
+
+        // Y una extensión sin ajustes de IA no inventa ninguno.
+        $this->assertSame([], $sin->ajustesDeIaBloqueados('agent_signature'));
+    }
+
+    /**
      * Y con el complemento Esencial sí, sin tocar el plan de CRM.
      *
      * Es la razón de separarlos: antes, para tener una función con IA había que

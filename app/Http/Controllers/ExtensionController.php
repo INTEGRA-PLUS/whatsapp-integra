@@ -194,10 +194,16 @@ class ExtensionController extends Controller
             // vende mejor que esconderlo, y esconderlo hace que nadie sepa que
             // existe.
             'en_plan' => $plan->permiteExtension($extension->slug()),
-            'ajustes_bloqueados' => array_values(array_filter(
-                (array) config("planes.ajustes_con_ia.{$extension->slug()}", []),
-                fn (string $campo) => ! $plan->permiteAjuste($extension->slug(), $campo)
-            )),
+            'ajustes_bloqueados' => $plan->ajustesDeIaBloqueados($extension->slug()),
+
+            // «La tienes, pero su parte con IA no.» Es el caso del semáforo:
+            // se instala y colorea con el diccionario sin llamar a ningún
+            // modelo, y lo único que exige complemento es «afinar con IA». Sin
+            // decirlo en la tarjeta, la pregunta «¿el semáforo no es con IA?»
+            // sale una y otra vez — y la respuesta correcta, «sí y no», sólo se
+            // ve entrando a los ajustes.
+            'ia_parcial' => $plan->permiteExtension($extension->slug())
+                && $plan->ajustesDeIaBloqueados($extension->slug()) !== [],
             'installed' => $instalada !== null,
             'enabled' => (bool) ($instalada?->enabled ?? false),
             'settings' => $instalada ? $instalada->settings() : $extension->defaultSettings(),

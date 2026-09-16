@@ -165,6 +165,37 @@ class PlanDeLaEmpresa
         );
     }
 
+    /**
+     * Qué ajustes de esta extensión le quedan cerrados por no tener complemento.
+     *
+     * Lo necesita el catálogo para poder decir «la tienes, pero su parte con IA
+     * no» — que es el caso del semáforo y el que más confusión ha causado: la
+     * extensión se instala y funciona coloreando con el diccionario, y lo único
+     * que exige complemento es «afinar con IA».
+     *
+     * Va aquí y no en el controlador porque el controlador lo leía de
+     * `planes.ajustes_con_ia`, una clave que dejó de existir al separar el CRM
+     * de la IA. Salía siempre vacío y nadie se enteraba: el candado funcionaba,
+     * pero la pantalla no lo decía.
+     *
+     * @return list<string>
+     */
+    public function ajustesDeIaBloqueados(string $slug): array
+    {
+        $todos = [];
+
+        foreach (config('planes.ia', []) as $nivel) {
+            foreach ((array) ($nivel['ajustes'][$slug] ?? []) as $campo) {
+                $todos[] = $campo;
+            }
+        }
+
+        return array_values(array_filter(
+            array_unique($todos),
+            fn (string $campo) => ! $this->permiteAjuste($slug, $campo)
+        ));
+    }
+
     /** ¿Algún nivel de IA reclama este campo como suyo? */
     private function esAjusteDeIa(string $slug, string $ajuste): bool
     {
