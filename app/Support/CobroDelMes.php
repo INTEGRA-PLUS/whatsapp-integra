@@ -30,10 +30,10 @@ use Illuminate\Support\Collection;
  *   un pendiente comercial que alguien tiene que revisar.
  * - **mes gratis** — va a pagar, pero no este mes. Vuelve solo.
  *
- * Y una cuarta que sí sale en la lista pero avisando: **sin tramo asignado**.
- * Es un cliente al que nadie le puso precio; sale con «a cotizar» en vez de
- * desaparecer, porque desaparecer es como se deja de cobrar a alguien durante
- * un año sin que nadie lo note.
+ * Y una cuarta que sí sale en la lista pero avisando: **precio cero con el
+ * cobro activo**. Es un cliente al que nadie le puso plan; sale marcado en vez
+ * de desaparecer, porque desaparecer es como se deja de cobrarle a alguien
+ * durante un año sin que nadie lo note.
  *
  * ## Lo que no hace
  *
@@ -78,19 +78,29 @@ class CobroDelMes
 
             $precio = $plan->precioMensual();
 
-            if ($precio === null) {
+            // Cero con cobro activo es un cliente al que nadie le puso plan:
+            // sale en la lista marcado en vez de desaparecer, porque
+            // desaparecer es como se deja de cobrarle a alguien un año sin que
+            // nadie lo note.
+            if ($precio === 0) {
                 $sinTramo++;
             }
 
-            $total += (int) $precio;
+            $total += $precio;
 
             $cobrar[] = [
                 'id' => $company->id,
                 'empresa' => $company->name,
                 'plan' => $plan->nombre(),
-                'tramo' => $company->contactos_contratados,
+                'ia' => $plan->nombreIa(),
+                // Al cliente de Integra sólo se le cobra el complemento: el CRM
+                // va dentro de su ERP. Decirlo en la lista evita que quien
+                // factura se pregunte por qué paga menos que el de al lado.
+                'solo_ia' => $plan->incluidoEnIntegra(),
                 'contactos_reales' => $plan->contactosReales(),
+                'agentes_reales' => $plan->agentesReales(),
                 'se_paso' => $plan->sePasoDelTramo(),
+                'se_paso_de' => $plan->sePasoDe(),
                 'usd' => $precio,
                 'usd_anual' => $plan->precioMensualAnual(),
                 'nota' => $company->nota_de_cobro,
@@ -124,7 +134,13 @@ class CobroDelMes
         // cortesía es uno al que todavía no se le cobra. Si Integra saliera como
         // cortesía, alguien la pasaría a activo en la siguiente revisión y le
         // cobraría dos veces el mismo CRM.
-        if ($plan->incluidoEnIntegra()) {
+        //
+        // Pero **sólo mientras no tenga complemento de IA**. El día que lo
+        // contrata sí entra en la factura, por el importe del complemento y
+        // nada más: el CRM ya se lo cobró el ERP. Ése es el único camino por el
+        // que un cliente de Integra empieza a aparecer aquí, y es justo la
+        // venta que se busca — excluirlo siempre la haría invisible.
+        if ($plan->incluidoEnIntegra() && ! $plan->tieneIa()) {
             return 'integra';
         }
 
@@ -150,23 +166,25 @@ class CobroDelMes
     {
         $datos = self::calcular();
 
-        $lineas = new Collection(["\u{FEFF}Empresa;Plan;Tramo;Contactos reales;USD mes;USD mes pagando anual;Aviso;Nota"]);
+        $lineas = new Collection(["\u{FEFF}Empresa;Plan CRM;Complemento IA;Concepto;Contactos;Agentes;USD mes;USD mes pagando anual;Aviso;Nota"]);
 
         foreach ($datos['cobrar'] as $fila) {
             $lineas->push(implode(';', [
                 self::limpio($fila['empresa']),
                 $fila['plan'],
-                $fila['tramo'] ?: 'sin tramo',
+                $fila['ia'],
+                $fila['solo_ia'] ? 'Solo complemento IA (CRM en su ERP)' : 'CRM + complemento',
                 $fila['contactos_reales'],
-                $fila['usd'] ?? 'a cotizar',
-                $fila['usd_anual'] ?? 'a cotizar',
-                $fila['se_paso'] ? 'pasado del tramo' : '',
+                $fila['agentes_reales'],
+                $fila['usd'] ?: 'sin plan',
+                $fila['usd_anual'] ?: 'sin plan',
+                $fila['se_paso_de'] ? 'pasado de '.implode(' y ', $fila['se_paso_de']) : '',
                 self::limpio((string) $fila['nota']),
             ]));
         }
 
         $lineas->push('');
-        $lineas->push('TOTAL;;;;'.$datos['total_usd'].';;;');
+        $lineas->push('TOTAL;;;;;;'.$datos['total_usd'].';;;');
 
         return $lineas->implode("\r\n");
     }

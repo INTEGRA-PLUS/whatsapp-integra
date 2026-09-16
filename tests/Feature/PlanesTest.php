@@ -38,6 +38,41 @@ class PlanesTest extends TestCase
         ], $extra));
     }
 
+    /** Contactos de verdad: es de donde sale `contactosReales()`. */
+    private function contactos(Company $company, int $cuantos): void
+    {
+        $filas = [];
+
+        for ($i = 0; $i < $cuantos; $i++) {
+            $filas[] = [
+                'company_id' => $company->id,
+                'name' => 'Contacto '.$i,
+                'phone_number' => '57300'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        foreach (array_chunk($filas, 200) as $lote) {
+            \Illuminate\Support\Facades\DB::table('contacts')->insert($lote);
+        }
+    }
+
+    /** Agentes de la empresa. `activos: false` para los que no atienden. */
+    private function agentes(Company $company, int $cuantos, bool $activos = true): void
+    {
+        for ($i = 0; $i < $cuantos; $i++) {
+            User::create([
+                'company_id' => $company->id,
+                'name' => 'Agente '.$i,
+                'email' => 'agente'.$i.'.'.uniqid().'@x.test',
+                'password' => bcrypt('secreto123'),
+                'role' => 'agent',
+                'active' => $activos,
+            ]);
+        }
+    }
+
     /**
      * Un admin con permisos de verdad.
      *
@@ -96,18 +131,32 @@ class PlanesTest extends TestCase
     // ─── La transición ───────────────────────────────────────────────────────
 
     /**
-     * La empresa que ya existía nace con todo encendido y sin factura. Si esto
-     * se rompe, once clientes pierden funciones sin avisar.
+     * Una empresa nueva nace en Básico, sin IA y sin factura.
+     *
+     * Cambió el 15-sep-2026, al separar el CRM de la IA. Antes nacían en
+     * `inteligente` —con todo encendido— para no degradar a los clientes de
+     * siempre al introducir los planes. Ahora el CRM va entero en los tres
+     * planes, así que nacer en Básico no le quita nada a nadie, y nacer **sin
+     * IA** es lo correcto: la IA cuesta tokens y es lo que se vende.
      */
-    public function test_una_empresa_nueva_nace_con_todo_y_sin_cobro(): void
+    public function test_una_empresa_nueva_nace_en_basico_sin_ia_y_sin_cobro(): void
     {
         $plan = PlanDeLaEmpresa::de($this->empresa());
 
-        $this->assertSame('inteligente', $plan->slug());
+        $this->assertSame('basico', $plan->slug());
+        $this->assertSame('ninguno', $plan->slugIa());
         $this->assertSame('cortesia', $plan->cobro());
         $this->assertFalse($plan->seFactura());
-        $this->assertTrue($plan->permiteExtension('conversation_summary'));
-        $this->assertTrue($plan->tieneIa());
+        $this->assertFalse($plan->tieneIa());
+
+        // El CRM entero, eso sí: las cuatro extensiones sin modelo.
+        $this->assertTrue($plan->permiteExtension('agent_signature'));
+        $this->assertTrue($plan->permiteExtension('follow_up'));
+        $this->assertTrue($plan->permiteExtension('keyword_routing'));
+        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
+
+        // Y nada de IA.
+        $this->assertFalse($plan->permiteExtension('conversation_summary'));
     }
 
     public function test_la_cortesia_no_se_factura_aunque_pase_el_tiempo(): void
@@ -149,40 +198,75 @@ class PlanesTest extends TestCase
 
     // ─── El candado ──────────────────────────────────────────────────────────
 
-    public function test_el_plan_esencial_no_llega_a_las_extensiones_de_arriba(): void
+    /**
+     * El tamaño del plan de CRM no cambia qué extensiones se pueden instalar.
+     *
+     * Las cuatro sin modelo van en los tres planes: se venden en paquete, y lo
+     * que decide el plan es el tamaño —agentes, contactos, líneas—, no las
+     * funciones. Antes no era así y por eso Esencial se leía como un plan de una
+     * sola función.
+     */
+    public function test_el_plan_de_crm_no_decide_las_extensiones(): void
     {
-        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'esencial']));
+        foreach (array_keys(config('planes.crm')) as $slug) {
+            $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => $slug]));
 
-        $this->assertTrue($plan->permiteExtension('agent_signature'));
-        $this->assertFalse($plan->permiteExtension('follow_up'));
-        $this->assertFalse($plan->permiteExtension('conversation_summary'));
-        $this->assertFalse($plan->tieneIa());
-        $this->assertSame(0, $plan->creditoIa());
+            foreach (config('planes.extensiones_del_crm') as $extension) {
+                $this->assertTrue(
+                    $plan->permiteExtension($extension),
+                    "El plan {$slug} tendría que llegar a {$extension}."
+                );
+            }
+
+            $this->assertFalse($plan->permiteExtension('conversation_summary'));
+            $this->assertFalse($plan->tieneIa());
+            $this->assertSame(0, $plan->creditoIa());
+        }
     }
 
-    public function test_automatizacion_llega_al_semaforo_pero_no_a_la_ia(): void
+    /** Sin complemento no hay IA, por grande que sea el plan de CRM. */
+    public function test_el_plan_mas_grande_sin_complemento_no_tiene_ia(): void
     {
-        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'automatizacion']));
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'avanzado']));
 
         $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
-        $this->assertTrue($plan->permiteExtension('keyword_routing'));
         $this->assertFalse($plan->permiteExtension('conversation_summary'));
         $this->assertFalse($plan->tieneIa());
     }
 
     /** El candado por la puerta de atrás: la extensión entra, el ajuste no. */
-    public function test_automatizacion_no_puede_encender_afinar_con_ia(): void
+    public function test_sin_complemento_no_se_puede_encender_afinar_con_ia(): void
     {
-        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'automatizacion']));
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'avanzado']));
 
         $this->assertFalse($plan->permiteAjuste('sentiment_traffic_light', 'usar_ia'));
         // Los demás ajustes del semáforo sí.
         $this->assertTrue($plan->permiteAjuste('sentiment_traffic_light', 'sensibilidad'));
     }
 
+    /**
+     * Y con el complemento Esencial sí, sin tocar el plan de CRM.
+     *
+     * Es la razón de separarlos: antes, para tener una función con IA había que
+     * subir de plan entero, y a un cliente de Integra —que ya paga el CRM por el
+     * ERP— eso no se le podía ni plantear.
+     */
+    public function test_el_complemento_abre_la_ia_sin_cambiar_el_plan(): void
+    {
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'basico', 'ia' => 'esencial']));
+
+        $this->assertTrue($plan->tieneIa());
+        $this->assertTrue($plan->permiteExtension('conversation_summary'));
+        $this->assertTrue($plan->permiteAjuste('sentiment_traffic_light', 'usar_ia'));
+
+        // Pero los flujos caros son del complemento Completa.
+        $this->assertFalse($plan->permiteFlujoIa('ai_chat'));
+        $this->assertFalse($plan->permiteFlujoIa('ai_menus'));
+    }
+
     public function test_instalar_fuera_de_plan_responde_402(): void
     {
-        $company = $this->empresa(['plan' => 'esencial']);
+        $company = $this->empresa(['plan' => 'basico']);
 
         $this->actingAs($this->admin($company))
             ->postJson('/api/extensions/conversation_summary/install')
@@ -200,7 +284,7 @@ class PlanesTest extends TestCase
      */
     public function test_no_se_confunde_con_un_problema_de_permisos(): void
     {
-        $company = $this->empresa(['plan' => 'esencial']);
+        $company = $this->empresa(['plan' => 'basico']);
 
         $this->actingAs($this->admin($company))
             ->postJson('/api/extensions/conversation_summary/install')
@@ -210,7 +294,7 @@ class PlanesTest extends TestCase
 
     public function test_guardar_ajustes_no_cuela_la_ia_de_tapadillo(): void
     {
-        $company = $this->empresa(['plan' => 'automatizacion']);
+        $company = $this->empresa(['plan' => 'basico']);
 
         CompanyExtension::create([
             'company_id' => $company->id,
@@ -236,204 +320,172 @@ class PlanesTest extends TestCase
 
     // ─── El crédito de IA ────────────────────────────────────────────────────
 
-    public function test_el_credito_sale_del_tramo_contratado(): void
+    /**
+     * El crédito de IA sale del plan de CRM, no del complemento.
+     *
+     * Es un número que depende del **tamaño del cliente** —cuánta conversación
+     * mueve— y no de qué funciones tenga encendidas. El complemento decide qué
+     * se enciende; el plan, cuánto cabe.
+     */
+    public function test_el_credito_sale_del_plan_de_crm(): void
     {
-        $this->assertSame(300, PlanDeLaEmpresa::de($this->empresa(['contactos_contratados' => 400]))->creditoIa());
-        $this->assertSame(3000, PlanDeLaEmpresa::de($this->empresa(['contactos_contratados' => 4500]))->creditoIa());
-        $this->assertSame(8000, PlanDeLaEmpresa::de($this->empresa(['contactos_contratados' => 12000]))->creditoIa());
-    }
+        foreach (config('planes.crm') as $slug => $datos) {
+            $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => $slug, 'ia' => 'completa']));
 
-    /** Sin tramo asignado se da el suelo, no cero: cero parecería una avería. */
-    public function test_sin_tramo_se_da_el_suelo_del_plan(): void
-    {
-        $this->assertSame(1200, PlanDeLaEmpresa::de($this->empresa())->creditoIa());
-    }
-
-    public function test_el_contador_suma_eventos_y_conversaciones(): void
-    {
-        $company = $this->empresa(['contactos_contratados' => 12000]);
-
-        ContadorDeIa::apuntar($company->id, 'chat', conversacionNueva: true);
-        ContadorDeIa::apuntar($company->id, 'chat');
-        ContadorDeIa::apuntar($company->id, 'semaforo');
-
-        $estado = ContadorDeIa::estado($company->refresh());
-
-        // Tres eventos, UNA conversación: se vende por conversación.
-        $this->assertSame(1, $estado['usadas']);
-        $this->assertSame(8000, $estado['incluidas']);
-        $this->assertSame(0, $estado['exceso']);
-        $this->assertGreaterThan(0, $estado['coste_usd']);
-    }
-
-    /** Pasarse del crédito se apunta como exceso; no se bloquea nada. */
-    public function test_pasarse_del_credito_no_bloquea_nada(): void
-    {
-        $company = $this->empresa(['plan' => 'inteligente', 'contactos_contratados' => 400]);
-
-        for ($i = 0; $i < 302; $i++) {
-            ContadorDeIa::apuntar($company->id, 'chat', conversacionNueva: true);
+            $this->assertSame($datos['credito_ia'], $plan->creditoIa());
         }
-
-        $estado = ContadorDeIa::estado($company->refresh());
-
-        $this->assertSame(302, $estado['usadas']);
-        $this->assertSame(2, $estado['exceso']);
-        // Y la empresa sigue pudiendo usar todo lo suyo.
-        $this->assertTrue(PlanDeLaEmpresa::de($company)->permiteExtension('conversation_summary'));
     }
 
-    /** Un contador roto no puede dejar mudo al bot. */
-    public function test_apuntar_sin_empresa_no_revienta(): void
+    /** Y sin complemento es cero: no hay nada que consumir. */
+    public function test_sin_complemento_el_credito_es_cero(): void
     {
-        ContadorDeIa::apuntar(null, 'chat');
-        ContadorDeIa::apuntar(1, 'tipo-que-no-existe');
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'avanzado']));
 
-        $this->assertDatabaseCount('company_ai_usage', 0);
+        $this->assertSame(0, $plan->creditoIa());
     }
 
-    // ─── La escalera de precios ──────────────────────────────────────────────
-
-    public function test_el_precio_sale_del_tramo_y_del_plan(): void
-    {
-        $this->assertSame(35, PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'esencial', 'contactos_contratados' => 300,
-        ]))->precioMensual());
-
-        $this->assertSame(299, PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'inteligente', 'contactos_contratados' => 12000,
-        ]))->precioMensual());
-
-        $this->assertSame(149, PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'automatizacion', 'contactos_contratados' => 4500,
-        ]))->precioMensual());
-    }
+    // ─── Precio ──────────────────────────────────────────────────────────────
 
     /**
-     * El número que se dijo en la mesa. 299 de lista menos los dos meses del
-     * pago anual son los 250 USD que se le propusieron a Cootramed: si esto se
-     * rompe, el panel contradice una cotización ya entregada.
+     * El precio es un número fijo por plan, no un rango por tramo.
+     *
+     * Se cambió el 15-sep-2026: antes eran quince precios —cinco tramos por tres
+     * planes— y un rango se lee como «depende» o como negociable. Ahora se dice
+     * un número en la mesa.
      */
-    public function test_el_anual_da_los_249_de_cootramed(): void
+    public function test_cada_plan_tiene_su_precio_fijo(): void
     {
-        $plan = PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'inteligente', 'contactos_contratados' => 12000,
-        ]));
+        foreach (config('planes.crm') as $slug => $datos) {
+            $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => $slug]));
 
-        $this->assertSame(299, $plan->precioMensual());
-        $this->assertSame(249, $plan->precioMensualAnual());
+            $this->assertSame($datos['precio'], $plan->precioMensual());
+        }
     }
 
-    /** Sin tramo no se inventa un precio: se dice que falta ponerlo. */
-    public function test_sin_tramo_no_hay_precio(): void
+    /** El complemento de IA se suma al plan: son dos cosas que se venden aparte. */
+    public function test_el_complemento_se_suma_al_precio_del_plan(): void
     {
-        $this->assertNull(PlanDeLaEmpresa::de($this->empresa())->precioMensual());
-        $this->assertNull(PlanDeLaEmpresa::de($this->empresa())->precioMensualAnual());
-    }
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'pro', 'ia' => 'completa']));
 
-    /** Por encima del último tramo es «a cotizar», y ahí tampoco se inventa. */
-    public function test_por_encima_del_ultimo_tramo_se_cotiza_a_mano(): void
-    {
-        $this->assertNull(PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'inteligente', 'contactos_contratados' => 80000,
-        ]))->precioMensual());
-    }
-
-    /**
-     * Los dos mapas son el mismo tramo mirado desde dos sitios. Si alguien
-     * añade un tramo de precio y se olvida del crédito, una empresa acabaría
-     * pagando un escalón y recibiendo el crédito de otro.
-     */
-    public function test_los_tramos_de_precio_y_de_credito_no_se_separan(): void
-    {
         $this->assertSame(
-            array_keys(config('planes.credito_ia')),
-            array_keys(config('planes.precios')),
-            'Los tramos de precio y de crédito de IA dejaron de coincidir'
+            config('planes.crm.pro.precio') + config('planes.ia.completa.precio'),
+            $plan->precioMensual()
         );
     }
 
-    /** Cada plan tiene precio en todos los tramos: un hueco sería un «sin definir» falso. */
-    public function test_ningun_plan_se_queda_sin_precio_en_un_tramo(): void
+    /**
+     * Al cliente de Integra sólo se le cobra el complemento.
+     *
+     * El CRM ya se lo cobró el ERP. Cobrarle también el plan sería cobrarle dos
+     * veces lo mismo, y es lo que hacía el panel antes de distinguirlos: contaba
+     * 2.391 USD/mes de facturación potencial sobre gente que ya pagaba.
+     */
+    public function test_al_de_integra_solo_se_le_cobra_el_complemento(): void
     {
-        foreach (config('planes.precios') as $tope => $fila) {
-            foreach (array_keys(config('planes.disponibles')) as $plan) {
-                $this->assertArrayHasKey($plan, $fila, "Falta el precio de {$plan} en el tramo {$tope}");
+        $sinIa = PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'avanzado', 'viene_de_integra' => true, 'cobro' => 'integra',
+        ]));
+
+        $this->assertSame(0, $sinIa->precioMensual());
+        $this->assertFalse($sinIa->seFactura());
+
+        $conIa = PlanDeLaEmpresa::de($this->empresa([
+            'plan' => 'avanzado', 'ia' => 'esencial',
+            'viene_de_integra' => true, 'cobro' => 'integra',
+        ]));
+
+        $this->assertSame(config('planes.ia.esencial.precio'), $conIa->precioMensual());
+        $this->assertTrue($conIa->seFactura(), 'Contratar la IA es lo que le hace entrar en la factura.');
+    }
+
+    /** Dos meses gratis pagando el año: diez mensualidades repartidas en doce. */
+    public function test_el_anual_son_diez_mensualidades(): void
+    {
+        $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'avanzado']));
+
+        $esperado = (int) round(config('planes.crm.avanzado.precio') * 10 / 12);
+
+        $this->assertSame($esperado, $plan->precioMensualAnual());
+        $this->assertSame(2, (int) config('planes.meses_gratis_al_pagar_anual'));
+    }
+
+    /** Ningún plan del catálogo puede quedarse sin precio o sin crédito. */
+    public function test_ningun_plan_se_queda_a_medias(): void
+    {
+        foreach (config('planes.crm') as $slug => $datos) {
+            foreach (['precio', 'agentes', 'contactos', 'lineas', 'credito_ia'] as $campo) {
+                $this->assertArrayHasKey($campo, $datos, "A {$slug} le falta {$campo}.");
+                $this->assertGreaterThan(0, $datos[$campo], "{$slug}.{$campo} no puede ser cero.");
             }
         }
-    }
 
-    // ─── Contactos reales contra tramo contratado ────────────────────────────
-
-    private function contactos(Company $company, int $cuantos): void
-    {
-        for ($i = 0; $i < $cuantos; $i++) {
-            Contact::create([
-                'company_id' => $company->id,
-                'phone_number' => '5730'.str_pad((string) $i, 8, '0', STR_PAD_LEFT),
-                'name' => 'Cliente '.$i,
-            ]);
+        foreach (config('planes.ia') as $slug => $datos) {
+            $this->assertArrayHasKey('precio', $datos, "Al complemento {$slug} le falta el precio.");
         }
     }
 
-    public function test_cuenta_los_contactos_que_hay_de_verdad(): void
-    {
-        $company = $this->empresa(['contactos_contratados' => 2000]);
-        $this->contactos($company, 5);
-
-        $plan = PlanDeLaEmpresa::de($company);
-
-        $this->assertSame(5, $plan->contactosReales());
-        $this->assertFalse($plan->sePasoDelTramo());
-    }
+    // ─── Lo que tiene de verdad ──────────────────────────────────────────────
 
     /**
-     * La razón de contar: saber cuándo toca renegociar. No cobra ni bloquea —
-     * sale en el panel para que alguien llame, que es una conversación
-     * comercial y no una factura automática por crecer.
+     * Avisa de en QUÉ se pasó, no sólo de que se pasó.
+     *
+     * Son conversaciones distintas: «tienes más agentes de los que incluye tu
+     * plan» se resuelve de otra manera que «te crecieron los contactos». Con un
+     * `true` a secas, quien llama al cliente no sabe de qué hablarle.
+     *
+     * Y no bloquea nada: nadie deja de atender a un cliente porque la empresa
+     * creció.
      */
-    public function test_avisa_cuando_la_empresa_se_paso_de_lo_contratado(): void
+    public function test_avisa_de_en_que_se_paso(): void
     {
-        $company = $this->empresa(['contactos_contratados' => 3]);
-        $this->contactos($company, 7);
+        $company = $this->empresa(['plan' => 'basico']);
+        $this->contactos($company, config('planes.crm.basico.contactos') + 1);
 
-        $plan = PlanDeLaEmpresa::de($company);
+        $plan = PlanDeLaEmpresa::de($company->refresh());
 
+        $this->assertSame(['contactos'], $plan->sePasoDe());
         $this->assertTrue($plan->sePasoDelTramo());
-        // Y sigue funcionándole todo.
-        $this->assertTrue($plan->permiteExtension('conversation_summary'));
+
+        // Y sigue pudiendo instalar todo lo suyo.
+        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
     }
-
-    /** Sin tramo asignado no se puede decir que alguien se pasó. */
-    public function test_sin_tramo_nadie_se_pasa(): void
-    {
-        $company = $this->empresa();
-        $this->contactos($company, 50);
-
-        $this->assertFalse(PlanDeLaEmpresa::de($company)->sePasoDelTramo());
-    }
-
-    public function test_sugiere_el_tramo_por_los_contactos_que_ya_tiene(): void
-    {
-        $company = $this->empresa();
-        $this->contactos($company, 12);
-
-        // 12 contactos caen en el primer tramo.
-        $this->assertSame(500, PlanDeLaEmpresa::de($company)->tramoSugerido());
-    }
-
-    // ─── Lo que NO debe pasar nunca ──────────────────────────────────────────
 
     /**
-     * Suspendido marca a quien no paga para que aparezca en el panel. NO apaga
-     * el CRM: dejar sin WhatsApp a una cooperativa un día de recaudo por una
-     * factura de 300 dólares es la forma más cara que existe de cobrar, y el que
-     * se queda sin atender es el socio, que no debe nada.
+     * El plan sugerido mira contactos Y agentes, no sólo contactos.
+     *
+     * Una empresa con 400 contactos pero cuatro agentes no cabe en Básico
+     * aunque le sobren contactos, y ponerla ahí la marcaría como «pasada de
+     * plan» desde el primer día.
      */
+    public function test_el_plan_sugerido_mira_las_dos_cosas(): void
+    {
+        $chica = $this->empresa();
+        $this->assertSame('basico', PlanDeLaEmpresa::de($chica)->planSugerido());
+
+        $conMuchosAgentes = $this->empresa();
+        $this->agentes($conMuchosAgentes, config('planes.crm.basico.agentes') + 1);
+
+        $this->assertSame(
+            'pro',
+            PlanDeLaEmpresa::de($conMuchosAgentes->refresh())->planSugerido(),
+            'Con más agentes de los que incluye Básico, el suelo es Pro.'
+        );
+    }
+
+    /** Un usuario inactivo no cuenta como agente: no atiende a nadie. */
+    public function test_los_agentes_inactivos_no_cuentan(): void
+    {
+        $company = $this->empresa();
+        $this->agentes($company, 3, activos: false);
+
+        $this->assertSame(0, PlanDeLaEmpresa::de($company)->agentesReales());
+    }
+
+
     public function test_suspendido_no_apaga_las_extensiones(): void
     {
         $plan = PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'inteligente',
+            'plan' => 'avanzado', 'ia' => 'completa',
             'cobro' => 'suspendido',
         ]));
 
@@ -442,12 +494,32 @@ class PlanesTest extends TestCase
         $this->assertTrue($plan->tieneIa());
     }
 
-    /** Un plan escrito a mano que no existe cae en el más alto, no en ninguno. */
-    public function test_un_plan_desconocido_no_deja_a_nadie_sin_nada(): void
+    /**
+     * Un plan que no existe cae en el suelo, y sigue teniendo el CRM entero.
+     *
+     * Antes caía en el plan más alto, para no degradar a nadie al introducir los
+     * planes. Ahora el suelo es lo correcto: el CRM va completo en los tres, así
+     * que caer en Básico no le quita ninguna función — sólo deja de regalar el
+     * tamaño grande a quien tenga la columna con un plan retirado del catálogo.
+     */
+    public function test_un_plan_desconocido_cae_en_el_suelo_con_el_crm_entero(): void
     {
         $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'premium-que-no-existe']));
 
-        $this->assertSame('inteligente', $plan->slug());
-        $this->assertTrue($plan->permiteExtension('conversation_summary'));
+        $this->assertSame('basico', $plan->slug());
+
+        foreach (config('planes.extensiones_del_crm') as $extension) {
+            $this->assertTrue($plan->permiteExtension($extension));
+        }
+    }
+
+    /** Y un complemento de IA que no existe no abre nada. */
+    public function test_un_complemento_desconocido_no_abre_la_ia(): void
+    {
+        $plan = PlanDeLaEmpresa::de($this->empresa(['ia' => 'ultra-que-no-existe']));
+
+        $this->assertSame('ninguno', $plan->slugIa());
+        $this->assertFalse($plan->tieneIa());
+        $this->assertFalse($plan->permiteExtension('conversation_summary'));
     }
 }

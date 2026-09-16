@@ -18,6 +18,7 @@ class Company extends Model
         'domain',
         'active',
         'plan',
+        'ia',
         'cobro',
         'interna',
         'viene_de_integra',

@@ -73,31 +73,45 @@ class MiPlanController extends Controller
             'nucleo' => config('planes.nucleo', []),
             'uso_ia' => ContadorDeIa::estado($company),
             'extensiones' => $extensiones,
-            'planes' => collect(config('planes.disponibles'))
+            'planes' => collect(config('planes.crm'))
                 ->map(fn (array $p, string $slug) => [
                     'slug' => $slug,
                     'nombre' => $p['nombre'],
-                    'con_ia' => ($p['ia'] ?? null) !== null,
+                    'agentes' => $p['agentes'],
+                    'contactos' => $p['contactos'],
                     'es_el_suyo' => $slug === $plan->slug(),
+                ])
+                ->values(),
+
+            // El complemento, que es lo que se vende. Va aparte del plan porque
+            // son dos decisiones distintas y mezclarlas es lo que obligaba a
+            // subir de plan entero para tener una función con IA.
+            'complementos' => collect(config('planes.ia'))
+                ->map(fn (array $p, string $slug) => [
+                    'slug' => $slug,
+                    'nombre' => $p['nombre'],
+                    'es_el_suyo' => $slug === $plan->slugIa(),
                 ])
                 ->values(),
         ]);
     }
 
     /**
-     * El plan más bajo que incluye esta extensión.
+     * El complemento de IA más bajo que incluye esta extensión.
      *
-     * Para poder decir «esto está en Automatización» en vez de un «no incluido»
-     * a secas, que no le dice a nadie qué tiene que hacer. Recorre el catálogo
-     * en su orden, que va de menos a más.
+     * Para poder decir «esto está en IA Esencial» en vez de un «no incluido» a
+     * secas, que no le dice a nadie qué tiene que hacer. `null` si va con el
+     * CRM: entonces la tiene, y no hay nada que decir.
      */
     private function planMinimoPara(string $slug): ?string
     {
-        foreach (config('planes.disponibles', []) as $datos) {
-            $permitidas = $datos['extensiones'] ?? [];
+        if (in_array($slug, (array) config('planes.extensiones_del_crm', []), true)) {
+            return null;
+        }
 
-            if ($permitidas === '*' || in_array($slug, (array) $permitidas, true)) {
-                return $datos['nombre'];
+        foreach (config('planes.ia', []) as $nivel) {
+            if (in_array($slug, (array) ($nivel['extensiones'] ?? []), true)) {
+                return $nivel['nombre'];
             }
         }
 

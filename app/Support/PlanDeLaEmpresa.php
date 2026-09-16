@@ -4,19 +4,34 @@ namespace App\Support;
 
 use App\Models\Company;
 use App\Models\Contact;
+use App\Models\Instance;
+use App\Models\User;
 
 /**
- * Qué puede usar una empresa según su plan, y si se le cobra.
+ * Qué puede usar una empresa, cuánto paga y si se le cobra.
  *
  * Todas las preguntas sobre planes pasan por aquí. Es a propósito: un candado
  * repartido por cinco controladores es un candado que alguien se deja abierto al
  * añadir el sexto.
  *
- * **Lo que este objeto NO hace es apagar el CRM.** Ni por plan vencido, ni por
- * cobro suspendido, ni por crédito de IA agotado. Decide qué se puede
- * *instalar* y avisa de lo demás. Apagarle el WhatsApp a una cooperativa un día
- * de recaudo por una factura pendiente es la forma más cara que existe de
- * cobrar, y el que se queda sin atender es el socio, que no debe nada.
+ * ## Son dos cosas, no una
+ *
+ * - **El plan de CRM** (`crm`) decide el tamaño: agentes, contactos, líneas y el
+ *   crédito de IA. Tiene precio fijo.
+ * - **El complemento de IA** (`ia`) decide qué funciones con modelo se
+ *   encienden. Tiene su propio precio y se suma.
+ *
+ * Antes eran tres planes con la IA metida dentro del más caro. Se separó el
+ * 15-sep-2026 al ver que casi toda la base llegó con Integra y **ya paga el CRM
+ * dentro del ERP**: lo que se les puede vender no es el CRM, es la IA.
+ *
+ * ## Lo que este objeto NO hace es apagar el CRM
+ *
+ * Ni por plan vencido, ni por cobro suspendido, ni por crédito de IA agotado.
+ * Decide qué se puede *instalar* y avisa de lo demás. Apagarle el WhatsApp a una
+ * cooperativa un día de recaudo por una factura pendiente es la forma más cara
+ * que existe de cobrar, y el que se queda sin atender es el socio, que no debe
+ * nada.
  */
 class PlanDeLaEmpresa
 {
@@ -27,151 +42,234 @@ class PlanDeLaEmpresa
         return new self($company);
     }
 
+    // ─── El plan de CRM ──────────────────────────────────────────────────────
+
+    /**
+     * El plan de CRM contratado.
+     *
+     * Cae en `basico` cuando el valor no se reconoce: es el suelo, y dar el
+     * suelo ante la duda es lo correcto — lo contrario sería regalar el plan
+     * grande a quien tenga la columna con un plan retirado del catálogo.
+     */
     public function slug(): string
     {
-        $plan = (string) ($this->company->plan ?: 'inteligente');
+        $plan = (string) ($this->company->plan ?: 'basico');
 
-        return isset(config('planes.disponibles')[$plan]) ? $plan : 'inteligente';
+        return isset(config('planes.crm')[$plan]) ? $plan : 'basico';
     }
 
     public function nombre(): string
     {
-        return config("planes.disponibles.{$this->slug()}.nombre", 'Inteligente');
+        return config("planes.crm.{$this->slug()}.nombre", 'Básico');
+    }
+
+    /** @return array<string, mixed> */
+    private function planCrm(): array
+    {
+        return config("planes.crm.{$this->slug()}", []);
+    }
+
+    public function agentesIncluidos(): int
+    {
+        return (int) ($this->planCrm()['agentes'] ?? 0);
+    }
+
+    public function contactosIncluidos(): int
+    {
+        return (int) ($this->planCrm()['contactos'] ?? 0);
+    }
+
+    public function lineasIncluidas(): int
+    {
+        return (int) ($this->planCrm()['lineas'] ?? 0);
+    }
+
+    // ─── El complemento de IA ────────────────────────────────────────────────
+
+    /** El complemento contratado: `ninguno`, `esencial` o `completa`. */
+    public function slugIa(): string
+    {
+        $ia = (string) ($this->company->ia ?: 'ninguno');
+
+        return isset(config('planes.ia')[$ia]) ? $ia : 'ninguno';
+    }
+
+    public function nombreIa(): string
+    {
+        return config("planes.ia.{$this->slugIa()}.nombre", 'Sin IA');
     }
 
     /**
+     * ¿Tiene contratada alguna función con IA?
+     *
+     * **Ésta es la pregunta que hace el resto del sistema**: la pantalla del
+     * flujo de IA, el candado de los ajustes y el panel pasan por aquí.
+     * Preguntar por `$company->plan` en vez de por esto es lo que hace que un
+     * cambio de catálogo rompa cinco sitios a la vez.
+     */
+    public function tieneIa(): bool
+    {
+        return $this->slugIa() !== 'ninguno';
+    }
+
+    /**
+     * ¿Tiene contratados los flujos caros — chat y menús con IA?
+     *
+     * Separado de `tieneIa()` porque el coste no es parejo: una conversación de
+     * chat con IA cuesta trece veces un análisis de semáforo. El complemento
+     * Esencial da las funciones baratas; sólo Completa abre éstas.
+     */
+    public function permiteFlujoIa(string $flujo): bool
+    {
+        return in_array($flujo, (array) config("planes.ia.{$this->slugIa()}.flujos", []), true);
+    }
+
+    // ─── Qué puede instalar ──────────────────────────────────────────────────
+
+    /**
      * ¿Puede esta empresa instalar esta extensión?
+     *
+     * Las del CRM van con cualquier plan; las demás dependen del complemento de
+     * IA contratado.
      */
     public function permiteExtension(string $slug): bool
     {
-        $permitidas = config("planes.disponibles.{$this->slug()}.extensiones", []);
+        if (in_array($slug, (array) config('planes.extensiones_del_crm', []), true)) {
+            return true;
+        }
 
-        return $permitidas === '*' || in_array($slug, (array) $permitidas, true);
+        return in_array($slug, (array) config("planes.ia.{$this->slugIa()}.extensiones", []), true);
     }
 
     /**
      * ¿Puede encender este ajuste concreto?
      *
-     * Existe porque una extensión puede estar en un plan y tener dentro un
-     * ajuste que no: el semáforo entra en Automatización, pero «afinar con IA»
-     * es del plan Inteligente. Sin esto el candado se saltaría por el
-     * formulario de ajustes, que es por donde nadie mira.
+     * Existe porque una extensión puede ir con el CRM y tener dentro un ajuste
+     * que no: el semáforo entra con cualquier plan, pero «afinar con IA» exige
+     * complemento. Sin esto el candado se saltaría por el formulario de ajustes,
+     * que es por donde nadie mira.
+     *
+     * Un ajuste que ningún nivel de IA reclama es un ajuste normal y se permite:
+     * lo contrario cerraría campos por accidente al añadir una extensión nueva.
      */
     public function permiteAjuste(string $slug, string $ajuste): bool
     {
-        $conIa = config("planes.ajustes_con_ia.{$slug}", []);
+        if (! $this->esAjusteDeIa($slug, $ajuste)) {
+            return true;
+        }
 
-        return ! in_array($ajuste, (array) $conIa, true) || $this->tieneIa();
+        return in_array(
+            $ajuste,
+            (array) config("planes.ia.{$this->slugIa()}.ajustes.{$slug}", []),
+            true
+        );
     }
 
-    public function tieneIa(): bool
+    /** ¿Algún nivel de IA reclama este campo como suyo? */
+    private function esAjusteDeIa(string $slug, string $ajuste): bool
     {
-        return $this->creditoIa() > 0;
+        foreach (config('planes.ia', []) as $nivel) {
+            if (in_array($ajuste, (array) ($nivel['ajustes'][$slug] ?? []), true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
+
+    // ─── Crédito de IA ───────────────────────────────────────────────────────
 
     /**
      * Conversaciones con IA incluidas al mes.
      *
-     * Sale del tramo de contactos contratado; si no hay tramo, del suelo del
-     * plan. Un cliente sin tramo asignado es un cliente al que todavía nadie le
-     * puso precio, y lo correcto ahí es darle el mínimo y que aparezca en el
-     * panel, no cero —que parecería una avería—.
+     * Sale del **plan de CRM**, no del complemento: es un número que depende del
+     * tamaño del cliente, no de qué funciones tenga encendidas. Sin complemento
+     * es cero, porque no hay nada que consumir.
+     *
+     * Al agotarse no se corta nada: se factura el exceso.
      */
     public function creditoIa(): int
     {
-        $base = config("planes.disponibles.{$this->slug()}.ia");
+        return $this->tieneIa() ? (int) ($this->planCrm()['credito_ia'] ?? 0) : 0;
+    }
 
-        if ($base === null) {
-            return 0;
-        }
+    // ─── Precio ──────────────────────────────────────────────────────────────
 
-        $contactos = (int) $this->company->contactos_contratados;
+    public function precioCrm(): int
+    {
+        return (int) ($this->planCrm()['precio'] ?? 0);
+    }
 
-        if ($contactos <= 0) {
-            return (int) $base;
-        }
-
-        foreach (config('planes.credito_ia', []) as $tope => $credito) {
-            if ($contactos <= $tope) {
-                return (int) $credito;
-            }
-        }
-
-        // Por encima del último tramo el precio es «a cotizar», así que el
-        // crédito también: se le pone a mano y mientras tanto va con el mayor.
-        return (int) max(config('planes.credito_ia', [0]));
+    public function precioIa(): int
+    {
+        return (int) config("planes.ia.{$this->slugIa()}.precio", 0);
     }
 
     /**
-     * Lo que le toca pagar al mes, según su plan y su tramo.
+     * Lo que le toca pagar al mes, todo junto.
      *
-     * `null` significa «hay que cotizarlo a mano», y son dos casos distintos:
-     * una empresa sin tramo asignado —a la que todavía nadie le puso precio— y
-     * una por encima del último tramo, donde el precio es a cotizar a propósito.
-     * En los dos, el panel enseña «sin definir» en vez de inventarse una cifra.
+     * Al cliente de Integra sólo se le cobra el complemento: el CRM va dentro de
+     * lo que ya paga por el ERP. Por eso su precio es cero hasta que contrate la
+     * IA — que es exactamente la venta que se busca.
      */
-    public function precioMensual(): ?int
+    public function precioMensual(): int
     {
-        $contactos = (int) $this->company->contactos_contratados;
-
-        if ($contactos <= 0) {
-            return null;
-        }
-
-        foreach (config('planes.precios', []) as $tope => $fila) {
-            if ($contactos <= $tope) {
-                return $fila[$this->slug()] ?? null;
-            }
-        }
-
-        return null;
+        return $this->incluidoEnIntegra()
+            ? $this->precioIa()
+            : $this->precioCrm() + $this->precioIa();
     }
 
     /**
      * El mismo precio pagando el año por adelantado.
      *
      * Dos meses gratis, o sea diez mensualidades repartidas en doce. Es el
-     * número que se dice en la mesa: «299 de lista, 249 si pagas el año».
+     * número que se dice en la mesa: «29 de lista, 24 si pagas el año».
      */
-    public function precioMensualAnual(): ?int
+    public function precioMensualAnual(): int
     {
-        $lista = $this->precioMensual();
-
-        if ($lista === null) {
-            return null;
-        }
-
         $gratis = (int) config('planes.meses_gratis_al_pagar_anual', 0);
 
-        return (int) round($lista * (12 - $gratis) / 12);
+        return (int) round($this->precioMensual() * (12 - $gratis) / 12);
     }
+
+    // ─── Lo que tiene de verdad, contra lo que incluye su plan ───────────────
 
     /**
      * Cuántos contactos tiene de verdad.
      *
      * Se cuentan de `contacts`, que es donde acaban solos: cada persona nueva
-     * que escribe queda registrada por `ensureContactRegistered`. No es lo mismo
-     * que `contactos_contratados` —eso es lo que se vendió— y la gracia está
-     * justo en la diferencia: es lo que dice cuándo toca renegociar el tramo.
+     * que escribe queda registrada. La gracia está en la diferencia con lo que
+     * incluye su plan — es lo que dice cuándo toca hablar de subir.
      */
     public function contactosReales(): int
     {
         return Contact::where('company_id', $this->company->id)->count();
     }
 
-    /**
-     * El tramo que le tocaría por sus contactos reales.
-     *
-     * Para proponerlo al asignar el plan en vez de que alguien lo escriba a ojo.
-     * `null` si se sale de la escalera, que es cuando hay que cotizar a mano.
-     */
-    public function tramoSugerido(): ?int
+    public function agentesReales(): int
     {
-        $reales = $this->contactosReales();
+        return User::where('company_id', $this->company->id)->where('active', true)->count();
+    }
 
-        foreach (array_keys(config('planes.precios', [])) as $tope) {
-            if ($reales <= $tope) {
-                return (int) $tope;
+    public function lineasReales(): int
+    {
+        return Instance::where('company_id', $this->company->id)->count();
+    }
+
+    /**
+     * El plan de CRM que le tocaría por lo que usa de verdad.
+     *
+     * Para proponerlo en vez de que alguien lo ponga a ojo. `null` si se sale
+     * del catálogo, que es cuando hay que cotizar a mano.
+     */
+    public function planSugerido(): ?string
+    {
+        $contactos = $this->contactosReales();
+        $agentes = $this->agentesReales();
+
+        foreach (config('planes.crm', []) as $slug => $datos) {
+            if ($contactos <= $datos['contactos'] && $agentes <= $datos['agentes']) {
+                return $slug;
             }
         }
 
@@ -179,20 +277,40 @@ class PlanDeLaEmpresa
     }
 
     /**
-     * ¿Tiene más contactos de los que contrató?
+     * ¿Se pasó de lo que incluye su plan, y de qué?
      *
-     * Devuelve `false` mientras no haya tramo asignado: a quien todavía no se le
-     * ha puesto precio no se le puede decir que se pasó.
+     * **Esto no cobra ni bloquea nada.** Sale en el panel para que alguien llame
+     * y hable de subir, que es una conversación comercial, no una factura
+     * automática por crecer.
      *
-     * **Esto no cobra ni bloquea nada.** Sale en el panel para que alguien
-     * llame y renegocie el tramo, que es una conversación comercial, no una
-     * factura automática por crecer.
+     * Devuelve en qué se pasó y no un simple `true` porque son conversaciones
+     * distintas: «tienes más agentes de los que incluye tu plan» se resuelve de
+     * otra manera que «te crecieron los contactos».
+     *
+     * @return list<string> Alguna de: `contactos`, `agentes`, `lineas`.
      */
+    public function sePasoDe(): array
+    {
+        $pasados = [];
+
+        if ($this->contactosIncluidos() && $this->contactosReales() > $this->contactosIncluidos()) {
+            $pasados[] = 'contactos';
+        }
+
+        if ($this->agentesIncluidos() && $this->agentesReales() > $this->agentesIncluidos()) {
+            $pasados[] = 'agentes';
+        }
+
+        if ($this->lineasIncluidas() && $this->lineasReales() > $this->lineasIncluidas()) {
+            $pasados[] = 'lineas';
+        }
+
+        return $pasados;
+    }
+
     public function sePasoDelTramo(): bool
     {
-        $contratado = (int) $this->company->contactos_contratados;
-
-        return $contratado > 0 && $this->contactosReales() > $contratado;
+        return $this->sePasoDe() !== [];
     }
 
     // ─── Cobro ───────────────────────────────────────────────────────────────
@@ -201,23 +319,7 @@ class PlanDeLaEmpresa
     {
         $cobro = (string) ($this->company->cobro ?: 'cortesia');
 
-        return in_array($cobro, config('planes.cobros', []), true) ? $cobro : 'cortesia';
-    }
-
-    /**
-     * ¿Se le factura este mes?
-     *
-     * `cortesia` es el estado de los clientes que ya usaban el CRM antes de que
-     * existieran los planes. No es un limbo ni un impago: es una decisión
-     * comercial, y dura lo que tenga que durar.
-     */
-    public function seFactura(): bool
-    {
-        if (in_array($this->cobro(), ['integra', 'cortesia', 'prueba'], true)) {
-            return false;
-        }
-
-        return ! $this->enMesGratis();
+        return in_array($cobro, (array) config('planes.cobros', []), true) ? $cobro : 'cortesia';
     }
 
     /**
@@ -233,6 +335,27 @@ class PlanDeLaEmpresa
         return $this->cobro() === 'integra' || (bool) $this->company->viene_de_integra;
     }
 
+    /**
+     * ¿Se le factura este mes?
+     *
+     * El cliente de Integra sólo entra en la factura cuando contrata el
+     * complemento de IA: el CRM ya se lo cobró el ERP, pero la IA no. Ése es el
+     * único camino por el que un cliente de Integra empieza a aparecer en la
+     * lista de cobro, y es la venta que se busca.
+     */
+    public function seFactura(): bool
+    {
+        if ($this->incluidoEnIntegra()) {
+            return $this->tieneIa() && ! $this->enMesGratis();
+        }
+
+        if (in_array($this->cobro(), ['cortesia', 'prueba'], true)) {
+            return false;
+        }
+
+        return ! $this->enMesGratis();
+    }
+
     public function enMesGratis(): bool
     {
         return $this->company->gratis_hasta
@@ -245,18 +368,31 @@ class PlanDeLaEmpresa
         return [
             'plan' => $this->slug(),
             'plan_nombre' => $this->nombre(),
+            'ia' => $this->slugIa(),
+            'ia_nombre' => $this->nombreIa(),
+            'tiene_ia' => $this->tieneIa(),
+
             'cobro' => $this->cobro(),
             'se_factura' => $this->seFactura(),
             'incluido_en_integra' => $this->incluidoEnIntegra(),
             'en_mes_gratis' => $this->enMesGratis(),
             'gratis_hasta' => optional($this->company->gratis_hasta)->toDateString(),
-            'contactos_contratados' => $this->company->contactos_contratados,
-            'credito_ia' => $this->creditoIa(),
-            'tiene_ia' => $this->tieneIa(),
+
+            'precio_crm' => $this->precioCrm(),
+            'precio_ia' => $this->precioIa(),
             'precio_usd' => $this->precioMensual(),
             'precio_usd_anual' => $this->precioMensualAnual(),
+
+            'agentes_incluidos' => $this->agentesIncluidos(),
+            'agentes_reales' => $this->agentesReales(),
+            'contactos_incluidos' => $this->contactosIncluidos(),
             'contactos_reales' => $this->contactosReales(),
-            'tramo_sugerido' => $this->tramoSugerido(),
+            'lineas_incluidas' => $this->lineasIncluidas(),
+            'lineas_reales' => $this->lineasReales(),
+
+            'credito_ia' => $this->creditoIa(),
+            'plan_sugerido' => $this->planSugerido(),
+            'se_paso_de' => $this->sePasoDe(),
             'se_paso_del_tramo' => $this->sePasoDelTramo(),
         ];
     }

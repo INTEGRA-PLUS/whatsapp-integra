@@ -36,33 +36,31 @@ class PanelDePlanesTest extends TestCase
      */
     public function test_el_resumen_sale_del_catalogo_y_de_las_empresas(): void
     {
-        $this->empresa('Fibra Sur', 'esencial');
-        $this->empresa('Cootramed', 'automatizacion');
-        $this->empresa('Ticc', 'inteligente');
+        $this->empresa('Fibra Sur', 'basico');
+        $this->empresa('Cootramed', 'pro');
+        $this->empresa('Ticc', 'avanzado');
 
         $resumen = $this->resumen();
 
         $this->assertSame(
-            ['esencial', 'automatizacion', 'inteligente'],
+            ['basico', 'pro', 'avanzado'],
             array_column($resumen['planes'], 'slug'),
             'Los planes de la pantalla son los de config/planes.php, en su orden.'
         );
 
         $porSlug = collect($resumen['planes'])->keyBy('slug');
 
-        $this->assertSame(1, $porSlug['esencial']['empresas']);
-        $this->assertSame(1, $porSlug['automatizacion']['empresas']);
+        $this->assertSame(1, $porSlug['pro']['empresas']);
+        $this->assertSame(1, $porSlug['avanzado']['empresas']);
 
-        // La empresa del master también es Inteligente: no tiene plan puesto.
-        $this->assertSame(2, $porSlug['inteligente']['empresas']);
+        // La empresa del master también cae en Básico: no tiene plan puesto, y
+        // el suelo ante la duda es lo correcto.
+        $this->assertSame(2, $porSlug['basico']['empresas']);
 
-        // El precio va como rango y no como número suelto: un plan cuesta
-        // distinto según el tramo de socios, y dar uno solo obligaría a elegir
-        // un tramo arbitrario y llamarlo «el precio».
-        $this->assertSame(35, $porSlug['esencial']['precio_desde']);
-        $this->assertSame(259, $porSlug['esencial']['precio_hasta']);
-        $this->assertSame(65, $porSlug['inteligente']['precio_desde']);
-        $this->assertSame(419, $porSlug['inteligente']['precio_hasta']);
+        // Y el precio es un número fijo, no un rango. Un rango se lee como
+        // «depende» o como negociable; un número se dice en la mesa.
+        $this->assertSame(config('planes.crm.basico.precio'), $porSlug['basico']['precio']);
+        $this->assertSame(config('planes.crm.avanzado.precio'), $porSlug['avanzado']['precio']);
     }
 
     /**
@@ -77,7 +75,7 @@ class PanelDePlanesTest extends TestCase
     public function test_una_empresa_con_un_plan_retirado_no_se_pierde(): void
     {
         $this->empresa('De un plan que ya no existe', 'pro_antiguo');
-        $this->empresa('Con plan', 'esencial');
+        $this->empresa('Con plan', 'basico');
 
         $resumen = $this->resumen();
 
@@ -91,9 +89,9 @@ class PanelDePlanesTest extends TestCase
     /** Quién factura y quién no, que es la columna que importa en la transición. */
     public function test_cuenta_las_empresas_por_estado_de_cobro(): void
     {
-        $this->empresa('Paga', 'inteligente', 'activo');
-        $this->empresa('Cortesía', 'inteligente', 'cortesia');
-        $this->empresa('Debe', 'inteligente', 'suspendido');
+        $this->empresa('Paga', 'avanzado', 'activo');
+        $this->empresa('Cortesía', 'avanzado', 'cortesia');
+        $this->empresa('Debe', 'avanzado', 'suspendido');
 
         $resumen = $this->resumen();
 
@@ -107,94 +105,72 @@ class PanelDePlanesTest extends TestCase
         // no ha pagado, no quien no debe — se le sigue facturando, y el CRM
         // tampoco se le apaga. Perdonarle la factura al contarlo haría que el
         // panel enseñara menos ingreso pendiente del que hay.
-        $inteligente = collect($resumen['planes'])->firstWhere('slug', 'inteligente');
-        $this->assertSame(2, $inteligente['facturando']);
-    }
-
-    /** La escalera de contactos, que hasta ahora no se veía en ninguna pantalla. */
-    public function test_los_tramos_son_los_de_la_configuracion(): void
-    {
-        $resumen = $this->resumen();
-
-        $this->assertSame(
-            array_keys(config('planes.credito_ia')),
-            array_column($resumen['tramos'], 'hasta')
-        );
+        $avanzado = collect($resumen['planes'])->firstWhere('slug', 'avanzado');
+        $this->assertSame(2, $avanzado['facturando']);
     }
 
     /**
-     * Cada tramo lleva el precio de los tres planes.
+     * Los tres planes de CRM, con lo que incluye cada uno.
      *
-     * La pantalla enseñaba de cada plan sólo su precio menor y su mayor —«35 a
-     * 259»—, y un rango se lee como un «depende» o como algo negociable. Son
-     * quince precios fijos, y el que hace falta delante de un cliente es el de
-     * su tramo, no el rango.
+     * La pantalla enseñaba una escalera de quince precios —cinco tramos por tres
+     * planes— que se retiró el 15-sep-2026: ahora son tres precios fijos, como
+     * pidió Alejandro y como lo hace TecnoChat. Un rango se lee como «depende» o
+     * como negociable; un número se dice en la mesa.
      */
-    public function test_cada_tramo_trae_el_precio_de_cada_plan(): void
+    public function test_los_planes_traen_su_precio_y_lo_que_incluyen(): void
     {
-        $tramos = collect($this->resumen()['tramos'])->keyBy('hasta');
+        $planes = collect($this->resumen()['planes'])->keyBy('slug');
 
-        foreach (config('planes.precios') as $hasta => $porPlan) {
-            foreach ($porPlan as $slug => $precio) {
-                $this->assertSame(
-                    $precio,
-                    $tramos[$hasta]['precios'][$slug] ?? null,
-                    "El precio de {$slug} en el tramo de {$hasta} no llega a la pantalla."
-                );
-            }
+        foreach (config('planes.crm') as $slug => $datos) {
+            $this->assertSame($datos['precio'], $planes[$slug]['precio']);
+            $this->assertSame($datos['agentes'], $planes[$slug]['agentes']);
+            $this->assertSame($datos['contactos'], $planes[$slug]['contactos']);
+            $this->assertSame($datos['credito_ia'], $planes[$slug]['credito_ia']);
         }
     }
 
     /**
-     * Cada tramo dice cuántas empresas caen hoy dentro, por sus contactos de
-     * verdad y no por el tramo que alguien tecleó en la ficha.
+     * Y el complemento de IA aparte, que es lo que se vende.
      *
-     * Es lo que responde si la escalera está donde están los clientes. Y la
-     * suma tiene que dar todas las empresas mientras ninguna se salga del
-     * último tramo: una empresa sin un solo contacto es un cliente recién
-     * conectado, no un cliente que no existe, y cuenta en el primero.
+     * Va separado del plan porque al cliente de Integra el CRM ya se lo cobró el
+     * ERP: lo único nuevo que se le puede vender es esto. Si el panel los
+     * mezclara, no habría forma de ver cuántos lo tienen.
      */
-    public function test_cada_tramo_cuenta_las_empresas_por_contactos_reales(): void
+    public function test_el_complemento_de_ia_se_cuenta_aparte(): void
     {
-        $sinContactos = $this->empresa('Recién conectada');
-        $conPocos = $this->empresa('Pequeña');
-        $mediana = $this->empresa('Mediana');
+        $this->empresa('Con IA', 'basico', null, ['ia' => 'esencial']);
+        $this->empresa('Sin IA', 'basico');
 
-        $this->contactos($conPocos, 3);
-        $this->contactos($mediana, 600);
-
-        $escalera = $this->resumen()['tramos'];
-        $tramos = collect($escalera)->keyBy('hasta');
-
-        // La del master y las dos de arriba de 500 o menos: 3 en el primero.
-        $this->assertSame(3, $tramos[500]['empresas']);
-        $this->assertSame(1, $tramos[2000]['empresas']);
-        $this->assertSame(0, $tramos[5000]['empresas']);
+        $complementos = collect($this->resumen()['complementos'])->keyBy('slug');
 
         $this->assertSame(
-            Company::count(),
-            collect($escalera)->sum('empresas'),
-            'Ninguna empresa puede quedarse fuera de la escalera.'
+            array_keys(config('planes.ia')),
+            array_keys($complementos->all()),
+            'Los complementos de la pantalla son los del catálogo, en su orden.'
         );
+
+        $this->assertSame(config('planes.ia.esencial.precio'), $complementos['esencial']['precio']);
+        $this->assertSame(1, $complementos['esencial']['empresas']);
     }
 
-    private function contactos(Company $company, int $cuantos): void
+    /**
+     * Cuántas vienen de Integra, que es el número que explica la facturación.
+     *
+     * Sin él, el panel enseñaba 2.391 USD/mes de facturación potencial sobre 41
+     * clientes que en su mayoría ya pagaban — el CRM iba dentro de su ERP.
+     */
+    public function test_cuenta_cuantas_vienen_de_integra(): void
     {
-        $filas = [];
+        $this->empresa('ISP con ERP', 'basico', 'integra', ['viene_de_integra' => true]);
+        $this->empresa('Cliente directo', 'basico', 'activo');
 
-        for ($i = 0; $i < $cuantos; $i++) {
-            $filas[] = [
-                'company_id' => $company->id,
-                'name' => 'Contacto '.$i,
-                'phone_number' => '57300'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        }
+        $this->assertSame(1, $this->resumen()['de_integra']);
+    }
 
-        foreach (array_chunk($filas, 200) as $lote) {
-            DB::table('contacts')->insert($lote);
-        }
+    /** El CRM que va en los tres planes llega a la pantalla desde el catálogo. */
+    public function test_el_nucleo_sale_de_la_configuracion(): void
+    {
+        $this->assertSame(config('planes.nucleo'), $this->resumen()['nucleo']);
     }
 
     /** Y los dos meses del pago anual, que son parte del precio. */
@@ -216,7 +192,7 @@ class PanelDePlanesTest extends TestCase
      */
     public function test_buscar_no_calcula_el_resumen_de_planes(): void
     {
-        $this->empresa('Ticc', 'esencial');
+        $this->empresa('Ticc', 'basico');
 
         $this->parcial('/master?search=ticc', 'companies,filters')
             ->assertOk()
@@ -235,16 +211,16 @@ class PanelDePlanesTest extends TestCase
      * `plan` y `cobro` son NOT NULL con default en la tabla ('inteligente' y
      * 'cortesia'): no se pasan si no se piden, o el insert revienta.
      */
-    private function empresa(string $nombre, ?string $plan = null, ?string $cobro = null): Company
+    private function empresa(string $nombre, ?string $plan = null, ?string $cobro = null, array $extra = []): Company
     {
-        return Company::create(array_filter([
+        return Company::create(array_merge(array_filter([
             'name' => $nombre,
             'slug' => Str::slug($nombre),
             'email' => Str::slug($nombre).'@x.test',
             'active' => true,
             'plan' => $plan,
             'cobro' => $cobro,
-        ], fn ($valor) => $valor !== null));
+        ], fn ($valor) => $valor !== null), $extra));
     }
 
     private function parcial(string $url, string $props)

@@ -603,155 +603,92 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         pueda quedar desincronizada del catálogo de extensiones. */}
                     {activeTab === 'plans' && (
                         <div className="space-y-6">
+                            {/* Los tres tamaños de CRM. Precio fijo y no un rango:
+                                un rango se lee como «depende» o como negociable, y
+                                lo que hace falta delante de un cliente es un
+                                número. La escalera de quince precios que había
+                                aquí —cinco tramos por tres planes— se retiró el
+                                15-sep-2026 junto con los tramos. */}
                             <div className="grid gap-4 md:grid-cols-3">
                                 {planes_resumen.planes.map(plan => (
                                     <section key={plan.slug} className="flex flex-col rounded-xl border border-border bg-card p-5">
                                         <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <h3 className="font-heading text-base font-semibold text-foreground">{plan.nombre}</h3>
-                                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                                    {plan.ia
-                                                        ? `Desde ${plan.ia.toLocaleString('es-CO')} conversaciones con IA al mes`
-                                                        : 'Sin IA'}
-                                                </p>
-                                            </div>
+                                            <h3 className="font-heading text-base font-semibold text-foreground">{plan.nombre}</h3>
                                             <span className="shrink-0 rounded-md border border-border bg-muted px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
                                                 {plan.empresas} {plan.empresas === 1 ? 'empresa' : 'empresas'}
                                             </span>
                                         </div>
 
                                         <div className="mt-4 border-y border-border py-3">
-                                            {plan.precio_desde === null ? (
-                                                <p className="text-sm text-muted-foreground">Precio sin definir</p>
-                                            ) : (
-                                                <>
-                                                    <p className="flex items-baseline gap-1.5">
-                                                        <span className="text-2xl font-semibold tabular-nums text-foreground">
-                                                            ${plan.precio_desde}
-                                                        </span>
-                                                        <span className="text-sm text-muted-foreground">–</span>
-                                                        <span className="text-2xl font-semibold tabular-nums text-foreground">
-                                                            ${plan.precio_hasta}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground">USD al mes</span>
-                                                    </p>
-                                                    {/* El rango y no un número: el precio depende del tramo de
-                                                        contactos, y dar uno solo obligaría a elegir un tramo
-                                                        arbitrario y llamarlo «el precio». */}
-                                                    <p className="mt-1 text-[11px] text-muted-foreground">
-                                                        Según cuántos contactos tenga. Pagando el año, dos meses gratis.
-                                                    </p>
-                                                </>
-                                            )}
+                                            <p className="flex items-baseline gap-1.5">
+                                                <span className="text-3xl font-semibold tabular-nums text-foreground">
+                                                    ${plan.precio}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">USD al mes</span>
+                                            </p>
+                                            <p className="mt-1 text-[11px] text-muted-foreground">
+                                                Pagando el año, dos meses gratis: ${Math.round((plan.precio * (12 - planes_resumen.meses_gratis_al_pagar_anual)) / 12)} al mes.
+                                            </p>
                                         </div>
 
-                                        <p className="mt-4 text-xs font-medium text-foreground">
-                                            {plan.todas_las_extensiones
-                                                ? 'Todas las extensiones'
-                                                : `${plan.extensiones.length} extensiones`}
-                                        </p>
-                                        <ul className="mt-2 space-y-1.5">
-                                            {plan.extensiones.map(nombre => (
-                                                <li key={nombre} className="flex items-start gap-2 text-xs text-muted-foreground">
-                                                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" />
-                                                    {nombre}
-                                                </li>
-                                            ))}
+                                        <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
+                                            <li><span className="font-semibold tabular-nums text-foreground">{plan.agentes}</span> agentes</li>
+                                            <li><span className="font-semibold tabular-nums text-foreground">{plan.contactos.toLocaleString('es-CO')}</span> contactos</li>
+                                            <li><span className="font-semibold tabular-nums text-foreground">{plan.lineas}</span> {plan.lineas === 1 ? 'línea' : 'líneas'}</li>
+                                            <li className="pt-1 text-[11px]">
+                                                Con complemento: {plan.credito_ia.toLocaleString('es-CO')} conversaciones con IA al mes
+                                            </li>
                                         </ul>
+
+                                        {plan.facturando > 0 && (
+                                            <p className="mt-4 text-[11px] text-muted-foreground">
+                                                <span className="font-semibold text-foreground">{plan.facturando}</span> facturando
+                                            </p>
+                                        )}
                                     </section>
                                 ))}
                             </div>
 
-                            {/* La tabla de precios entera, que es lo que faltaba.
-                                Arriba, cada plan enseña su precio menor y su mayor
-                                —«35 a 259»—, y un rango se lee como un «depende» o
-                                como algo negociable. No lo es: son quince precios
-                                fijos, cinco tramos por tres planes. La pregunta que
-                                se hace delante de una empresa es «¿cuánto le cobro a
-                                una de 5.000 contactos?». */}
-                            <section className="overflow-hidden rounded-xl border border-border bg-card">
+                            {/* El complemento, aparte. Es lo que se vende: al cliente
+                                de Integra el CRM ya se lo cobró el ERP. */}
+                            <section className="rounded-xl border border-border bg-card">
                                 <div className="border-b border-border px-5 py-4">
-                                    <h3 className="font-heading text-sm font-semibold text-foreground">
-                                        Precio por número de contactos
-                                    </h3>
-                                    {/* Los dos nombres del producto son empresa y contacto,
-                                        y son los que usa el resto del CRM: la empresa es la
-                                        que lo usa, el contacto es la persona que le escribe.
-                                        Aquí decía «socios» —la palabra de una cooperativa,
-                                        un ISP dice suscriptores— y había que preguntar qué
-                                        se estaba contando. */}
+                                    <h3 className="font-heading text-sm font-semibold text-foreground">Complemento de IA</h3>
                                     <p className="mt-0.5 text-xs text-muted-foreground">
-                                        Los mismos de la pantalla de Contactos: cada persona distinta que le ha escrito
-                                        a la empresa por WhatsApp, que el CRM va guardando sola. Una cooperativa los
-                                        llama socios y un ISP suscriptores; en la propuesta se usa su palabra.
-                                    </p>
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                        USD al mes de plataforma. No incluye los mensajes: esos se los paga la
-                                        empresa a Meta directamente y nosotros no cobramos margen encima.
+                                        Se vende aparte del plan y se suma al precio. De las {planes_resumen.total_empresas} empresas,{' '}
+                                        <span className="font-semibold text-foreground">{planes_resumen.de_integra}</span> vienen de Integra
+                                        y ya pagan el CRM dentro de su ERP: lo único nuevo que se les puede vender es esto.
                                     </p>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
-                                                <th className="px-5 py-2.5 text-left font-medium">Hasta</th>
-                                                {planes_resumen.planes.map(plan => (
-                                                    <th key={plan.slug} className="px-5 py-2.5 text-right font-medium">
-                                                        {plan.nombre}
-                                                    </th>
-                                                ))}
-                                                <th className="px-5 py-2.5 text-right font-medium">IA incluida</th>
-                                                <th className="px-5 py-2.5 text-right font-medium">Empresas ahí</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {planes_resumen.tramos.map(tramo => (
-                                                <tr key={tramo.hasta} className="border-b border-border/60 last:border-0">
-                                                    <td className="whitespace-nowrap px-5 py-2.5 tabular-nums text-foreground">
-                                                        {tramo.hasta.toLocaleString('es-CO')} contactos
-                                                    </td>
-                                                    {planes_resumen.planes.map(plan => (
-                                                        <td key={plan.slug} className="px-5 py-2.5 text-right tabular-nums text-foreground">
-                                                            {tramo.precios[plan.slug] != null ? `$${tramo.precios[plan.slug]}` : '—'}
-                                                        </td>
-                                                    ))}
-                                                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
-                                                        {tramo.ia.toLocaleString('es-CO')}
-                                                    </td>
-                                                    {/* Por contactos de verdad, no por el
-                                                        tramo que alguien tecleó: es lo que
-                                                        dice si la escalera está donde están
-                                                        las empresas. */}
-                                                    <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
-                                                        {tramo.empresas}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div className="space-y-1 border-t border-border px-5 py-3 text-xs text-muted-foreground">
-                                    <p>
-                                        Pagando el año por adelantado, {planes_resumen.meses_gratis_al_pagar_anual} meses
-                                        gratis: son {12 - planes_resumen.meses_gratis_al_pagar_anual} mensualidades por
-                                        doce. Una empresa con 15.000 contactos, en Inteligente, paga $
-                                        {planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? '—'} al
-                                        mes, o el equivalente a $
-                                        {Math.round(((planes_resumen.tramos.find(t => t.hasta === 15000)?.precios?.inteligente ?? 0)
-                                            * (12 - planes_resumen.meses_gratis_al_pagar_anual)) / 12)} pagando el año.
-                                    </p>
-                                    <p>
-                                        Por encima del último tramo el precio es a cotizar, y la columna de IA es el
-                                        crédito del plan Inteligente: pasarse de ahí no corta nada, se factura el exceso.
-                                        Agentes y líneas van ilimitados en los tres planes: se cobra por contactos,
-                                        que es como cuenta la empresa su propio tamaño, y cobrar por agente castigaría
-                                        justo a quien más usa la herramienta.
-                                    </p>
-                                </div>
+                                <ul className="divide-y divide-border">
+                                    {planes_resumen.complementos.map(c => (
+                                        <li key={c.slug} className="flex items-center justify-between gap-3 px-5 py-3">
+                                            <span className="text-sm text-foreground">{c.nombre}</span>
+                                            <span className="flex items-center gap-4">
+                                                <span className="text-sm tabular-nums text-muted-foreground">
+                                                    {c.precio ? `+$${c.precio}/mes` : '—'}
+                                                </span>
+                                                <span className="w-20 text-right text-sm tabular-nums text-muted-foreground">
+                                                    {c.empresas} {c.empresas === 1 ? 'empresa' : 'empresas'}
+                                                </span>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </section>
 
-                            {/* A quién cobrarle este mes. Va antes del resumen
-                                de estados porque es lo único accionable de esta
+                            {/* Lo que va en los tres planes. Sin esto, el plan de
+                                entrada se lee como un plan de una sola función. */}
+                            <section className="rounded-xl border border-border bg-card px-5 py-4">
+                                <h3 className="font-heading text-sm font-semibold text-foreground">En los tres planes</h3>
+                                <ul className="mt-3 grid gap-x-6 gap-y-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+                                    {planes_resumen.nucleo.map(linea => (
+                                        <li key={linea}>· {linea}</li>
+                                    ))}
+                                </ul>
+                            </section>
+
+
                                 pestaña: lo demás es catálogo. */}
                             <CobroDelMes datos={cobro_del_mes} />
 

@@ -13,7 +13,7 @@ import { iconFor } from '@/pages/Extensions/icons';
  * un comercial. Lo que sí enseña es qué tiene, cuánto le queda y qué se
  * desbloquea subiendo — que es la parte que decide.
  */
-export default function MiPlan({ plan, uso_ia, extensiones, planes, nucleo = [] }) {
+export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [] }) {
     const incluidas = extensiones.filter(e => e.en_plan);
     const bloqueadas = extensiones.filter(e => !e.en_plan);
 
@@ -146,8 +146,8 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, nucleo = [] 
                                     ¿Te interesa algo de esto?
                                 </p>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Escríbenos y lo activamos. Cambiar de plan no interrumpe nada de lo que
-                                    ya usas.
+                                    Escríbenos y lo activamos. Añadir el complemento no interrumpe nada de
+                                    lo que ya usas ni cambia tu plan.
                                 </p>
                             </div>
                             <Button asChild className="gap-2 shrink-0">
@@ -159,25 +159,56 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, nucleo = [] 
                     </section>
                 )}
 
-                {/* La escalera, para situarse. Sin precios, a propósito. */}
-                <section>
-                    <h2 className="text-sm font-semibold text-foreground">Los planes</h2>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {planes.map(p => (
-                            <span
-                                key={p.slug}
-                                className={clsx(
-                                    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold',
-                                    p.es_el_suyo
-                                        ? 'border-primary bg-primary/10 text-primary'
-                                        : 'border-border text-muted-foreground'
-                                )}
-                            >
-                                {p.es_el_suyo && <Check className="size-3.5" />}
-                                {p.nombre}
-                                {p.con_ia && <Sparkles className="size-3" />}
-                            </span>
-                        ))}
+                {/* Para situarse. Sin precios, a propósito: dependen de lo
+                    negociado y de si es cliente de Integra, y un número suelto
+                    aquí acaba contradiciendo a un comercial. */}
+                <section className="grid gap-5 sm:grid-cols-2">
+                    <div>
+                        <h2 className="text-sm font-semibold text-foreground">
+                            Tamaño
+                            <span className="ml-2 font-normal text-muted-foreground">agentes y contactos</span>
+                        </h2>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {planes.map(p => (
+                                <span
+                                    key={p.slug}
+                                    title={`${p.agentes} agentes · ${p.contactos.toLocaleString('es-CO')} contactos`}
+                                    className={clsx(
+                                        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold',
+                                        p.es_el_suyo
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-border text-muted-foreground'
+                                    )}
+                                >
+                                    {p.es_el_suyo && <Check className="size-3.5" />}
+                                    {p.nombre}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 className="text-sm font-semibold text-foreground">
+                            Inteligencia artificial
+                            <span className="ml-2 font-normal text-muted-foreground">se añade aparte</span>
+                        </h2>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {complementos.map(c => (
+                                <span
+                                    key={c.slug}
+                                    className={clsx(
+                                        'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold',
+                                        c.es_el_suyo
+                                            ? 'border-info bg-info/10 text-info'
+                                            : 'border-border text-muted-foreground'
+                                    )}
+                                >
+                                    {c.es_el_suyo && <Check className="size-3.5" />}
+                                    {c.nombre}
+                                    {c.slug !== 'ninguno' && <Sparkles className="size-3" />}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 </section>
             </div>

@@ -52,21 +52,21 @@ class MiPlanTest extends TestCase
 
     public function test_el_admin_ve_su_plan(): void
     {
-        $company = $this->empresa(['plan' => 'automatizacion', 'contactos_contratados' => 2000]);
+        $company = $this->empresa(['plan' => 'pro', 'contactos_contratados' => 2000]);
 
         $this->actingAs($this->admin($company))
             ->get('/mi-plan')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('MiPlan/Index')
-                ->where('plan.plan_nombre', 'Automatización')
+                ->where('plan.plan_nombre', 'Pro')
                 ->where('plan.tiene_ia', false));
     }
 
     /** Lo bloqueado se enseña: esconderlo hace que nadie pregunte por ello. */
     public function test_ensena_tambien_lo_que_no_tiene(): void
     {
-        $company = $this->empresa(['plan' => 'esencial']);
+        $company = $this->empresa(['plan' => 'basico']);
 
         $this->actingAs($this->admin($company))
             ->get('/mi-plan')
@@ -78,8 +78,10 @@ class MiPlanTest extends TestCase
 
                 $resumen = $extensiones->firstWhere('slug', 'conversation_summary');
                 $this->assertFalse($resumen['en_plan']);
-                // Y dice en cuál está, no un «no incluido» a secas.
-                $this->assertSame('Inteligente', $resumen['plan_minimo']);
+                // Y dice en qué complemento está, no un «no incluido» a secas:
+                // el más barato que lo incluye, para que la conversación
+                // comercial empiece por ahí y no por el paquete grande.
+                $this->assertSame('IA Esencial', $resumen['plan_minimo']);
             });
     }
 
@@ -113,7 +115,7 @@ class MiPlanTest extends TestCase
 
     public function test_marca_las_extensiones_que_tiene_encendidas(): void
     {
-        $company = $this->empresa(['plan' => 'inteligente']);
+        $company = $this->empresa(['plan' => 'avanzado', 'ia' => 'completa']);
 
         CompanyExtension::create([
             'company_id' => $company->id,

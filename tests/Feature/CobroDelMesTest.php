@@ -24,7 +24,7 @@ class CobroDelMesTest extends TestCase
     /** Una empresa nuestra no se factura aunque tenga el cobro activo. */
     public function test_las_internas_nunca_entran_en_la_factura(): void
     {
-        $this->empresa('PRUEBAS', ['cobro' => 'activo', 'interna' => true, 'contactos_contratados' => 2000]);
+        $this->empresa('PRUEBAS', ['cobro' => 'activo', 'interna' => true, 'plan' => 'pro']);
 
         $datos = CobroDelMes::calcular();
 
@@ -60,8 +60,7 @@ class CobroDelMesTest extends TestCase
         $this->empresa('ISP con Integra', [
             'viene_de_integra' => true,
             'cobro' => 'integra',
-            'plan' => 'esencial',
-            'contactos_contratados' => 2000,
+            'plan' => 'pro',
         ]);
 
         $datos = CobroDelMes::calcular();
@@ -96,7 +95,7 @@ class CobroDelMesTest extends TestCase
         $this->empresa('Con mes gratis', [
             'cobro' => 'activo',
             'gratis_hasta' => now()->addDays(20)->toDateString(),
-            'contactos_contratados' => 500,
+            'plan' => 'basico',
         ]);
 
         $motivos = array_column(CobroDelMes::calcular()['fuera'], 'motivo', 'empresa');
@@ -105,39 +104,71 @@ class CobroDelMesTest extends TestCase
         $this->assertSame('mes_gratis', $motivos['Con mes gratis']);
     }
 
-    /** Un cliente activo sí sale, con el precio de su tramo y su plan. */
-    public function test_el_cliente_activo_sale_con_el_precio_de_su_tramo(): void
+    /** Un cliente activo sale con el precio fijo de su plan. */
+    public function test_el_cliente_activo_sale_con_el_precio_de_su_plan(): void
     {
-        $this->empresa('Fibra Sur', [
-            'cobro' => 'activo',
-            'plan' => 'esencial',
-            'contactos_contratados' => 2000,
-        ]);
+        $this->empresa('Fibra Sur', ['cobro' => 'activo', 'plan' => 'pro']);
 
         $datos = CobroDelMes::calcular();
         $fila = $datos['cobrar'][0];
 
         $this->assertSame('Fibra Sur', $fila['empresa']);
-        $this->assertSame(config('planes.precios.2000.esencial'), $fila['usd']);
-        $this->assertSame(config('planes.precios.2000.esencial'), $datos['total_usd']);
+        $this->assertSame(config('planes.crm.pro.precio'), $fila['usd']);
+        $this->assertSame(config('planes.crm.pro.precio'), $datos['total_usd']);
     }
 
     /**
-     * Un cliente activo sin tramo sale igual, marcado, y no suma.
+     * El complemento de IA se suma al plan.
      *
-     * Es a quien nadie le puso precio. Si desapareciera de la lista, dejaría de
-     * cobrársele sin que nadie lo note — que es exactamente lo que pasa hoy con
-     * las 55, sólo que a propósito.
+     * Son dos cosas que se venden por separado, así que el precio es la suma —
+     * y es la única forma de que el cliente de Integra, que no paga CRM, pueda
+     * aparecer en la factura por la IA.
      */
-    public function test_el_activo_sin_tramo_sale_a_cotizar_y_no_suma(): void
+    public function test_el_complemento_de_ia_se_suma_al_plan(): void
     {
-        $this->empresa('Sin precio puesto', ['cobro' => 'activo']);
+        $this->empresa('Con IA', ['cobro' => 'activo', 'plan' => 'basico', 'ia' => 'completa']);
+
+        $esperado = config('planes.crm.basico.precio') + config('planes.ia.completa.precio');
+
+        $this->assertSame($esperado, CobroDelMes::calcular()['total_usd']);
+    }
+
+    /**
+     * Al cliente de Integra se le cobra SÓLO el complemento.
+     *
+     * Es la venta que se busca: el CRM ya se lo cobró el ERP, así que empieza a
+     * aparecer en la lista el día que contrata la IA, y por el importe de la IA
+     * y nada más. Cobrarle también el plan sería cobrarle dos veces el CRM.
+     */
+    public function test_al_de_integra_se_le_cobra_solo_el_complemento(): void
+    {
+        $this->empresa('ISP que compró IA', [
+            'viene_de_integra' => true,
+            'cobro' => 'integra',
+            'plan' => 'avanzado',
+            'ia' => 'esencial',
+        ]);
 
         $datos = CobroDelMes::calcular();
 
         $this->assertCount(1, $datos['cobrar']);
-        $this->assertNull($datos['cobrar'][0]['usd']);
-        $this->assertSame(1, $datos['sin_tramo']);
+        $this->assertSame(config('planes.ia.esencial.precio'), $datos['total_usd']);
+        $this->assertTrue($datos['cobrar'][0]['solo_ia']);
+    }
+
+    /**
+     * Un cliente de Integra sin complemento no sale en la lista: no debe nada.
+     *
+     * Es el caso de casi toda la base hoy, y el que hacía que el panel contara
+     * 2.391 USD/mes de facturación potencial sobre gente que ya paga.
+     */
+    public function test_el_de_integra_sin_complemento_no_sale(): void
+    {
+        $this->empresa('ISP sin IA', ['viene_de_integra' => true, 'cobro' => 'integra', 'plan' => 'basico']);
+
+        $datos = CobroDelMes::calcular();
+
+        $this->assertSame([], $datos['cobrar']);
         $this->assertSame(0, $datos['total_usd']);
     }
 
@@ -150,11 +181,7 @@ class CobroDelMesTest extends TestCase
      */
     public function test_el_suspendido_se_sigue_facturando(): void
     {
-        $this->empresa('Debe dos meses', [
-            'cobro' => 'suspendido',
-            'plan' => 'esencial',
-            'contactos_contratados' => 500,
-        ]);
+        $this->empresa('Debe dos meses', ['cobro' => 'suspendido', 'plan' => 'basico']);
 
         $this->assertCount(1, CobroDelMes::calcular()['cobrar']);
     }
@@ -162,16 +189,12 @@ class CobroDelMesTest extends TestCase
     /** Un `;` en el nombre de una empresa partiría la fila del CSV en dos. */
     public function test_el_csv_no_se_parte_con_un_punto_y_coma_en_el_nombre(): void
     {
-        $this->empresa('Redes; Cables y Más', [
-            'cobro' => 'activo',
-            'plan' => 'esencial',
-            'contactos_contratados' => 500,
-        ]);
+        $this->empresa('Redes; Cables y Más', ['cobro' => 'activo', 'plan' => 'basico']);
 
         $fila = collect(explode("\r\n", CobroDelMes::csv()))
             ->first(fn (string $l) => str_contains($l, 'Redes'));
 
-        $this->assertSame(8, substr_count($fila, ';') + 1, 'La fila tiene que tener las ocho columnas de la cabecera.');
+        $this->assertSame(10, substr_count($fila, ';') + 1, 'La fila tiene que tener las diez columnas de la cabecera.');
     }
 
     private function empresa(string $nombre, array $extra = []): Company

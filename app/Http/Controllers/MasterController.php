@@ -254,39 +254,6 @@ class MasterController extends Controller
      *
      * @return list<array<string, mixed>>
      */
-    private function escaleraDePrecios(): array
-    {
-        $contactosPorEmpresa = DB::table('contacts')
-            ->selectRaw('company_id, count(*) as total')
-            ->groupBy('company_id')
-            ->pluck('total', 'company_id');
-
-        // Las empresas sin un solo contacto también ocupan un tramo —el
-        // primero—: son clientes recién conectados, no clientes que no existen.
-        $totales = Company::pluck('id')
-            ->map(fn (int $id) => (int) ($contactosPorEmpresa[$id] ?? 0));
-
-        $topes = array_keys(config('planes.precios', []));
-        $anterior = 0;
-        $escalera = [];
-
-        foreach ($topes as $hasta) {
-            $escalera[] = [
-                'hasta' => (int) $hasta,
-                'ia' => (int) config("planes.credito_ia.{$hasta}", 0),
-                'precios' => collect(config('planes.disponibles'))
-                    ->map(fn (array $plan, string $slug) => config("planes.precios.{$hasta}.{$slug}"))
-                    ->all(),
-                'empresas' => $totales
-                    ->filter(fn (int $t) => ($t > $anterior && $t <= $hasta) || ($anterior === 0 && $t === 0))
-                    ->count(),
-            ];
-
-            $anterior = (int) $hasta;
-        }
-
-        return $escalera;
-    }
 
     /**
      * El catálogo de planes con lo que de verdad hay detrás de cada uno.
@@ -323,55 +290,48 @@ class MasterController extends Controller
 
     private function resumenDePlanes(): array
     {
-        $nombresDeExtension = collect(app(ExtensionRegistry::class)->all())
-            ->mapWithKeys(fn (Extension $extension) => [$extension->slug() => $extension->name()]);
-
         $empresas = Company::query()
-            ->get(['id', 'plan', 'cobro', 'gratis_hasta', 'contactos_contratados'])
+            ->get(['id', 'plan', 'ia', 'cobro', 'gratis_hasta', 'interna', 'viene_de_integra'])
             ->map(fn (Company $company) => PlanDeLaEmpresa::de($company));
 
         return [
-            'planes' => collect(config('planes.disponibles'))
-                ->map(function (array $plan, string $slug) use ($empresas, $nombresDeExtension) {
+            // Los tres tamaños de CRM, con lo que incluye cada uno.
+            'planes' => collect(config('planes.crm'))
+                ->map(function (array $plan, string $slug) use ($empresas) {
                     $suyas = $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->slug() === $slug);
-                    $todas = ($plan['extensiones'] ?? []) === '*';
 
                     return [
                         'slug' => $slug,
                         'nombre' => $plan['nombre'],
-                        // Un plan no tiene «un» precio: tiene uno por tramo.
-                        // Se manda el rango, que es lo que se puede decir sin
-                        // mentir — «Inteligente va de 65 a 419 según el tamaño».
-                        'precio_desde' => collect(config('planes.precios'))->min(fn (array $f) => $f[$slug] ?? null),
-                        'precio_hasta' => collect(config('planes.precios'))->max(fn (array $f) => $f[$slug] ?? null),
-                        'ia' => $plan['ia'],
-                        'todas_las_extensiones' => $todas,
-                        'extensiones' => $todas
-                            ? $nombresDeExtension->values()->all()
-                            : collect($plan['extensiones'])
-                                ->map(fn (string $s) => $nombresDeExtension[$s] ?? $s)
-                                ->all(),
+                        'precio' => $plan['precio'],
+                        'agentes' => $plan['agentes'],
+                        'contactos' => $plan['contactos'],
+                        'lineas' => $plan['lineas'],
+                        'credito_ia' => $plan['credito_ia'],
                         'empresas' => $suyas->count(),
                         'facturando' => $suyas->filter(fn (PlanDeLaEmpresa $p) => $p->seFactura())->count(),
                     ];
                 })
                 ->values(),
 
-            // La escalera entera, tramo por tramo y plan por plan. La pantalla
-            // enseñaba de cada plan sólo su precio menor y su mayor —«35 a
-            // 259»— y eso se lee como un precio negociable o un «depende»,
-            // cuando son quince precios fijos: cinco tramos por tres planes. La
-            // pregunta que se hace delante de un cliente es «¿cuánto le cobro a
-            // uno de 5.000 socios?», y esa se responde con la tabla, no con el
-            // rango.
-            //
-            // El crédito de IA va en la misma fila porque es el mismo tramo: son
-            // dos columnas de una misma escalera, y separarlas obligaba a
-            // cruzarlas de cabeza.
-            'tramos' => $this->escaleraDePrecios(),
+            // El complemento, que es donde está la venta: al cliente de Integra
+            // el CRM ya se lo cobró el ERP, así que lo único nuevo que se le
+            // puede vender es esto.
+            'complementos' => collect(config('planes.ia'))
+                ->map(function (array $nivel, string $slug) use ($empresas) {
+                    $suyas = $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->slugIa() === $slug);
 
-            // Dos meses gratis pagando el año: es parte del precio, no una
-            // promoción, y es lo que ancla los 250 USD de Cootramed.
+                    return [
+                        'slug' => $slug,
+                        'nombre' => $nivel['nombre'],
+                        'precio' => $nivel['precio'],
+                        'empresas' => $suyas->count(),
+                    ];
+                })
+                ->values(),
+
+            'nucleo' => config('planes.nucleo', []),
+
             'meses_gratis_al_pagar_anual' => (int) config('planes.meses_gratis_al_pagar_anual', 0),
 
             'cobros' => collect(config('planes.cobros', []))
@@ -379,9 +339,14 @@ class MasterController extends Controller
                     $cobro => $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->cobro() === $cobro)->count(),
                 ]),
 
+            // Cuántos vienen de Integra: es el número que explica por qué la
+            // facturación potencial es mucho menor de lo que parecía.
+            'de_integra' => $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->incluidoEnIntegra())->count(),
+
             'total_empresas' => $empresas->count(),
         ];
     }
+
 
     /**
      * Los usuarios de la empresa que pida el panel, o nada.
@@ -568,7 +533,8 @@ class MasterController extends Controller
         $this->authorizeMaster();
 
         $datos = $request->validate([
-            'plan' => 'required|string|in:'.implode(',', array_keys(config('planes.disponibles'))),
+            'plan' => 'required|string|in:'.implode(',', array_keys(config('planes.crm'))),
+            'ia' => 'required|string|in:'.implode(',', array_keys(config('planes.ia'))),
             'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
             'viene_de_integra' => 'boolean',
             'contactos_contratados' => 'nullable|integer|min:0|max:1000000',
@@ -590,6 +556,7 @@ class MasterController extends Controller
         Log::channel('whatsapp')->info('💳 Plan de empresa cambiado', [
             'empresa' => $company->id,
             'plan' => $datos['plan'],
+            'ia' => $datos['ia'] ?? null,
             'cobro' => $datos['cobro'],
             'por' => auth()->id(),
         ]);
