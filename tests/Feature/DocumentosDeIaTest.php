@@ -338,6 +338,53 @@ class DocumentosDeIaTest extends TestCase
         Queue::assertPushed(ProcesarDocumentoDeIa::class);
     }
 
+    // ─── El probador ─────────────────────────────────────────────────────────
+
+    /** @test */
+    public function el_probador_enseña_lo_que_encontraria(): void
+    {
+        config(['services.embeddings.url' => null]);
+
+        $this->subir(UploadedFile::fake()->createWithContent(
+            'tarifario.csv',
+            "Plan,Precio\n300 megas,89900\n600 megas,109900\n"
+        ));
+
+        $respuesta = $this->postJson('/api/settings/ai-flow/documentos/probar', [
+            'pregunta' => '¿cuánto cuesta el de 300 megas?',
+        ])->assertOk()->json();
+
+        $this->assertNotEmpty($respuesta['fragmentos']);
+        $this->assertStringContainsString('300 megas', $respuesta['fragmentos'][0]['texto']);
+        // Sin modelo configurado la pantalla tiene que poder decir que se está
+        // buscando por palabras y no por significado.
+        $this->assertFalse($respuesta['por_significado']);
+    }
+
+    /** Y no cuenta como uso, para no inflar el número al que mira el admin. */
+    public function test_el_probador_no_cuenta_como_uso(): void
+    {
+        config(['services.embeddings.url' => null]);
+
+        $documento = $this->subir(UploadedFile::fake()->createWithContent(
+            'tarifario.csv',
+            "Plan,Precio\n300 megas,89900\n"
+        ));
+
+        $this->postJson('/api/settings/ai-flow/documentos/probar', ['pregunta' => '300 megas'])->assertOk();
+
+        $this->assertSame(0, $documento->refresh()->usos);
+    }
+
+    /** El probador es del plan de IA, como el resto de la pantalla. */
+    public function test_sin_el_complemento_no_se_puede_probar(): void
+    {
+        $this->company->update(['ia' => 'esencial']);
+
+        $this->postJson('/api/settings/ai-flow/documentos/probar', ['pregunta' => 'hola'])
+            ->assertStatus(402);
+    }
+
     // ─── Ayudas ──────────────────────────────────────────────────────────────
 
     private function subir(UploadedFile $archivo): AiDocumento

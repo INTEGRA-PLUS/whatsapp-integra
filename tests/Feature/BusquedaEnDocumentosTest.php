@@ -340,6 +340,81 @@ class BusquedaEnDocumentosTest extends TestCase
         $this->assertSame('listo', $documento->refresh()->estado);
     }
 
+    // ─── Saber si esto sirve ─────────────────────────────────────────────────
+
+    /**
+     * Contestar cuenta como uso del documento.
+     *
+     * Es el único número que distingue un documento que trabaja de uno que
+     * nadie consulta — y sin él, los dos se ven igual en la pantalla.
+     *
+     * @test
+     */
+    public function contestar_cuenta_como_uso_del_documento(): void
+    {
+        config(['services.embeddings.url' => null]);
+
+        $documento = $this->documento($this->company);
+
+        AiFragmento::create([
+            'ai_documento_id' => $documento->id,
+            'company_id' => $this->company->id,
+            'origen' => 'tarifario.pdf',
+            'orden' => 0,
+            'texto' => 'El internet de 300 megas cuesta 89.900 pesos.',
+            'vector' => null,
+        ]);
+
+        // `refresh()` porque `create()` devuelve el modelo con lo que se le
+        // pasó, y `usos` lo pone el valor por defecto de la columna.
+        $this->assertSame(0, $documento->refresh()->usos);
+
+        BuscarFragmentos::para($this->company->id, 'precio del internet de 300 megas');
+
+        $this->assertSame(1, $documento->refresh()->usos);
+        $this->assertNotNull($documento->ultimo_uso_at);
+    }
+
+    /**
+     * Probar desde la pantalla NO cuenta como uso.
+     *
+     * Si contara, el admin infla con sus propias pruebas justo el número al que
+     * luego mira para decidir si un documento sirve.
+     *
+     * @test
+     */
+    public function probar_desde_la_pantalla_no_infla_el_contador(): void
+    {
+        config(['services.embeddings.url' => null]);
+
+        $documento = $this->documento($this->company);
+
+        AiFragmento::create([
+            'ai_documento_id' => $documento->id,
+            'company_id' => $this->company->id,
+            'origen' => 'tarifario.pdf',
+            'orden' => 0,
+            'texto' => 'El internet de 300 megas cuesta 89.900 pesos.',
+            'vector' => null,
+        ]);
+
+        BuscarFragmentos::para($this->company->id, 'precio del internet', 5, apuntar: false);
+
+        $this->assertSame(0, $documento->refresh()->usos);
+        $this->assertNull($documento->ultimo_uso_at);
+    }
+
+    /** Un documento de hace más de medio año pide revisión. */
+    public function test_un_documento_viejo_se_marca_para_revisar(): void
+    {
+        $reciente = $this->documento($this->company);
+        $viejo = $this->documento($this->company);
+        $viejo->forceFill(['created_at' => now()->subMonths(8)])->save();
+
+        $this->assertFalse($reciente->esAntiguo());
+        $this->assertTrue($viejo->refresh()->esAntiguo(), 'Un tarifario de hace ocho meses cita precios que ya no existen.');
+    }
+
     // ─── Ayudas ──────────────────────────────────────────────────────────────
 
     /** Guarda un fragmento por cada término, con el vector que se le pase. */

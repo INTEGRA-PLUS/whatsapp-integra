@@ -2,8 +2,10 @@
 
 namespace App\Support\Documentos;
 
+use App\Models\AiDocumento;
 use App\Models\AiFragmento;
 use App\Services\Embeddings;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Qué trozos de los documentos de una empresa responden a lo que preguntó el
@@ -62,10 +64,20 @@ class BuscarFragmentos
     private const UMBRAL_DE_ESCANEO = 800;
 
     /**
-     * @return list<array{texto: string, origen: ?string}>
+     * @return list<array{texto: string, origen: ?string, documento: ?int, parecido: ?float}>
      */
-    public static function para(int $companyId, string $pregunta, int $cuantos = self::CUANTOS): array
-    {
+    /**
+     * @param  bool  $apuntar  Si cuenta como uso de verdad de los documentos.
+     *                         El probador de la pantalla pasa `false`: si
+     *                         contara, el admin infla el número al que luego
+     *                         mira para decidir si un documento sirve.
+     */
+    public static function para(
+        int $companyId,
+        string $pregunta,
+        int $cuantos = self::CUANTOS,
+        bool $apuntar = true
+    ): array {
         $pregunta = trim($pregunta);
 
         if ($pregunta === '') {
@@ -74,9 +86,41 @@ class BuscarFragmentos
 
         $vector = Embeddings::de($pregunta);
 
-        return $vector === null
+        $encontrados = $vector === null
             ? self::porPalabras($companyId, $pregunta, $cuantos)
             : self::porVector($companyId, $vector, $cuantos, $pregunta);
+
+        if ($apuntar) {
+            self::apuntarUso($encontrados);
+        }
+
+        return $encontrados;
+    }
+
+    /**
+     * Apunta que estos documentos contestaron.
+     *
+     * Un `increment` por documento y no por fragmento: como mucho son cinco
+     * filas, y esto corre en el camino de un mensaje entrante. Sin `updated_at`
+     * porque no es una edición del documento — mover esa fecha haría que la
+     * pantalla enseñara «modificado hoy» un tarifario que nadie ha tocado.
+     *
+     * @param  list<array{texto: string, origen: ?string, documento?: int}>  $encontrados
+     */
+    private static function apuntarUso(array $encontrados): void
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_column($encontrados, 'documento')
+        )));
+
+        if ($ids === []) {
+            return;
+        }
+
+        AiDocumento::whereIn('id', $ids)->update([
+            'usos' => DB::raw('usos + 1'),
+            'ultimo_uso_at' => now(),
+        ]);
     }
 
     /**
@@ -119,7 +163,7 @@ class BuscarFragmentos
             $base->limit(self::UMBRAL_DE_ESCANEO);
         }
 
-        $candidatos = $base->get(['texto', 'origen', 'vector']);
+        $candidatos = $base->get(['texto', 'origen', 'vector', 'ai_documento_id']);
 
         if ($candidatos->isEmpty()) {
             return [];
@@ -129,12 +173,18 @@ class BuscarFragmentos
             ->map(fn (AiFragmento $f) => [
                 'texto' => $f->texto,
                 'origen' => $f->origen,
-                'parecido' => Embeddings::parecido($vector, $f->vector ?? []),
+                'documento' => $f->ai_documento_id,
+                'parecido' => round(Embeddings::parecido($vector, $f->vector ?? []), 3),
             ])
             ->filter(fn ($f) => $f['parecido'] >= self::minimoParecido())
             ->sortByDesc('parecido')
             ->take($cuantos)
-            ->map(fn ($f) => ['texto' => $f['texto'], 'origen' => $f['origen']])
+            ->map(fn ($f) => [
+                'texto' => $f['texto'],
+                'origen' => $f['origen'],
+                'documento' => $f['documento'],
+                'parecido' => $f['parecido'],
+            ])
             ->values()
             ->all();
     }
@@ -161,7 +211,7 @@ class BuscarFragmentos
                 }
             })
             ->limit(200)
-            ->get(['texto', 'origen']);
+            ->get(['texto', 'origen', 'ai_documento_id']);
 
         // Se ordenan por cuántas de las palabras aparecen: la base devuelve
         // igual de bien un fragmento que casa con una que otro que casa con
@@ -170,6 +220,7 @@ class BuscarFragmentos
             ->map(fn (AiFragmento $f) => [
                 'texto' => $f->texto,
                 'origen' => $f->origen,
+                'documento' => $f->ai_documento_id,
                 'aciertos' => count(array_filter(
                     $palabras,
                     fn ($p) => mb_stripos($f->texto, $p) !== false
@@ -177,7 +228,15 @@ class BuscarFragmentos
             ])
             ->sortByDesc('aciertos')
             ->take($cuantos)
-            ->map(fn ($f) => ['texto' => $f['texto'], 'origen' => $f['origen']])
+            ->map(fn ($f) => [
+                'texto' => $f['texto'],
+                'origen' => $f['origen'],
+                'documento' => $f['documento'],
+                // Sin vectores no hay parecido que enseñar: se buscó por
+                // palabras, y un número inventado aquí se leería como si lo
+                // hubiera.
+                'parecido' => null,
+            ])
             ->values()
             ->all();
     }

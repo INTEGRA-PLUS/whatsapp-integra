@@ -41,13 +41,33 @@ class AiDocumento extends Model
         'estado',
         'motivo',
         'fragmentos',
+        'usos',
+        'ultimo_uso_at',
         'subido_por',
     ];
 
     protected $casts = [
         'bytes' => 'integer',
         'fragmentos' => 'integer',
+        'usos' => 'integer',
+        'ultimo_uso_at' => 'datetime',
     ];
+
+    /**
+     * A partir de cuándo conviene que alguien lo mire otra vez.
+     *
+     * Seis meses. Un tarifario caducado que nadie borró es **peor que no tener
+     * nada**: la IA va a citar precios que ya no existen, y con la misma
+     * seguridad con la que cita los buenos. No se bloquea ni se deja de usar
+     * —eso sería decidir por el cliente— pero se dice.
+     */
+    public const MESES_HASTA_REVISAR = 6;
+
+    public function esAntiguo(): bool
+    {
+        return $this->created_at !== null
+            && $this->created_at->lt(now()->subMonths(self::MESES_HASTA_REVISAR));
+    }
 
     protected static function booted(): void
     {

@@ -112,6 +112,12 @@ class AiPrompt
        no tiene ese servicio, esa factura o ese registro.
     8. No confirmes acciones que requieran ejecución real si no tienes una
        herramienta que las haga; deriva a un agente.
+    9. Si la información de la empresa que se te entrega trae fragmentos con un
+       nombre de archivo delante entre corchetes, y respondes con lo que dice
+       uno de ellos, menciona de dónde lo sacaste en lenguaje natural («según
+       el tarifario», «en el reglamento de crédito»). Nunca copies el corchete
+       ni el nombre del fichero tal cual, ni cites un archivo del que no hayas
+       usado nada.
     TXT;
 
     /**

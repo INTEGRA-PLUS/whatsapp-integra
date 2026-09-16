@@ -580,7 +580,24 @@ function DocumentosCard({ permitido, nombreDelComplemento }) {
                                                     precios que ya no existen sonando igual de
                                                     segura. */}
                                                 <span className="text-muted-foreground/70">{fecha(d.subido_el)}</span>
+                                                {/* Si ha contestado o no. Es el único número que
+                                                    distingue un documento que trabaja de uno que
+                                                    nadie consulta: sin él, los dos se ven igual. */}
+                                                {d.estado === 'listo' && (
+                                                    <span className={d.usos > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/70'}>
+                                                        {d.usos > 0
+                                                            ? `ha respondido ${d.usos} ${d.usos === 1 ? 'vez' : 'veces'}`
+                                                            : 'sin usar todavía'}
+                                                    </span>
+                                                )}
                                             </div>
+                                            {d.antiguo && (
+                                                <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed">
+                                                    <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                                                    Lleva más de seis meses. Si trae precios o plazos, comprueba que sigan vigentes:
+                                                    la IA los va a citar con la misma seguridad estén o no al día.
+                                                </p>
+                                            )}
                                             {d.motivo && (
                                                 <p className="mt-1.5 text-[11px] text-destructive leading-relaxed">{d.motivo}</p>
                                             )}
@@ -613,8 +630,107 @@ function DocumentosCard({ permitido, nombreDelComplemento }) {
                 <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
                     Un PDF escaneado —una foto del papel— no tiene texto y no se puede leer. Si pasa, te lo decimos aquí.
                 </p>
+
+                {documentos.some(d => d.estado === 'listo') && <Probador permitido={permitido} />}
             </div>
         </Card>
+    );
+}
+
+/**
+ * Preguntar como preguntaría un cliente, y ver qué encuentra.
+ *
+ * Convierte «he subido un PDF y no sé si sirve» en algo que se comprueba en diez
+ * segundos. Sin esto, la única forma de saberlo es esperar a que un cliente real
+ * pregunte y luego leerse la conversación.
+ *
+ * No cuenta como uso: si contara, el admin inflaría con sus propias pruebas el
+ * mismo número al que mira para decidir si un documento sirve.
+ */
+function Probador({ permitido }) {
+    const [pregunta, setPregunta] = useState('');
+    const [resultado, setResultado] = useState(null);
+    const [buscando, setBuscando] = useState(false);
+
+    async function probar(e) {
+        e.preventDefault();
+        if (!pregunta.trim() || buscando) return;
+
+        setBuscando(true);
+        try {
+            const { data } = await axios.post('/api/settings/ai-flow/documentos/probar', { pregunta });
+            setResultado(data);
+        } catch {
+            setResultado({ fragmentos: [], error: true });
+        } finally {
+            setBuscando(false);
+        }
+    }
+
+    return (
+        <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+            <div>
+                <p className="text-xs font-medium text-foreground">Pruébalo</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Escribe lo que preguntaría un cliente y mira qué encuentra. No se le manda nada a nadie.
+                </p>
+            </div>
+
+            <form onSubmit={probar} className="flex gap-2">
+                <input
+                    id="probador-pregunta"
+                    value={pregunta}
+                    onChange={e => setPregunta(e.target.value)}
+                    maxLength={500}
+                    placeholder="¿a cuántos años puedo pagar la casa?"
+                    disabled={!permitido}
+                    className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                />
+                <Button type="submit" disabled={!permitido || buscando || !pregunta.trim()} className="shrink-0 gap-1.5">
+                    {buscando ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                    Buscar
+                </Button>
+            </form>
+
+            {resultado && (
+                <div className="space-y-2">
+                    {resultado.error ? (
+                        <p className="text-[11px] text-destructive">No se pudo buscar. Inténtalo otra vez.</p>
+                    ) : resultado.fragmentos.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            No encontró nada. Si esperabas que sí, puede que tus documentos no cubran esa pregunta
+                            —o que esté escrita con palabras que no aparecen en ellos.
+                        </p>
+                    ) : (
+                        resultado.fragmentos.map((f, i) => (
+                            <div key={i} className="rounded-lg border border-border/50 bg-background px-3 py-2">
+                                <div className="flex items-baseline justify-between gap-3">
+                                    <span className="text-[11px] font-medium text-muted-foreground break-all">
+                                        {f.origen ?? 'sin origen'}
+                                    </span>
+                                    {/* Sin vectores no hay parecido que enseñar: se buscó
+                                        por palabras, y un número aquí se leería como si
+                                        lo hubiera. */}
+                                    {f.parecido !== null && f.parecido !== undefined && (
+                                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">
+                                            {Math.round(f.parecido * 100)}%
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="mt-1 text-[11px] text-foreground/90 leading-relaxed">{f.texto}</p>
+                            </div>
+                        ))
+                    )}
+
+                    {!resultado.error && !resultado.por_significado && (
+                        <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                            Ahora mismo se busca por palabras sueltas, no por significado: si preguntas por
+                            «préstamo» no encontrará el párrafo que habla de «crédito». Avísale a un administrador.
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
 

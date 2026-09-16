@@ -624,6 +624,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:whatsapp_menus.update');
         Route::delete('/documentos/{documento}', [AiDocumentoController::class, 'destroy'])
             ->middleware('permission:whatsapp_menus.update');
+        Route::post('/documentos/probar', [AiDocumentoController::class, 'probar'])
+            ->middleware('permission:whatsapp_menus.update');
         Route::post('/documentos/{documento}/reprocesar', [AiDocumentoController::class, 'reprocesar'])
             ->middleware('permission:whatsapp_menus.update');
         Route::get('/documentos/{documento}/descargar', [AiDocumentoController::class, 'descargar'])

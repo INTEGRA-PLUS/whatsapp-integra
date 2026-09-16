@@ -403,3 +403,44 @@ Queda una cifra incómoda y conviene tenerla a la vista: **~4 segundos por
 fragmento al indexar**. Un PDF de 600 fragmentos son unos 40 minutos de trabajo
 en segundo plano. Se aguanta —es una vez por documento y va en cola— pero es el
 número a vigilar si un cliente sube cinco documentos gordos el mismo día.
+
+---
+
+## Entrega 3, hecha el 16-sep-2026: saber si esto sirve
+
+Las tres primeras entregas hacían que funcionara. Esta hace que se **note** si
+funciona, que no es lo mismo.
+
+**La IA cita de dónde lo sacó.** Hasta ahora el nombre del archivo viajaba en el
+prompt y nada le decía al modelo qué hacer con él. Ahora es una regla de
+plataforma: si contesta con lo que dice un fragmento, menciona la fuente en
+lenguaje natural —«según el tarifario»— y **nunca copia el corchete** con el
+nombre del fichero, que es andamiaje nuestro y en un WhatsApp se lee como un
+error del sistema. Está en el nodo `Preparar contexto` y en su espejo
+`AiPrompt::BASE`.
+
+**Cada documento dice si ha contestado alguna vez.** `usos` y `ultimo_uso_at`.
+Es el único número que distingue un documento que trabaja de uno que nadie
+consulta, y sin él los dos se ven igual en la pantalla. Un PDF con tres semanas y
+cero usos es una de dos cosas —o nadie pregunta por lo que hay dentro, o la
+búsqueda no lo encuentra— y las dos hay que saberlas.
+
+**Un documento de más de seis meses pide revisión**, en ámbar y sin bloquearlo.
+No se deja de usar —eso sería decidir por el cliente— pero se dice, porque un
+tarifario caducado que nadie borró es peor que no tener nada: la IA cita precios
+que ya no existen con la misma seguridad con la que cita los buenos.
+
+**Y el admin puede probar la búsqueda desde la pantalla.** Escribe lo que
+preguntaría un cliente y ve qué fragmentos salen, con su porcentaje de parecido.
+Convierte «he subido un PDF y no sé si sirve» en algo que se comprueba en diez
+segundos; antes la única forma era esperar a que preguntara un cliente real y
+leerse la conversación después.
+
+Dos detalles del probador que son decisiones, no adornos:
+
+- **No cuenta como uso.** Si contara, el admin inflaría con sus propias pruebas
+  justo el número al que mira para decidir si un documento sirve.
+- **Cuando no hay modelo de vectores, lo dice.** «Se busca por palabras sueltas,
+  no por significado: si preguntas por *préstamo* no encontrará el párrafo que
+  habla de *crédito*». Sin ese aviso, un resultado pobre parece culpa del
+  documento y en realidad es de la configuración.

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcesarDocumentoDeIa;
 use App\Models\AiDocumento;
 use App\Models\Company;
+use App\Services\Embeddings;
+use App\Support\Documentos\BuscarFragmentos;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -177,6 +179,43 @@ class AiDocumentoController extends Controller
         return Storage::disk('ai_documentos')->download($documento->ruta, $documento->nombre);
     }
 
+    /**
+     * POST /api/settings/ai-flow/documentos/probar
+     *
+     * Enseña qué fragmentos saldrían para una pregunta, sin hablar con ningún
+     * cliente.
+     *
+     * Es la pieza que convierte «he subido un PDF y no sé si sirve» en algo que
+     * se puede comprobar en diez segundos. Sin esto, la única forma de saber si
+     * la búsqueda encuentra el tarifario es esperar a que un cliente real
+     * pregunte y leerse la conversación.
+     *
+     * **No cuenta como uso.** Si contara, el admin infla con sus propias
+     * pruebas el número al que luego mira para decidir si un documento sirve.
+     */
+    public function probar(Request $request)
+    {
+        $company = $this->empresa($request);
+        $this->exigirPlan($company);
+
+        $datos = $request->validate(['pregunta' => 'required|string|max:500']);
+
+        $encontrados = BuscarFragmentos::para(
+            $company->id,
+            $datos['pregunta'],
+            BuscarFragmentos::CUANTOS,
+            apuntar: false
+        );
+
+        return response()->json([
+            'fragmentos' => $encontrados,
+            // Para que el admin entienda un resultado pobre: sin modelo de
+            // vectores se busca por palabras, y eso explica que «préstamo» no
+            // encuentre el párrafo que habla de «crédito».
+            'por_significado' => Embeddings::configurado(),
+        ]);
+    }
+
     private function empresa(Request $request): Company
     {
         $company = $request->user()?->company;
@@ -212,7 +251,13 @@ class AiDocumentoController extends Controller
                 'estado' => $d->estado,
                 'motivo' => $d->motivo,
                 'fragmentos' => $d->fragmentos,
+                'usos' => $d->usos,
+                'ultimo_uso' => $d->ultimo_uso_at?->toIso8601String(),
                 'subido_el' => $d->created_at?->toIso8601String(),
+                // Se calcula aquí y no en el navegador porque el aviso de
+                // «revísalo» es una decisión de producto, no de pintado: si
+                // mañana pasa de seis meses a tres, se cambia en un sitio.
+                'antiguo' => $d->esAntiguo(),
             ])
             ->all();
     }
