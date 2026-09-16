@@ -155,6 +155,7 @@ class MontarEmpresaDemo extends Command
 
         $socios = $this->socios($company);
         $this->conversaciones($instance, $socios, $agentes, $etiquetas);
+        $this->historial($company, $instance, $agentes, $etiquetas);
         $this->campana($company, $instance, $admin, $socios);
 
         return $company;
@@ -669,6 +670,188 @@ class MontarEmpresaDemo extends Command
 
             $conversacion->update(['last_message' => Str::limit($ultimo, 120)]);
             $conversacion->tags()->attach($etiquetas[$guion['etiqueta']]->id);
+        }
+    }
+
+
+    /**
+     * Dos semanas de atención ya cerrada, para que la gráfica no salga plana.
+     *
+     * La pantalla de inicio dibuja «mensajes por día, últimas dos semanas». Con
+     * sólo las conversaciones de hoy salía una línea en cero durante trece días
+     * y un pico vertical al final: honesto —la demo se acababa de montar— pero
+     * delante de un cliente se lee como «esto lo encendieron hace un rato».
+     *
+     * Son hilos **cerrados** a propósito. Si estuvieran abiertos, la bandeja
+     * pasaría de siete conversaciones a treinta y cinco y la demo dejaría de
+     * poder enseñar lo que importa: que de un vistazo se sabe a quién atender.
+     * Cerrados hacen lo que hace la atención real —acumularse detrás— y llenan
+     * la curva sin ensuciar el presente.
+     *
+     * El volumen varía por día y los fines de semana bajan: una recta perfecta
+     * de doce mensajes diarios se nota inventada tanto como la línea en cero.
+     *
+     * @param  array<int, User>  $agentes
+     * @param  array<string, Tag>  $etiquetas
+     */
+    private function historial(Company $company, Instance $instance, array $agentes, array $etiquetas): void
+    {
+        // Consultas cortas y resueltas, que es lo que de verdad llena una
+        // bandeja: lo largo y lo conflictivo es la excepción.
+        $guiones = [
+            ['Ahorro', [
+                ['in', 'Buenas, ¿cuál es el saldo de mis aportes?'],
+                ['out', 'Con gusto. ¿Me confirmas tu cédula?'],
+                ['in', '{cedula}'],
+                ['out', 'Tus aportes suman $4.812.300 al corte de este mes.'],
+                ['in', 'Gracias'],
+            ]],
+            ['Cartera', [
+                ['in', '¿Hasta qué día tengo para pagar la cuota?'],
+                ['out', 'Hasta el 15 sin recargo. Después se cobra interés de mora.'],
+                ['in', 'Perfecto, muchas gracias'],
+            ]],
+            ['Crédito', [
+                ['in', 'Quiero saber cuánto me falta para terminar de pagar el crédito'],
+                ['out', '¿Me confirmas tu número de cédula para revisarlo?'],
+                ['in', '{cedula}'],
+                ['out', 'Te quedan 7 cuotas, saldo de $2.184.000.'],
+                ['in', 'Ah listo, gracias'],
+            ]],
+            ['Asociación', [
+                ['in', 'Buenos días, ¿qué necesito para asociarme?'],
+                ['out', "Cédula ampliada al 150%, certificado laboral y los últimos 3 desprendibles.\n\nMás el aporte inicial."],
+                ['in', '¿Y lo puedo hacer en la agencia de Caucasia?'],
+                ['out', 'Claro que sí, de lunes a viernes de 8 a 5.'],
+                ['in', 'Muchas gracias'],
+            ]],
+            ['PQRSF', [
+                ['in', 'El cajero de la sede no me entregó el comprobante'],
+                ['out', 'Lamento el inconveniente. Te lo genero y te lo envío por aquí.'],
+                ['in', 'Listo, quedo pendiente'],
+                ['out', 'Aquí está el comprobante Nro. 8812. ¿Te sirve así?'],
+                ['in', 'Sí señor, muchas gracias'],
+            ]],
+            ['Ahorro', [
+                ['in', '¿Están dando CDAT todavía?'],
+                ['out', 'Sí, desde $1.000.000 y a partir de 90 días. ¿Qué plazo te interesa?'],
+                ['in', 'Lo voy a pensar, gracias'],
+            ]],
+            ['Cartera', [
+                ['in', 'Ya hice el pago por PSE, ¿les llegó?'],
+                ['out', 'Déjame verificar. ¿Me das el número de la transacción?'],
+                ['in', '{cedula}'],
+                ['out', 'Confirmado, quedó aplicado hoy mismo. Tu cuota está al día.'],
+                ['in', 'Excelente, muchas gracias 🙏'],
+            ]],
+            ['Crédito', [
+                ['in', 'Buenas tardes, ¿cuánto es lo máximo que me pueden prestar?'],
+                ['out', 'Depende de tus ingresos y tu capacidad de pago. ¿Trabajas con empresa en convenio?'],
+                ['in', 'Sí, en el hospital'],
+                ['out', 'Entonces aplicas por libranza. Acércate a cualquier agencia con el certificado laboral.'],
+                ['in', 'Listo, muchas gracias'],
+            ]],
+        ];
+
+        $nombres = [
+            ['Diana Marcela Agudelo', '3145567812', '43119876'],
+            ['Jorge Humberto Restrepo', '3009912345', '70334455'],
+            ['Sandra Milena Ochoa', '3187765431', '39221144'],
+            ['Alberto José Mesa', '3112234567', '71889900'],
+            ['Claudia Inés Vélez', '3156678123', '43556677'],
+            ['Fernando Andrés Toro', '3023345671', '98112233'],
+            ['Marta Lucía Jaramillo', '3178891234', '32447788'],
+            ['Julián Esteban Muñoz', '3134456789', '1039221100'],
+            ['Rosa Elvira Cardona', '3199987654', '21334455'],
+            ['Andrés Felipe Hoyos', '3167712389', '8223344'],
+            ['Paula Andrea Betancur', '3143398712', '43667788'],
+            ['Germán Darío Álvarez', '3008876123', '70998877'],
+            ['Liliana Patricia Sierra', '3182234198', '39558822'],
+            ['Óscar Mauricio Londoño', '3121178945', '71223399'],
+            ['Nubia Esther Zuluaga', '3159987123', '32118844'],
+            ['Carlos Arturo Pineda', '3038812347', '98334422'],
+            ['Yolanda del Socorro Ruiz', '3117823456', '21889977'],
+            ['Iván Darío Quintero', '3145589901', '71445566'],
+            ['Amparo Cecilia Gómez', '3029912378', '32667799'],
+            ['Nelson Enrique Arias', '3188834512', '98776655'],
+            ['Beatriz Helena Uribe', '3136645789', '43882211'],
+            ['Rubén Alonso Maya', '3007723189', '70115599'],
+            ['Doralba Tamayo', '3159934278', '21556688'],
+            ['Jaime Alberto Ceballos', '3172218934', '71667733'],
+        ];
+
+        $contactos = [];
+        foreach ($nombres as [$nombre, $telefono, $cedula]) {
+            $contactos[] = Contact::create([
+                'company_id' => $company->id,
+                'name' => $nombre,
+                'phone_number' => '57'.$telefono,
+                'identificacion' => $cedula,
+                'source' => 'demo',
+                'notes' => 'Asociado.',
+            ]);
+        }
+
+        // Cuántas conversaciones por día, de hace 13 días a hace 1. Escrito a
+        // mano y no al azar: los ceros y los picos son los que hacen que una
+        // curva parezca una operación y no un generador.
+        // La suma tiene que caber en los contactos de arriba: el índice único
+        // (instance_id, wa_id) sólo admite UN hilo por número, que es como
+        // funciona WhatsApp de verdad.
+        $porDia = [13 => 2, 12 => 3, 11 => 1, 10 => 0, 9 => 3, 8 => 2,
+            7 => 3, 6 => 2, 5 => 0, 4 => 2, 3 => 3, 2 => 1, 1 => 2];
+
+        $i = 0;
+
+        foreach ($porDia as $hace => $cuantas) {
+            for ($n = 0; $n < $cuantas; $n++) {
+                [$etiqueta, $guion] = $guiones[$i % count($guiones)];
+                $contacto = $contactos[$i % count($contactos)];
+                $agente = $agentes[$i % count($agentes)];
+                $i++;
+
+                // Repartidas por la jornada, que no salgan todas a la misma hora.
+                $inicio = now()->subDays($hace)->setTime(8 + ($n * 3) % 9, ($i * 17) % 60);
+
+                $conversacion = WhatsAppConversation::create([
+                    'instance_id' => $instance->id,
+                    'contact_id' => $contacto->id,
+                    'wa_id' => $contacto->phone_number,
+                    'phone_number' => $contacto->phone_number,
+                    'name' => $contacto->name,
+                    'status' => 'closed',
+                    'assigned_to' => $agente->id,
+                    'closed_by' => $agente->id,
+                    'closed_at' => $inicio->copy()->addMinutes(count($guion) * 4),
+                    'unread_count' => 0,
+                    'last_message_at' => $inicio->copy()->addMinutes((count($guion) - 1) * 3),
+                ]);
+
+                $ultimo = '';
+                foreach ($guion as $paso => [$direccion, $texto]) {
+                    $texto = str_replace('{cedula}', (string) $contacto->identificacion, $texto);
+                    $cuando = $inicio->copy()->addMinutes($paso * 3);
+
+                    $mensaje = WhatsAppMessage::create([
+                        'conversation_id' => $conversacion->id,
+                        'wamid' => 'wamid.demo.'.Str::random(16),
+                        'type' => 'text',
+                        'content' => $texto,
+                        'direction' => $direccion === 'in' ? 'inbound' : 'outbound',
+                        'status' => $direccion === 'in' ? 'delivered' : 'read',
+                        'sent_by' => $direccion === 'out' ? $agente->id : null,
+                        'sent_at' => $cuando,
+                    ]);
+
+                    // Igual que en las de hoy: `created_at` no es asignable en
+                    // masa, y es justo la columna que dibuja la gráfica.
+                    WhatsAppMessage::whereKey($mensaje->id)->update(['created_at' => $cuando]);
+                    $ultimo = $texto;
+                }
+
+                $conversacion->update(['last_message' => Str::limit($ultimo, 120)]);
+                $conversacion->tags()->attach($etiquetas[$etiqueta]->id);
+            }
         }
     }
 

@@ -36,12 +36,20 @@ class EmpresaDemoTest extends TestCase
         $this->assertSame(4, User::where('company_id', $company->id)->count());
 
         // Socios, conversaciones con su hilo, menús y una campaña con resultados.
-        $this->assertSame(10, Contact::where('company_id', $company->id)->count());
+        // Diez de las conversaciones de hoy y veinticuatro del historial de dos
+        // semanas, que es lo que llena la gráfica de la pantalla de inicio.
+        $this->assertSame(34, Contact::where('company_id', $company->id)->count());
 
         $instancia = Instance::where('company_id', $company->id)->firstOrFail();
         $conversaciones = WhatsAppConversation::where('instance_id', $instancia->id)->get();
 
-        $this->assertCount(8, $conversaciones);
+        $this->assertCount(32, $conversaciones);
+
+        // Siete abiertas: las de hoy menos la de María Eugenia, que se cerró.
+        // El historial de dos semanas va TODO cerrado a propósito — si no, la
+        // bandeja pasaría de siete a treinta y una y la demo dejaría de poder
+        // enseñar lo que importa: que de un vistazo se sabe a quién atender.
+        $this->assertSame(7, $conversaciones->where('status', '!=', 'closed')->count());
         $this->assertGreaterThan(20, WhatsAppMessage::whereIn('conversation_id', $conversaciones->pluck('id'))->count());
 
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
@@ -50,6 +58,38 @@ class EmpresaDemoTest extends TestCase
         $this->assertSame('completed', $campana->status);
         $this->assertSame(10, $campana->recipients()->count());
         $this->assertSame(1, $campana->recipients()->where('status', 'failed')->count());
+    }
+
+    /**
+     * La gráfica de la pantalla de inicio no puede salir plana.
+     *
+     * Dibuja «mensajes por día, últimas dos semanas». Con sólo las
+     * conversaciones de hoy salía una línea en cero durante trece días y un
+     * pico vertical al final: delante de un cliente eso se lee como «esto lo
+     * encendieron hace un rato», que es lo contrario de lo que se va a vender.
+     *
+     * Se comprueba que haya mensajes repartidos en al menos ocho días
+     * distintos, no sólo que existan: mil mensajes con la fecha de ayer
+     * llenarían la cuenta y dejarían la curva igual de plana.
+     */
+    public function test_la_grafica_de_inicio_tiene_dos_semanas_de_actividad(): void
+    {
+        $this->artisan('demo:montar')->assertSuccessful();
+
+        $company = Company::where('slug', 'cootramed-demo')->firstOrFail();
+        $instancia = Instance::where('company_id', $company->id)->firstOrFail();
+
+        $dias = WhatsAppMessage::whereIn(
+            'conversation_id',
+            WhatsAppConversation::where('instance_id', $instancia->id)->pluck('id')
+        )->get()->groupBy(fn (WhatsAppMessage $m) => $m->created_at->toDateString());
+
+        $this->assertGreaterThanOrEqual(8, $dias->count(),
+            'Los mensajes tienen que estar repartidos en varios días, no todos hoy.');
+
+        // Y que el pico de hoy siga ahí: es lo que da los «recibidos hoy» de
+        // las tarjetas de arriba, que es el número que más se mira.
+        $this->assertGreaterThan(10, $dias[now()->toDateString()]->count());
     }
 
     /**
@@ -147,7 +187,7 @@ class EmpresaDemoTest extends TestCase
         $this->artisan('demo:montar --rehacer')->assertSuccessful();
 
         $this->assertSame(1, Company::where('slug', 'cootramed-demo')->count());
-        $this->assertSame(10, Contact::whereIn(
+        $this->assertSame(34, Contact::whereIn(
             'company_id',
             Company::where('slug', 'cootramed-demo')->pluck('id')
         )->count());
