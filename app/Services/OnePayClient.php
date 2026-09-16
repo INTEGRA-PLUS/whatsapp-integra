@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\SuscripcionCobro;
+use App\Support\Configuracion;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -41,9 +42,18 @@ class OnePayClient
 
     private const MAXIMO_COP = 100_000_000;
 
+    /**
+     * ¿Hay token, y es un token y no el hueco donde había que ponerlo?
+     *
+     * `filled()` no basta: los tres secretos de OnePay se quedaron en
+     * producción con el texto de ejemplo literal —`<el appkey de la cuenta>`—
+     * al copiar un comando de la documentación, y así pasaban esta puerta,
+     * viajaban a la pasarela y volvían como un 401 que había que ir a buscar
+     * al log. Ver `App\Support\Configuracion`.
+     */
     public static function configurado(): bool
     {
-        return filled(config('services.onepay.token'));
+        return Configuracion::puesta(config('services.onepay.token'));
     }
 
     /**
@@ -56,7 +66,14 @@ class OnePayClient
     public static function crearFactura(SuscripcionCobro $cobro): ?string
     {
         if (! self::configurado()) {
-            Log::warning('⚠️ OnePay sin token: el cobro queda sólo en el CRM', ['cobro' => $cobro->id]);
+            Log::warning('⚠️ OnePay sin token de verdad: el cobro queda sólo en el CRM', [
+                'cobro' => $cobro->id,
+                // Sin el valor, que es un secreto; con el motivo, que es lo que
+                // hace falta para arreglarlo.
+                'motivo' => filled(config('services.onepay.token'))
+                    ? 'ONEPAY_TOKEN tiene el texto de ejemplo, no un token'
+                    : 'ONEPAY_TOKEN está vacía',
+            ]);
 
             return null;
         }

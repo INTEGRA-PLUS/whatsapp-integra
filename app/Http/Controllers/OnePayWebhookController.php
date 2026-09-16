@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SuscripcionCobro;
 use App\Services\OnePayClient;
+use App\Support\Configuracion;
 use App\Support\Suscripcion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -142,8 +143,12 @@ class OnePayWebhookController extends Controller
      */
     private function verificar(Request $request): array
     {
-        $token = (string) config('services.onepay.webhook_header');
-        $secreto = (string) config('services.onepay.webhook_secret');
+        // Un marcador sin sustituir NO puede valer como credencial. Si
+        // `ONEPAY_WEBHOOK_HEADER` se quedó con el texto de ejemplo y alguien
+        // pone el modo en `exigir`, quien acierte esa frase —que está escrita
+        // en la documentación del repo— firma cualquier pago como bueno.
+        $token = (string) (Configuracion::valor(config('services.onepay.webhook_header')) ?? '');
+        $secreto = (string) (Configuracion::valor(config('services.onepay.webhook_secret')) ?? '');
 
         if ($token === '' && $secreto === '') {
             return [false, 'sin configurar'];

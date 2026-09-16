@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Configuracion;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -42,7 +43,7 @@ class Embeddings
 
     public static function configurado(): bool
     {
-        return filled(config('services.embeddings.url'));
+        return Configuracion::puesta(config('services.embeddings.url'));
     }
 
     /** El vector de un texto, o `null` si no se pudo. */
