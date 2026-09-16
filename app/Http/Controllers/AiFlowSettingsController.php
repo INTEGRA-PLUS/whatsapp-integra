@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Company;
 use App\Models\CompanyIntegration;
+use App\Models\User;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\AiAssistantProfile;
 use App\Support\AiPrompt;
+use App\Support\TraspasoAUnAsesor;
 use App\Support\DefaultAiMenusIntegration;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\JsonResponse;
@@ -168,6 +170,22 @@ class AiFlowSettingsController extends Controller
             // "te pasaste de largo" en su formulario en vez de que AiPrompt le
             // recorte el texto por detrás sin decir nada.
             'assistant.instrucciones' => 'sometimes|nullable|string|max:' . AiPrompt::MAX_INSTRUCTIONS,
+
+            // A dónde va el chat cuando la IA se rinde. Los ids se comprueban
+            // contra la empresa aquí para que el admin vea el error en su
+            // formulario, y `TraspasoAUnAsesor` los vuelve a mirar al repartir:
+            // un asesor puede darse de baja entre que se guarda y que llega el
+            // siguiente chat.
+            'traspaso' => 'sometimes|array',
+            'traspaso.estrategia' => ['sometimes', Rule::in(TraspasoAUnAsesor::ESTRATEGIAS)],
+            'traspaso.usuario_id' => ['sometimes', 'nullable', 'integer',
+                Rule::exists('users', 'id')->where('company_id', $company->id)],
+            'traspaso.equipo' => 'sometimes|array|max:' . TraspasoAUnAsesor::MAX_EQUIPO,
+            'traspaso.equipo.*' => ['integer',
+                Rule::exists('users', 'id')->where('company_id', $company->id)],
+        ], [
+            'traspaso.usuario_id.exists' => 'Ese asesor no es de tu empresa.',
+            'traspaso.equipo.*.exists' => 'Uno de los asesores del equipo no es de tu empresa.',
         ]);
 
         // Encender, sólo lo contratado. Apagar no se comprueba: a quien se le
@@ -214,6 +232,10 @@ class AiFlowSettingsController extends Controller
                 $company->id,
                 array_replace(AiAssistantProfile::settings($company->id), $data['assistant'])
             );
+        }
+
+        if (isset($data['traspaso'])) {
+            TraspasoAUnAsesor::guardar($company, $data['traspaso']);
         }
 
         if (array_key_exists('chat_enabled', $data)) {
@@ -314,6 +336,17 @@ class AiFlowSettingsController extends Controller
                     'instrucciones' => AiPrompt::MAX_INSTRUCTIONS,
                 ],
             ],
+            // A dónde va el chat cuando la IA se rinde o el cliente pide un
+            // humano. Antes esto no se elegía: iba siempre al menos cargado.
+            'traspaso' => TraspasoAUnAsesor::de($company) + [
+                'estrategias' => TraspasoAUnAsesor::ESTRATEGIAS,
+                'max_equipo' => TraspasoAUnAsesor::MAX_EQUIPO,
+                // Quién puede recibir un chat: los mismos que usa el reparto,
+                // no todos los usuarios. Enseñar a alguien que el reparto
+                // nunca va a elegir es prometer algo que no pasa.
+                'asesores' => $this->asesores($company),
+            ],
+
             // Los dos prompts, para que el admin vea a qué le está sumando.
             //
             // El base baja entero y de sólo lectura: es de la plataforma y lo
@@ -329,6 +362,30 @@ class AiFlowSettingsController extends Controller
                 'compuesto' => AiPrompt::compose($company->id, false),
             ],
         ];
+    }
+
+    /**
+     * Los que de verdad pueden recibir un chat.
+     *
+     * Mismo criterio que `AgentAssignmentService`: activos, de la empresa y con
+     * rol de atención. Listar a todos los usuarios dejaría elegir de destino a
+     * alguien que el reparto nunca va a escoger, y el admin no entendería por
+     * qué sus chats siguen yendo a otro.
+     *
+     * @return list<array{id: int, name: string}>
+     */
+    private function asesores(Company $company): array
+    {
+        setPermissionsTeamId($company->id);
+
+        return User::where('company_id', $company->id)
+            ->where('active', true)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->filter(fn (User $u) => $u->hasRole(['admin', 'agent']))
+            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name])
+            ->values()
+            ->all();
     }
 
     /** La fila de la IA de menús, creándola si faltara. */

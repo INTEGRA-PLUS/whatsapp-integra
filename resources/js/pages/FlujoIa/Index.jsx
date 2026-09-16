@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
     AlertTriangle, BadgeCheck, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, KeyRound,
     ListChecks, Loader2, Lock, MessageCircle, Plus, Save, ShieldAlert, ShieldCheck, Sparkles,
-    Trash2, XCircle,
+    Trash2, UserCheck, XCircle,
 } from 'lucide-react';
 
 /**
@@ -400,6 +400,183 @@ function PromptCard({ state, busy, save }) {
                         Guardar
                     </Button>
                 </div>
+            </div>
+        </Card>
+    );
+}
+
+/* ───────────────────────── El traspaso a un asesor ───────────────────────── */
+
+const TRASPASOS = [
+    {
+        id: 'menos_cargado',
+        titulo: 'Al asesor menos cargado',
+        detalle: 'El que menos conversaciones abiertas tenga. A igualdad, el que lleva más tiempo sin recibir una.',
+    },
+    {
+        id: 'equipo',
+        titulo: 'Al menos cargado de un equipo',
+        detalle: 'Reparte igual, pero solo entre las personas que elijas. Útil si soporte y cartera no atienden lo mismo.',
+    },
+    {
+        id: 'fijo',
+        titulo: 'Siempre a la misma persona',
+        detalle: 'Todos los traspasos le llegan a quien elijas, tenga la carga que tenga.',
+    },
+    {
+        id: 'bandeja',
+        titulo: 'A nadie en concreto',
+        detalle: 'El chat queda sin dueño y visible para todo el equipo, que lo toma quien pueda.',
+    },
+];
+
+/**
+ * A dónde va el chat cuando la IA se rinde o el cliente pide un humano.
+ *
+ * Antes no se elegía: iba siempre al asesor menos cargado. Eso funciona en un
+ * equipo donde todos hacen lo mismo, y no en una empresa donde soporte técnico y
+ * cartera son dos mundos — ahí la factura acaba en manos del que instala antenas
+ * solo porque tenía un hueco.
+ */
+function TraspasoCard({ state, busy, save }) {
+    const t = state.traspaso ?? {};
+    const asesores = t.asesores ?? [];
+
+    const [estrategia, setEstrategia] = useState(t.estrategia ?? 'menos_cargado');
+    const [usuarioId, setUsuarioId] = useState(t.usuario_id ?? null);
+    const [equipo, setEquipo] = useState(t.equipo ?? []);
+
+    function guardar(cambios) {
+        const siguiente = { estrategia, usuario_id: usuarioId, equipo, ...cambios };
+
+        setEstrategia(siguiente.estrategia);
+        setUsuarioId(siguiente.usuario_id);
+        setEquipo(siguiente.equipo);
+
+        save({ traspaso: siguiente }, 'Traspaso a un asesor actualizado.');
+    }
+
+    function alternarDelEquipo(id) {
+        guardar({ equipo: equipo.includes(id) ? equipo.filter(x => x !== id) : [...equipo, id] });
+    }
+
+    // Sin nadie con rol de atención no hay a quién mandar nada, y elegir entre
+    // una lista vacía solo confunde.
+    const sinAsesores = asesores.length === 0;
+
+    return (
+        <Card>
+            <div className="p-6 space-y-4">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <UserCheck className="size-4 text-accent-foreground" />
+                        <p className="text-sm font-semibold text-foreground">Cuando hay que pasar a una persona</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                        Si el cliente pide un asesor, o la IA no sabe responder, el chat se le entrega a alguien
+                        de tu equipo con un resumen de lo que pedía. Aquí eliges a quién.
+                    </p>
+                </div>
+
+                {sinAsesores && (
+                    <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
+                        <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                        <span>No hay nadie con rol de administrador o asesor. Los chats quedarán en la bandeja general.</span>
+                    </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                    {TRASPASOS.map(opcion => {
+                        const activa = estrategia === opcion.id;
+
+                        return (
+                            <button
+                                key={opcion.id}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => guardar({ estrategia: opcion.id })}
+                                className={`rounded-xl border p-3.5 text-left transition ${
+                                    activa
+                                        ? 'border-teal-500/60 bg-teal-500/5 ring-1 ring-teal-500/30'
+                                        : 'border-border/60 hover:border-border hover:bg-muted/30'
+                                }`}
+                            >
+                                <div className="flex items-start gap-2">
+                                    <span className={`mt-0.5 size-3.5 shrink-0 rounded-full border-2 ${
+                                        activa ? 'border-teal-500 bg-teal-500' : 'border-border'
+                                    }`} />
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-medium text-foreground">{opcion.titulo}</p>
+                                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                                            {opcion.detalle}
+                                        </p>
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {estrategia === 'fijo' && (
+                    <div className="space-y-2">
+                        <label className="block text-xs font-medium text-muted-foreground" htmlFor="traspaso-asesor">
+                            Quién recibe los traspasos
+                        </label>
+                        <select
+                            id="traspaso-asesor"
+                            value={usuarioId ?? ''}
+                            disabled={busy || sinAsesores}
+                            onChange={e => guardar({ usuario_id: e.target.value ? Number(e.target.value) : null })}
+                            className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40"
+                        >
+                            <option value="">Elige un asesor…</option>
+                            {asesores.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                    </div>
+                )}
+
+                {estrategia === 'equipo' && (
+                    <div className="space-y-2">
+                        <label className="block text-xs font-medium text-muted-foreground">
+                            Quiénes están en el equipo
+                            <span className="text-muted-foreground/60"> ({equipo.length}/{t.max_equipo ?? 25})</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {asesores.map(a => {
+                                const dentro = equipo.includes(a.id);
+
+                                return (
+                                    <button
+                                        key={a.id}
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => alternarDelEquipo(a.id)}
+                                        className={`rounded-lg border px-3 py-1.5 text-[11px] transition ${
+                                            dentro
+                                                ? 'border-teal-500/60 bg-teal-500/10 text-foreground'
+                                                : 'border-border/60 text-muted-foreground hover:text-foreground'
+                                        }`}
+                                    >
+                                        {dentro && <CheckCircle2 className="mr-1 inline size-3 text-teal-500" />}
+                                        {a.name}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Lo que pasa si la configuración se rompe. Se dice aquí porque
+                    es una decisión de producto que sorprende: quien elige «a esta
+                    persona» espera que sea siempre, y conviene que sepa que un
+                    cliente nunca se queda esperando a nadie. */}
+                {(estrategia === 'fijo' || estrategia === 'equipo') && (
+                    <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                        Si quien elegiste no puede recibir el chat —se dio de baja, o el equipo entero está
+                        inactivo— se lo entregamos igualmente al asesor menos cargado. Dejar al cliente esperando
+                        a nadie es peor que saltarse tu preferencia.
+                    </p>
+                )}
             </div>
         </Card>
     );
@@ -918,6 +1095,9 @@ function Configuracion() {
 
                     {/* De qué documentos saca lo que sabe */}
                     <DocumentosCard permitido={complemento.chat} nombreDelComplemento={complemento.nombre} />
+
+                    {/* A quién le llega el chat cuando la IA se rinde */}
+                    <TraspasoCard state={state} busy={busy} save={save} />
 
                     {/* IA de los chats */}
                     <Card>

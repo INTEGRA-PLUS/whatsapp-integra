@@ -12,6 +12,7 @@ use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use App\Services\AgentAssignmentService;
+use App\Support\TraspasoAUnAsesor;
 use App\Services\MetaWhatsAppService;
 use App\Services\WhatsAppMenuActionService;
 use App\Services\WhatsAppMenuService;
@@ -37,6 +38,16 @@ use Illuminate\Support\Facades\Log;
  */
 class ProcessWhatsAppMenu implements ShouldQueue
 {
+    /**
+     * Estrategia de reparto que significa «lo que haya elegido la empresa».
+     *
+     * No vive en `WhatsAppMenuOption::ASSIGN_STRATEGIES` a propósito: eso es lo
+     * que se elige opción por opción dentro de un menú, y esto es un ajuste de
+     * la empresa entera. Mezclarlas dejaría elegir «lo que diga la empresa» en
+     * una opción de menú, que es una indirección que no ayuda a nadie.
+     */
+    private const TRASPASO_DE_LA_EMPRESA = 'traspaso_de_la_empresa';
+
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
@@ -281,14 +292,18 @@ class ProcessWhatsAppMenu implements ShouldQueue
         }
 
         if ($result->handoff) {
-            // El bot se rindió: el reparto va al asesor más descargado aunque
-            // la opción no fuera un handoff, porque dejarlo en la bandeja
-            // general es exactamente el silencio que se quería evitar.
+            // El bot se rindió. A dónde va el chat lo decide la empresa desde
+            // «IA que responde»; antes esto imponía el menos cargado, que en un
+            // equipo donde soporte y cartera son dos mundos deja la factura en
+            // manos del que instala antenas sólo porque tenía un hueco.
+            //
+            // El valor por defecto sigue siendo el menos cargado: quien no
+            // haya tocado nada no nota ningún cambio.
             $this->claimAgent(
                 $instance,
                 $conversation,
                 $option,
-                WhatsAppMenuOption::ASSIGN_LEAST_BUSY,
+                self::TRASPASO_DE_LA_EMPRESA,
                 // Cuando la IA deriva trae su propio resumen de lo que el
                 // cliente pidió, que es mucho más útil que el aviso genérico:
                 // el asesor abre el chat sabiendo de qué va.
@@ -556,6 +571,13 @@ class ProcessWhatsAppMenu implements ShouldQueue
         $agent = match ($strategy) {
             WhatsAppMenuOption::ASSIGN_FIXED => $option?->assignee,
             WhatsAppMenuOption::ASSIGN_LEAST_BUSY => $assignment->leastBusy($instance->company_id),
+            // Lo que la empresa haya elegido en «IA que responde»: una persona,
+            // un equipo, el menos cargado o nadie. Sólo lo usa el traspaso de
+            // la IA; las opciones de menú siguen trayendo el suyo, que se
+            // configura opción por opción y es más fino.
+            self::TRASPASO_DE_LA_EMPRESA => $instance->company
+                ? TraspasoAUnAsesor::asesorPara($instance->company, $assignment)
+                : $assignment->leastBusy($instance->company_id),
             default => null,
         };
 
