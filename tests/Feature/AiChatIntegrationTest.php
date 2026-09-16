@@ -13,6 +13,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppChatAiClient;
 use App\Services\WhatsAppMenuService;
+use App\Support\AiAssistantProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -107,6 +108,50 @@ class AiChatIntegrationTest extends TestCase
                 // Lo del flujo de menús no puede colarse aquí.
                 && ! isset($body['mensaje'])
                 && ! isset($body['integra']);
+        });
+    }
+
+    /**
+     * El conocimiento de la empresa viaja con el mensaje.
+     *
+     * No es un campo más del contrato: es el único sitio por el que el flujo se
+     * entera de a quién atiende. Lo que se rompió el 16-sep-2026 fue justo
+     * esto — el nodo `Validar entrada` del gateway reconstruía el objeto campo
+     * por campo con una lista blanca donde `asistente` no estaba, así que el
+     * texto que la empresa había escrito en «Flujo IA» salía de aquí, moría en
+     * ese nodo y el modelo contestaba con la identidad genérica escrita a mano
+     * en el worker. Desde fuera se veía como si el panel no guardara nada.
+     *
+     * Este test cubre la mitad que es nuestra. La otra mitad vive en n8n y no
+     * hay forma de probarla desde aquí: está anotada en
+     * `docs/prompt-entrenable-por-empresa.md`.
+     *
+     * @test
+     */
+    public function el_conocimiento_de_la_empresa_viaja_con_el_mensaje(): void
+    {
+        Http::fake(['*' => Http::response(['status' => 'done', 'answer' => 'Claro.'], 200)]);
+
+        AiAssistantProfile::save($this->company->id, [
+            'nombre_asistente' => 'Diego',
+            'tratamiento' => 'usted',
+            'conocimiento' => 'COOTRAMED es una cooperativa de ahorro y crédito.',
+            'instrucciones' => 'Saluda siempre nombrando la cooperativa.',
+        ]);
+
+        (new WhatsAppChatAiClient)->ask($this->instance, $this->conversation, 'quiénes son', 'wamid.IN1');
+
+        Http::assertSent(function ($request) {
+            $a = $request->data()['asistente'] ?? [];
+
+            return ($a['nombre_asistente'] ?? null) === 'Diego'
+                && ($a['tratamiento'] ?? null) === 'usted'
+                && ($a['empresa'] ?? null) === 'Fibra XYZ'
+                && str_contains($a['conocimiento'] ?? '', 'COOTRAMED')
+                && str_contains($a['instrucciones'] ?? '', 'cooperativa')
+                // El chat no tiene herramientas: prometer gestiones que no
+                // puede ejecutar es peor que no ofrecerlas.
+                && ($a['puede_ejecutar'] ?? true) === false;
         });
     }
 
