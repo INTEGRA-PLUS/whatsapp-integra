@@ -63,6 +63,10 @@ class AiAssistantProfile
         // antes de que esto se pudiera elegir, así que quien no lo toque no
         // nota ningún cambio en cómo le responde su IA.
         'longitud' => 'equilibrado',
+        // Apagado por defecto: leer el archivo de un desconocido gasta tokens
+        // que paga la empresa, y es una capacidad nueva. Que la encienda quien
+        // la quiera, no quien no se entere de que existe.
+        'leer_documentos' => false,
         'conocimiento' => '',
         'limites' => [],
         'instrucciones' => '',
@@ -169,6 +173,7 @@ class AiAssistantProfile
             'longitud' => in_array($input['longitud'] ?? null, self::LONGITUDES, true)
                 ? $input['longitud']
                 : self::DEFAULTS['longitud'],
+            'leer_documentos' => (bool) ($input['leer_documentos'] ?? self::DEFAULTS['leer_documentos']),
             'conocimiento' => self::text($input['conocimiento'] ?? '', self::MAX_KNOWLEDGE),
             'limites' => collect($limits)
                 ->map(fn ($l) => self::line(is_scalar($l) ? (string) $l : '', self::MAX_LIMIT))
@@ -185,6 +190,12 @@ class AiAssistantProfile
                 is_scalar($input['instrucciones'] ?? null) ? (string) $input['instrucciones'] : ''
             ),
         ];
+    }
+
+    /** ¿Esta empresa quiere que la IA lea los archivos que mandan sus clientes? */
+    public static function leeDocumentos(int $companyId): bool
+    {
+        return (bool) (self::settings($companyId)['leer_documentos'] ?? false);
     }
 
     /**

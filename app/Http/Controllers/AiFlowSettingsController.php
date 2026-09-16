@@ -163,6 +163,7 @@ class AiFlowSettingsController extends Controller
             'assistant.nombre_asistente' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_NAME,
             'assistant.tratamiento' => ['sometimes', Rule::in(AiAssistantProfile::TREATMENTS)],
             'assistant.longitud' => ['sometimes', Rule::in(AiAssistantProfile::LONGITUDES)],
+            'assistant.leer_documentos' => 'sometimes|boolean',
             'assistant.tono' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_TONE,
             'assistant.conocimiento' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_KNOWLEDGE,
             'assistant.limites' => 'sometimes|array|max:' . AiAssistantProfile::MAX_LIMITS,

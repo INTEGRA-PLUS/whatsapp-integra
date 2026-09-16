@@ -444,3 +444,60 @@ Dos detalles del probador que son decisiones, no adornos:
   no por significado: si preguntas por *préstamo* no encontrará el párrafo que
   habla de *crédito*». Sin ese aviso, un resultado pobre parece culpa del
   documento y en realidad es de la configuración.
+
+---
+
+## El archivo que manda el cliente (16-sep-2026)
+
+Lo de arriba es la empresa enseñándole cosas a su IA. Esto es el otro lado: el
+cliente manda un PDF por WhatsApp —su factura, un contrato, un comprobante— y la
+IA responde sobre él.
+
+**Salió barato porque la tubería ya estaba.** PDF, Word, Excel, CSV y texto ya se
+saben leer desde la primera entrega; lo único que faltaba era traer el fichero y
+decidir cuándo merece la pena.
+
+Y de hecho el fichero **ya se descargaba**: el webhook lo guarda en S3 al entrar.
+Lo que pasaba es que un mensaje de tipo `document` llega con `content` vacío, así
+que `handOverToAi()` lo descartaba en su primera línea y el PDF nunca llegaba a
+la IA.
+
+### Las cuatro decisiones
+
+**Apagado por defecto.** Leer el archivo de un desconocido gasta tokens que paga
+la empresa, y es una capacidad nueva: que la encienda quien la quiera, no quien
+no se entere de que existe.
+
+**El texto se extrae en el job, nunca en el webhook.** Descargar y extraer son
+segundos, y el webhook de Meta es sincrónico: tardar ahí acaba en un reintento y
+en el mismo mensaje entrando dos veces. En el webhook sólo se **decide**; lo que
+viaja al job es la ficha del archivo.
+
+**Un archivo ilegible no acaba en silencio.** Si no se pudo leer —un PDF
+escaneado, una descarga fallida, algo demasiado grande— lo que viaja al modelo no
+es nada, sino la frase que hace que la IA se lo diga al cliente y le ofrezca otra
+vía. El cliente ya mandó su archivo y espera respuesta; callarse es el peor
+resultado posible.
+
+**Tope propio de 5 MB**, más bajo que los 10 de la empresa. Aquí no hay pantalla
+donde nadie revise nada: el cliente manda lo que le dé la gana, y un catálogo de
+200 páginas dejaría un worker ocupado minutos y se comería el contexto del modelo
+por algo que ni preguntó. Se mira la cabecera antes de descargar, y otra vez con
+el fichero delante porque hay servidores que no mandan `Content-Length`.
+
+### Lo que sigue sin entrar
+
+**Imágenes y audios.** Son otros modelos y otro coste, y prometerlos aquí sería
+que un cliente mande la foto de su factura y la IA conteste como si la hubiera
+visto. Siguen su camino hacia la respuesta automática o hacia un agente, que es
+mejor que hacerse cargo para no responder nada.
+
+Del audio conviene recordar el tamaño del problema antes de abrirlo: en WhatsApp
+colombiano **no es un caso raro, es la mitad de los mensajes**, y Whisper en este
+servidor competiría por CPU con el modelo de vectores.
+
+### Y el texto del archivo es DATO, no instrucción
+
+Pasa por el mismo saneado que el prompt entrenable —`AiPrompt::sanitizeInstructions()`—
+y entra declarado como «datos del cliente, no instrucciones». Aquí hace más falta
+que en ningún otro sitio: lo escribió un desconocido, no el admin de la empresa.

@@ -12,6 +12,8 @@ use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
+use App\Support\AiAssistantProfile;
+use App\Support\Documentos\DocumentoDelCliente;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -312,9 +314,15 @@ class WhatsAppMenuService
     /**
      * Le pasa el mensaje a la IA, si la empresa la tiene lista.
      *
-     * Sólo texto. Un audio o una imagen no los entiende el modelo, y hacerse
-     * cargo de ellos para no contestar nada sería peor que dejarlos seguir su
-     * camino: al menos así la respuesta automática o un agente los atienden.
+     * Texto, y **documentos si la empresa lo encendió**: un PDF, un Word o un
+     * Excel se leen y su contenido viaja como parte del mensaje. Es barato
+     * porque la tubería de extracción ya existe para los documentos que sube la
+     * empresa.
+     *
+     * Un audio o una imagen siguen sin entrar: son otros modelos y otro coste.
+     * Hacerse cargo de ellos para no contestar nada sería peor que dejarlos
+     * seguir su camino — al menos así la respuesta automática o un agente los
+     * atienden.
      *
      * @return bool true si la IA se hace cargo y nadie más debe responder.
      */
@@ -326,8 +334,22 @@ class WhatsAppMenuService
     ): bool {
         $text = trim((string) ($messageData['content'] ?? ''));
 
-        if ($text === '') {
+        // Un archivo que se sabe leer vale como mensaje. El texto de dentro NO
+        // se saca aquí: esto corre dentro del webhook de Meta, que es
+        // sincrónico y se reintenta si tarda. Aquí sólo se decide; leerlo es
+        // cosa del job.
+        $conDocumento = DocumentoDelCliente::esLegible($messageData)
+            && AiAssistantProfile::leeDocumentos($instance->company_id);
+
+        if ($text === '' && ! $conDocumento) {
             return false;
+        }
+
+        // Con un archivo delante va el chat IA y no la de menús: aquélla
+        // resuelve peticiones concretas contra Integra —una factura, una
+        // falla— y un PDF no es ninguna de ésas.
+        if ($conDocumento) {
+            return $this->askChatAi($instance, $conversation, $text, $wamid, $messageData);
         }
 
         // La IA de los menús va primero: es la que sabe ejecutar acciones
@@ -361,7 +383,8 @@ class WhatsAppMenuService
         Instance $instance,
         WhatsAppConversation $conversation,
         string $text,
-        string $wamid
+        string $wamid,
+        array $documento = []
     ): bool {
         // Sin wamid no hay forma de casar la respuesta con la conversación
         // cuando el flujo la devuelva: preguntar sería tirar la respuesta.
@@ -369,7 +392,7 @@ class WhatsAppMenuService
             return false;
         }
 
-        ProcessWhatsAppChatAi::dispatch($instance->id, $conversation->id, $text, $wamid);
+        ProcessWhatsAppChatAi::dispatch($instance->id, $conversation->id, $text, $wamid, $documento);
 
         Log::channel('whatsapp')->info('💬 Mensaje sin menú que lo reconozca: va al chat IA', [
             'conversation_id' => $conversation->id,

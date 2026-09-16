@@ -6,6 +6,7 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppChatAiClient;
+use App\Support\Documentos\DocumentoDelCliente;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -42,11 +43,16 @@ class ProcessWhatsAppChatAi implements ShouldQueue
      */
     public int $timeout;
 
+    /**
+     * @param array $documento Datos del archivo que mandó el cliente, si mandó
+     *                         uno y la empresa quiere que se lea. Vacío si no.
+     */
     public function __construct(
         public int $instanceId,
         public int $conversationId,
         public string $message,
-        public string $wamid
+        public string $wamid,
+        public array $documento = []
     ) {
         $this->timeout = (int) config('services.ai_chat.timeout', 180) + 30;
     }
@@ -75,7 +81,18 @@ class ProcessWhatsAppChatAi implements ShouldQueue
             return;
         }
 
-        $decision = $ai->ask($instance, $conversation, $this->message, $this->wamid);
+        // El archivo se lee AQUÍ y no en el webhook: descargarlo y extraer su
+        // texto son segundos, y el webhook de Meta es sincrónico —tardar ahí
+        // acaba en un reintento y en el mismo mensaje entrando dos veces.
+        $mensaje = $this->documento !== []
+            ? DocumentoDelCliente::comoTexto($this->documento, $this->message)
+            : $this->message;
+
+        if (trim($mensaje) === '') {
+            return;
+        }
+
+        $decision = $ai->ask($instance, $conversation, $mensaje, $this->wamid);
 
         // El gateway no se hizo cargo (rechazó, no respondió, vino vacío). El
         // turno vuelve a la respuesta automática: el webhook se la saltó dando

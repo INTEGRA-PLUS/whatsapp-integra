@@ -740,7 +740,7 @@ const ESTADOS = {
  * para siempre y recarga la página, que es como acaba subiendo el mismo
  * documento tres veces.
  */
-function DocumentosCard({ permitido, nombreDelComplemento }) {
+function DocumentosCard({ permitido, nombreDelComplemento, leeDocumentos, alternarLectura, guardandoLectura }) {
     const [documentos, setDocumentos] = useState([]);
     const [cargando, setCargando] = useState(true);
     const [subiendo, setSubiendo] = useState(false);
@@ -947,6 +947,24 @@ function DocumentosCard({ permitido, nombreDelComplemento }) {
                 </p>
 
                 {documentos.some(d => d.estado === 'listo') && <Probador permitido={permitido} />}
+
+                {/* El otro lado de lo mismo: archivos que la IA lee, pero los
+                    que manda el cliente. Va aquí y no en una tarjeta propia
+                    porque es la misma idea vista al revés. */}
+                <div className="flex items-start justify-between gap-4 rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3">
+                    <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">Leer los archivos que mande el cliente</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                            Si te manda un PDF, un Word o un Excel, la IA lo lee y responde sobre él. Imágenes y
+                            audios no: ésos siguen pasando a una persona.
+                        </p>
+                    </div>
+                    <AiSwitch
+                        checked={leeDocumentos}
+                        disabled={!permitido || guardandoLectura}
+                        onChange={alternarLectura}
+                    />
+                </div>
             </div>
         </Card>
     );
@@ -1365,7 +1383,16 @@ function Configuracion() {
 
                             <ConocimientoCard state={state} busy={busy} save={save} />
 
-                            <DocumentosCard permitido={complemento.chat} nombreDelComplemento={complemento.nombre} />
+                            <DocumentosCard
+                                permitido={complemento.chat}
+                                nombreDelComplemento={complemento.nombre}
+                                leeDocumentos={!!state.assistant.leer_documentos}
+                                guardandoLectura={busy}
+                                alternarLectura={v => save(
+                                    { assistant: { leer_documentos: v } },
+                                    v ? 'La IA leerá los archivos que manden tus clientes.' : 'La IA ya no leerá los archivos entrantes.'
+                                )}
+                            />
 
                             <PromptCard state={state} busy={busy} save={save} />
                         </div>
