@@ -400,6 +400,11 @@ class MasterController extends Controller
                 })
                 ->values(),
 
+            // Cuántas pagan fuera de tarifa. Es el número que dice si «a
+            // medida» sigue siendo la excepción que se supone que es: el día que
+            // sean diez, el catálogo es el que está mal.
+            'a_medida' => $empresas->filter(fn (PlanDeLaEmpresa $p) => $p->esAMedida())->count(),
+
             'nucleo' => config('planes.nucleo', []),
 
             'meses_gratis_al_pagar_anual' => (int) config('planes.meses_gratis_al_pagar_anual', 0),
@@ -609,6 +614,10 @@ class MasterController extends Controller
             'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
             'viene_de_integra' => 'boolean',
             'gratis_hasta' => 'nullable|date',
+            // El precio negociado, cuando no sale del catálogo. Vacío = se
+            // vuelve a la tarifa, y por eso se admite null explícitamente: sin
+            // eso no habría forma de quitar un precio a medida puesto por error.
+            'precio_personalizado' => 'nullable|integer|min:1|max:100000',
             'nota_de_cobro' => 'nullable|string|max:300',
         ]);
 
@@ -619,6 +628,18 @@ class MasterController extends Controller
         // casilla ya dijo lo que quería decir.
         if (($datos['viene_de_integra'] ?? false) && ($datos['cobro'] ?? null) === 'cortesia') {
             $datos['cobro'] = 'integra';
+        }
+
+        // Un precio a medida sin explicación es una cifra que dentro de un año
+        // nadie sabe justificar. No se rechaza —quien lo pone sabrá por qué—
+        // pero queda dicho en el registro para que se note quién lo dejó sin
+        // nota.
+        if (($datos['precio_personalizado'] ?? null) && blank($datos['nota_de_cobro'] ?? null)) {
+            Log::channel('whatsapp')->warning('⚠️ Precio a medida sin nota', [
+                'empresa' => $company->id,
+                'precio' => $datos['precio_personalizado'],
+                'por' => auth()->id(),
+            ]);
         }
 
         $company->update($datos);

@@ -49,7 +49,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     const [planCompany, setPlanCompany] = useState(null);
     const [planForm, setPlanForm] = useState({
         plan: 'inteligente', cobro: 'cortesia',
-        gratis_hasta: '', nota_de_cobro: '',
+        gratis_hasta: '', nota_de_cobro: '', precio_personalizado: '',
     });
     
     // Sync tab with URL
@@ -152,6 +152,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             cobro: p.cobro ?? 'cortesia',
             gratis_hasta: p.gratis_hasta ?? '',
             nota_de_cobro: company.nota_de_cobro ?? '',
+            precio_personalizado: company.precio_personalizado ?? '',
             viene_de_integra: !!company.viene_de_integra,
         });
         setPlanCompany(company);
@@ -781,6 +782,46 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 </ul>
                             </section>
 
+                            {/* Por encima del catálogo. Existe porque el techo de
+                                la tarifa —Avanzado con IA Completa, $158— se queda
+                                corto con los clientes grandes: a Cootramed se le
+                                propusieron 250, y esos 92 de diferencia no son un
+                                plan mayor sino lo que no cabe en ningún plan.
+
+                                No es un cuarto plan del catálogo a propósito: no
+                                tiene topes que escribir, porque cada caso es
+                                distinto. La empresa conserva su plan y su
+                                complemento —que deciden qué puede usar— y sólo
+                                cambia lo que paga. */}
+                            <section className="rounded-xl border border-dashed border-border bg-card px-5 py-4">
+                                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                                    <h3 className="font-heading text-sm font-semibold text-foreground">
+                                        A medida
+                                        <span className="ml-2 font-normal text-muted-foreground">
+                                            por encima del catálogo
+                                        </span>
+                                    </h3>
+                                    <span className="text-xs tabular-nums text-muted-foreground">
+                                        {planes_resumen.a_medida} {planes_resumen.a_medida === 1 ? 'empresa' : 'empresas'}
+                                    </span>
+                                </div>
+                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                    Se cotiza caso a caso y se escribe en la ficha de la empresa, con el porqué. Se
+                                    sigue eligiendo su plan y su complemento —son los que deciden qué puede usar—:
+                                    lo único que cambia es el importe.
+                                </p>
+                                <ul className="mt-3 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                                    <li className="flex items-start gap-1.5 text-xs text-foreground">
+                                        <Sparkles className="mt-0.5 size-3 shrink-0 text-accent-foreground" />
+                                        Desarrollos sobre su ERP
+                                    </li>
+                                    <li className="flex items-start gap-1.5 text-xs text-foreground">
+                                        <Sparkles className="mt-0.5 size-3 shrink-0 text-accent-foreground" />
+                                        Atención personalizada
+                                    </li>
+                                </ul>
+                            </section>
+
                             {/* Lo que va en los tres planes. Sin esto, el plan de
                                 entrada se lee como un plan de una sola función. */}
                             <section className="rounded-xl border border-border bg-card px-5 py-4">
@@ -1096,11 +1137,23 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             </p>
                         </div>
 
+                        {/* El precio a medida va pegado a la nota a propósito:
+                            son la cifra y su porqué, y separados se guarda la
+                            primera sin la segunda. */}
+                        <Field
+                            label="Precio a medida"
+                            type="number"
+                            value={planForm.precio_personalizado}
+                            onChange={v => setPlanForm({ ...planForm, precio_personalizado: v })}
+                            placeholder="250"
+                            ayuda="USD al mes, sólo si se negoció uno fuera de catálogo. Manda sobre el precio del plan y del complemento. Vacío = vuelve a la tarifa."
+                        />
+
                         <Field
                             label="Nota"
                             value={planForm.nota_de_cobro}
                             onChange={v => setPlanForm({ ...planForm, nota_de_cobro: v })}
-                            placeholder="Cliente desde 2024, cortesía hasta que firmen"
+                            placeholder="250/mes: incluye desarrollos sobre su ERP y atención personalizada"
                             ayuda="Por qué está así. Dentro de un año nadie se va a acordar, y sin esto acaba en un WhatsApp."
                         />
                     </form>
@@ -1696,6 +1749,14 @@ function PastillaDePlan({ resumen, uso }) {
             }`}>
                 {gracia ? 'mes gratis' : facturando ? 'facturando' : resumen.cobro}
             </span>
+            {/* A medida: el importe no sale de ningún plan del catálogo, así que
+                buscarlo en la tarifa para cuadrar una factura no lleva a nada.
+                Se dice aquí, con el número, para no tener que abrir la ficha. */}
+            {resumen.a_medida && (
+                <span className="rounded-md bg-info/10 px-1.5 py-0.5 text-xs tabular-nums text-info">
+                    a medida ${resumen.precio_usd}
+                </span>
+            )}
             {resumen.se_paso_del_tramo && (
                 <span className="text-[9px] font-bold uppercase tracking-wider text-warning">
                     +contactos

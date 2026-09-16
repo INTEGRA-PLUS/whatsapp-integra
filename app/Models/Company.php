@@ -19,6 +19,7 @@ class Company extends Model
         'active',
         'plan',
         'ia',
+        'precio_personalizado',
         'cobro',
         'ciclo',
         'suscripcion_hasta',

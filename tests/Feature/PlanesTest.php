@@ -555,4 +555,78 @@ class PlanesTest extends TestCase
         $this->assertFalse($plan->tieneIa());
         $this->assertFalse($plan->permiteExtension('conversation_summary'));
     }
+
+    /**
+     * El precio negociado manda sobre el del catálogo.
+     *
+     * El catálogo llega a 158 al mes y hay clientes por encima: a Cootramed se
+     * le propusieron 250, y esos 92 de diferencia son desarrollos sobre su ERP
+     * y atención personalizada, no un plan mayor. Se comprueba en
+     * `precioMensual()` porque es el punto por el que pasa todo lo que cobra
+     * —el ciclo, el cobro del mes, la suscripción y los avisos—: si se colara
+     * por cualquiera de ellos, se le facturaría la tarifa.
+     */
+    public function test_el_precio_a_medida_manda_sobre_el_catalogo(): void
+    {
+        $empresa = Company::create([
+            'name' => 'Cooperativa grande',
+            'slug' => 'cooperativa-grande',
+            'active' => true,
+            'plan' => 'avanzado',
+            'ia' => 'completa',
+            'precio_personalizado' => 250,
+        ]);
+
+        $plan = PlanDeLaEmpresa::de($empresa);
+
+        $this->assertTrue($plan->esAMedida());
+        $this->assertSame(250, $plan->precioMensual());
+
+        // Y lo arrastra el ciclo: lo que se emite cada periodo sale de
+        // multiplicar este precio por las mensualidades que se cobran.
+        $this->assertSame(
+            250 * config('planes.ciclos.'.$plan->ciclo().'.mensualidades'),
+            $plan->precioDelCiclo()
+        );
+    }
+
+    /**
+     * Y gana también al descuento de los clientes de Integra.
+     *
+     * A quien viene de Integra sólo se le cobra el complemento, porque el CRM ya
+     * se lo cobró el ERP. Si esa regla se aplicara después del precio negociado,
+     * a un cliente de Integra con precio a medida se le facturarían 49 en vez de
+     * los 250 que firmó.
+     */
+    public function test_el_precio_a_medida_gana_al_descuento_de_integra(): void
+    {
+        $empresa = Company::create([
+            'name' => 'Cooperativa de Integra',
+            'slug' => 'cooperativa-de-integra',
+            'active' => true,
+            'plan' => 'avanzado',
+            'ia' => 'completa',
+            'viene_de_integra' => true,
+            'precio_personalizado' => 250,
+        ]);
+
+        $this->assertSame(250, PlanDeLaEmpresa::de($empresa)->precioMensual());
+    }
+
+    /** Sin precio a medida, la tarifa de siempre. */
+    public function test_sin_precio_a_medida_se_cobra_el_catalogo(): void
+    {
+        $empresa = Company::create([
+            'name' => 'Normal',
+            'slug' => 'normal',
+            'active' => true,
+            'plan' => 'basico',
+            'ia' => 'ninguno',
+        ]);
+
+        $plan = PlanDeLaEmpresa::de($empresa);
+
+        $this->assertFalse($plan->esAMedida());
+        $this->assertSame(config('planes.crm.basico.precio'), $plan->precioMensual());
+    }
 }

@@ -245,9 +245,36 @@ class PlanDeLaEmpresa
      */
     public function precioMensual(): int
     {
+        // El precio a medida gana sobre todo lo demás, incluido el descuento de
+        // los clientes de Integra: es el número que se negoció y firmó, no el
+        // resultado de una fórmula. Aquí y no en cada pantalla, porque todo lo
+        // que cobra —el ciclo, el cobro del mes, la suscripción, los avisos—
+        // pasa por este método.
+        if ($this->esAMedida()) {
+            return $this->precioPersonalizado();
+        }
+
         return $this->incluidoEnIntegra()
             ? $this->precioIa()
             : $this->precioCrm() + $this->precioIa();
+    }
+
+    /**
+     * ¿Se le cobra un precio negociado en vez del de catálogo?
+     *
+     * El catálogo llega hasta 158 al mes y hay clientes por encima. Lo que pagan
+     * de más no es un plan mayor: es lo que no cabe en ningún plan —desarrollos
+     * sobre su ERP, atención personalizada—. Su plan y su complemento siguen
+     * decidiendo qué funciones tiene; esto sólo decide cuánto paga.
+     */
+    public function esAMedida(): bool
+    {
+        return $this->precioPersonalizado() > 0;
+    }
+
+    public function precioPersonalizado(): int
+    {
+        return (int) ($this->company->precio_personalizado ?? 0);
     }
 
     // ─── El ciclo y el periodo pagado ────────────────────────────────────────
@@ -476,6 +503,12 @@ class PlanDeLaEmpresa
             'precio_crm' => $this->precioCrm(),
             'precio_ia' => $this->precioIa(),
             'precio_usd' => $this->precioMensual(),
+            // Para que el panel pueda marcar «a medida» en vez de enseñar un
+            // número que no cuadra con ningún plan del catálogo.
+            'a_medida' => $this->esAMedida(),
+            'precio_de_catalogo' => $this->incluidoEnIntegra()
+                ? $this->precioIa()
+                : $this->precioCrm() + $this->precioIa(),
             'precio_usd_anual' => $this->precioMensualAnual(),
 
             'ciclo' => $this->ciclo(),
