@@ -38,6 +38,10 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     // sobrevive a una recarga.
     const { flash } = usePage().props;
     const [activeTab, setActiveTab] = useState('dashboard');
+    // Qué nivel de IA se está mirando en la pestaña de planes. Arranca en «Sin
+    // IA» —el precio de lista del CRM— y no en el más caro: el primero que hay
+    // que saber decir es cuánto cuesta entrar.
+    const [iaElegida, setIaElegida] = useState('ninguno');
     const [showCreate, setShowCreate] = useState(false);
     const [editingCompany, setEditingCompany] = useState(null);
     const [planCompany, setPlanCompany] = useState(null);
@@ -610,8 +614,47 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 número. La escalera de quince precios que había
                                 aquí —cinco tramos por tres planes— se retiró el
                                 15-sep-2026 junto con los tramos. */}
+                            {/* Tres planes por tres niveles de IA son NUEVE
+                                precios, y hasta ahora estaban en dos sitios: el
+                                del CRM en la tarjeta y el del complemento en una
+                                tabla más abajo. Para saber cuánto vale el Pro con
+                                IA había que sumar de cabeza delante del cliente.
+                                Listarlos como nueve planes tampoco: son dos
+                                decisiones, y presentarlas como una es lo que
+                                obligaba a subir de plan entero para tener IA.
+                                Un interruptor: se elige el nivel y los tres
+                                precios se recalculan a la vez. */}
+                            <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-xs font-medium text-muted-foreground">Ver precios</span>
+                                <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+                                    {planes_resumen.complementos.map(c => (
+                                        <button
+                                            key={c.slug}
+                                            type="button"
+                                            onClick={() => setIaElegida(c.slug)}
+                                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                                                iaElegida === c.slug
+                                                    ? 'bg-card text-foreground shadow-sm'
+                                                    : 'text-muted-foreground hover:text-foreground'
+                                            }`}
+                                        >
+                                            {c.nombre}
+                                            {c.precio > 0 && (
+                                                <span className="ml-1.5 tabular-nums opacity-70">+${c.precio}</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div className="grid gap-4 md:grid-cols-3">
-                                {planes_resumen.planes.map(plan => (
+                                {planes_resumen.planes.map(plan => {
+                                    const complemento = planes_resumen.complementos.find(c => c.slug === iaElegida)
+                                        ?? { slug: 'ninguno', nombre: 'Sin IA', precio: 0 };
+                                    const conIa = complemento.precio > 0;
+                                    const total = plan.precio + complemento.precio;
+
+                                    return (
                                     <section key={plan.slug} className="flex flex-col rounded-xl border border-border bg-card p-5">
                                         <div className="flex items-start justify-between gap-3">
                                             <h3 className="font-heading text-base font-semibold text-foreground">{plan.nombre}</h3>
@@ -623,12 +666,20 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                         <div className="mt-4 border-y border-border py-3">
                                             <p className="flex items-baseline gap-1.5">
                                                 <span className="text-3xl font-semibold tabular-nums text-foreground">
-                                                    ${plan.precio}
+                                                    ${total}
                                                 </span>
                                                 <span className="text-xs text-muted-foreground">USD al mes</span>
                                             </p>
+                                            {/* El desglose, para que el número grande no
+                                                parezca otro precio de lista: son dos cosas
+                                                que se facturan juntas. */}
+                                            {conIa && (
+                                                <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                                                    ${plan.precio} del plan + ${complemento.precio} de {complemento.nombre}
+                                                </p>
+                                            )}
                                             <p className="mt-1 text-[11px] text-muted-foreground">
-                                                Pagando el año, dos meses gratis: ${Math.round((plan.precio * (12 - planes_resumen.meses_gratis_al_pagar_anual)) / 12)} al mes.
+                                                Pagando el año, dos meses gratis: ${Math.round((total * (12 - planes_resumen.meses_gratis_al_pagar_anual)) / 12)} al mes.
                                             </p>
                                         </div>
 
@@ -636,8 +687,12 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             <li><span className="font-semibold tabular-nums text-foreground">{plan.agentes}</span> agentes</li>
                                             <li><span className="font-semibold tabular-nums text-foreground">{plan.contactos.toLocaleString('es-CO')}</span> contactos</li>
                                             <li><span className="font-semibold tabular-nums text-foreground">{plan.lineas}</span> {plan.lineas === 1 ? 'línea' : 'líneas'}</li>
-                                            <li className="pt-1 text-[11px]">
-                                                Con complemento: {plan.credito_ia.toLocaleString('es-CO')} conversaciones con IA al mes
+                                            <li className={`pt-1 text-[11px] ${conIa ? 'text-foreground' : ''}`}>
+                                                {conIa ? '' : 'Con complemento: '}
+                                                <span className={conIa ? 'font-semibold tabular-nums' : 'tabular-nums'}>
+                                                    {plan.credito_ia.toLocaleString('es-CO')}
+                                                </span>
+                                                {' '}conversaciones con IA al mes
                                             </li>
                                         </ul>
 
@@ -647,7 +702,8 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                             </p>
                                         )}
                                     </section>
-                                ))}
+                                    );
+                                })}
                             </div>
 
                             {/* El complemento, aparte. Es lo que se vende: al cliente
@@ -689,7 +745,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                 </ul>
                             </section>
 
-
+                            {/* El dinero del mes va arriba del todo en su propia
                                 pestaña: lo demás es catálogo. */}
                             <CobroDelMes datos={cobro_del_mes} />
 

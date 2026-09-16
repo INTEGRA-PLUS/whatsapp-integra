@@ -150,6 +150,15 @@ class PanelDePlanesTest extends TestCase
         );
 
         $this->assertSame(config('planes.ia.esencial.precio'), $complementos['esencial']['precio']);
+
+        // Los tres, con precio: el interruptor de la pestaña suma el del
+        // complemento al del plan para enseñar las nueve combinaciones sin
+        // listarlas. Si a alguno le faltara el número, el precio que se enseña
+        // sería el del CRM a secas y nadie lo notaría — sale bien formado.
+        foreach ($complementos as $slug => $complemento) {
+            $this->assertArrayHasKey('precio', $complemento, "El complemento {$slug} no trae precio.");
+            $this->assertSame(config("planes.ia.{$slug}.precio"), $complemento['precio']);
+        }
         $this->assertSame(1, $complementos['esencial']['empresas']);
     }
 
