@@ -224,9 +224,23 @@ return [
         'base_url' => env('ONEPAY_BASE_URL', 'https://api.onepay.la/v1'),
         'token' => env('ONEPAY_TOKEN'),
         'timeout' => (int) env('ONEPAY_TIMEOUT', 30),
-        // El secreto con el que se firma el webhook, si OnePay lo ofrece. Sin
-        // él, la ruta se protege por el token compartido de la cabecera.
+        // Lo que OnePay manda para probar que el aviso es suyo. Son dos valores
+        // distintos y no se sabe cuál viaja en qué cabecera, porque el webhook
+        // de Integra 2.0 no verifica nada y no hay de dónde copiarlo.
         'webhook_secret' => env('ONEPAY_WEBHOOK_SECRET'),
+        'webhook_header' => env('ONEPAY_WEBHOOK_HEADER'),
+
+        // `aprender` | `exigir`.
+        //
+        // En `aprender` se procesa todo y se apunta en el log si la firma habría
+        // pasado y por qué cabecera llegó. En `exigir` se rechaza lo que no
+        // valide.
+        //
+        // Se arranca en `aprender` a propósito: no hay sandbox —se prueba
+        // cobrando de verdad— así que rechazar por una cabecera mal adivinada
+        // sería perder un pago real sin saber por qué. Con el primer pago que
+        // entre, el log dice el nombre exacto y se pasa a `exigir`.
+        'webhook_modo' => env('ONEPAY_WEBHOOK_MODO', 'aprender'),
     ],
 
     'resumen' => [

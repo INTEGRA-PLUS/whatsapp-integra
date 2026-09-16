@@ -45,7 +45,25 @@ class OnePayWebhookController extends Controller
     {
         $tipo = (string) $request->input('event.type');
 
-        Log::channel('whatsapp')->info('💳 OnePay avisó', ['tipo' => $tipo ?: 'sin tipo']);
+        [$autentico, $como] = $this->verificar($request);
+
+        Log::channel('whatsapp')->info('💳 OnePay avisó', [
+            'tipo' => $tipo ?: 'sin tipo',
+            'autenticado' => $como,
+            // Los NOMBRES de las cabeceras, nunca sus valores: es lo que hace
+            // falta para descubrir cómo firma OnePay sin dejar el secreto en un
+            // log que se rota a un fichero y se lee con `tail`.
+            'cabeceras' => implode(', ', array_keys($request->headers->all())),
+        ]);
+
+        if (! $autentico && config('services.onepay.webhook_modo') === 'exigir') {
+            // 401 y no 200: aquí sí se quiere que la pasarela reintente, porque
+            // un rechazo por firma es un problema de configuración nuestro y el
+            // reintento nos da otra oportunidad de aceptarlo bien.
+            Log::channel('whatsapp')->warning('⚠️ Aviso de OnePay rechazado: no valida la firma');
+
+            return response()->json(['ok' => false, 'error' => 'firma'], 401);
+        }
 
         // 200 aunque no interese: un webhook que responde error hace que la
         // pasarela reintente en bucle un evento que nunca vamos a querer.
@@ -104,6 +122,61 @@ class OnePayWebhookController extends Controller
         ]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * ¿Viene de OnePay de verdad?
+     *
+     * Se aceptan las dos formas porque no se sabe cuál usa —Integra 2.0 no
+     * verifica nada y no hay de dónde copiarlo—:
+     *
+     * - **Token en cabecera.** El valor configurado aparece en alguna cabecera,
+     *   se llame como se llame. Se buscan todas en vez de exigir un nombre
+     *   concreto: adivinarlo mal es rechazar un pago real.
+     * - **Firma HMAC.** El cuerpo crudo firmado con el secreto, en hex o base64.
+     *   Sobre `getContent()` y nunca sobre `all()` re-serializado, por lo mismo
+     *   que el webhook de Meta: un re-serializado cambia el orden y los
+     *   escapes, y la firma deja de cuadrar sin motivo aparente.
+     *
+     * @return array{0: bool, 1: string} Si valida, y por qué camino.
+     */
+    private function verificar(Request $request): array
+    {
+        $token = (string) config('services.onepay.webhook_header');
+        $secreto = (string) config('services.onepay.webhook_secret');
+
+        if ($token === '' && $secreto === '') {
+            return [false, 'sin configurar'];
+        }
+
+        foreach ($request->headers->all() as $nombre => $valores) {
+            foreach ($valores as $valor) {
+                // `hash_equals` y no `===`: comparar secretos carácter a
+                // carácter filtra su longitud y su prefijo por el tiempo que
+                // tarda en fallar.
+                if ($token !== '' && hash_equals($token, trim((string) $valor))) {
+                    return [true, 'token en '.$nombre];
+                }
+
+                // Algunas pasarelas lo mandan como «Bearer xxx» o «sha256=xxx».
+                $limpio = preg_replace('/^(Bearer|sha256|sha1)[ =]/i', '', trim((string) $valor));
+
+                if ($token !== '' && $limpio && hash_equals($token, $limpio)) {
+                    return [true, 'token en '.$nombre];
+                }
+
+                if ($secreto !== '' && $limpio) {
+                    $cuerpo = $request->getContent();
+                    $hex = hash_hmac('sha256', $cuerpo, $secreto);
+
+                    if (hash_equals($hex, $limpio) || hash_equals(base64_encode(hex2bin($hex)), $limpio)) {
+                        return [true, 'firma en '.$nombre];
+                    }
+                }
+            }
+        }
+
+        return [false, 'no valida'];
     }
 
     /**

@@ -194,6 +194,128 @@ class OnePayWebhookTest extends TestCase
         $this->assertNull(OnePayClient::cobroDeLaReferencia('0FV123'));
     }
 
+    // ─── La firma ────────────────────────────────────────────────────────────
+
+    /**
+     * En modo `exigir`, sin firma no pasa.
+     *
+     * Este webhook mueve dinero: quien acierte un id de cobro podría marcarlo
+     * pagado. Sin verificación es una puerta abierta con la cerradura puesta al
+     * lado.
+     */
+    public function test_en_modo_exigir_se_rechaza_lo_que_no_firma(): void
+    {
+        config([
+            'services.onepay.webhook_header' => 'un-token-cualquiera',
+            'services.onepay.webhook_modo' => 'exigir',
+        ]);
+
+        [, $cobro] = $this->cobro();
+
+        $this->postJson('/pagos/onepay', [
+            'event' => ['type' => 'invoice.paid'],
+            'invoice' => ['external_id' => OnePayClient::referencia($cobro)],
+        ])->assertStatus(401);
+
+        $this->assertSame('pendiente', $cobro->refresh()->estado);
+    }
+
+    /**
+     * Y con el token en cualquier cabecera, sí.
+     *
+     * Se buscan todas en vez de exigir un nombre concreto porque no se sabe cuál
+     * usa OnePay: Integra 2.0 no verifica nada y no hay de dónde copiarlo.
+     * Adivinar el nombre mal sería rechazar un pago real, y no hay sandbox donde
+     * descubrirlo sin cobrar.
+     */
+    public function test_el_token_vale_venga_en_la_cabecera_que_venga(): void
+    {
+        config([
+            'services.onepay.webhook_header' => 'un-token-cualquiera',
+            'services.onepay.webhook_modo' => 'exigir',
+        ]);
+
+        [, $cobro] = $this->cobro();
+
+        $this->withHeaders(['X-Lo-Que-Sea' => 'un-token-cualquiera'])
+            ->postJson('/pagos/onepay', [
+                'event' => ['type' => 'invoice.paid'],
+                'invoice' => [
+                    'external_id' => OnePayClient::referencia($cobro),
+                    'payment' => ['id' => 'p1', 'amount' => $cobro->importe_usd * config('planes.tasa_cop')],
+                ],
+            ])->assertOk();
+
+        $this->assertSame('pagado', $cobro->refresh()->estado);
+    }
+
+    /** La firma HMAC del cuerpo crudo también vale. */
+    public function test_la_firma_hmac_del_cuerpo_tambien_vale(): void
+    {
+        config([
+            'services.onepay.webhook_secret' => 'un-secreto',
+            'services.onepay.webhook_modo' => 'exigir',
+        ]);
+
+        [, $cobro] = $this->cobro();
+
+        $payload = [
+            'event' => ['type' => 'invoice.paid'],
+            'invoice' => [
+                'external_id' => OnePayClient::referencia($cobro),
+                'payment' => ['id' => 'p2', 'amount' => $cobro->importe_usd * config('planes.tasa_cop')],
+            ],
+        ];
+
+        // Sobre el cuerpo crudo, no sobre el array re-serializado: es lo que
+        // manda la pasarela y lo que llega por el cable.
+        $crudo = json_encode($payload);
+
+        $this->call(
+            'POST',
+            '/pagos/onepay',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_SIGNATURE' => 'sha256='.hash_hmac('sha256', $crudo, 'un-secreto'),
+            ],
+            $crudo
+        )->assertOk();
+
+        $this->assertSame('pagado', $cobro->refresh()->estado);
+    }
+
+    /**
+     * En modo `aprender` se procesa aunque no valide.
+     *
+     * Es el modo con el que se arranca: no hay sandbox —se prueba cobrando de
+     * verdad— así que rechazar por una cabecera mal adivinada sería perder un
+     * pago real sin saber por qué. El log dice por dónde llegó, y con eso se
+     * pasa a `exigir`.
+     */
+    public function test_en_modo_aprender_se_procesa_aunque_no_valide(): void
+    {
+        config([
+            'services.onepay.webhook_header' => 'un-token',
+            'services.onepay.webhook_modo' => 'aprender',
+        ]);
+
+        [, $cobro] = $this->cobro();
+
+        $this->postJson('/pagos/onepay', [
+            'event' => ['type' => 'invoice.paid'],
+            'invoice' => [
+                'external_id' => OnePayClient::referencia($cobro),
+                'payment' => ['id' => 'p3', 'amount' => $cobro->importe_usd * config('planes.tasa_cop')],
+            ],
+        ])->assertOk();
+
+        $this->assertSame('pagado', $cobro->refresh()->estado);
+    }
+
     /** @return array{0: Company, 1: SuscripcionCobro} */
     private function cobro(): array
     {
