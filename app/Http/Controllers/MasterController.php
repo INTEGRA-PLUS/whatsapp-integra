@@ -203,12 +203,25 @@ class MasterController extends Controller
             // El catálogo va al frontend para que los selectores del modal de
             // plan salgan de la misma fuente que el candado. Si algún día se
             // añade un plan, aparece solo.
-            'planes' => collect(config('planes.disponibles'))
+            'planes' => collect(config('planes.crm'))
                 ->map(fn (array $p, string $slug) => [
                     'value' => $slug,
-                    'label' => $p['nombre'],
-                    'con_ia' => ($p['ia'] ?? null) !== null,
+                    // El tamaño en la propia etiqueta: quien elige el plan de
+                    // una empresa está mirando sus contactos y sus agentes, y
+                    // sin esto tiene que acordarse de memoria de qué incluye
+                    // cada uno.
+                    'label' => $p['nombre'].' — '.$p['agentes'].' agentes · '
+                        .number_format($p['contactos']).' contactos · $'.$p['precio'],
                 ])->values(),
+
+            // El complemento, que es la otra mitad de la decisión y es lo único
+            // que se le puede vender a un cliente de Integra.
+            'complementos' => collect(config('planes.ia'))
+                ->map(fn (array $p, string $slug) => [
+                    'value' => $slug,
+                    'label' => $p['nombre'].($p['precio'] ? ' — +$'.$p['precio'].'/mes' : ''),
+                ])->values(),
+
             'cobros' => config('planes.cobros'),
             // Va en closure por lo mismo que los bloques del dashboard: teclear
             // en el buscador de empresas es una visita a esta acción, y esto

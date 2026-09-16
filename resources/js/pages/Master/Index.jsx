@@ -33,7 +33,7 @@ import {
     Download,
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], cobros = [], planes_resumen, cobro_del_mes }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], complementos = [], cobros = [], planes_resumen, cobro_del_mes }) {
     // La contraseña temporal viaja por flash: existe una sola vez y no
     // sobrevive a una recarga.
     const { flash } = usePage().props;
@@ -140,7 +140,8 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     function openPlan(company) {
         const p = company.plan_resumen ?? {};
         setPlanForm({
-            plan: p.plan ?? 'inteligente',
+            plan: p.plan ?? 'basico',
+            ia: p.ia ?? 'ninguno',
             cobro: p.cobro ?? 'cortesia',
             contactos_contratados: p.contactos_contratados ?? '',
             gratis_hasta: p.gratis_hasta ?? '',
@@ -831,12 +832,25 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             value={planForm.plan}
                             onChange={v => setPlanForm({ ...planForm, plan: v })}
                             options={planes}
-                            ayuda="Qué extensiones puede instalar. Bajarlo no desinstala lo que ya tenga."
+                            ayuda="El tamaño: agentes, contactos y líneas. No es un límite duro — nadie deja de atender por crecer — y bajarlo no desinstala nada."
                         />
 
-                        {planCompany.plan_resumen?.precio_usd && (
+                        {/* El complemento va justo debajo del plan: son las dos
+                            mitades de la misma decisión, y es lo único que se le
+                            puede vender a un cliente de Integra. */}
+                        <Selector
+                            label="Complemento de IA"
+                            value={planForm.ia}
+                            onChange={v => setPlanForm({ ...planForm, ia: v })}
+                            options={complementos}
+                            ayuda="Se vende aparte del plan y se suma al precio. Esencial trae el semáforo afinado y el resumen; Completa añade los menús y el chat con IA, que cuestan trece veces más por conversación."
+                        />
+
+                        {planCompany.plan_resumen?.precio_usd > 0 && (
                             <p className="-mt-2 text-xs text-muted-foreground">
-                                Con su tramo actual le corresponden{' '}
+                                {planCompany.plan_resumen.incluido_en_integra
+                                    ? 'Viene de Integra, así que sólo se le cobra el complemento: '
+                                    : 'Le corresponden '}
                                 <span className="font-mono font-semibold text-foreground">
                                     ${planCompany.plan_resumen.precio_usd}
                                 </span>{' '}
@@ -886,53 +900,64 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             ayuda="Integra es quien ya paga por el ERP. Cortesía es a quien todavía no se le cobra — son cosas distintas. Suspendido no apaga nada, solo marca."
                         />
 
-                        <div className="space-y-1.5">
-                            <Field
-                                label="Contactos contratados"
-                                type="number"
-                                value={planForm.contactos_contratados}
-                                onChange={v => setPlanForm({ ...planForm, contactos_contratados: v })}
-                                placeholder="12000"
-                                ayuda="Cuántos contactos atiende por WhatsApp. Es el tramo de la escalera: decide el precio y el crédito de IA. No es un límite, nadie deja de atender por crecer."
-                            />
+                        {/* Lo que tiene de verdad, contra lo que incluye su plan.
+                            Sustituye al campo «contactos contratados», que era el
+                            tramo de la escalera vieja: ahora el tamaño lo decide
+                            el plan, así que escribir un número a mano no cambiaba
+                            nada y sólo confundía. */}
+                        {planCompany.plan_resumen && (
+                            <div className={`space-y-2 rounded-lg border px-3 py-2.5 text-xs ${
+                                planCompany.plan_resumen.se_paso_del_tramo
+                                    ? 'border-warning/40 bg-warning/10'
+                                    : 'border-border bg-muted/40'
+                            }`}>
+                                <p className="font-semibold text-foreground">Lo que tiene ahora mismo</p>
 
-                            {/* Lo que tiene de verdad, al lado de lo que contrató.
-                                El dato está ahí desde siempre —cada persona que
-                                escribe queda como contacto— pero nadie lo miraba al
-                                poner el tramo, así que se ponía a ojo. */}
-                            {planCompany.plan_resumen?.contactos_reales > 0 && (
-                                <div className={`rounded-lg border px-3 py-2 text-xs ${
-                                    planCompany.plan_resumen.se_paso_del_tramo
-                                        ? 'border-warning/40 bg-warning/10'
-                                        : 'border-border bg-muted/40'
-                                }`}>
-                                    <div className="flex items-baseline justify-between gap-3">
-                                        <span className="text-foreground">Tiene ahora mismo</span>
-                                        <span className="font-mono tabular-nums font-semibold text-foreground">
-                                            {planCompany.plan_resumen.contactos_reales.toLocaleString('es-CO')}
+                                {[
+                                    ['Contactos', 'contactos_reales', 'contactos_incluidos'],
+                                    ['Agentes', 'agentes_reales', 'agentes_incluidos'],
+                                    ['Líneas', 'lineas_reales', 'lineas_incluidas'],
+                                ].map(([etiqueta, real, incluido]) => (
+                                    <div key={etiqueta} className="flex items-baseline justify-between gap-3">
+                                        <span className="text-muted-foreground">{etiqueta}</span>
+                                        <span className="font-mono tabular-nums text-foreground">
+                                            <span className={
+                                                planCompany.plan_resumen[real] > planCompany.plan_resumen[incluido]
+                                                    ? 'font-bold text-warning'
+                                                    : 'font-semibold'
+                                            }>
+                                                {planCompany.plan_resumen[real].toLocaleString('es-CO')}
+                                            </span>
+                                            <span className="text-muted-foreground">
+                                                {' / '}{planCompany.plan_resumen[incluido].toLocaleString('es-CO')}
+                                            </span>
                                         </span>
                                     </div>
-                                    {planCompany.plan_resumen.se_paso_del_tramo ? (
-                                        <p className="mt-1 leading-snug text-muted-foreground">
-                                            Se pasó de lo contratado. Toca renegociar el tramo — no se le
-                                            corta nada mientras tanto.
-                                        </p>
-                                    ) : planCompany.plan_resumen.tramo_sugerido && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setPlanForm({
-                                                ...planForm,
-                                                contactos_contratados: planCompany.plan_resumen.tramo_sugerido,
-                                            })}
-                                            className="mt-1 text-primary hover:underline"
-                                        >
-                                            Usar el tramo que le corresponde
-                                            ({planCompany.plan_resumen.tramo_sugerido.toLocaleString('es-CO')})
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                                ))}
+
+                                {planCompany.plan_resumen.se_paso_del_tramo && (
+                                    <p className="leading-snug text-muted-foreground">
+                                        Se pasó de {planCompany.plan_resumen.se_paso_de.join(' y ')}. Conviene
+                                        hablar de subirle el plan — no se le corta nada mientras tanto.
+                                    </p>
+                                )}
+
+                                {planCompany.plan_resumen.plan_sugerido
+                                    && planCompany.plan_resumen.plan_sugerido !== planForm.plan && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPlanForm({
+                                            ...planForm,
+                                            plan: planCompany.plan_resumen.plan_sugerido,
+                                        })}
+                                        className="text-primary hover:underline"
+                                    >
+                                        Ponerle el plan que le corresponde por lo que usa
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-foreground">Gratis hasta</label>

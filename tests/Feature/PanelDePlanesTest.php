@@ -199,6 +199,37 @@ class PanelDePlanesTest extends TestCase
             ->assertJsonMissingPath('props.planes_resumen');
     }
 
+    /**
+     * El formulario de plan trae sus opciones, o sale un desplegable vacío.
+     *
+     * Pasó de verdad: al separar el CRM de la IA, el panel siguió alimentando el
+     * selector con `planes.disponibles`, que ya no existía. El modal abría con
+     * el desplegable en blanco y no se podía asignar plan a nadie — y no falla
+     * en ningún sitio, simplemente no hay nada que elegir.
+     *
+     * Se piden como recarga parcial de `planes,complementos`: son props de la
+     * página, no del resumen, y ésa es justo la distinción que se rompió.
+     */
+    public function test_el_formulario_trae_los_planes_y_los_complementos(): void
+    {
+        $respuesta = $this->parcial('/master', 'planes,complementos')->assertOk();
+
+        $this->assertSame(
+            array_keys(config('planes.crm')),
+            array_column($respuesta->json('props.planes'), 'value')
+        );
+
+        $this->assertSame(
+            array_keys(config('planes.ia')),
+            array_column($respuesta->json('props.complementos'), 'value')
+        );
+
+        // Y con etiqueta: un `value` sin `label` pinta opciones en blanco.
+        foreach ($respuesta->json('props.planes') as $opcion) {
+            $this->assertNotEmpty($opcion['label']);
+        }
+    }
+
     /** @return array<string, mixed> */
     private function resumen(): array
     {
