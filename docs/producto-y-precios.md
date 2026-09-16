@@ -256,32 +256,63 @@ encima de 5.000 suscriptores). Ponerse al nivel de TecnoChat sería regalar el
 trabajo y además restar credibilidad: nadie cree que una integración con el ERP
 cueste 112 USD.
 
-Tres decisiones que se derivan de la competencia:
+Tres decisiones, y las tres cambiaron al mirar la base real el 15-sep-2026.
 
-1. **Cobrar por número de socios**, como W-Chat, y no por agentes. Es como
-   piensa el cliente y evita la discusión de cuánta gente conectamos.
-2. **Tres niveles**, pero no los de W-Chat. Aquí se escribió «CRM, CRM + Bot,
-   CRM + Bot + IA» copiando su escalera, y al implementarlo se vio que no
-   encaja con el producto: **el bot de menús es núcleo y va en los tres
-   planes**. Moverlo a un plan de pago degradaría a 47 de las 48 empresas
-   cliente, que ya tienen menús activos con 846 opciones configuradas entre
-   todas. La escalera real es:
+1. **El CRM y la IA se venden por separado.** Es la decisión que reordenó todo
+   lo demás, y salió de un dato: **casi todos los clientes llegaron con Integra
+   y ya pagan el CRM dentro del ERP**. Los 2.391 USD/mes que el panel contaba
+   como facturación potencial eran de gente que ya paga.
 
-   | | |
-   |---|---|
-   | **Esencial** | El CRM completo, bot de menús incluido |
-   | **Automatización** | + reparto, avisos y semáforo, sin modelo |
-   | **Inteligente** | + las funciones que llaman a la IA |
+   Con la IA metida dentro del plan más caro, vendérsela obligaba a subirles de
+   plan entero — algo que a un cliente que ya paga el CRM no se le puede ni
+   plantear. Separadas, la conversación es otra: «lo que tienes sigue igual, y
+   por 19 dólares más el asesor entra a cada chat sabiéndolo todo».
 
-   Que el bot entre desde el primer plan **es un argumento, no una concesión**:
-   W-Chat lo cobra aparte y nosotros no. Se dice así en la mesa.
+2. **Precio fijo por plan, no un rango por tramo.** Había quince precios —cinco
+   tramos por tres planes— y un rango se lee como «depende» o como negociable.
+   TecnoChat pone un número y nosotros también:
 
-   *Corregido el 15-sep-2026, al consolidar los planes. La versión anterior de
-   este punto sigue apareciendo en propuestas viejas; si alguien cita «CRM +
-   Bot» como un plan, es de ahí.*
-3. **Facturar por trimestre o año adelantado**, como hacen todos. El montaje
-   —conectar el número, armar plantillas, entrenar al equipo— no se recupera en
-   un mes.
+   | Plan de CRM | Precio | Incluye |
+   |---|---|---|
+   | **Básico** | 29 USD | 2 agentes · 3.000 contactos · 1 línea |
+   | **Pro** | 59 USD | 5 agentes · 10.000 contactos · 2 líneas |
+   | **Avanzado** | 109 USD | 10 agentes · 30.000 contactos · 3 líneas |
+
+   | Complemento de IA | Precio | Abre |
+   |---|---|---|
+   | **IA Esencial** | +19 USD | Semáforo afinado y resumen de conversación |
+   | **IA Completa** | +49 USD | Lo anterior, más menús y chat con IA |
+
+   Los topes salen de la base real y no de una suposición: con 2 agentes y 3.000
+   contactos caben **36 de los 41 clientes** en el Básico.
+
+   Los dos niveles de IA existen por el coste, que no es parejo: una
+   conversación de chat con IA cuesta **trece veces** un análisis de semáforo.
+   Sobre el volumen real, semáforo y resumen juntos son ~30 USD/mes para toda la
+   base; el chat serían ~352. El nivel barato se vende con 96% de margen; el
+   caro necesita medirse, y para eso está el contador de `ContadorDeIa`.
+
+3. **El bot de menús va en los tres planes.** Aquí se escribió «CRM, CRM + Bot,
+   CRM + Bot + IA» copiando la escalera de W-Chat, y al implementarlo se vio que
+   no encaja: el bot es núcleo. Moverlo a un plan de pago degradaría a **47 de
+   las 48 empresas cliente**, que ya tienen menús activos con 846 opciones
+   configuradas entre todas.
+
+   Que entre desde el primer plan **es un argumento, no una concesión**: W-Chat
+   lo cobra aparte y nosotros no. Se dice así en la mesa.
+
+   *Si alguien cita «CRM + Bot» como un plan, viene de la versión anterior de
+   este documento y de las propuestas que se escribieron con ella.*
+
+4. **Facturar por trimestre o año adelantado**, como hacen todos. Dos meses
+   gratis pagando el año. El montaje —conectar el número, armar plantillas,
+   entrenar al equipo— no se recupera en un mes.
+
+Y una que no se deriva de la competencia sino de la casa: **a los agentes se les
+puso tope**. Antes eran ilimitados, con el argumento de que cobrar por agente
+castiga a quien más usa la herramienta. Sigue siendo verdad, y por eso el tope
+del Básico son dos y no uno como TecnoChat — pero un tope existe, porque es la
+mitad de lo que decide si un plan le queda corto a una empresa.
 
 El mensaje comercial de una frase: *pagas la plataforma a nosotros y los
 mensajes a Meta al costo, sin intermediarios que cobren margen encima*.
