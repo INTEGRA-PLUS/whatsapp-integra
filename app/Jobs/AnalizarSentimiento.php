@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\ConversationEvent;
 use App\Models\CompanyExtension;
+use App\Support\PlanDeLaEmpresa;
 use App\Models\SentimentEvent;
 use App\Models\WhatsAppConversation;
 use App\Services\SentimientoIaClient;
@@ -82,6 +83,15 @@ class AnalizarSentimiento implements ShouldQueue
         // Se revalida después de la espera y no sólo al despachar: la empresa
         // pudo apagar la extensión, o la IA, mientras el job hacía cola.
         if (! $instalada || ! ($instalada->settings()['usar_ia'] ?? false)) {
+            return;
+        }
+
+        // Y el plan, que el candado de instalación no cubre: `usar_ia` pudo
+        // quedar encendido de antes de que la empresa perdiera el complemento.
+        // Sin esto seguía llamando al modelo y gastando tokens de alguien que no
+        // lo paga. El semáforo no se apaga —la capa de léxico sigue coloreando
+        // sin modelo—, sólo deja de afinarse.
+        if (! PlanDeLaEmpresa::de($conversation->instance->company)->permiteAjuste('sentiment_traffic_light', 'usar_ia')) {
             return;
         }
 

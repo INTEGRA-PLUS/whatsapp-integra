@@ -9,6 +9,7 @@ use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use App\Support\ContadorDeIa;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -60,6 +61,18 @@ class WhatsAppChatAiClient
         string $wamid
     ): ?AiDecision {
         if (! self::enabledFor($instance->company_id) || trim($message) === '' || $wamid === '') {
+            return null;
+        }
+
+        // El plan, que el candado de instalación no cubre: la integración pudo
+        // quedar encendida de antes de que la empresa perdiera el complemento, y
+        // sin esto seguiría llamando al modelo con tokens de alguien que no los
+        // paga.
+        //
+        // El chat es el más caro de todos: 0,0086 USD por conversación, trece
+        // veces un análisis de semáforo. Si lo usara toda la base serían 352 USD
+        // al mes, así que aquí el candado no es cosmético.
+        if (! PlanDeLaEmpresa::de($instance->company)->permiteFlujoIa('ai_chat')) {
             return null;
         }
 

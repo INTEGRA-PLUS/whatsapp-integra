@@ -12,6 +12,7 @@ use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use App\Support\ContadorDeIa;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -80,6 +81,17 @@ class WhatsAppAiClient
         $integration = self::for($instance->company_id);
 
         if (blank($url) || ! $integration) {
+            return null;
+        }
+
+        // El plan, que el candado de instalación no cubre: la integración pudo
+        // quedar encendida de antes de que la empresa perdiera el complemento, y
+        // sin esto seguiría llamando al modelo con tokens de alguien que no los
+        // paga.
+        //
+        // Los menús con IA son de los flujos caros: 0,00065 USD por mensaje, y
+        // atendiendo todos los entrantes de la base serían 67 USD al mes.
+        if (! PlanDeLaEmpresa::de($instance->company)->permiteFlujoIa('ai_menus')) {
             return null;
         }
 

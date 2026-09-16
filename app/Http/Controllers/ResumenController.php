@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Extensions\ResumenExtension;
+use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\ResumenIaClient;
+use App\Support\PlanDeLaEmpresa;
 use App\Support\ContadorDeIa;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,6 +49,23 @@ class ResumenController extends Controller
             return response()->json([
                 'message' => 'La extensión de resumen no está encendida.',
             ], 409);
+        }
+
+        // El plan se comprueba AQUÍ y no sólo al instalar. El candado de
+        // `ExtensionController` impide instalar lo que no se contrató, pero no
+        // toca lo que ya estaba instalado — a propósito, para no apagarle nada a
+        // nadie en una migración. El efecto era una fuga: una empresa que pierde
+        // el complemento, o a la que se le apuntó mal, seguía gastando tokens
+        // cada vez que alguien pulsaba «Resumir».
+        //
+        // 402 y no 403, igual que en `ExtensionController::install()`: no es un
+        // problema de permisos sino de plan, y el frontend tiene que poder
+        // distinguirlos para decir «contrata el complemento» en vez de «no
+        // tienes acceso».
+        if (! PlanDeLaEmpresa::de(Company::findOrFail($user->company_id))->tieneIa()) {
+            return response()->json([
+                'message' => 'El resumen con IA no está incluido en tu plan.',
+            ], 402);
         }
 
         $ajustes = $installed->settings ?? [];
