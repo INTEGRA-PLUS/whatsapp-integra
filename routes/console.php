@@ -49,3 +49,13 @@ Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapp
 // archivo compartido, y el módulo existe precisamente para que añadir una no
 // toque nada fuera de su propia clase.
 Schedule::command('extensions:run')->everyFiveMinutes()->withoutOverlapping();
+
+// Avisos de plan: quién se pasó de agentes o contactos, a quién se le acabó el
+// crédito de IA y quién paga la IA sin usarla.
+//
+// **Una vez al día y no más.** Estos avisos no tienen prisa —son conversaciones
+// comerciales, no incidencias— y una campana que suena varias veces al día por
+// lo mismo se aprende a ignorar, arrastrando con ella los avisos que sí
+// importan. A las 07:15, después de los otros diarios, para que los tres
+// informes de la mañana no coincidan en el mismo minuto.
+Schedule::command('planes:avisar')->dailyAt('07:15')->withoutOverlapping();
