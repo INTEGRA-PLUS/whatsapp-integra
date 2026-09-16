@@ -51,6 +51,9 @@ La extracción no necesita nada del sistema operativo:
   `pdftotext` o LibreOffice en la imagen la engorda y añade un binario más que
   mantener.
 - **TXT y CSV** se leen tal cual.
+- **XLSX** es otro zip con XML dentro (`xl/sharedStrings.xml` y las hojas), así
+  que tampoco añade dependencias — pero se parte distinto. Ver
+  [«Las hojas de cálculo no son prosa»](#las-hojas-de-cálculo-no-son-prosa).
 
 ### 2. Cuando el cliente pregunta (en cada mensaje)
 
@@ -86,6 +89,60 @@ bloque delimitado y presentados como **datos, no instrucciones**:
 El nombre del archivo va delante a propósito: permite que la IA cite de dónde lo
 sacó («según el reglamento de crédito…»), que es lo que hace que un cliente se lo
 crea y lo que permite a la empresa auditar una respuesta mala.
+
+## Las hojas de cálculo no son prosa
+
+Un Excel es la mitad de lo que las empresas tienen a mano —el tarifario, las
+sedes, los planes, el catálogo— así que entra. Pero partirlo en trozos de 800
+caracteres como si fuera un PDF lo rompe: parte una tabla por la mitad y deja
+filas huérfanas de su encabezado, que es como decir «89.900» sin decir de qué.
+
+**Cada fila es un trozo, y lleva su encabezado pegado.** Una fila de un tarifario
+no se guarda como `300 megas | 89900 | 50000` sino como:
+
+```
+[Tarifario 2026.xlsx · hoja «Planes hogar»]
+Plan: 300 megas · Precio mensual: $89.900 · Instalación: $50.000 · Permanencia: sin cláusula
+```
+
+Así cada fila se explica sola, la búsqueda la encuentra por cualquiera de sus
+campos, y da igual que el archivo tenga treinta filas o tres mil: el mecanismo es
+el mismo que para el texto, sin una segunda tubería que mantener.
+
+### Lo que un Excel hace bien y lo que no
+
+**Contesta consultas.** «¿Cuánto cuesta el plan de 300 megas?», «¿tienen sede en
+Rionegro?», «¿el crédito de libre inversión a qué tasa está?». La fila aparece y
+el modelo la lee. Es el 90 % de lo que un cliente pregunta por WhatsApp, y es
+justo para lo que hoy no hay nada.
+
+**No hace análisis, y conviene no venderlo como que sí.** «¿Cuál es el plan más
+barato?», «¿cuántas sedes tienen en Antioquia?», «súmame el total» — para eso el
+modelo tendría que ver la tabla entera y hacer cuentas, y un LLM sumando
+trescientas filas se equivoca con total seguridad. Lo peligroso no es que falle:
+es que **falla sonando igual de convincente que cuando acierta**, y aquí hay
+precios de por medio.
+
+Si eso hace falta, es otra cosa: una herramienta que consulte de verdad la tabla
+y devuelva el resultado ya calculado. Está fuera de este plan y no debe colarse
+por la puerta de atrás.
+
+### Las trampas del XLSX
+
+Ninguna es grave, todas se olvidan:
+
+- **Las fechas son números.** Un `45.678` es una fecha; sólo se distingue mirando
+  el formato en `xl/styles.xml`. Sin eso, el tarifario dirá que la vigencia
+  empieza el «45678».
+- **Las fórmulas guardan dos cosas**: la fórmula y el último valor calculado. Hay
+  que leer el valor (`<v>`), no la fórmula (`<f>`).
+- **Varias hojas.** Se procesan todas, y el nombre de la hoja va en la cita — en
+  un tarifario suele ser lo que distingue «hogar» de «empresas».
+- **La primera fila no siempre es el encabezado.** A veces hay un logo, un título
+  y dos filas en blanco antes. Si la detección falla, la pantalla tiene que
+  **enseñar cómo quedó la primera fila interpretada** para que el admin lo vea,
+  en vez de descubrirlo por una respuesta rara tres semanas después.
+- **Las celdas combinadas** dejan huecos donde el humano ve el valor de arriba.
 
 ## El contrato con n8n, y la lección del 16-sep
 
@@ -191,4 +248,6 @@ Tres entregas, cada una útil por su cuenta:
 - **¿Entra en IA Completa o es un complemento aparte?** Es el argumento más
   fuerte frente a TecnoChat, que no lo tiene. Puede justificar su propio precio.
 - **¿Cinco archivos está bien?** Cinco es lo que pidió Alejandro. El tope que de
-  verdad importa no es el número de archivos sino el de trozos.
+  verdad importa no es el número de archivos sino el de trozos — y un Excel de
+  tres mil filas son tres mil trozos él solo, así que el tope tiene que contarse
+  ahí y no en la cantidad de ficheros.
