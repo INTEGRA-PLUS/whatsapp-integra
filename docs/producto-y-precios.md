@@ -260,8 +260,25 @@ Tres decisiones que se derivan de la competencia:
 
 1. **Cobrar por número de socios**, como W-Chat, y no por agentes. Es como
    piensa el cliente y evita la discusión de cuánta gente conectamos.
-2. **Tres niveles**: CRM, CRM + Bot, y CRM + Bot + IA. Es la escalera que usa
-   W-Chat y funciona porque deja entrar barato y subir después.
+2. **Tres niveles**, pero no los de W-Chat. Aquí se escribió «CRM, CRM + Bot,
+   CRM + Bot + IA» copiando su escalera, y al implementarlo se vio que no
+   encaja con el producto: **el bot de menús es núcleo y va en los tres
+   planes**. Moverlo a un plan de pago degradaría a 47 de las 48 empresas
+   cliente, que ya tienen menús activos con 846 opciones configuradas entre
+   todas. La escalera real es:
+
+   | | |
+   |---|---|
+   | **Esencial** | El CRM completo, bot de menús incluido |
+   | **Automatización** | + reparto, avisos y semáforo, sin modelo |
+   | **Inteligente** | + las funciones que llaman a la IA |
+
+   Que el bot entre desde el primer plan **es un argumento, no una concesión**:
+   W-Chat lo cobra aparte y nosotros no. Se dice así en la mesa.
+
+   *Corregido el 15-sep-2026, al consolidar los planes. La versión anterior de
+   este punto sigue apareciendo en propuestas viejas; si alguien cita «CRM +
+   Bot» como un plan, es de ahí.*
 3. **Facturar por trimestre o año adelantado**, como hacen todos. El montaje
    —conectar el número, armar plantillas, entrenar al equipo— no se recupera en
    un mes.

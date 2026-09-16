@@ -17,6 +17,29 @@ return [
     | seguro al publicar una extensión nueva: se decide en qué plan entra antes
     | de que aparezca, no después de que alguien ya la tenga.
     |
+    | **Las extensiones se venden en paquete, nunca sueltas.** Se decidió el
+    | 15-sep-2026 y conviene recordarlo cada vez que alguien pida «sólo el
+    | resumen con IA»: un catálogo con precio por extensión multiplica las
+    | combinaciones que hay que cobrar, explicar y sostener, y el cliente acaba
+    | eligiendo mal. Entra en el plan que las incluye o no entra.
+    |
+    | **Lo que NO se cobra aparte, y es una decisión, no un olvido:**
+    |
+    | - **Instagram y Facebook Messenger.** Van en los tres planes. El canal no
+    |   está atado a `Instance` ni a ningún candado de plan, y así se queda: es
+    |   el mismo buzón y el mismo equipo atendiendo, y cobrar por buzón nos
+    |   pondría a hacer justo lo que le criticamos a la competencia.
+    | - **Agentes y líneas.** Ilimitados en los tres. Cobrar por agente castiga
+    |   a quien más usa la herramienta.
+    | - **Los mensajes.** Se los paga la empresa a Meta directamente, sin margen
+    |   nuestro encima. Es el argumento comercial principal.
+    |
+    | Lo único que cambia entre planes son las cinco extensiones. El CRM entero
+    | —chat, Kanban, contactos, campañas, plantillas, reportes y **el bot de
+    | menús**— va en los tres. Que el bot entre desde Esencial no es un descuido
+    | heredado: 47 de las 48 empresas cliente lo tienen activo, y W-Chat lo
+    | cobra aparte, así que es un argumento de venta.
+    |
     | `ia` son las conversaciones con IA incluidas al mes. `null` = sin IA.
     |
     | El precio NO vive aquí dentro, sino en `precios`, más abajo: un plan no
@@ -66,6 +89,38 @@ return [
             'ia' => 1200,
         ],
 
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lo que va en los tres planes
+    |--------------------------------------------------------------------------
+    |
+    | El CRM entero. Esta lista no controla nada —no hay candado que la lea— y
+    | existe para que las pantallas puedan **enseñarlo**, que es el problema que
+    | resuelve.
+    |
+    | «Mi plan» presentaba el plan del cliente como una lista de extensiones, y
+    | así Esencial se leía como un plan con una sola función: la firma del
+    | agente. El valor de Esencial es el CRM completo, y no decirlo hacía que el
+    | plan de entrada pareciera vacío justo en la pantalla donde el cliente
+    | decide si le sirve.
+    |
+    | Se escribe aquí y no en el JSX por lo mismo que los precios: una lista de
+    | funciones a pelo en la pantalla es una lista que nadie actualiza.
+    |
+    */
+
+    'nucleo' => [
+        'Chat multiagente con historial completo',
+        'Tablero Kanban de conversaciones',
+        'Contactos, etiquetas y macros',
+        'Menús de WhatsApp: el bot que responde por reglas',
+        'Respuestas automáticas y respuestas rápidas',
+        'Campañas y plantillas',
+        'Reportes de atención',
+        'Agentes y líneas ilimitados',
+        'WhatsApp, Instagram y Facebook Messenger',
     ],
 
     /*

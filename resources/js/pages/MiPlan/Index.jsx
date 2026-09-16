@@ -13,7 +13,7 @@ import { iconFor } from '@/pages/Extensions/icons';
  * un comercial. Lo que sí enseña es qué tiene, cuánto le queda y qué se
  * desbloquea subiendo — que es la parte que decide.
  */
-export default function MiPlan({ plan, uso_ia, extensiones, planes }) {
+export default function MiPlan({ plan, uso_ia, extensiones, planes, nucleo = [] }) {
     const incluidas = extensiones.filter(e => e.en_plan);
     const bloqueadas = extensiones.filter(e => !e.en_plan);
 
@@ -92,10 +92,36 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes }) {
                     )}
                 </div>
 
-                {/* Lo que ya tiene. */}
+                {/* El CRM, antes que las extensiones.
+                    Esta sección no existía y la pantalla empezaba por «Incluido
+                    en tu plan» con la lista de extensiones. Para un cliente de
+                    Esencial eso era una sola línea —la firma del agente— y su
+                    plan parecía vacío, cuando lo que tiene es el producto
+                    entero. Lo que separa un plan de otro son las extensiones;
+                    lo que paga es sobre todo esto. */}
                 <section>
                     <h2 className="text-sm font-semibold text-foreground">
-                        Incluido en tu plan
+                        Tu CRM
+                        <span className="ml-2 font-normal text-muted-foreground">
+                            en todos los planes
+                        </span>
+                    </h2>
+                    <div className="mt-3 rounded-xl border bg-card p-5">
+                        <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                            {nucleo.map(linea => (
+                                <li key={linea} className="flex items-start gap-2 text-sm text-foreground">
+                                    <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+                                    {linea}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </section>
+
+                {/* Lo que añade su plan por encima del CRM. */}
+                <section>
+                    <h2 className="text-sm font-semibold text-foreground">
+                        Extensiones de tu plan
                         <span className="ml-2 font-normal text-muted-foreground">{incluidas.length}</span>
                     </h2>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">

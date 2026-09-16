@@ -26,6 +26,13 @@ use Inertia\Inertia;
  * contradiciendo lo que dijo un comercial. Lo que sí sale es qué se desbloquea
  * subiendo, que es la parte que decide.
  *
+ * ## Lo que esta pantalla SÍ tiene que enseñar
+ *
+ * El CRM entero, antes que las extensiones. Lo que distingue a un plan de otro
+ * son las cinco extensiones, pero lo que el cliente paga sobre todo es el CRM,
+ * y una pantalla que sólo lista extensiones convierte al plan de entrada en un
+ * plan de una sola función.
+ *
  * Tampoco sale el **coste** de la IA que consume. Es nuestro margen, no su
  * asunto, y enseñárselo invita a una conversación que no lleva a ningún sitio.
  * Lo que ve es cuánto le queda de lo suyo.
@@ -58,6 +65,12 @@ class MiPlanController extends Controller
 
         return Inertia::render('MiPlan/Index', [
             'plan' => $plan->resumen(),
+
+            // Lo que tiene por el simple hecho de ser cliente. Va primero en la
+            // pantalla: sin esto, el plan Esencial se leía como «una función»
+            // —la firma del agente— cuando lo que incluye es el CRM entero, y
+            // el cliente de entrada veía su plan más pobre de lo que es.
+            'nucleo' => config('planes.nucleo', []),
             'uso_ia' => ContadorDeIa::estado($company),
             'extensiones' => $extensiones,
             'planes' => collect(config('planes.disponibles'))
