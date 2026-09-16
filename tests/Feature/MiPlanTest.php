@@ -52,7 +52,7 @@ class MiPlanTest extends TestCase
 
     public function test_el_admin_ve_su_plan(): void
     {
-        $company = $this->empresa(['plan' => 'pro', 'contactos_contratados' => 2000]);
+        $company = $this->empresa(['plan' => 'pro']);
 
         $this->actingAs($this->admin($company))
             ->get('/mi-plan')
@@ -87,7 +87,7 @@ class MiPlanTest extends TestCase
 
     public function test_cuenta_sus_contactos_y_no_los_de_otra_empresa(): void
     {
-        $mia = $this->empresa(['contactos_contratados' => 500]);
+        $mia = $this->empresa(['plan' => 'basico']);
         $ajena = $this->empresa();
 
         Contact::create(['company_id' => $mia->id, 'phone_number' => '573001', 'name' => 'Mío']);
@@ -103,7 +103,7 @@ class MiPlanTest extends TestCase
     /** El coste de la IA es margen nuestro, no asunto suyo. */
     public function test_no_le_ensena_el_coste_de_la_ia(): void
     {
-        $company = $this->empresa(['contactos_contratados' => 2000]);
+        $company = $this->empresa(['plan' => 'pro']);
 
         $respuesta = $this->actingAs($this->admin($company))->get('/mi-plan')->assertOk();
 

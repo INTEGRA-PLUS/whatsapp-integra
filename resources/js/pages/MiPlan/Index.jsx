@@ -53,15 +53,24 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                         )}
                     </div>
 
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <div className="mt-6 grid gap-4 sm:grid-cols-3">
                         <Dato
                             icono={Users}
                             titulo="Contactos"
                             valor={plan.contactos_reales?.toLocaleString('es-CO') ?? '0'}
-                            pie={plan.contactos_contratados
-                                ? `de ${plan.contactos_contratados.toLocaleString('es-CO')} de tu plan`
-                                : 'sin límite asignado'}
-                            aviso={plan.se_paso_del_tramo}
+                            pie={`de ${plan.contactos_incluidos?.toLocaleString('es-CO')} de tu plan`}
+                            aviso={plan.se_paso_de?.includes('contactos')}
+                        />
+
+                        {/* Los agentes, que antes no salían: desde que el plan
+                            los incluye, es la mitad de lo que decide si le queda
+                            corto — y es lo primero que crece en un equipo. */}
+                        <Dato
+                            icono={Users}
+                            titulo="Agentes"
+                            valor={plan.agentes_reales?.toLocaleString('es-CO') ?? '0'}
+                            pie={`de ${plan.agentes_incluidos} de tu plan`}
+                            aviso={plan.se_paso_de?.includes('agentes')}
                         />
 
                         {plan.tiene_ia ? (
@@ -86,8 +95,9 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
 
                     {plan.se_paso_del_tramo && (
                         <p className="mt-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-foreground">
-                            Tienes más contactos de los que cubre tu plan. No se te ha limitado nada
-                            —seguimos atendiendo a todos— pero conviene que hablemos para ajustarlo.
+                            Tienes más {plan.se_paso_de.join(' y ')} de los que incluye tu plan. No se te
+                            ha limitado nada —seguimos atendiendo a todos— pero conviene que hablemos
+                            para ajustarlo.
                         </p>
                     )}
                 </div>

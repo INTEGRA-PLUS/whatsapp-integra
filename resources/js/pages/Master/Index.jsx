@@ -43,7 +43,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
     const [planCompany, setPlanCompany] = useState(null);
     const [planForm, setPlanForm] = useState({
         plan: 'inteligente', cobro: 'cortesia',
-        contactos_contratados: '', gratis_hasta: '', nota_de_cobro: '',
+        gratis_hasta: '', nota_de_cobro: '',
     });
     
     // Sync tab with URL
@@ -143,7 +143,6 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             plan: p.plan ?? 'basico',
             ia: p.ia ?? 'ninguno',
             cobro: p.cobro ?? 'cortesia',
-            contactos_contratados: p.contactos_contratados ?? '',
             gratis_hasta: p.gratis_hasta ?? '',
             nota_de_cobro: company.nota_de_cobro ?? '',
             viene_de_integra: !!company.viene_de_integra,

@@ -23,7 +23,6 @@ class Company extends Model
         'interna',
         'viene_de_integra',
         'gratis_hasta',
-        'contactos_contratados',
         'nota_de_cobro',
         'settings',
         'ai_flow_unlocked_at',

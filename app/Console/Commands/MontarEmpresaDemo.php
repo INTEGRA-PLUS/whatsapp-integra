@@ -118,9 +118,9 @@ class MontarEmpresaDemo extends Command
             // enseñar TODO, incluidas las extensiones con IA — que es
             // justamente lo que se va a vender.
             'interna' => true,
-            'plan' => 'inteligente',
+            'plan' => 'pro',
+            'ia' => 'completa',
             'cobro' => 'cortesia',
-            'contactos_contratados' => 500,
             'nota_de_cobro' => 'Cuenta de demostración. No facturar.',
         ]);
 
