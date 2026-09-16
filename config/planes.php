@@ -204,6 +204,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Ciclos de cobro
+    |--------------------------------------------------------------------------
+    |
+    | `meses` es lo que dura el periodo; `mensualidades` es lo que se cobra. La
+    | diferencia entre los dos es el descuento, y por eso van separados en vez de
+    | un porcentaje: «doce meses por diez mensualidades» se entiende y se dice en
+    | la mesa; «16,67% de descuento» hay que calcularlo delante del cliente.
+    |
+    | El trimestral no lleva descuento a propósito. Es el ciclo por defecto del
+    | nicho —todos facturan por trimestre adelantado, porque el montaje no se
+    | recupera en un mes— y regalar ahí quita margen al único descuento que de
+    | verdad compra permanencia, que es el anual.
+    |
+    */
+
+    'ciclos' => [
+        'mensual' => ['nombre' => 'Mensual', 'meses' => 1, 'mensualidades' => 1],
+        'trimestral' => ['nombre' => 'Trimestral', 'meses' => 3, 'mensualidades' => 3],
+        'anual' => ['nombre' => 'Anual', 'meses' => 12, 'mensualidades' => 10],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Estados de cobro
     |--------------------------------------------------------------------------
     |

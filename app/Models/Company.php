@@ -20,6 +20,8 @@ class Company extends Model
         'plan',
         'ia',
         'cobro',
+        'ciclo',
+        'suscripcion_hasta',
         'interna',
         'viene_de_integra',
         'gratis_hasta',
@@ -34,6 +36,7 @@ class Company extends Model
         'interna' => 'boolean',
         'viene_de_integra' => 'boolean',
         'gratis_hasta' => 'date',
+        'suscripcion_hasta' => 'date',
         'settings' => 'array',
         'ai_flow_unlocked_at' => 'datetime',
     ];

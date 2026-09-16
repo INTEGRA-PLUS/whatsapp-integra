@@ -13,6 +13,10 @@ use App\Models\Company;
  *
  * ## Los tres motivos, y por qué son distintos
  *
+ * - **`por_vencer` / `vencida` / `sin_periodo`** — la suscripción. `sin_periodo`
+ *   es el que más se olvida: una empresa a la que se le factura y a la que nunca
+ *   se le emitió un cobro. No es una renovación pendiente, es que nadie la dio
+ *   de alta, y sin avisarlo se queda así para siempre.
  * - **`plan_corto`** — tiene más agentes, contactos o líneas de los que incluye
  *   su plan. Es una conversación comercial: se le llama y se le sube. No se
  *   corta nada mientras tanto, nadie deja de atender a un cliente porque la
@@ -35,6 +39,15 @@ class AvisosDePlan
      * usar». Por debajo de esto, el cliente paga y no lo aprovecha.
      */
     private const UMBRAL_SIN_USAR = 0.05;
+
+    /**
+     * Con cuántos días de antelación se avisa de una renovación.
+     *
+     * Siete: lo bastante para emitir el cobro y que el cliente lo pague sin
+     * prisa, y no tanto como para que el aviso se quede en la campana una
+     * semana perdiendo urgencia.
+     */
+    private const DIAS_DE_AVISO = 7;
 
     /**
      * @return list<array{
@@ -64,6 +77,46 @@ class AvisosDePlan
     private static function deLaEmpresa(Company $company, PlanDeLaEmpresa $plan): array
     {
         $avisos = [];
+
+        // ── La suscripción vence o venció ───────────────────────────────────
+        //
+        // Sólo a quien se le factura: a un cliente de Integra sin complemento no
+        // se le cobra nada, así que no tiene periodo que renovar y avisar de él
+        // sería ruido sobre las 46 empresas que están así.
+        if ($plan->seFactura()) {
+            $dias = $plan->diasParaRenovar();
+
+            if ($dias === null) {
+                $avisos[] = [
+                    'motivo' => 'sin_periodo',
+                    'titulo' => $company->name.' se factura y no tiene periodo',
+                    'cuerpo' => 'Está en cobro «'.$plan->cobro().'» por '.$plan->precioDelCiclo()
+                        .' USD al ciclo, pero nunca se le emitió un cobro. Es un olvido administrativo, '
+                        .'no una renovación pendiente.',
+                    'firma' => 'sin_periodo:'.$plan->slug().':'.$plan->slugIa(),
+                ];
+            } elseif ($dias < 0) {
+                $avisos[] = [
+                    'motivo' => 'vencida',
+                    'titulo' => $company->name.' tiene la suscripción vencida',
+                    'cuerpo' => 'Venció hace '.abs($dias).' días. No se le ha cortado nada — '
+                        .'toca emitirle el cobro de '.$plan->precioDelCiclo().' USD del ciclo '
+                        .mb_strtolower($plan->nombreCiclo()).'.',
+                    // El mes en la firma: si sigue vencida el mes que viene,
+                    // vuelve a salir. Callar para siempre es cómo se deja de
+                    // cobrar a alguien un año sin notarlo.
+                    'firma' => 'vencida:'.now()->format('Y-m'),
+                ];
+            } elseif ($dias <= self::DIAS_DE_AVISO) {
+                $avisos[] = [
+                    'motivo' => 'por_vencer',
+                    'titulo' => $company->name.' renueva en '.$dias.' días',
+                    'cuerpo' => 'Le toca '.$plan->precioDelCiclo().' USD del ciclo '
+                        .mb_strtolower($plan->nombreCiclo()).'. Conviene emitir el cobro antes de que venza.',
+                    'firma' => 'por_vencer:'.optional($plan->suscripcionHasta())->toDateString(),
+                ];
+            }
+        }
 
         // ── Se pasó de lo que incluye su plan ───────────────────────────────
         if ($pasados = $plan->sePasoDe()) {

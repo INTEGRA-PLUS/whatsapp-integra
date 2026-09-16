@@ -250,6 +250,63 @@ class PlanDeLaEmpresa
             : $this->precioCrm() + $this->precioIa();
     }
 
+    // ─── El ciclo y el periodo pagado ────────────────────────────────────────
+
+    /** Cada cuánto se le cobra: `mensual`, `trimestral` o `anual`. */
+    public function ciclo(): string
+    {
+        $ciclo = (string) ($this->company->ciclo ?: 'mensual');
+
+        return isset(config('planes.ciclos')[$ciclo]) ? $ciclo : 'mensual';
+    }
+
+    public function nombreCiclo(): string
+    {
+        return config("planes.ciclos.{$this->ciclo()}.nombre", 'Mensual');
+    }
+
+    /**
+     * Lo que se le cobra de una vez en su ciclo.
+     *
+     * Mensualidades y no meses: el anual son doce meses por diez mensualidades,
+     * y esa diferencia es el descuento. Multiplicar por los meses cobraría el
+     * año completo y se comería el argumento con el que se vende.
+     */
+    public function precioDelCiclo(): int
+    {
+        $mensualidades = (int) config("planes.ciclos.{$this->ciclo()}.mensualidades", 1);
+
+        return $this->precioMensual() * $mensualidades;
+    }
+
+    public function suscripcionHasta(): ?\Illuminate\Support\Carbon
+    {
+        return $this->company->suscripcion_hasta;
+    }
+
+    /**
+     * ¿Tiene el periodo al día?
+     *
+     * Sin fecha devuelve `false`: es una empresa a la que nunca se le emitió un
+     * cobro. Es distinto de vencida y se cuenta aparte, porque una es un olvido
+     * administrativo y la otra es una renovación pendiente.
+     */
+    public function suscripcionVigente(): bool
+    {
+        return $this->suscripcionHasta()?->endOfDay()->isFuture() ?? false;
+    }
+
+    /**
+     * Días que faltan para renovar. Negativo si ya venció, `null` si nunca se
+     * le emitió un cobro.
+     */
+    public function diasParaRenovar(): ?int
+    {
+        return $this->suscripcionHasta()
+            ? (int) now()->startOfDay()->diffInDays($this->suscripcionHasta()->endOfDay(), false)
+            : null;
+    }
+
     /**
      * El mismo precio pagando el año por adelantado.
      *
@@ -420,6 +477,13 @@ class PlanDeLaEmpresa
             'precio_ia' => $this->precioIa(),
             'precio_usd' => $this->precioMensual(),
             'precio_usd_anual' => $this->precioMensualAnual(),
+
+            'ciclo' => $this->ciclo(),
+            'ciclo_nombre' => $this->nombreCiclo(),
+            'precio_del_ciclo' => $this->precioDelCiclo(),
+            'suscripcion_hasta' => optional($this->suscripcionHasta())->toDateString(),
+            'suscripcion_vigente' => $this->suscripcionVigente(),
+            'dias_para_renovar' => $this->diasParaRenovar(),
 
             'agentes_incluidos' => $this->agentesIncluidos(),
             'agentes_reales' => $this->agentesReales(),
