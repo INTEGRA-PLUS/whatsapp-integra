@@ -38,7 +38,7 @@ class AiChatIntegrationTest extends TestCase
     {
         parent::setUp();
 
-        $this->company = Company::create(['name' => 'Fibra XYZ', 'slug' => 'fibra-xyz', 'active' => true]);
+        $this->company = Company::create(['name' => 'Fibra XYZ', 'slug' => 'fibra-xyz', 'active' => true, 'ia' => 'completa']);
 
         $this->instance = Instance::create([
             'company_id' => $this->company->id,

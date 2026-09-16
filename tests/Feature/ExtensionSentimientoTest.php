@@ -64,7 +64,7 @@ class ExtensionSentimientoTest extends TestCase
         // siguiente y los fallos aparecerían según el orden de ejecución.
         Cache::flush();
 
-        $this->company = Company::create(['name' => 'Fibra Sur', 'slug' => 'fibra-sur', 'active' => true]);
+        $this->company = Company::create(['name' => 'Fibra Sur', 'slug' => 'fibra-sur', 'active' => true, 'ia' => 'completa']);
 
         $this->admin = User::create([
             'company_id' => $this->company->id,

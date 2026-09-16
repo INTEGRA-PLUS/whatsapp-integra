@@ -43,7 +43,7 @@ class ExtensionResumenTest extends TestCase
         config()->set('services.resumen.webhook_url', 'https://n8n.test/resumen');
         config()->set('services.resumen.api_key', 'clave');
 
-        $this->company = Company::create(['name' => 'Fibra Sur', 'slug' => 'fibra-sur', 'active' => true]);
+        $this->company = Company::create(['name' => 'Fibra Sur', 'slug' => 'fibra-sur', 'active' => true, 'ia' => 'completa']);
 
         $this->admin = User::create([
             'company_id' => $this->company->id,

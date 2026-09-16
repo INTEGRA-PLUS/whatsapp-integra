@@ -33,6 +33,7 @@ class AiPromptTest extends TestCase
         parent::setUp();
 
         $this->company = Company::create([
+            'ia' => 'completa',
             'name' => 'Fibra XYZ',
             'slug' => 'fibra-xyz',
             'active' => true,

@@ -43,10 +43,12 @@ class AiAssistantProfileTest extends TestCase
             'name' => 'Fibra XYZ',
             'slug' => 'fibra-xyz',
             'active' => true,
-            'ia' => collect(array_keys(config('planes.ia', [])))
-                ->first(fn (string $slug) => \App\Support\PlanDeLaEmpresa::de(
-                    new Company(['ia' => $slug])
-                )->tieneIa()),
+            // `completa` y no «el primer nivel con IA»: desde que existe el
+            // candado en ejecución, los flujos de chat y de menús exigen este
+            // nivel concreto — son los caros, y `esencial` no los abre. Con el
+            // nivel barato, las peticiones al flujo no llegan a salir y el test
+            // falla por un motivo que no tiene que ver con lo que prueba.
+            'ia' => 'completa',
         ]);
 
         $this->instance = Instance::create([
