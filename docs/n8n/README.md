@@ -35,9 +35,17 @@ de reemplazar, cambia el `id` antes.
 | Fichero | Flujo en n8n | Documentado en |
 |---|---|---|
 | `whatsapp-resumen.json` | WhatsApp · Resumen de conversación | [`../resumen-de-conversacion.md`](../resumen-de-conversacion.md) |
+| `gateway-chat-validar-entrada.js` | 01 · Chatbot Gateway (Ingest), nodo `Validar entrada` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
+| `gateway-chat-armar-job.js` | 01 · Chatbot Gateway (Ingest), nodo `Armar job` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.
+
+Los dos `.js` son **nodos sueltos, no flujos**: se pegan en el canvas
+reemplazando el contenido entero del nodo que nombra el fichero. Están aquí
+porque son los dos únicos sitios del gateway donde el contrato del payload se
+escribe a mano, y olvidarse de ellos al añadir un campo es lo que causó el
+incidente del 16-sep.
 
 ## Ollama Cloud ignora `format`, así que el prompt nombra las claves
 
