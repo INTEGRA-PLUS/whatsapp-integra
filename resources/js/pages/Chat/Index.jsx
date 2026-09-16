@@ -763,6 +763,13 @@ const ConversationItem = memo(({
                         )}
                     </div>
                     
+                    {/* Los dos botones de acción de aquí abajo se ocultaban con
+                        `opacity-0` a secas, que los hace invisibles pero les deja
+                        su caja: 40 px de ancho más sus separaciones, robados a
+                        TODAS las filas todo el rato. Con el nombre y la insignia
+                        del agente compitiendo por lo que quedaba, «Óscar Iván
+                        Bedoya» se leía como «Ó…». Ahora se encogen a cero hasta
+                        el hover. */}
                     <div className="flex items-center gap-1 shrink-0 ml-auto">
                         <span className={`text-[10px] whitespace-nowrap ${conv.unread_count > 0 ? 'text-[#25d366] font-bold' : 'text-muted-foreground/60'}`}>
                             {formatTime(conv.last_message_at)}
@@ -776,7 +783,7 @@ const ConversationItem = memo(({
                                     <button
                                         onClick={onClick}
                                         className={clsx(
-                                            "p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all",
+                                            "w-0 p-0 overflow-hidden opacity-0 group-hover/conv:w-auto group-hover/conv:p-1 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all",
                                             conv.assigned_to ? "text-accent-foreground" : "text-muted-foreground/60 hover:text-accent-foreground"
                                         )}
                                         title={conv.assigned_agent?.name ? `Asignado a ${conv.assigned_agent.name}` : "Asignar agente"}
@@ -825,7 +832,7 @@ const ConversationItem = memo(({
                             renderTrigger={(onClick) => (
                                 <button
                                     onClick={onClick}
-                                    className="p-1 opacity-0 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-accent-foreground"
+                                    className="w-0 p-0 overflow-hidden opacity-0 group-hover/conv:w-auto group-hover/conv:p-1 group-hover/conv:opacity-100 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-all text-muted-foreground/60 hover:text-accent-foreground"
                                 >
                                     <TagIcon className="size-3" />
                                 </button>
