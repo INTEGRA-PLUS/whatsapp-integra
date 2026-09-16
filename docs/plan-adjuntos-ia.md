@@ -229,9 +229,12 @@ Como mínimo, la pantalla enseña la fecha de subida bien visible.
 
 Tres entregas, cada una útil por su cuenta:
 
-1. **Subir, extraer y ver.** Tabla, cola, extracción, la tarjeta en `/ia` con la
-   lista, el estado y el borrado. Todavía no cambia ninguna respuesta — pero
-   valida lo que más rompe, que es leer PDFs del mundo real.
+1. **Subir, extraer y ver.** ✅ *Hecha el 16-sep-2026.* Tabla, cola, extracción,
+   la tarjeta en `/ia` con la lista, el estado y el borrado. Todavía no cambia
+   ninguna respuesta — pero valida lo que más rompe, que es leer PDFs y Excels
+   del mundo real. Lo cubre `DocumentosDeIaTest`, que arma un XLSX y un DOCX de
+   cero en vez de usar un binario guardado: así el test dice qué contiene el
+   fichero y por qué, y prueba el formato de verdad.
 2. **Buscar y responder.** Vectores, búsqueda, los trozos en el prompt. Aquí es
    donde se nota.
 3. **Afinar.** Citas en la respuesta, avisos de documento viejo, métricas de qué

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\MiPlanController;
 use App\Http\Controllers\ResumenController;
+use App\Http\Controllers\AiDocumentoController;
 use App\Http\Controllers\AiFlowSettingsController;
 use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
 use App\Http\Controllers\AutoResponseController;
@@ -612,6 +613,21 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:whatsapp_menus.update');
         Route::put('/', [AiFlowSettingsController::class, 'update'])
             ->middleware('permission:whatsapp_menus.update');
+
+        // Los documentos con los que la empresa entrena a su IA. La comprobación
+        // de empresa NO está en el middleware: va dentro del controlador, en
+        // cada método, porque aquí el aislamiento es manual y una ruta con
+        // {documento} deja pedir el de cualquier otra si no se mira.
+        Route::get('/documentos', [AiDocumentoController::class, 'index'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::post('/documentos', [AiDocumentoController::class, 'store'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::delete('/documentos/{documento}', [AiDocumentoController::class, 'destroy'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::post('/documentos/{documento}/reprocesar', [AiDocumentoController::class, 'reprocesar'])
+            ->middleware('permission:whatsapp_menus.update');
+        Route::get('/documentos/{documento}/descargar', [AiDocumentoController::class, 'descargar'])
+            ->middleware('permission:whatsapp_menus.update')->name('ia.documentos.descargar');
     });
 
     Route::prefix('api/business-hours')->group(function () {
