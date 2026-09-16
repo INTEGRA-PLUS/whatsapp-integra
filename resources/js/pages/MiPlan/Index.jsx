@@ -261,14 +261,47 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                                     <Renglon termino="Contactos" valor={p.contactos.toLocaleString('es-CO')} />
                                     <Renglon termino="Líneas" valor={p.lineas} />
                                 </dl>
+
+                                {/* El crédito de IA, separado del resto de la
+                                    tarjeta a propósito: no es tamaño contratado
+                                    como lo de arriba, es lo que se gasta cada
+                                    mes, y sólo corre si además hay complemento.
+                                    Sin esta línea la comparativa no explicaba en
+                                    qué se nota subir de plan a quien lo que
+                                    quiere es la IA — que es todo el que mira
+                                    esta pantalla dos veces. */}
+                                <div className="mt-3 border-t pt-3">
+                                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                                        <Sparkles className={clsx(
+                                            'size-3',
+                                            plan.tiene_ia ? 'text-accent-foreground' : 'text-muted-foreground/60'
+                                        )} />
+                                        Con complemento de IA
+                                    </p>
+                                    <p className="mt-1 text-xs">
+                                        <span className="font-semibold tabular-nums text-foreground">
+                                            {p.credito_ia.toLocaleString('es-CO')}
+                                        </span>
+                                        <span className="text-muted-foreground"> conversaciones al mes</span>
+                                    </p>
+                                </div>
                             </div>
                         ))}
                     </div>
 
-                    <p className="mt-3 text-xs text-muted-foreground">
+                    {/* Las dos mitades de la decisión, dichas juntas porque por
+                        separado ninguna se entiende: el complemento decide QUÉ
+                        se enciende y el plan, CUÁNTO cabe. */}
+                    <p className="mt-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">
                         La inteligencia artificial se añade aparte, sobre cualquiera de los tres:{' '}
                         {complementos.filter(c => c.slug !== 'ninguno').map(c => c.nombre).join(' o ')}.
-                        {elSuyo && ' Cambiar de plan no toca nada de lo que ya tienes configurado.'}
+                        El complemento decide <span className="font-medium text-foreground">qué funciones</span>{' '}
+                        se encienden; el plan, <span className="font-medium text-foreground">cuántas
+                        conversaciones</span> con IA te caben al mes —por eso el crédito sube con el
+                        tamaño y no con el complemento.
+                        {plan.tiene_ia
+                            ? ' Cambiar de plan no toca nada de lo que ya tienes configurado.'
+                            : ' Sin complemento contratado ese crédito no corre: no se gasta nada.'}
                     </p>
                 </section>
             </div>

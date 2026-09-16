@@ -71,6 +71,15 @@ class MiPlanTest extends TestCase
             $this->assertArrayHasKey('agentes', $plan);
             $this->assertArrayHasKey('contactos', $plan);
             $this->assertArrayHasKey('lineas', $plan, 'Las líneas no llegan a la pantalla.');
+
+            // El crédito de IA vive en el plan de CRM y no en el complemento,
+            // así que es en esta comparativa donde se explica en qué se nota
+            // subir de plan a quien lo que quiere es la IA.
+            $this->assertSame(
+                config("planes.crm.{$plan['slug']}.credito_ia"),
+                $plan['credito_ia'],
+                'El crédito de IA del plan no llega a la comparativa.'
+            );
         }
     }
 

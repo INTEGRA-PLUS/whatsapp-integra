@@ -94,6 +94,12 @@ class MiPlanController extends Controller
                     'agentes' => $p['agentes'],
                     'contactos' => $p['contactos'],
                     'lineas' => $p['lineas'],
+                    // El crédito de IA va en el plan de CRM y no en el
+                    // complemento —depende del tamaño del cliente, no de qué
+                    // tenga encendido— así que es aquí donde hay que enseñarlo:
+                    // sin él, la comparativa no explica en qué se nota subir de
+                    // plan si lo que quieres es la IA.
+                    'credito_ia' => $p['credito_ia'],
                     'es_el_suyo' => $slug === $plan->slug(),
                     // El que le tocaría por lo que de verdad usa. Es lo que
                     // convierte «tienes más de lo que incluye tu plan» en algo
