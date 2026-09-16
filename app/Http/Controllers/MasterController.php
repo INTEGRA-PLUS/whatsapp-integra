@@ -23,6 +23,17 @@ use Spatie\Permission\Models\Role;
 
 class MasterController extends Controller
 {
+    /**
+     * Los flujos de IA, dichos como se venden.
+     *
+     * En la configuración son `ai_chat` y `ai_menus` porque así se llaman los
+     * candados; en una pantalla de precios eso no significa nada.
+     */
+    private const NOMBRE_DE_FLUJO = [
+        'ai_chat' => 'Responde los chats por escrito',
+        'ai_menus' => 'Resuelve contra el ERP: factura, pago, falla',
+    ];
+
     public function index(Request $request)
     {
         $this->authorizeMaster();
@@ -364,6 +375,27 @@ class MasterController extends Controller
                         'nombre' => $nivel['nombre'],
                         'precio' => $nivel['precio'],
                         'empresas' => $suyas->count(),
+
+                        // Qué trae cada nivel, por su nombre. La pestaña
+                        // enseñaba «IA Esencial +$19» y «IA Completa +$49» sin
+                        // decir en qué se diferencian, así que para contarlo
+                        // había que abrir el fichero de configuración.
+                        'extensiones' => collect($nivel['extensiones'] ?? [])
+                            ->map(fn (string $ext) => app(ExtensionRegistry::class)->find($ext)?->name())
+                            ->filter()
+                            ->values(),
+                        'flujos' => collect($nivel['flujos'] ?? [])
+                            ->map(fn (string $f) => self::NOMBRE_DE_FLUJO[$f] ?? $f)
+                            ->values(),
+
+                        // La diferencia en una palabra, y sale de los datos y no
+                        // de un texto escrito aparte: lo que separa un nivel del
+                        // otro es si la IA además HABLA con el cliente, y eso es
+                        // exactamente tener flujos o no tenerlos. Escribirlo a
+                        // mano se desincronizaría el día que se mueva una
+                        // función de nivel — que ya ha pasado hoy con el
+                        // semáforo.
+                        'contesta' => ($nivel['flujos'] ?? []) !== [],
                     ];
                 })
                 ->values(),

@@ -159,6 +159,15 @@ class PanelDePlanesTest extends TestCase
             $this->assertArrayHasKey('precio', $complemento, "El complemento {$slug} no trae precio.");
             $this->assertSame(config("planes.ia.{$slug}.precio"), $complemento['precio']);
         }
+
+        // Y qué trae cada uno, que es lo que se explica delante del cliente.
+        // «Contesta» separa los dos niveles de pago y sale de tener flujos o no
+        // tenerlos, no de un texto escrito aparte: una función que cambie de
+        // nivel arrastra la frase consigo.
+        $this->assertFalse($complementos['esencial']['contesta'], 'La IA Esencial no habla con el cliente.');
+        $this->assertTrue($complementos['completa']['contesta'], 'La IA Completa sí contesta.');
+        $this->assertNotEmpty($complementos['esencial']['extensiones'], 'La Esencial no dice qué trae.');
+        $this->assertNotEmpty($complementos['completa']['flujos'], 'La Completa no dice qué añade.');
         $this->assertSame(1, $complementos['esencial']['empresas']);
     }
 

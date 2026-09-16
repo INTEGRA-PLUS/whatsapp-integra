@@ -3,6 +3,8 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { 
+    Sparkles,
+    Check,
     Plus, 
     Search, 
     Users, 
@@ -717,18 +719,63 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                         y ya pagan el CRM dentro de su ERP: lo único nuevo que se les puede vender es esto.
                                     </p>
                                 </div>
+                                {/* Qué trae cada nivel, y no sólo cuánto cuesta.
+                                    La lista decía «IA Esencial +$19» e «IA
+                                    Completa +$49» sin una palabra sobre en qué
+                                    se diferencian: para explicárselo a un
+                                    cliente había que abrir config/planes.php.
+
+                                    La diferencia cabe en una línea y es la que
+                                    decide la venta: la Esencial LEE las
+                                    conversaciones —las resume y las prioriza,
+                                    para el asesor— y la Completa además CONTESTA
+                                    al cliente. Van separadas por precio porque
+                                    tampoco cuestan lo mismo: una conversación de
+                                    chat con IA sale trece veces un análisis de
+                                    semáforo. */}
                                 <ul className="divide-y divide-border">
                                     {planes_resumen.complementos.map(c => (
-                                        <li key={c.slug} className="flex items-center justify-between gap-3 px-5 py-3">
-                                            <span className="text-sm text-foreground">{c.nombre}</span>
-                                            <span className="flex items-center gap-4">
-                                                <span className="text-sm tabular-nums text-muted-foreground">
-                                                    {c.precio ? `+$${c.precio}/mes` : '—'}
+                                        <li key={c.slug} className="px-5 py-4">
+                                            <div className="flex flex-wrap items-baseline justify-between gap-3">
+                                                <span className="flex items-baseline gap-2">
+                                                    <span className="text-sm font-semibold text-foreground">{c.nombre}</span>
+                                                    {c.slug !== 'ninguno' && (
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {c.contesta
+                                                                ? 'contesta a tus clientes'
+                                                                : 'te ayuda a atenderlos'}
+                                                        </span>
+                                                    )}
                                                 </span>
-                                                <span className="w-20 text-right text-sm tabular-nums text-muted-foreground">
-                                                    {c.empresas} {c.empresas === 1 ? 'empresa' : 'empresas'}
+                                                <span className="flex items-center gap-4">
+                                                    <span className="text-sm tabular-nums text-muted-foreground">
+                                                        {c.precio ? `+$${c.precio}/mes` : '—'}
+                                                    </span>
+                                                    <span className="w-20 text-right text-sm tabular-nums text-muted-foreground">
+                                                        {c.empresas} {c.empresas === 1 ? 'empresa' : 'empresas'}
+                                                    </span>
                                                 </span>
-                                            </span>
+                                            </div>
+
+                                            {(c.extensiones?.length > 0 || c.flujos?.length > 0) && (
+                                                <ul className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                                                    {c.extensiones.map(nombre => (
+                                                        <li key={nombre} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                                            <Check className="mt-0.5 size-3 shrink-0 text-success" />
+                                                            {nombre}
+                                                        </li>
+                                                    ))}
+                                                    {/* Lo que sólo trae la Completa va marcado: es
+                                                        justo lo que justifica los treinta dólares de
+                                                        diferencia, y perdido entre el resto no se ve. */}
+                                                    {c.flujos.map(nombre => (
+                                                        <li key={nombre} className="flex items-start gap-1.5 text-xs text-foreground">
+                                                            <Sparkles className="mt-0.5 size-3 shrink-0 text-accent-foreground" />
+                                                            {nombre}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>
