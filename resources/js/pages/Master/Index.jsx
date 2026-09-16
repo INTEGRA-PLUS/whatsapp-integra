@@ -145,6 +145,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             contactos_contratados: p.contactos_contratados ?? '',
             gratis_hasta: p.gratis_hasta ?? '',
             nota_de_cobro: company.nota_de_cobro ?? '',
+            viene_de_integra: !!company.viene_de_integra,
         });
         setPlanCompany(company);
     }
@@ -910,12 +911,42 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             </p>
                         )}
 
+                        {/* Va encima del cobro porque lo decide: a un cliente de
+                            Integra el CRM ya se le cobró dentro del ERP. */}
+                        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                            <input
+                                type="checkbox"
+                                checked={planForm.viene_de_integra}
+                                onChange={e => setPlanForm({
+                                    ...planForm,
+                                    viene_de_integra: e.target.checked,
+                                    // Marcarlo y dejar el cobro en cortesía es una
+                                    // contradicción que sólo se ve un mes después,
+                                    // en la lista de cobro.
+                                    cobro: e.target.checked && planForm.cobro === 'cortesia'
+                                        ? 'integra'
+                                        : planForm.cobro,
+                                })}
+                                className="mt-0.5 size-4 shrink-0 accent-primary"
+                            />
+                            <span className="min-w-0">
+                                <span className="block text-sm font-semibold text-foreground">
+                                    Viene de Integra
+                                </span>
+                                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                                    Se le vendió el ERP con el CRM dentro, así que ya paga. No se le
+                                    factura aquí y no aparece en la lista de cobro. Lo que sí se le
+                                    puede vender es el complemento de IA.
+                                </span>
+                            </span>
+                        </label>
+
                         <Selector
                             label="Cobro"
                             value={planForm.cobro}
                             onChange={v => setPlanForm({ ...planForm, cobro: v })}
                             options={cobros.map(c => ({ value: c, label: ETIQUETA_COBRO[c] ?? c }))}
-                            ayuda="Cortesía es el estado de los clientes de siempre: todo encendido y sin factura. Suspendido no apaga nada, solo marca."
+                            ayuda="Integra es quien ya paga por el ERP. Cortesía es a quien todavía no se le cobra — son cosas distintas. Suspendido no apaga nada, solo marca."
                         />
 
                         <div className="space-y-1.5">
@@ -1417,12 +1448,14 @@ function CobroDelMes({ datos }) {
 
 const MOTIVO_FUERA = {
     interna: 'internas nuestras',
+    integra: 'con el CRM dentro de Integra',
     cortesia: 'en cortesía',
     prueba: 'en prueba',
     mes_gratis: 'con mes gratis',
 };
 
 const ETIQUETA_COBRO = {
+    integra: 'Integra — el CRM va en su ERP',
     cortesia: 'Cortesía — no se factura',
     prueba: 'Prueba',
     activo: 'Activo — se factura',

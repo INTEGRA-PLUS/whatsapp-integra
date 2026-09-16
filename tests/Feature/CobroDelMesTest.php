@@ -47,6 +47,48 @@ class CobroDelMesTest extends TestCase
         $this->assertSame('interna', CobroDelMes::calcular()['fuera'][0]['motivo']);
     }
 
+    /**
+     * Un cliente de Integra no se factura, y se reporta como tal.
+     *
+     * Es el caso que más dinero movía en el panel: la cuenta de «facturación
+     * potencial» daba 2.391 USD/mes sobre 41 clientes, y casi todos ya pagaban
+     * —el CRM iba dentro de lo que compraron con el ERP—. La cifra era
+     * ficticia.
+     */
+    public function test_el_cliente_de_integra_no_se_factura(): void
+    {
+        $this->empresa('ISP con Integra', [
+            'viene_de_integra' => true,
+            'cobro' => 'integra',
+            'plan' => 'esencial',
+            'contactos_contratados' => 2000,
+        ]);
+
+        $datos = CobroDelMes::calcular();
+
+        $this->assertSame([], $datos['cobrar']);
+        $this->assertSame(0, $datos['total_usd']);
+        $this->assertSame('integra', $datos['fuera'][0]['motivo']);
+    }
+
+    /**
+     * Y se distingue de cortesía aunque la columna diga cortesía.
+     *
+     * Son las dos formas de «aquí no se le factura» y significan cosas
+     * opuestas: Integra es un cliente que paga, cortesía es uno al que todavía
+     * no se le cobra. Si Integra apareciera como cortesía, alguien la pasaría a
+     * activo en la siguiente revisión y le cobraría dos veces el mismo CRM.
+     */
+    public function test_integra_no_se_confunde_con_cortesia(): void
+    {
+        $this->empresa('Marcada pero sin estado', [
+            'viene_de_integra' => true,
+            'cobro' => 'cortesia',
+        ]);
+
+        $this->assertSame('integra', CobroDelMes::calcular()['fuera'][0]['motivo']);
+    }
+
     /** La transición: en cortesía no se factura, y se dice por qué. */
     public function test_cortesia_y_mes_gratis_quedan_fuera_por_motivos_distintos(): void
     {

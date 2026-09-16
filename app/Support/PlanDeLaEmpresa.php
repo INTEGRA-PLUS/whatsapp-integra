@@ -213,11 +213,24 @@ class PlanDeLaEmpresa
      */
     public function seFactura(): bool
     {
-        if (in_array($this->cobro(), ['cortesia', 'prueba'], true)) {
+        if (in_array($this->cobro(), ['integra', 'cortesia', 'prueba'], true)) {
             return false;
         }
 
         return ! $this->enMesGratis();
+    }
+
+    /**
+     * ¿El CRM va dentro de lo que ya paga por Integra?
+     *
+     * Distinto de «no se le factura»: un cliente en cortesía es un pendiente
+     * comercial que alguien va a revisar, y uno de Integra **ya está pagando**.
+     * Mezclarlos es lo que hace que dentro de unos meses alguien mande una
+     * factura por algo que el cliente tiene contratado desde hace un año.
+     */
+    public function incluidoEnIntegra(): bool
+    {
+        return $this->cobro() === 'integra' || (bool) $this->company->viene_de_integra;
     }
 
     public function enMesGratis(): bool
@@ -234,6 +247,7 @@ class PlanDeLaEmpresa
             'plan_nombre' => $this->nombre(),
             'cobro' => $this->cobro(),
             'se_factura' => $this->seFactura(),
+            'incluido_en_integra' => $this->incluidoEnIntegra(),
             'en_mes_gratis' => $this->enMesGratis(),
             'gratis_hasta' => optional($this->company->gratis_hasta)->toDateString(),
             'contactos_contratados' => $this->company->contactos_contratados,

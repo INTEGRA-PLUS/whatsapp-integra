@@ -570,10 +570,20 @@ class MasterController extends Controller
         $datos = $request->validate([
             'plan' => 'required|string|in:'.implode(',', array_keys(config('planes.disponibles'))),
             'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
+            'viene_de_integra' => 'boolean',
             'contactos_contratados' => 'nullable|integer|min:0|max:1000000',
             'gratis_hasta' => 'nullable|date',
             'nota_de_cobro' => 'nullable|string|max:300',
         ]);
+
+        // Marcar «viene de Integra» y dejar el cobro en cortesía es una
+        // contradicción que no se ve aquí: se ve un mes después, cuando la
+        // empresa aparece en la lista de cobro como pendiente comercial. Se
+        // arregla al guardar y no con una validación, porque quien marca la
+        // casilla ya dijo lo que quería decir.
+        if (($datos['viene_de_integra'] ?? false) && ($datos['cobro'] ?? null) === 'cortesia') {
+            $datos['cobro'] = 'integra';
+        }
 
         $company->update($datos);
 

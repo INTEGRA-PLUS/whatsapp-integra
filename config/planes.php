@@ -218,6 +218,13 @@ return [
     | Estados de cobro
     |--------------------------------------------------------------------------
     |
+    | `integra` es el más importante y el que faltaba: la empresa llegó con
+    | Integra y **el CRM va dentro de lo que ya paga por el ERP**. No se le
+    | factura aquí, y no hay nada que revisar. Antes estaban todas en
+    | `cortesia`, que significa otra cosa —un pendiente comercial— y garantizaba
+    | que dentro de unos meses alguien intentara «regularizarlas» cobrándoles
+    | dos veces lo mismo.
+    |
     | `cortesia` es el estado de las empresas que ya usaban el CRM cuando se
     | introdujeron los planes: todo encendido y sin factura, hasta que firmen.
     | Es un estado legítimo y permanente, no un limbo.
@@ -228,6 +235,6 @@ return [
     |
     */
 
-    'cobros' => ['cortesia', 'prueba', 'activo', 'suspendido'],
+    'cobros' => ['integra', 'cortesia', 'prueba', 'activo', 'suspendido'],
 
 ];

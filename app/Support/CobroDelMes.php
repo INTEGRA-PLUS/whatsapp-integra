@@ -21,8 +21,13 @@ use Illuminate\Support\Collection;
  *
  * - **interna** — es nuestra. `Master Admin`, `PRUEBAS`, `Meta App Review`.
  *   Nunca va a pagar y no es un pendiente comercial.
+ * - **integra** — llegó con el ERP y el CRM va dentro de lo que ya paga por
+ *   él. Es un cliente que paga, sólo que por otra puerta, y su venta futura no
+ *   es el CRM sino el complemento de IA. Sin este motivo aparte, la cuenta de
+ *   facturación potencial del panel salía inflada: contaba como cobrable a
+ *   gente que ya paga.
  * - **cortesía / prueba** — cliente al que se decidió no cobrarle todavía. Es
- *   la transición, y es donde están hoy las 55.
+ *   un pendiente comercial que alguien tiene que revisar.
  * - **mes gratis** — va a pagar, pero no este mes. Vuelve solo.
  *
  * Y una cuarta que sí sale en la lista pero avisando: **sin tramo asignado**.
@@ -112,6 +117,15 @@ class CobroDelMes
     {
         if ($company->interna) {
             return 'interna';
+        }
+
+        // Antes que cortesía a propósito: son las dos formas de «aquí no se le
+        // factura» y significan cosas opuestas. Integra es un cliente que paga;
+        // cortesía es uno al que todavía no se le cobra. Si Integra saliera como
+        // cortesía, alguien la pasaría a activo en la siguiente revisión y le
+        // cobraría dos veces el mismo CRM.
+        if ($plan->incluidoEnIntegra()) {
+            return 'integra';
         }
 
         if (in_array($plan->cobro(), ['cortesia', 'prueba'], true)) {
