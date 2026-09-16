@@ -1,5 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    Sparkles,
     LayoutGrid,
     MessageSquare,
     MessageSquareX,
@@ -65,6 +66,11 @@ export function AppSidebar() {
     } else {
         const permissions = usePage().props.auth.user.permissions || [];
         const hasPermission = (perm) => permissions.includes(perm);
+        // Del plan de la empresa, compartido por HandleInertiaRequests. Si no
+        // llegara —una página vieja, un render parcial— el distintivo sale, que
+        // es el lado seguro: enseñar «PRO» de más sólo cuesta una pregunta;
+        // esconderlo de menos cuesta la venta.
+        const tieneIa = usePage().props.plan?.tiene_ia ?? false;
 
         // De lo que se usa cada día a lo que se configura una vez.
         navGroups = [
@@ -92,6 +98,10 @@ export function AppSidebar() {
                 // son alternativas entre sí y separadas nadie las compara.
                 label: 'Respuestas automáticas',
                 items: [
+                    // Se ve tenga o no el complemento contratado, y a propósito:
+                    // esconder lo que no se ha comprado es la forma más segura de
+                    // que nadie lo compre. Lo que cambia es lo que hay dentro.
+                    { title: 'IA que responde', href: route('ia.index'), icon: Sparkles, show: hasPermission('whatsapp_menus.update'), badge: tieneIa ? null : 'PRO' },
                     { title: 'Menús de WhatsApp', href: route('whatsapp-menus.index'), icon: ListTree, show: hasPermission('whatsapp_menus.view') },
                     { title: 'Respuestas Automáticas', href: route('auto-responses.index'), icon: Bot, show: hasPermission('auto_responses.view') },
                     { title: 'Respuestas Rápidas', href: route('quick-replies.index'), icon: Zap, show: hasPermission('quick_replies.view') },

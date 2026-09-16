@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,6 +38,20 @@ class HandleInertiaRequests extends Middleware
             // Laravel. Sin compartirlo, el controlador lo deja en la sesión y
             // la pantalla no muestra nada en absoluto: el formulario sólo se
             // vacía, que desde fuera es idéntico a no haber pulsado.
+            // Lo que el menú lateral necesita para poner el distintivo «PRO» en
+            // la IA sin esconderla: lo que no se ve no lo pide nadie, así que la
+            // entrada sale siempre y lo que cambia es lo que hay dentro.
+            //
+            // Se pregunta por `PlanDeLaEmpresa` y no por la columna `plan`: el
+            // catálogo se está partiendo en un plan de CRM más el complemento de
+            // IA aparte, y esta llamada seguirá respondiendo lo mismo. No añade
+            // consultas — la relación `company` ya se resuelve dos líneas más
+            // arriba para el nombre de la empresa.
+            'plan' => [
+                'tiene_ia' => fn () => $request->user()?->company
+                    ? PlanDeLaEmpresa::de($request->user()->company)->tieneIa()
+                    : false,
+            ],
             'status' => fn () => session('status'),
             'flash' => [
                 'success' => fn () => session('success'),

@@ -15,6 +15,7 @@ use App\Http\Controllers\ExtensionController;
 use App\Http\Controllers\InstagramConexionController;
 use App\Http\Controllers\InstagramPrivacidadController;
 use App\Http\Controllers\InstagramWebhookController;
+use App\Http\Controllers\FlujoIaController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\KanbanController;
@@ -551,11 +552,28 @@ Route::middleware('auth')->group(function () {
 
     // Settings routes
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/', [SettingsController::class, 'index'])->name('index');
+        Route::get('/', function (\Illuminate\Http\Request $request) {
+            // El apartado de IA se fue de aquí a su propia pantalla, y el
+            // enlace viejo está escrito en manuales y en WhatsApps del equipo.
+            // Quien lo abra acaba en la pestaña de Perfil sin entender qué pasó,
+            // que es la peor forma de enterarse de que algo se movió.
+            if ($request->query('tab') === 'flujo-ia') {
+                return redirect()->route('ia.index');
+            }
+
+            return app(SettingsController::class)->index($request);
+        })->name('index');
         Route::put('/profile', [SettingsController::class, 'updateProfile'])->name('profile');
         Route::put('/password', [SettingsController::class, 'updatePassword'])->name('password');
         Route::delete('/sessions', [SettingsController::class, 'destroyOtherSessions'])->name('sessions.destroy');
     });
+
+    // La IA que responde sola. Pantalla propia y no una pestaña de Configuración:
+    // es lo que se vende, y lo que no está en el menú no lo pide nadie. Las
+    // rutas de la API se quedan donde estaban —la pantalla nueva las llama
+    // igual— para no romper nada que ya funcionaba.
+    Route::get('/ia', [FlujoIaController::class, 'index'])
+        ->middleware('permission:whatsapp_menus.update')->name('ia.index');
 
     // Flujo IA: el apartado va detrás de un secreto, así que el desbloqueo se
     // limita —el secreto es corto y se puede probar a ciegas—. El resto sólo

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\AiAssistantProfile;
 use App\Support\AiPrompt;
 use App\Support\DefaultAiMenusIntegration;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -23,6 +25,12 @@ use Illuminate\Validation\Rule;
  * El desbloqueo es por empresa y una sola vez: a partir de ahí el admin
  * enciende, apaga y ajusta permisos sin volver a escribirlo. Bloquear de nuevo
  * es lo que devuelve la puerta a su sitio si alguien se arrepiente.
+ *
+ * Delante de ese freno hay ahora un candado distinto: el del plan. Son dos
+ * preguntas que parecen una —«¿lo pagó?» y «¿está seguro?»— y juntarlas haría
+ * que el día que una empresa contrate el complemento, la IA se encendiera sola
+ * sin que nadie del equipo se entere. Por eso el secreto correcto NO se salta
+ * el plan: `exigirPlanConIa()` va primero también en `unlock()`.
  */
 class AiFlowSettingsController extends Controller
 {
@@ -30,6 +38,41 @@ class AiFlowSettingsController extends Controller
     public function show(): JsonResponse
     {
         return response()->json($this->state());
+    }
+
+    /**
+     * Corta si la empresa no tiene contratado el complemento de IA.
+     *
+     * 402 y no 403, igual que en `ExtensionController::install()`: no es un
+     * problema de permisos sino de plan, y el frontend tiene que poder
+     * distinguirlos para decir «contrátalo» en vez de «no tienes acceso», que
+     * manda al admin a pelearse con sus roles para nada.
+     *
+     * Se pregunta por `PlanDeLaEmpresa::tieneIa()` y no por el nombre del plan:
+     * el catálogo se está partiendo en un plan de CRM más un complemento de IA
+     * aparte, y esa llamada va a seguir respondiendo lo mismo.
+     */
+    private function exigirPlanConIa(Company $company): void
+    {
+        if (! PlanDeLaEmpresa::de($company)->tieneIa()) {
+            abort(402, 'El complemento de IA no está incluido en tu plan.');
+        }
+    }
+
+    /**
+     * Y para encender uno de los dos flujos caros, el complemento que los trae.
+     *
+     * `tieneIa()` no basta aquí: el complemento Esencial da el semáforo y el
+     * resumen, que cuestan céntimos, pero no el chat ni los menús con IA — una
+     * conversación de chat cuesta trece veces un análisis de semáforo. Sin esta
+     * comprobación, quien contrata el barato enciende el caro desde esta misma
+     * pantalla y la diferencia no la ve nadie hasta la factura del modelo.
+     */
+    private function exigirFlujo(Company $company, string $flujo, string $queEs): void
+    {
+        if (! PlanDeLaEmpresa::de($company)->permiteFlujoIa($flujo)) {
+            abort(402, "{$queEs} no está incluido en tu complemento de IA.");
+        }
     }
 
     /**
@@ -44,6 +87,9 @@ class AiFlowSettingsController extends Controller
         $data = $request->validate(['secret' => 'required|string|max:200']);
         $expected = (string) config('services.ai_activation.secret');
         $user = $request->user();
+
+        // Antes de mirar el secreto: tener el secreto no es haberlo contratado.
+        $this->exigirPlanConIa($user->company);
 
         // Sin secreto configurado no se desbloquea nada. Tratarlo como "todo
         // vale" dejaría el apartado abierto justo en las instalaciones donde
@@ -93,6 +139,8 @@ class AiFlowSettingsController extends Controller
         $user = $request->user();
         $company = $user->company;
 
+        $this->exigirPlanConIa($company);
+
         if (! $company->aiFlowUnlocked()) {
             return response()->json([
                 'ok' => false,
@@ -121,6 +169,16 @@ class AiFlowSettingsController extends Controller
             // recorte el texto por detrás sin decir nada.
             'assistant.instrucciones' => 'sometimes|nullable|string|max:' . AiPrompt::MAX_INSTRUCTIONS,
         ]);
+
+        // Encender, sólo lo contratado. Apagar no se comprueba: a quien se le
+        // acabe el complemento hay que dejarle apagar lo que dejó encendido.
+        if ($data['menus_enabled'] ?? false) {
+            $this->exigirFlujo($company, 'ai_menus', 'La IA en los menús');
+        }
+
+        if ($data['chat_enabled'] ?? false) {
+            $this->exigirFlujo($company, 'ai_chat', 'La IA en los chats');
+        }
 
         // Encender algo que la plataforma no tiene configurado dejaría al admin
         // con un interruptor en verde y sin IA: se avisa en vez de aceptarlo.
@@ -212,9 +270,19 @@ class AiFlowSettingsController extends Controller
             ->where('key', CompanyIntegration::KEY_AI_CHAT)
             ->first();
 
+        $plan = PlanDeLaEmpresa::de($company);
+
         return [
             'unlocked' => $company->aiFlowUnlocked(),
             'unlocked_at' => $company->ai_flow_unlocked_at,
+            // Qué trae el complemento contratado. La pantalla lo usa para
+            // desactivar el interruptor que no se ha pagado y decir por qué, en
+            // vez de dejar que lo pulse y se coma un 402.
+            'complemento' => [
+                'nombre' => $plan->nombreIa(),
+                'chat' => $plan->permiteFlujoIa('ai_chat'),
+                'menus' => $plan->permiteFlujoIa('ai_menus'),
+            ],
             // Para que el panel pueda decir "avisa al equipo técnico" en vez de
             // dejar al admin encendiendo un interruptor que no hace nada.
             'platform' => [

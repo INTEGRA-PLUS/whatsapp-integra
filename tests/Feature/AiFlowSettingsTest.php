@@ -29,7 +29,19 @@ class AiFlowSettingsTest extends TestCase
     {
         parent::setUp();
 
-        $this->company = Company::create(['name' => 'Fibra XYZ', 'slug' => 'fibra-xyz', 'active' => true]);
+        // Con el complemento de IA contratado: desde que la pantalla se sacó de
+        // Configuración, `unlock` y `update` responden 402 a quien no lo tiene,
+        // y lo que se prueba aquí es el freno del secreto, que va detrás. El
+        // candado del plan tiene sus propios tests en PantallaDeIaTest.
+        //
+        // El complemento se busca por lo que hace y no por su nombre: el
+        // catálogo se está reescribiendo esta semana.
+        $this->company = Company::create([
+            'name' => 'Fibra XYZ',
+            'slug' => 'fibra-xyz',
+            'active' => true,
+            'ia' => $this->complementoCompleto(),
+        ]);
 
         $this->user = User::create([
             'company_id' => $this->company->id,
@@ -53,6 +65,20 @@ class AiFlowSettingsTest extends TestCase
             'services.ai_chat.webhook_url' => 'https://n8n.example.test/webhook/chat',
             'services.ai_chat.api_key' => 'n8n_llave',
         ]);
+    }
+
+    /** El complemento que abre los dos flujos de IA: los que configura esta pantalla. */
+    private function complementoCompleto(): string
+    {
+        foreach (array_keys(config('planes.ia', [])) as $slug) {
+            $plan = \App\Support\PlanDeLaEmpresa::de(new Company(['ia' => $slug]));
+
+            if ($plan->permiteFlujoIa('ai_chat') && $plan->permiteFlujoIa('ai_menus')) {
+                return $slug;
+            }
+        }
+
+        $this->fail('Ningún complemento del catálogo abre los dos flujos de IA.');
     }
 
     private function unlocked(): void

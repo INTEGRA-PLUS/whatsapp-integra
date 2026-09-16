@@ -35,7 +35,19 @@ class AiAssistantProfileTest extends TestCase
     {
         parent::setUp();
 
-        $this->company = Company::create(['name' => 'Fibra XYZ', 'slug' => 'fibra-xyz', 'active' => true]);
+        // Con complemento de IA: el panel del perfil se guarda por
+        // `PUT /api/settings/ai-flow`, que desde que la pantalla salió de
+        // Configuración responde 402 a quien no lo tiene contratado. Aquí se
+        // prueba el perfil del asistente, no el candado del plan.
+        $this->company = Company::create([
+            'name' => 'Fibra XYZ',
+            'slug' => 'fibra-xyz',
+            'active' => true,
+            'ia' => collect(array_keys(config('planes.ia', [])))
+                ->first(fn (string $slug) => \App\Support\PlanDeLaEmpresa::de(
+                    new Company(['ia' => $slug])
+                )->tieneIa()),
+        ]);
 
         $this->instance = Instance::create([
             'company_id' => $this->company->id,

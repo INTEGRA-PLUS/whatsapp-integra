@@ -104,6 +104,16 @@ export function NavMain({ groups = [] }) {
                                         <Link href={item.href}>
                                             {item.icon && <item.icon />}
                                             <span>{item.title}</span>
+                                            {/* Un «PRO», no un candado gris: el
+                                                candado se lee como «no tienes
+                                                permiso» y manda al admin a
+                                                pelearse con sus roles por algo
+                                                que en realidad es de plan. */}
+                                            {item.badge && (
+                                                <span className="ml-auto rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent-foreground">
+                                                    {item.badge}
+                                                </span>
+                                            )}
                                         </Link>
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
