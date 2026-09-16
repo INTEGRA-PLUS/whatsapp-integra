@@ -23,6 +23,7 @@ use App\Http\Controllers\MacroController;
 use App\Http\Controllers\Master\LogsController;
 use App\Http\Controllers\Master\MessagesController;
 use App\Http\Controllers\MasterController;
+use App\Http\Controllers\SuscripcionController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\QuickReplyController;
 use App\Http\Controllers\ReportsController;
@@ -519,6 +520,20 @@ Route::middleware('auth')->group(function () {
         // se emite fuera del CRM a propósito: aquí sólo se decide a quién y
         // cuánto.
         Route::get('/cobro.csv', [MasterController::class, 'cobroCsv'])->name('cobro.csv');
+
+        // Suscripciones: emitir el cobro del periodo y darlo por pagado.
+        //
+        // Mientras no exista el puente con IntegraPay, esto es lo que permite
+        // operar de verdad: emitir a mano desde la ficha y marcar el pago cuando
+        // entra. Cuando llegue la pasarela, `pagar` lo llamará un webhook en vez
+        // de una persona — y por eso el que alarga el periodo es
+        // `Suscripcion::pagar()` y no el controlador.
+        Route::post('/companies/{company}/suscripcion/emitir', [SuscripcionController::class, 'emitir'])
+            ->name('companies.suscripcion.emitir');
+        Route::post('/cobros/{cobro}/pagar', [SuscripcionController::class, 'pagar'])
+            ->name('cobros.pagar');
+        Route::post('/cobros/{cobro}/anular', [SuscripcionController::class, 'anular'])
+            ->name('cobros.anular');
 
         // Restablecer la contraseña de cualquier usuario de cualquier empresa,
         // para cuando quien se ha quedado fuera es el propio admin del cliente

@@ -195,6 +195,24 @@ class MasterController extends Controller
             $company->setAttribute('plan_resumen', PlanDeLaEmpresa::de($company)->resumen());
             $company->setAttribute('uso_ia', ContadorDeIa::estado($company));
 
+            // El historial de cobros, para la ficha. Los seis últimos: es lo que
+            // cabe sin scroll y lo que alguien mira de verdad — para más está el
+            // CSV. Va sobre las diez empresas de la página, no sobre todas.
+            $company->setAttribute('cobros', \App\Models\SuscripcionCobro::where('company_id', $company->id)
+                ->orderByDesc('periodo_hasta')
+                ->limit(6)
+                ->get()
+                ->map(fn (\App\Models\SuscripcionCobro $c) => [
+                    'id' => $c->id,
+                    'concepto' => $c->concepto(),
+                    'importe' => $c->importe_usd,
+                    'desde' => $c->periodo_desde->toDateString(),
+                    'hasta' => $c->periodo_hasta->toDateString(),
+                    'estado' => $c->estado,
+                    'referencia' => $c->referencia,
+                    'nota' => $c->nota,
+                ]));
+
             return $company;
         });
 
@@ -220,6 +238,13 @@ class MasterController extends Controller
                 ->map(fn (array $p, string $slug) => [
                     'value' => $slug,
                     'label' => $p['nombre'].($p['precio'] ? ' — +$'.$p['precio'].'/mes' : ''),
+                ])->values(),
+
+            'ciclos' => collect(config('planes.ciclos'))
+                ->map(fn (array $c, string $slug) => [
+                    'value' => $slug,
+                    'label' => $c['nombre'].' — '.$c['meses'].' meses por '.$c['mensualidades']
+                        .($c['mensualidades'] === 1 ? ' mensualidad' : ' mensualidades'),
                 ])->values(),
 
             'cobros' => config('planes.cobros'),
@@ -548,6 +573,7 @@ class MasterController extends Controller
         $datos = $request->validate([
             'plan' => 'required|string|in:'.implode(',', array_keys(config('planes.crm'))),
             'ia' => 'required|string|in:'.implode(',', array_keys(config('planes.ia'))),
+            'ciclo' => 'required|string|in:'.implode(',', array_keys(config('planes.ciclos'))),
             'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
             'viene_de_integra' => 'boolean',
             'gratis_hasta' => 'nullable|date',

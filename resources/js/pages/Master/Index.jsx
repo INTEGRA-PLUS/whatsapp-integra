@@ -33,7 +33,7 @@ import {
     Download,
 } from 'lucide-react';
 
-export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], complementos = [], cobros = [], planes_resumen, cobro_del_mes }) {
+export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], complementos = [], ciclos = [], cobros = [], planes_resumen, cobro_del_mes }) {
     // La contraseña temporal viaja por flash: existe una sola vez y no
     // sobrevive a una recarga.
     const { flash } = usePage().props;
@@ -142,6 +142,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
         setPlanForm({
             plan: p.plan ?? 'basico',
             ia: p.ia ?? 'ninguno',
+            ciclo: p.ciclo ?? 'mensual',
             cobro: p.cobro ?? 'cortesia',
             gratis_hasta: p.gratis_hasta ?? '',
             nota_de_cobro: company.nota_de_cobro ?? '',
@@ -845,6 +846,14 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             ayuda="Se vende aparte del plan y se suma al precio. Esencial trae el semáforo afinado y el resumen; Completa añade los menús y el chat con IA, que cuestan trece veces más por conversación."
                         />
 
+                        <Selector
+                            label="Ciclo de cobro"
+                            value={planForm.ciclo}
+                            onChange={v => setPlanForm({ ...planForm, ciclo: v })}
+                            options={ciclos}
+                            ayuda="Cada cuánto se le emite el cobro. El anual son doce meses por diez mensualidades — dos gratis."
+                        />
+
                         {planCompany.plan_resumen?.precio_usd > 0 && (
                             <p className="-mt-2 text-xs text-muted-foreground">
                                 {planCompany.plan_resumen.incluido_en_integra
@@ -957,6 +966,13 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                             </div>
                         )}
 
+
+                        {/* La suscripción: hasta cuándo tiene pagado y su
+                            historial. Va aquí y no en otra pantalla porque es la
+                            misma conversación que el plan — «qué tiene y si
+                            paga»— y separarlas obliga a abrir dos sitios para
+                            entender a un cliente. */}
+                        <Suscripcion company={planCompany} />
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-foreground">Gratis hasta</label>
@@ -1414,6 +1430,137 @@ const MOTIVO_FUERA = {
     prueba: 'en prueba',
     mes_gratis: 'con mes gratis',
 };
+
+/**
+ * La suscripción de una empresa: hasta cuándo tiene pagado y qué se le ha cobrado.
+ *
+ * Mientras no exista el puente con IntegraPay, esto es lo que permite operar:
+ * emitir el cobro del periodo y marcarlo pagado cuando entra el dinero. Cuando
+ * llegue la pasarela seguirá haciendo falta — para el que paga por
+ * transferencia, el que negocia otro importe y el cobro que se emitió mal.
+ */
+function Suscripcion({ company }) {
+    const plan = company.plan_resumen ?? {};
+    const cobros = company.cobros ?? [];
+    const [referencia, setReferencia] = useState('');
+
+    const dias = plan.dias_para_renovar;
+
+    return (
+        <div className="space-y-2.5 rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground">Suscripción</span>
+
+                {plan.suscripcion_hasta ? (
+                    <span className={clsx(
+                        'text-xs tabular-nums',
+                        dias < 0 ? 'font-semibold text-destructive'
+                            : dias <= 7 ? 'font-semibold text-warning'
+                            : 'text-muted-foreground'
+                    )}>
+                        {dias < 0
+                            ? `vencida hace ${Math.abs(dias)} días`
+                            : `hasta el ${new Date(plan.suscripcion_hasta + 'T12:00').toLocaleDateString('es-CO')} · ${dias} días`}
+                    </span>
+                ) : (
+                    /* Sin periodo no es lo mismo que vencida: es que nadie la
+                       dio de alta, y se corrige de otra forma. */
+                    <span className="text-xs text-muted-foreground">sin periodo emitido</span>
+                )}
+            </div>
+
+            {plan.precio_del_ciclo > 0 ? (
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 gap-1.5 text-xs"
+                        onClick={() => router.post(
+                            route('master.companies.suscripcion.emitir', company.id),
+                            {},
+                            { preserveScroll: true }
+                        )}
+                    >
+                        <CreditCard className="size-3.5" />
+                        Emitir cobro de ${plan.precio_del_ciclo}
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground">
+                        {plan.ciclo_nombre?.toLowerCase()} · no cobra nada, deja el cobro pendiente
+                    </span>
+                </div>
+            ) : (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    No se le factura nada: {plan.incluido_en_integra
+                        ? 'viene de Integra y no tiene complemento de IA contratado.'
+                        : 'está en cortesía o sin plan de pago.'}
+                </p>
+            )}
+
+            {cobros.length > 0 && (
+                <ul className="divide-y divide-border border-t border-border pt-1">
+                    {cobros.map(c => (
+                        <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                            <span className="min-w-0 text-[11px] leading-snug text-muted-foreground">
+                                <span className="font-mono font-semibold text-foreground">${c.importe}</span>
+                                {' · '}{c.concepto}
+                                <br />
+                                {new Date(c.desde + 'T12:00').toLocaleDateString('es-CO')}
+                                {' a '}
+                                {new Date(c.hasta + 'T12:00').toLocaleDateString('es-CO')}
+                                {c.referencia && <> · <span className="font-mono">{c.referencia}</span></>}
+                            </span>
+
+                            {c.estado === 'pagado' ? (
+                                <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-success">
+                                    Pagado
+                                </span>
+                            ) : c.estado === 'anulado' ? (
+                                <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground/60">
+                                    Anulado
+                                </span>
+                            ) : (
+                                <span className="flex shrink-0 items-center gap-1">
+                                    <input
+                                        id={`ref-${c.id}`}
+                                        value={referencia}
+                                        onChange={e => setReferencia(e.target.value)}
+                                        placeholder="referencia"
+                                        className="h-7 w-24 rounded border border-input bg-background px-2 text-[11px] outline-none focus:border-ring"
+                                    />
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        className="h-7 px-2 text-[11px]"
+                                        onClick={() => router.post(
+                                            route('master.cobros.pagar', c.id),
+                                            { referencia },
+                                            { preserveScroll: true, onSuccess: () => setReferencia('') }
+                                        )}
+                                    >
+                                        Pagado
+                                    </Button>
+                                    <button
+                                        type="button"
+                                        title="Anular este cobro"
+                                        onClick={() => router.post(
+                                            route('master.cobros.anular', c.id),
+                                            {},
+                                            { preserveScroll: true }
+                                        )}
+                                        className="rounded p-1 text-muted-foreground/60 hover:text-destructive"
+                                    >
+                                        <XIcon className="size-3.5" />
+                                    </button>
+                                </span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
 
 const ETIQUETA_COBRO = {
     integra: 'Integra — el CRM va en su ERP',

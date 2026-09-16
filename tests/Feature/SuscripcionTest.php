@@ -188,6 +188,88 @@ class SuscripcionTest extends TestCase
         $this->assertStringContainsString('anual', $cobro->concepto());
     }
 
+    // ─── El panel ────────────────────────────────────────────────────────────
+
+    /**
+     * Sólo el master emite y marca pagos.
+     *
+     * Es dinero: un admin de empresa que pudiera llamar a esta ruta se alargaría
+     * la suscripción él solo. Y no basta con esconder el botón — la ruta se
+     * llama sin botón.
+     */
+    public function test_solo_el_master_toca_los_cobros(): void
+    {
+        $company = $this->empresa(['plan' => 'basico', 'cobro' => 'activo']);
+        $admin = $this->usuario($company, 'admin');
+
+        $this->actingAs($admin)
+            ->post("/master/companies/{$company->id}/suscripcion/emitir")
+            ->assertForbidden();
+    }
+
+    /** Emitir dos veces seguidas no deja dos cobros por el mismo periodo. */
+    public function test_no_se_emiten_dos_cobros_pendientes(): void
+    {
+        $company = $this->empresa(['plan' => 'basico', 'cobro' => 'activo']);
+        $master = $this->usuario($company, 'master');
+
+        $this->actingAs($master)->post("/master/companies/{$company->id}/suscripcion/emitir");
+        $this->actingAs($master)->post("/master/companies/{$company->id}/suscripcion/emitir");
+
+        $this->assertSame(1, SuscripcionCobro::where('company_id', $company->id)->count());
+    }
+
+    /**
+     * La misma referencia no se puede aplicar a dos cobros.
+     *
+     * Es la red que queda cuando el mismo comprobante se mete dos veces a mano,
+     * y la misma que protegerá del webhook repetido de IntegraPay.
+     */
+    public function test_la_misma_referencia_no_paga_dos_cobros(): void
+    {
+        $company = $this->empresa(['plan' => 'basico', 'cobro' => 'activo']);
+
+        $uno = Suscripcion::emitir($company);
+        $this->assertTrue(Suscripcion::pagar($uno, 'transferencia-777'));
+
+        $otro = Suscripcion::emitir($company->refresh());
+        $this->assertFalse(Suscripcion::pagar($otro, 'transferencia-777'));
+
+        $this->assertSame('pendiente', $otro->refresh()->estado);
+    }
+
+    /** Un cobro pagado no se anula: eso es una devolución y se hace fuera. */
+    public function test_un_cobro_pagado_no_se_anula(): void
+    {
+        $company = $this->empresa(['plan' => 'basico', 'cobro' => 'activo']);
+        $cobro = Suscripcion::emitir($company);
+        Suscripcion::pagar($cobro, 'ref-1');
+
+        $this->actingAs($this->usuario($company, 'master'))
+            ->post("/master/cobros/{$cobro->id}/anular");
+
+        $this->assertSame('pagado', $cobro->refresh()->estado);
+    }
+
+    private function usuario(Company $company, string $rol): \App\Models\User
+    {
+        $user = \App\Models\User::create([
+            'company_id' => $company->id,
+            'name' => ucfirst($rol),
+            'email' => \Illuminate\Support\Str::uuid().'@x.test',
+            'password' => bcrypt('secreto123'),
+            'role' => $rol,
+            'active' => true,
+        ]);
+
+        setPermissionsTeamId($company->id);
+        $user->assignRole(\Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => $rol, 'company_id' => $company->id, 'guard_name' => 'web',
+        ]));
+
+        return $user->fresh();
+    }
+
     private function empresa(array $extra = []): Company
     {
         return Company::create(array_merge([
