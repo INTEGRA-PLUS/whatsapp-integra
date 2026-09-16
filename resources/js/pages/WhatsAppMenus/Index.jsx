@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
@@ -91,11 +92,22 @@ const emptyForm = () => ({
     options: [emptyOption()],
 });
 
-export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, ai = {} }) {
+export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, ai = {}, orden = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
     const actionMeta = Object.fromEntries(actionTypes.map(a => [a.value, a]));
+
+    // El backend manda las claves en snake_case y el componente las quiere en
+    // camel. Se traduce aquí y no dentro de él porque lo comparten dos páginas.
+    const ordenProps = {
+        hayMenus: !!orden.hay_menus,
+        hayDisparadores: !!orden.hay_disparadores,
+        saludaConMenu: !!orden.saluda_con_menu,
+        iaMenus: !!orden.ia_menus,
+        iaChat: !!orden.ia_chat,
+        horarios: !!orden.horarios,
+    };
     const [showCreate, setShowCreate] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     const [editing, setEditing] = useState(null);
@@ -202,6 +214,12 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         if (menu) openEdit(menu, optionId);
                     }} />
                 )}
+
+                {/* La duda que no tenía respuesta en ninguna pantalla: si lo
+                    primero que ve el cliente es un menú o la IA. Abierto por
+                    defecto cuando todavía no hay menús, que es justo cuando
+                    alguien está decidiendo si los necesita. */}
+                <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
 
                 {menus.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
@@ -1237,11 +1255,35 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
             <div className="flex items-center gap-2">
                 <ActionIcon className="size-3.5 shrink-0 text-muted-foreground" />
                 <Select value={option.action_type} onChange={v => onChange({ action_type: v })} className="h-8 text-xs">
-                    {grouped.map(([group, list]) => (
-                        <optgroup key={group} label={GROUP_LABELS[group] ?? group}>
-                            {list.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                        </optgroup>
-                    ))}
+                    {grouped.map(([group, list]) => {
+                        // Las acciones de autoservicio consultan Integra: sin la
+                        // integración conectada no hacen lo que prometen —el
+                        // cliente acaba derivado a un asesor— así que no se
+                        // pueden elegir. Se enseñan igualmente, porque saber que
+                        // existen es la mitad de la razón para conectar Integra.
+                        const bloqueado = group === 'integra' && !integra.connected;
+                        const etiqueta = bloqueado
+                            ? `${GROUP_LABELS[group]} — conecta Integra para usarlas`
+                            : (GROUP_LABELS[group] ?? group);
+
+                        return (
+                            <optgroup key={group} label={etiqueta}>
+                                {list.map(a => (
+                                    <option
+                                        key={a.value}
+                                        value={a.value}
+                                        // La que ya está elegida nunca se
+                                        // bloquea: una empresa pudo configurarla
+                                        // y desconectar Integra después, y
+                                        // esconderle su propia opción es peor.
+                                        disabled={bloqueado && option.action_type !== a.value}
+                                    >
+                                        {a.label}{bloqueado && option.action_type !== a.value ? ' (requiere Integra)' : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        );
+                    })}
                 </Select>
             </div>
 

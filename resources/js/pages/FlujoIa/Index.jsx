@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
+import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
 import {
     AlertTriangle, BadgeCheck, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, KeyRound,
@@ -1508,7 +1509,7 @@ function Venta({ plan }) {
 
 /* ───────────────────────── La página ───────────────────────── */
 
-export default function FlujoIaIndex({ tiene_ia, plan }) {
+export default function FlujoIaIndex({ tiene_ia, plan, orden = {} }) {
     return (
         <AppLayout breadcrumb={['IA que responde']}>
             <Head title="IA que responde" />
@@ -1524,6 +1525,21 @@ export default function FlujoIaIndex({ tiene_ia, plan }) {
                         </p>
                     </div>
                 </div>
+
+                {/* Antes que cualquier interruptor: cuándo entra esta IA.
+                    Manda el menú y ella es el último recurso, y quien no lo
+                    sabe la enciende, escribe «hola», recibe un menú y concluye
+                    que no funciona. */}
+                {tiene_ia && (
+                    <OrdenDeLaConversacion
+                        hayMenus={!!orden.hay_menus}
+                        hayDisparadores={!!orden.hay_disparadores}
+                        saludaConMenu={!!orden.saluda_con_menu}
+                        iaMenus={!!orden.ia_menus}
+                        iaChat={!!orden.ia_chat}
+                        horarios={!!orden.horarios}
+                    />
+                )}
 
                 {/* La venta sigue estrecha —es un texto que se lee— y la
                     configuración ocupa el ancho, que es lo que permite las dos

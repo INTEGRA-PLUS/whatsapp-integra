@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
+use App\Support\OrdenDeLaConversacion;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -36,6 +37,10 @@ class FlujoIaController extends Controller
             // semana.
             'tiene_ia' => PlanDeLaEmpresa::de($company)->tieneIa(),
             'plan' => PlanDeLaEmpresa::de($company)->nombre(),
+            // Qué le pasa hoy a un cliente que escribe. Se pinta también en
+            // «Menús de WhatsApp»: la duda aparece en las dos pantallas, y
+            // mandar a la otra a leerlo es como no contarlo.
+            'orden' => OrdenDeLaConversacion::de($company->id),
         ]);
     }
 }

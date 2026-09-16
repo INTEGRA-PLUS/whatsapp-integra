@@ -7,6 +7,7 @@ use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
+use App\Support\OrdenDeLaConversacion;
 use App\Services\Integra;
 use App\Services\IntegraCapabilities;
 use App\Services\IntegraClient;
@@ -72,6 +73,10 @@ class WhatsAppMenuController extends Controller
             'integra' => [
                 'connected' => Integra::connected($user->company_id),
             ],
+            // Qué le pasa hoy a un cliente que escribe. La pregunta «¿sale
+            // primero un menú o la IA?» no tenía respuesta en ninguna pantalla,
+            // y la respuesta cambia según lo que la empresa tenga puesto.
+            'orden' => OrdenDeLaConversacion::de($user->company_id),
             // El interruptor de la IA. Vive aquí y no en Integraciones porque
             // es la IA DE LOS MENÚS: se enciende donde se configuran.
             'ai' => [
