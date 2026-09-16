@@ -51,6 +51,16 @@ Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook'])
 // Instagram. Va en su propia URL y no colgando del webhook de WhatsApp porque
 // Meta admite un solo callback_url por app y por tópico: son dos suscripciones
 // independientes que conviven en la misma app.
+// El aviso de pago de OnePay. Pública porque la llama la pasarela, no una
+// persona, y con el mismo camino que en Integra 2.0 —`pagos/onepay`— para que
+// quien la parametrice reconozca el patrón.
+//
+// Contesta 200 a todo, incluso a lo que no le incumbe: un webhook que responde
+// error hace que la pasarela reintente en bucle un evento que nunca se va a
+// querer. Lo que decide si el pago es nuestro es la referencia, no el HTTP.
+Route::post('pagos/onepay', \App\Http\Controllers\OnePayWebhookController::class)
+    ->name('pagos.onepay');
+
 Route::get('/webhooks/instagram', [InstagramWebhookController::class, 'verificar']);
 Route::post('/webhooks/instagram', [InstagramWebhookController::class, 'recibir']);
 

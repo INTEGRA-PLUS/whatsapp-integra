@@ -205,6 +205,30 @@ return [
     | que eso, el color que ya puso la matriz es mejor que un worker ocupado.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | OnePay / IntegraPay — la pasarela que cobra las suscripciones
+    |--------------------------------------------------------------------------
+    |
+    | La misma API que usa Integra 2.0 para facturar a los abonados de los ISPs,
+    | pero con **cuenta aparte**: el webhook de OnePay se configura por cuenta, y
+    | apuntar el de Integra hacia aquí le quitaría el suyo — dejaría de
+    | registrarse el pago de todos los ISPs a la vez.
+    |
+    | Sin token, `OnePayClient::configurado()` devuelve false y los cobros se
+    | quedan sólo en el CRM: se pueden emitir y marcar pagados a mano, que es
+    | como se operaba antes de la pasarela.
+    |
+    */
+    'onepay' => [
+        'base_url' => env('ONEPAY_BASE_URL', 'https://api.onepay.la/v1'),
+        'token' => env('ONEPAY_TOKEN'),
+        'timeout' => (int) env('ONEPAY_TIMEOUT', 30),
+        // El secreto con el que se firma el webhook, si OnePay lo ofrece. Sin
+        // él, la ruta se protege por el token compartido de la cabecera.
+        'webhook_secret' => env('ONEPAY_WEBHOOK_SECRET'),
+    ],
+
     'resumen' => [
         'webhook_url' => env('RESUMEN_WEBHOOK_URL'),
         'api_key' => env('RESUMEN_API_KEY'),

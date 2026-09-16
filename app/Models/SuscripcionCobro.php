@@ -31,6 +31,7 @@ class SuscripcionCobro extends Model
         'estado',
         'pagado_at',
         'referencia',
+        'referencia_onepay',
         'nota',
         'creado_por',
     ];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Company;
 use App\Models\SuscripcionCobro;
+use App\Services\OnePayClient;
 use App\Support\Suscripcion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -25,8 +26,13 @@ class SuscripcionController extends Controller
     /**
      * POST /master/companies/{company}/suscripcion/emitir
      *
-     * Emite el cobro del próximo periodo, en estado pendiente. No cobra nada ni
-     * contacta con ninguna pasarela.
+     * Emite el cobro del próximo periodo y lo pone delante del cliente en
+     * OnePay. Queda **pendiente**: la suscripción no se alarga hasta que la
+     * pasarela confirme el pago, o hasta que alguien lo marque a mano.
+     *
+     * Si no hay pasarela configurada, el cobro se emite igual y sólo vive en el
+     * CRM — que es como se operaba antes y como se sigue operando con el cliente
+     * que paga por transferencia.
      */
     public function emitir(Request $request, Company $company)
     {
@@ -50,6 +56,13 @@ class SuscripcionController extends Controller
 
         $cobro = Suscripcion::emitir($company, $request->user()->id, $datos['nota'] ?? null);
 
+        // Y se pone delante del cliente, si hay pasarela. Va aquí y no dentro de
+        // `Suscripcion::emitir()` para que el servicio siga sin saber de HTTP:
+        // emitir tiene que funcionar igual sin token, que es como se operaba
+        // antes de OnePay y como se seguirá operando para el que paga por
+        // transferencia.
+        $enOnePay = OnePayClient::crearFactura($cobro);
+
         Log::channel('whatsapp')->info('💳 Cobro de suscripción emitido', [
             'empresa' => $company->id,
             'cobro' => $cobro->id,
@@ -57,7 +70,8 @@ class SuscripcionController extends Controller
             'por' => $request->user()->id,
         ]);
 
-        return back()->with('success', "Cobro de \${$cobro->importe_usd} emitido, pendiente de pago.");
+        return back()->with('success', "Cobro de \${$cobro->importe_usd} emitido"
+            .($enOnePay ? ' y enviado a OnePay.' : '. No se envió a OnePay: revisa el log.'));
     }
 
     /**

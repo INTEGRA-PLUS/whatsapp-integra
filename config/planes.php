@@ -204,6 +204,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tasa de cambio para facturar
+    |--------------------------------------------------------------------------
+    |
+    | Los precios de este catálogo están en USD porque así se negocia y así se
+    | compara con la competencia. Pero OnePay cobra en **pesos colombianos**, en
+    | entero, y con un mínimo de 5.000 y un máximo de 100.000.000 por factura.
+    |
+    | La tasa es **fija y se pone a mano**, no se consulta en vivo a propósito.
+    | Una tasa viva haría que el mismo plan costara distinto cada mes sin que
+    | nadie lo hubiera decidido, que el cliente viera un importe que no cuadra
+    | con lo que se le dijo, y que conciliar dos facturas seguidas fuera un
+    | ejercicio de arqueología.
+    |
+    | Al cambiarla, los cobros ya emitidos no se mueven: el importe se guarda en
+    | la fila, no se recalcula.
+    |
+    */
+
+    'tasa_cop' => (int) env('PLANES_TASA_COP', 4000),
+
+    /*
+    |--------------------------------------------------------------------------
     | Ciclos de cobro
     |--------------------------------------------------------------------------
     |

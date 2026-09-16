@@ -27,6 +27,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'webhooks/whatsapp',
             'webhooks/instagram',
+            // OnePay avisa de los pagos por POST, sin sesión. Va con la misma
+            // ruta que en Integra 2.0 a propósito: quien configure la pasarela
+            // reconoce el patrón.
+            'pagos/onepay',
             // Meta manda estos dos avisos como POST de formulario, sin sesión y
             // sin token: la autenticidad la da el signed_request, que se valida
             // dentro con la clave secreta de la app de Instagram.
