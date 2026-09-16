@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
+import ModoDeAtencion from '@/components/modo-de-atencion';
 import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
 import {
@@ -1530,6 +1531,10 @@ export default function FlujoIaIndex({ tiene_ia, plan, orden = {} }) {
                     Manda el menú y ella es el último recurso, y quien no lo
                     sabe la enciende, escribe «hola», recibe un menú y concluye
                     que no funciona. */}
+                {tiene_ia && (
+                    <ModoDeAtencion alCambiar={() => router.reload({ only: ['orden'] })} />
+                )}
+
                 {tiene_ia && (
                     <OrdenDeLaConversacion
                         hayMenus={!!orden.hay_menus}

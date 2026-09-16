@@ -17,6 +17,7 @@ use App\Http\Controllers\InstagramConexionController;
 use App\Http\Controllers\InstagramPrivacidadController;
 use App\Http\Controllers\InstagramWebhookController;
 use App\Http\Controllers\FlujoIaController;
+use App\Http\Controllers\ModoDeAtencionController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\KanbanController;
@@ -604,6 +605,13 @@ Route::middleware('auth')->group(function () {
     // Flujo IA: el apartado va detrás de un secreto, así que el desbloqueo se
     // limita —el secreto es corto y se puede probar a ciegas—. El resto sólo
     // exige el permiso de siempre.
+    // Cómo atiende la empresa: a mano, con menú, con IA o con las dos. Toca los
+    // dos mundos, así que no cuelga de las rutas de menús ni de las de IA.
+    Route::prefix('api/atencion')->middleware('permission:whatsapp_menus.update')->group(function () {
+        Route::get('/modo', [ModoDeAtencionController::class, 'show']);
+        Route::post('/modo', [ModoDeAtencionController::class, 'update']);
+    });
+
     Route::prefix('api/settings/ai-flow')->group(function () {
         Route::get('/', [AiFlowSettingsController::class, 'show'])
             ->middleware('permission:whatsapp_menus.update');

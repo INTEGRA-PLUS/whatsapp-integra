@@ -35,6 +35,13 @@ class MenuReview
     {
         $issues = [];
 
+        // Con Integra desconectado, sus opciones ya no hacen lo que prometen:
+        // el aviso de arriba lo dice una vez y derivan al asesor. Pedir además
+        // que se les configure el tipo de falla o el enlace de pago es mandar a
+        // rellenar campos que hoy no ejecutan nada, y entierra los avisos que sí
+        // se pueden arreglar entre ruido que no.
+        $integraConectado = (bool) ($capabilities['connected'] ?? false);
+
         // Un token revocado tumba TODOS los permisos a la vez, así que sacar un
         // aviso por cada opción y cada permiso llenaría la pantalla de ocho
         // líneas que dicen lo mismo y esconden las que sí son distintas. Es una
@@ -81,7 +88,7 @@ class MenuReview
                     $byMissing[$key]['options'][] = $option->title;
                 }
 
-                foreach (self::optionIssues($menu, $option, $menus) as $issue) {
+                foreach (self::optionIssues($menu, $option, $menus, $integraConectado) as $issue) {
                     $issues[] = $issue + [
                         'menu_id' => $menu->id,
                         'menu' => $menu->name,
@@ -165,9 +172,21 @@ class MenuReview
     private static function optionIssues(
         WhatsAppMenu $menu,
         WhatsAppMenuOption $option,
-        $menus
+        $menus,
+        bool $integraConectado = true
     ): array {
         $issues = [];
+
+        // Las de autoservicio no se revisan si Integra no está conectado: no se
+        // ejecutan, y el aviso de que falta conectarlo ya está arriba.
+        $esDeIntegra = array_key_exists(
+            (string) $option->action_type,
+            WhatsAppMenuOption::INTEGRA_ACTIONS
+        );
+
+        if ($esDeIntegra && ! $integraConectado) {
+            return [];
+        }
 
         if ($option->action_type === 'reportar_falla' && ! $option->setting('radicado_servicio')) {
             $issues[] = [

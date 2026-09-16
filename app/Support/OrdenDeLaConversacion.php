@@ -6,6 +6,7 @@ use App\Models\BusinessHour;
 use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Models\WhatsAppMenu;
+use App\Services\WhatsAppChatAiClient;
 
 /**
  * Cómo está configurada hoy esta empresa para atender un mensaje entrante.
@@ -61,15 +62,21 @@ class OrdenDeLaConversacion
 
             'horarios' => BusinessHour::where('company_id', $companyId)->exists(),
 
-            // Encendidas **y** permitidas por el plan: una integración que
-            // quedó en `enabled` de cuando la empresa tenía el complemento no
-            // responde, y pintarla como activa manda a buscar el fallo donde
-            // no está.
+            // Hacen falta las TRES cosas para que una IA responda de verdad:
+            // encendida por la empresa, incluida en su plan, y con el flujo
+            // configurado en el servidor. Que falte cualquiera y aun así se
+            // pinte como activa manda al admin a buscar el fallo donde no
+            // está — que es justo lo que este archivo existe para evitar.
+            //
+            // La tercera es la que más se olvida porque no la puede arreglar
+            // él: es del equipo técnico.
             'ia_menus' => self::encendida($companyId, CompanyIntegration::KEY_AI_MENUS)
-                && $plan->permiteFlujoIa('ai_menus'),
+                && $plan->permiteFlujoIa('ai_menus')
+                && filled(config('services.ai_menus.webhook_url')),
 
             'ia_chat' => self::encendida($companyId, CompanyIntegration::KEY_AI_CHAT)
-                && $plan->permiteFlujoIa('ai_chat'),
+                && $plan->permiteFlujoIa('ai_chat')
+                && WhatsAppChatAiClient::configured(),
         ];
     }
 

@@ -41,6 +41,11 @@ class OrdenDeLaConversacionTest extends TestCase
             'plan' => 'basico', 'ia' => 'completa',
         ]);
 
+        config([
+            'services.ai_chat.webhook_url' => 'https://n8n.example.test/webhook/chat',
+            'services.ai_chat.api_key' => 'n8n_llave',
+        ]);
+
         $this->instance = Instance::create([
             'company_id' => $this->company->id,
             'uuid' => (string) Str::uuid(),
@@ -158,6 +163,31 @@ class OrdenDeLaConversacionTest extends TestCase
 
         // Se le acaba el complemento: la fila sigue encendida y ya no responde.
         $this->company->update(['ia' => 'ninguno']);
+
+        $this->assertFalse(OrdenDeLaConversacion::de($this->company->id)['ia_chat']);
+    }
+
+    /**
+     * Sin el flujo configurado en el servidor, la IA tampoco se pinta activa.
+     *
+     * Es la condición que más se olvida porque **no la puede arreglar el
+     * admin**: es del equipo técnico. Pintarla como activa le haría revisar su
+     * plan, sus interruptores y su prompt buscando un fallo que está en el
+     * servidor.
+     *
+     * @test
+     */
+    public function sin_flujo_en_el_servidor_la_ia_no_se_pinta_activa(): void
+    {
+        CompanyIntegration::create([
+            'company_id' => $this->company->id,
+            'key' => CompanyIntegration::KEY_AI_CHAT,
+            'enabled' => true,
+        ]);
+
+        $this->assertTrue(OrdenDeLaConversacion::de($this->company->id)['ia_chat']);
+
+        config(['services.ai_chat.webhook_url' => null]);
 
         $this->assertFalse(OrdenDeLaConversacion::de($this->company->id)['ia_chat']);
     }

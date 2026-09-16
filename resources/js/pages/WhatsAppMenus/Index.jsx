@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import ModoDeAtencion from '@/components/modo-de-atencion';
 import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
 import {
@@ -215,10 +216,11 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     }} />
                 )}
 
-                {/* La duda que no tenía respuesta en ninguna pantalla: si lo
-                    primero que ve el cliente es un menú o la IA. Abierto por
-                    defecto cuando todavía no hay menús, que es justo cuando
-                    alguien está decidiendo si los necesita. */}
+                {/* Primero la decisión —cómo quiere atender— y debajo el
+                    detalle de qué pasa paso a paso. Al revés, el admin tiene
+                    que leerse ocho pasos para deducir qué debería cambiar. */}
+                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'ai'] })} />
+
                 <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
 
                 {menus.length === 0 ? (
