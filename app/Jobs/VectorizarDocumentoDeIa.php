@@ -58,7 +58,7 @@ class VectorizarDocumentoDeIa implements ShouldQueue
         // Si alguien apagó los embeddings a mitad, el documento se queda
         // utilizable: la búsqueda por palabras funciona sin vectores.
         if (! Embeddings::configurado()) {
-            $documento->update(['estado' => 'listo', 'motivo' => null]);
+            $documento->update(['estado' => 'listo']);
 
             return;
         }
@@ -70,7 +70,9 @@ class VectorizarDocumentoDeIa implements ShouldQueue
             ->get(['id', 'texto']);
 
         if ($pendientes->isEmpty()) {
-            $documento->update(['estado' => 'listo', 'motivo' => null]);
+            // `motivo` no se toca: si la extracción dejó el aviso de que el
+            // documento se recortó, ese aviso sigue siendo cierto.
+            $documento->update(['estado' => 'listo']);
 
             Log::channel('whatsapp')->info('🧮 Documento de IA vectorizado', [
                 'documento' => $documento->id,
@@ -85,7 +87,7 @@ class VectorizarDocumentoDeIa implements ShouldQueue
         // Ninguno salió: el modelo está caído o rechazando. Reintentar en bucle
         // sólo lo machaca, y el documento sirve igual buscando por palabras.
         if ($escritos === 0) {
-            $documento->update(['estado' => 'listo', 'motivo' => null]);
+            $documento->update(['estado' => 'listo']);
 
             Log::channel('whatsapp')->warning('⚠️ Un documento se quedó sin vectores; se buscará por palabras', [
                 'documento' => $documento->id,
@@ -116,7 +118,14 @@ class VectorizarDocumentoDeIa implements ShouldQueue
                 // `update` directo y no `save()` sobre el modelo: sólo se
                 // seleccionaron `id` y `texto`, y guardar el modelo escribiría
                 // el resto de columnas con lo que no se leyó.
-                AiFragmento::where('id', $fragmento->id)->update(['vector' => json_encode($vectores[$i])]);
+                //
+                // Pero `update()` **se salta el cast**, así que el vector hay
+                // que empaquetarlo aquí a mano. Escribir JSON en esta columna no
+                // falla: se guarda, y al leerlo el cast lo desempaqueta como
+                // ruido. La búsqueda seguiría funcionando y devolviendo
+                // fragmentos al azar, sin un solo error en ningún log.
+                AiFragmento::where('id', $fragmento->id)
+                    ->update(['vector' => pack('g*', ...$vectores[$i])]);
                 $escritos++;
             }
         }

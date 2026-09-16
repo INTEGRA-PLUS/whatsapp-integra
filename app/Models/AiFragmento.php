@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\Vector;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -37,7 +38,7 @@ class AiFragmento extends Model
 
     protected $casts = [
         'orden' => 'integer',
-        'vector' => 'array',
+        'vector' => Vector::class,
     ];
 
     public function documento(): BelongsTo

@@ -77,7 +77,12 @@ return new class extends Migration
 
             $table->unsignedInteger('orden');
             $table->text('texto');
-            $table->json('vector')->nullable();
+            // Binario y no JSON: un vector de bge-m3 son 1.024 dimensiones,
+            // 7,4 KB en JSON contra 4 KB en float32 crudo. La búsqueda los
+            // carga en cada mensaje entrante, así que el doble de tamaño es el
+            // doble de lectura por cada mensaje de cada cliente. Lo empaqueta
+            // `App\Casts\Vector`, y desde el modelo sigue siendo un array.
+            $table->binary('vector')->nullable();
             $table->timestamps();
 
             $table->index(['company_id', 'ai_documento_id']);

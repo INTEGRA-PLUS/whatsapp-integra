@@ -142,7 +142,15 @@ class ProcesarDocumentoDeIa implements ShouldQueue
             // necesita nada más: ahí sí está listo ya.
             $documento->update([
                 'estado' => Embeddings::configurado() ? 'procesando' : 'listo',
-                'motivo' => null,
+                // Un documento recortado se dice, aunque haya salido bien. Un
+                // tarifario del que sólo se leyó la mitad contesta con total
+                // seguridad sobre los planes que sí entraron y jura no conocer
+                // los que se quedaron fuera, y desde la pantalla se vería como
+                // un documento «Listo» igual que los demás.
+                'motivo' => count($filas) >= ExtraerTexto::MAXIMO_TROZOS
+                    ? 'El documento es muy largo: sólo se leyeron sus primeras '
+                        .number_format(ExtraerTexto::MAXIMO_TROZOS, 0, ',', '.').' partes.'
+                    : null,
                 'fragmentos' => count($filas),
             ]);
         });

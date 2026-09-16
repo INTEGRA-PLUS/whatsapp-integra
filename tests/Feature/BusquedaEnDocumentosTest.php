@@ -294,6 +294,16 @@ class BusquedaEnDocumentosTest extends TestCase
 
         $this->assertSame(0, AiFragmento::where('ai_documento_id', $documento->id)->whereNull('vector')->count());
 
+        // Y se guardó de forma que al leerlo vuelve a ser el mismo vector. El
+        // job escribe con `update()`, que se salta el cast: si se le olvida
+        // empaquetar, esto se guarda igual y vuelve como ruido, sin fallar y
+        // sin un solo error en el log.
+        $vector = AiFragmento::where('ai_documento_id', $documento->id)->first()->vector;
+
+        $this->assertCount(3, $vector);
+        $this->assertEqualsWithDelta(0.1, $vector[0], 0.0001);
+        $this->assertEqualsWithDelta(0.3, $vector[2], 0.0001);
+
         // La primera tanda no cierra: es la segunda, la que ya no encuentra
         // pendientes, la que marca el documento como listo.
         (new VectorizarDocumentoDeIa($documento->id))->handle();

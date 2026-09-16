@@ -45,6 +45,16 @@ class BuscarFragmentos
     private const MINIMO_PARECIDO = 0.35;
 
     /**
+     * Cuántos fragmentos se comparan de una vez, como mucho.
+     *
+     * Comparar vectores en PHP es barato; **traerlos de la base no lo es**. A
+     * 4 KB por vector, 800 fragmentos son 3 MB por mensaje, y esto corre en cada
+     * mensaje entrante de cada cliente. Es el número a partir del cual esta
+     * búsqueda sin índice deja de ser gratis.
+     */
+    private const UMBRAL_DE_ESCANEO = 800;
+
+    /**
      * @return list<array{texto: string, origen: ?string}>
      */
     public static function para(int $companyId, string $pregunta, int $cuantos = self::CUANTOS): array
@@ -59,7 +69,7 @@ class BuscarFragmentos
 
         return $vector === null
             ? self::porPalabras($companyId, $pregunta, $cuantos)
-            : self::porVector($companyId, $vector, $cuantos);
+            : self::porVector($companyId, $vector, $cuantos, $pregunta);
     }
 
     /**
@@ -71,11 +81,38 @@ class BuscarFragmentos
      * decenas de miles, esto deja de valer y hay que mover la comparación a un
      * índice de verdad.
      */
-    private static function porVector(int $companyId, array $vector, int $cuantos): array
+    private static function porVector(int $companyId, array $vector, int $cuantos, string $pregunta = ''): array
     {
-        $candidatos = AiFragmento::where('company_id', $companyId)
-            ->whereNotNull('vector')
-            ->get(['texto', 'origen', 'vector']);
+        $base = AiFragmento::where('company_id', $companyId)->whereNotNull('vector');
+
+        // Cuántos hay antes de traérselos. Un vector de bge-m3 son 4 KB, así que
+        // 2.000 fragmentos son 8 MB que se leerían **en cada mensaje entrante**
+        // de esa empresa. Por debajo del umbral se comparan todos, que es lo
+        // que da la mejor respuesta; por encima hay que acotar antes.
+        $cuantosHay = (clone $base)->count();
+
+        if ($cuantosHay > self::UMBRAL_DE_ESCANEO) {
+            // Se recortan por palabras y se ordenan por vector después. Se
+            // pierde algo de alcance —las palabras no saben que «préstamo» y
+            // «crédito» son lo mismo— pero el orden final lo sigue poniendo el
+            // significado, que es donde más se nota.
+            //
+            // Si un día esto es lo normal y no la excepción, es la señal de que
+            // toca un índice vectorial de verdad y no seguir apretando aquí.
+            $palabras = self::palabrasUtiles($pregunta);
+
+            if ($palabras !== []) {
+                $base->where(function ($q) use ($palabras) {
+                    foreach ($palabras as $palabra) {
+                        $q->orWhere('texto', 'like', '%'.$palabra.'%');
+                    }
+                });
+            }
+
+            $base->limit(self::UMBRAL_DE_ESCANEO);
+        }
+
+        $candidatos = $base->get(['texto', 'origen', 'vector']);
 
         if ($candidatos->isEmpty()) {
             return [];

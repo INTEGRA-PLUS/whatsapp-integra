@@ -336,3 +336,33 @@ lo que pasó el 16-sep por la mañana.
    El número está en dos sitios a la vez —aquí y en
    `ConocimientoParaLaPregunta::MAXIMO`— y si se cambia uno hay que cambiar el
    otro, o Laravel manda más de lo que el nodo deja pasar.
+
+### Lo que el primer repaso de rendimiento cambió
+
+Al medirlo antes de desplegar aparecieron dos cosas que no estaban en el plan y
+que sí habrían dolido en producción.
+
+**Un vector ocupa más de lo que parece, y se lee en cada mensaje.** `bge-m3` da
+1.024 dimensiones: 7,4 KB en JSON. Una empresa con 600 fragmentos —cinco PDF de
+treinta páginas, nada raro— serían **4,3 MB leídos por cada mensaje entrante**.
+Dos cambios lo acotan:
+
+- Los vectores se guardan en **float32 crudo** (`App\Casts\Vector`), 4 KB en vez
+  de 7,4. Desde el modelo siguen siendo un `array<float>`.
+- La búsqueda compara como mucho **800 fragmentos** (`UMBRAL_DE_ESCANEO`). Por
+  debajo se comparan todos, que da la mejor respuesta; por encima se recorta
+  antes por palabras y el orden final lo sigue poniendo el vector. El día que
+  eso sea lo normal y no la excepción, es la señal de que toca un índice
+  vectorial de verdad y no seguir apretando aquí.
+
+**Y un fallo que los tests no cazaban.** `VectorizarDocumentoDeIa` escribe con
+`update()`, que **se salta el cast de Eloquent**: seguía guardando JSON en una
+columna que ya era binaria. Eso no falla — se guarda, y al leerlo el cast lo
+desempaqueta como ruido. La búsqueda habría seguido funcionando, devolviendo
+fragmentos al azar, sin un solo error en ningún log. El test ahora comprueba el
+viaje de ida y vuelta del vector, no sólo que la columna no esté vacía.
+
+Como efecto lateral: **un documento recortado lo dice**. Si se pasa del tope de
+partes, el aviso se queda visible en la pantalla aunque el documento haya salido
+bien. Un tarifario del que sólo se leyó la mitad contesta con total seguridad
+sobre los planes que entraron y jura no conocer los que se quedaron fuera.
