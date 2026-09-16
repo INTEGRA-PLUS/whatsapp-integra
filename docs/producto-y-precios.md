@@ -87,8 +87,17 @@ Comprobado contra el código. Agrupado como se vende, no como está el repo.
 - El menú **decide en caliente** dentro del webhook y se calla si un agente ya
   tomó el chat: el cliente nunca recibe dos respuestas al mismo mensaje.
 
-### Automatización con IA
-Dos flujos distintos, contra un gateway propio (n8n):
+### Lo que hace la IA
+Cinco funciones, y no cuestan lo mismo ni de lejos. Las dos primeras son las que
+se venden hoy: están construidas, probadas y se enseñan en la demo.
+
+- **Semáforo de emociones**: marca cada conversación en verde, amarillo o rojo
+  según cómo esté el cliente, y dice por qué. Dos capas: un diccionario en PHP
+  que colorea sin modelo, y el afinado con IA encima.
+- **Resumen de conversación**: pone al día al asesor de un chat largo en cinco
+  líneas, separando lo que se le prometió al cliente de lo que queda pendiente.
+
+Y los dos flujos caros, contra un gateway propio (n8n):
 - **IA de menús**: entiende lo que el socio pide en lenguaje natural y lo lleva
   a la acción correcta, con lista blanca de eventos que la IA puede emitir.
 - **IA de chat**: conversación abierta con contexto de la conversación.
@@ -280,7 +289,7 @@ Tres decisiones, y las tres cambiaron al mirar la base real el 15-sep-2026.
 
    | Complemento de IA | Precio | Abre |
    |---|---|---|
-   | **IA Esencial** | +19 USD | Semáforo afinado y resumen de conversación |
+   | **IA Esencial** | +19 USD | Semáforo de emociones y resumen de conversación |
    | **IA Completa** | +49 USD | Lo anterior, más menús y chat con IA |
 
    Los topes salen de la base real y no de una suposición: con 2 agentes y 3.000
@@ -291,6 +300,17 @@ Tres decisiones, y las tres cambiaron al mirar la base real el 15-sep-2026.
    Sobre el volumen real, semáforo y resumen juntos son ~30 USD/mes para toda la
    base; el chat serían ~352. El nivel barato se vende con 96% de margen; el
    caro necesita medirse, y para eso está el contador de `ContadorDeIa`.
+
+   **El semáforo entra en el complemento aunque técnicamente no lo necesite.**
+   Su primera capa es un diccionario en PHP: colorea sin llamar a ningún modelo.
+   Estuvo en el CRM por eso, con el argumento de que verlo funcionando es lo que
+   hace que quieran la IA. Se movió por estrategia: es **la función de IA que
+   mejor se ve** —caritas de colores en la bandeja, sin abrir ni pulsar nada— y
+   por tanto la que mejor la vende. El resumen es más útil pero hay que pedirlo;
+   el semáforo entra por los ojos solo. Regalarlo era regalar el escaparate.
+
+   *Movido el 15-sep-2026. Si alguien dice que el semáforo va incluido, viene de
+   la versión anterior de este documento.*
 
 3. **El bot de menús va en los tres planes.** Aquí se escribió «CRM, CRM + Bot,
    CRM + Bot + IA» copiando la escalera de W-Chat, y al implementarlo se vio que
