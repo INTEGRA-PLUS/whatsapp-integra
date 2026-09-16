@@ -128,7 +128,8 @@ class AvisosDePlan
                 'motivo' => 'ia_sin_usar',
                 'titulo' => $company->name.' paga IA y no la usa',
                 'cuerpo' => 'Tiene contratado '.$plan->nombreIa().' y lleva '.number_format($usadas)
-                    .' conversaciones este mes. Conviene llamar antes de que se pregunte para qué paga.',
+                    .($usadas === 1 ? ' conversación' : ' conversaciones')
+                    .' este mes. Conviene llamar antes de que se pregunte para qué paga.',
                 'firma' => 'ia_sin_usar:'.now()->format('Y-m'),
             ];
         }

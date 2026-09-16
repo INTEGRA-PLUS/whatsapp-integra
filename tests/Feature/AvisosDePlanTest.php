@@ -45,6 +45,31 @@ class AvisosDePlanTest extends TestCase
     }
 
     /**
+     * La sugerencia mira las tres cosas, incluidas las líneas.
+     *
+     * Con las líneas fuera, una empresa con dos líneas en un plan de una salía
+     * avisada de que se pasó **y con la sugerencia de quedarse donde está**:
+     * «tiene 2 líneas de 1, le correspondería Básico». Salió en la primera
+     * pasada contra datos reales, con GLOBAL CONEXIT. Una recomendación que se
+     * contradice enseña a no leerlas.
+     */
+    public function test_la_sugerencia_no_se_contradice_con_el_aviso(): void
+    {
+        $company = $this->empresa(['plan' => 'basico']);
+        $this->lineas($company, config('planes.crm.basico.lineas') + 1);
+
+        $aviso = collect(AvisosDePlan::calcular())->firstWhere('motivo', 'plan_corto');
+
+        $this->assertNotNull($aviso);
+        $this->assertStringContainsString('líneas', $aviso['cuerpo']);
+        $this->assertStringNotContainsString(
+            'Le correspondería Básico',
+            $aviso['cuerpo'],
+            'No puede sugerir el mismo plan del que se acaba de pasar.'
+        );
+    }
+
+    /**
      * Las empresas internas no generan avisos.
      *
      * `PRUEBAS` y `Meta App Review` existen para probar lo que aún no se vende,
@@ -202,6 +227,23 @@ class AvisosDePlanTest extends TestCase
                 'password' => bcrypt('secreto123'),
                 'role' => 'agent',
                 'active' => true,
+            ]);
+        }
+    }
+
+    private function lineas(Company $company, int $cuantas): void
+    {
+        for ($i = 0; $i < $cuantas; $i++) {
+            \App\Models\Instance::create([
+                'company_id' => $company->id,
+                'uuid' => (string) Str::uuid(),
+                'name' => 'Línea '.$i,
+                'phone_number_id' => 'T-'.Str::random(10),
+                'waba_id' => 'W-'.Str::random(10),
+                'type' => 'meta',
+                'status' => 'active',
+                'active' => true,
+                'access_token' => '',
             ]);
         }
     }

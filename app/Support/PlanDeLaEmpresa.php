@@ -266,9 +266,16 @@ class PlanDeLaEmpresa
     {
         $contactos = $this->contactosReales();
         $agentes = $this->agentesReales();
+        $lineas = $this->lineasReales();
 
         foreach (config('planes.crm', []) as $slug => $datos) {
-            if ($contactos <= $datos['contactos'] && $agentes <= $datos['agentes']) {
+            // Las tres, no dos. Con las líneas fuera, una empresa con dos líneas
+            // en un plan de una salía avisada de que se pasó y con la sugerencia
+            // de quedarse donde está: «tiene 2 líneas de 1, le correspondería
+            // Básico». Una recomendación que se contradice enseña a no leerlas.
+            if ($contactos <= $datos['contactos']
+                && $agentes <= $datos['agentes']
+                && $lineas <= $datos['lineas']) {
                 return $slug;
             }
         }
