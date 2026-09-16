@@ -12,6 +12,7 @@
         "laravel/reverb": "^1.10",
         "laravel/tinker": "^2.10.1",
         "league/flysystem-aws-s3-v3": "^3.0",
+        "smalot/pdfparser": "^2.12",
         "spatie/laravel-permission": "^7.3",
         "tightenco/ziggy": "^2.6"
     },

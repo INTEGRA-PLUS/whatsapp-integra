@@ -1,6 +1,10 @@
 // ---------------------------------------------------------------
 // Prepara el contexto del turno.
 //
+// 16-sep-2026 (2): sube el tope del conocimiento a 12000 caracteres,
+// porque ahora ademas del texto escrito a mano viajan los fragmentos de
+// los documentos que subio la empresa.
+//
 // 16-sep-2026: este nodo llevaba dos dias guardado con el codigo
 // correcto y los workers seguian ejecutando la version anterior, la
 // que tenia el prompt de "Integra" escrito a mano. Se destrabo
@@ -138,7 +142,14 @@ return $input.all().map((item) => {
   // Cortes de seguridad por si acaso. El saneo de verdad —longitud,
   // URLs, caracteres raros, marcadores de turno y los delimitadores de
   // los bloques de aquí arriba— lo hace Laravel antes de mandarlo.
-  a.conocimiento = String(a.conocimiento ?? '').slice(0, 4000);
+  // 12000 y no 4000: desde que la empresa puede subir documentos, el
+  // conocimiento no es solo lo que escribio a mano —son ademas los
+  // fragmentos que responden a ESTE mensaje, con su cita delante—. Con el
+  // tope viejo se cortaban a media frase justo cuando empiezan a servir.
+  // El mismo numero esta en ConocimientoParaLaPregunta::MAXIMO: si se
+  // cambia uno hay que cambiar el otro, o Laravel manda mas de lo que este
+  // nodo deja pasar.
+  a.conocimiento = String(a.conocimiento ?? '').slice(0, 12000);
   a.instrucciones = String(a.instrucciones ?? '').slice(0, 6000);
   a.limites = (Array.isArray(a.limites) ? a.limites : [])
     .slice(0, 10)

@@ -118,6 +118,20 @@ x-app-env: &app-env
   AI_MENUS_TIMEOUT: ${AI_MENUS_TIMEOUT:-180}
   AI_MENUS_DEBOUNCE: ${AI_MENUS_DEBOUNCE:-6}
   AI_CHAT_TIMEOUT: ${AI_CHAT_TIMEOUT:-180}
+  # El modelo que convierte texto en vectores, para buscar dentro de los
+  # documentos que sube una empresa. Corre en el propio servidor: Ollama Cloud no
+  # ofrece embeddings, y esta función va incluida en el plan sin cobrarse aparte,
+  # así que su coste tiene que ser fijo y no por consulta.
+  #
+  # Si falta, los documentos siguen sirviendo: se buscan por palabras en vez de
+  # por significado. Peor, pero contesta.
+  #
+  # Cambiar EMBEDDINGS_MODEL obliga a `php artisan ia:revectorizar --todos`: los
+  # vectores de dos modelos distintos no se pueden comparar, y sin reindexar la
+  # búsqueda devuelve fragmentos absurdos sin fallar ni avisar.
+  EMBEDDINGS_URL: ${EMBEDDINGS_URL:-}
+  EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-paraphrase-multilingual}
+  EMBEDDINGS_TIMEOUT: ${EMBEDDINGS_TIMEOUT:-120}
   # Semáforo de emociones. Si faltan, el semáforo NO se apaga: se queda con la
   # matriz, que es justo para lo que está.
   SENTIMIENTO_WEBHOOK_URL: ${SENTIMIENTO_WEBHOOK_URL:-}

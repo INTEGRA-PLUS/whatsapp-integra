@@ -229,9 +229,12 @@ Como mínimo, la pantalla enseña la fecha de subida bien visible.
 
 Tres entregas, cada una útil por su cuenta:
 
-1. **Subir, extraer y ver.** Tabla, cola, extracción, la tarjeta en `/ia` con la
-   lista, el estado y el borrado. Todavía no cambia ninguna respuesta — pero
-   valida lo que más rompe, que es leer PDFs del mundo real.
+1. **Subir, extraer y ver.** ✅ *Hecha el 16-sep-2026.* Tabla, cola, extracción,
+   la tarjeta en `/ia` con la lista, el estado y el borrado. Todavía no cambia
+   ninguna respuesta — pero valida lo que más rompe, que es leer PDFs y Excels
+   del mundo real. Lo cubre `DocumentosDeIaTest`, que arma un XLSX y un DOCX de
+   cero en vez de usar un binario guardado: así el test dice qué contiene el
+   fichero y por qué, y prueba el formato de verdad.
 2. **Buscar y responder.** Vectores, búsqueda, los trozos en el prompt. Aquí es
    donde se nota.
 3. **Afinar.** Citas en la respuesta, avisos de documento viejo, métricas de qué
@@ -283,3 +286,120 @@ desde otro sitio.
   verdad importa no es el número de archivos sino el de trozos — y un Excel de
   tres mil filas son tres mil trozos él solo, así que el tope tiene que contarse
   ahí y no en la cantidad de ficheros.
+
+---
+
+## Entrega 2, hecha el 16-sep-2026
+
+Lo que se buscó, se encontró y llegó al modelo. Las piezas:
+
+| Pieza | Qué hace |
+|---|---|
+| `Embeddings` | La **única** puerta al modelo de vectores. Nunca lanza: si no responde, devuelve nulos |
+| `VectorizarDocumentoDeIa` | Calcula los vectores en tandas, volviéndose a despachar hasta acabar |
+| `BuscarFragmentos` | Los cinco trozos que responden a la pregunta. Con vectores, o por palabras |
+| `ConocimientoParaLaPregunta` | Junta lo escrito a mano con los trozos, cada uno con su cita |
+| `ia:revectorizar` | Para cuando se cambie de modelo |
+
+### Las cuatro decisiones que importan
+
+**Una sola puerta al modelo.** Los vectores de dos modelos distintos no se pueden
+comparar entre sí, así que cambiar de modelo obliga a reindexar. Con una sola
+clase eso es una variable de entorno y un comando; repartido por tres sitios es
+una búsqueda que devuelve resultados absurdos **sin fallar ni avisar**.
+
+**Sin vectores también se contesta.** Si no hay modelo configurado, o se cayó, o
+el documento se subió antes de que lo hubiera, se busca por palabras. Es peor
+—no sabe que «préstamo» y «crédito» son lo mismo— pero contesta, y eso es mejor
+que dejar al cliente sin respuesta por no poder hacer una búsqueda que es una
+mejora, no un requisito. Por eso un documento que se quedó sin vectores queda en
+`listo` y no en `fallido`: esconderlo sería esconder algo que sí sirve.
+
+**Hay un mínimo de parecido (0,35).** Sin él siempre salen cinco fragmentos,
+también cuando la pregunta no tiene nada que ver: un «hola» arrastraría los cinco
+párrafos menos malos y el modelo contestaría con el reglamento a quien sólo
+saludaba.
+
+**Los fragmentos viajan en el campo `conocimiento` que ya existía**, no en uno
+nuevo. Un campo nuevo cuesta tres sitios —`WhatsAppChatAiClient`, `Validar
+entrada` y `Armar job`— y olvidarse de uno se pierde en silencio. Es exactamente
+lo que pasó el 16-sep por la mañana.
+
+### Lo que hay que tocar fuera del repo
+
+1. **Un contenedor de Ollama en el VPS.** Es la única infraestructura que añade
+   todo el plan. No había ninguno (nada escuchando en el 11434).
+2. **`EMBEDDINGS_URL` en `.env.docker`.** Sin ella no se calcula ningún vector y
+   la búsqueda cae a palabras — funciona, pero es la mitad de lo que se quería.
+3. **El nodo `Preparar contexto` de n8n**, con el tope del conocimiento subido de
+   4.000 a 12.000 caracteres. Está en `docs/n8n/worker-chat-preparar-contexto.js`.
+   El número está en dos sitios a la vez —aquí y en
+   `ConocimientoParaLaPregunta::MAXIMO`— y si se cambia uno hay que cambiar el
+   otro, o Laravel manda más de lo que el nodo deja pasar.
+
+### Lo que el primer repaso de rendimiento cambió
+
+Al medirlo antes de desplegar aparecieron dos cosas que no estaban en el plan y
+que sí habrían dolido en producción.
+
+**Un vector ocupa más de lo que parece, y se lee en cada mensaje.** `bge-m3` da
+1.024 dimensiones: 7,4 KB en JSON. Una empresa con 600 fragmentos —cinco PDF de
+treinta páginas, nada raro— serían **4,3 MB leídos por cada mensaje entrante**.
+Dos cambios lo acotan:
+
+- Los vectores se guardan en **float32 crudo** (`App\Casts\Vector`), 4 KB en vez
+  de 7,4. Desde el modelo siguen siendo un `array<float>`.
+- La búsqueda compara como mucho **800 fragmentos** (`UMBRAL_DE_ESCANEO`). Por
+  debajo se comparan todos, que da la mejor respuesta; por encima se recorta
+  antes por palabras y el orden final lo sigue poniendo el vector. El día que
+  eso sea lo normal y no la excepción, es la señal de que toca un índice
+  vectorial de verdad y no seguir apretando aquí.
+
+**Y un fallo que los tests no cazaban.** `VectorizarDocumentoDeIa` escribe con
+`update()`, que **se salta el cast de Eloquent**: seguía guardando JSON en una
+columna que ya era binaria. Eso no falla — se guarda, y al leerlo el cast lo
+desempaqueta como ruido. La búsqueda habría seguido funcionando, devolviendo
+fragmentos al azar, sin un solo error en ningún log. El test ahora comprueba el
+viaje de ida y vuelta del vector, no sólo que la columna no esté vacía.
+
+Como efecto lateral: **un documento recortado lo dice**. Si se pasa del tope de
+partes, el aviso se queda visible en la pantalla aunque el documento haya salido
+bien. Un tarifario del que sólo se leyó la mitad contesta con total seguridad
+sobre los planes que entraron y jura no conocer los que se quedaron fuera.
+
+### El modelo se eligió midiendo, no leyendo
+
+*16-sep-2026.* El plan decía `bge-m3` «si la memoria lo permite». Medido en el
+servidor de verdad, con la pregunta «quiero pedir un préstamo» contra un párrafo
+sobre créditos y otro sobre internet:
+
+| modelo | dim | 1 pregunta | lote de 16 | separación |
+|---|---:|---:|---:|---:|
+| `all-minilm` | 384 | 0,62 s | 14,2 s | **−0,013** |
+| `paraphrase-multilingual` | 768 | **0,42 s** | 62,6 s | **0,183** |
+| `bge-m3` | 1024 | 4,19 s | 54,4 s | 0,142 |
+
+«Separación» es cuánto más se parece el párrafo del sinónimo que el que no viene
+a cuento — o sea, si el modelo sabe que «préstamo» y «crédito» son lo mismo, que
+es la razón entera de usar vectores.
+
+Tres cosas que no se sabían antes de medir:
+
+**`all-minilm` no sirve en español.** Su separación sale **negativa**: puntúa más
+alto el párrafo equivocado. Es el más rápido de los tres y da igual.
+
+**`bge-m3` es diez veces más lento en lo que importa.** Esos 4,19 s corren **en
+cada mensaje entrante**, con el cliente esperando al otro lado de WhatsApp — y a
+cambio separa peor que el modelo diez veces más rápido.
+
+**Y el umbral de parecido depende del modelo.** Con `paraphrase-multilingual` el
+sinónimo puntúa 0,401 y el ajeno 0,218, así que el corte va en 0,30. El 0,35 que
+llevaba escrito de antes habría **descartado el acierto**. Por eso el umbral está
+en `config/services.php` junto a la tabla, y no como una constante suelta:
+cambiar de modelo obliga a volver a medirlo, y uno heredado deja entrar basura o
+no deja pasar nada, sin fallar ni avisar.
+
+Queda una cifra incómoda y conviene tenerla a la vista: **~4 segundos por
+fragmento al indexar**. Un PDF de 600 fragmentos son unos 40 minutos de trabajo
+en segundo plano. Se aguanta —es una vez por documento y va en cola— pero es el
+número a vigilar si un cliente sube cinco documentos gordos el mismo día.

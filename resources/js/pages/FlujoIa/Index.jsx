@@ -405,6 +405,232 @@ function PromptCard({ state, busy, save }) {
     );
 }
 
+/* ───────────────────────── Los documentos ───────────────────────── */
+
+const ESTADOS = {
+    procesando: { texto: 'Leyendo…', clase: 'text-muted-foreground', Icono: Loader2, gira: true },
+    listo:      { texto: 'Listo',    clase: 'text-emerald-600 dark:text-emerald-400', Icono: CheckCircle2 },
+    fallido:    { texto: 'No se pudo leer', clase: 'text-destructive', Icono: XCircle },
+};
+
+/**
+ * Lo que la empresa sube para que su IA sepa de qué habla.
+ *
+ * El campo de texto de arriba son 4.000 caracteres —página y media— y no cabe
+ * un reglamento. Aquí caben cinco documentos, y de cada uno la IA usa sólo los
+ * párrafos que responden a lo que preguntó el cliente.
+ *
+ * **Se sondea mientras haya alguno leyéndose.** Un PDF grande tarda decenas de
+ * segundos y el job corre en otra parte: sin el sondeo el admin ve «Leyendo…»
+ * para siempre y recarga la página, que es como acaba subiendo el mismo
+ * documento tres veces.
+ */
+function DocumentosCard({ permitido, nombreDelComplemento }) {
+    const [documentos, setDocumentos] = useState([]);
+    const [cargando, setCargando] = useState(true);
+    const [subiendo, setSubiendo] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => { cargar(); }, []);
+
+    // El sondeo se monta y se desmonta con los documentos que están en curso:
+    // en cuanto no queda ninguno, deja de correr solo.
+    useEffect(() => {
+        if (!documentos.some(d => d.estado === 'procesando')) return;
+
+        const id = setInterval(cargar, 3000);
+        return () => clearInterval(id);
+    }, [documentos]);
+
+    async function cargar() {
+        try {
+            const { data } = await axios.get('/api/settings/ai-flow/documentos');
+            setDocumentos(data.documentos);
+        } catch {
+            setError('No se pudo cargar la lista de documentos.');
+        } finally {
+            setCargando(false);
+        }
+    }
+
+    async function subir(e) {
+        const archivo = e.target.files?.[0];
+        // El input se limpia siempre: si no, volver a elegir el mismo fichero
+        // tras un error no dispara ningún evento y parece que el botón murió.
+        e.target.value = '';
+
+        if (!archivo || subiendo) return;
+
+        setSubiendo(true); setError('');
+
+        const cuerpo = new FormData();
+        cuerpo.append('archivo', archivo);
+
+        try {
+            const { data } = await axios.post('/api/settings/ai-flow/documentos', cuerpo);
+            setDocumentos(data.documentos);
+        } catch (err) {
+            setError(err.response?.data?.message ?? 'No se pudo subir el archivo.');
+        } finally {
+            setSubiendo(false);
+        }
+    }
+
+    async function borrar(documento) {
+        setError('');
+        try {
+            const { data } = await axios.delete(`/api/settings/ai-flow/documentos/${documento.id}`);
+            setDocumentos(data.documentos);
+        } catch {
+            setError('No se pudo borrar el documento.');
+        }
+    }
+
+    async function reprocesar(documento) {
+        setError('');
+        try {
+            const { data } = await axios.post(`/api/settings/ai-flow/documentos/${documento.id}/reprocesar`);
+            setDocumentos(data.documentos);
+        } catch {
+            setError('No se pudo volver a intentarlo.');
+        }
+    }
+
+    const lleno = documentos.length >= 5;
+
+    return (
+        <Card>
+            <div className="p-6 space-y-4">
+                <div className="flex items-start justify-between gap-6">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <FileText className="size-4 text-accent-foreground" />
+                            <p className="text-sm font-semibold text-foreground">Documentos de tu empresa</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                            Sube tu tarifario, tu reglamento o tus preguntas frecuentes. De cada consulta la IA
+                            usará sólo los párrafos que respondan a lo que preguntó el cliente.
+                        </p>
+                    </div>
+
+                    <label className={`shrink-0 ${permitido && !lleno ? '' : 'pointer-events-none opacity-50'}`}>
+                        <input
+                            type="file"
+                            className="sr-only"
+                            accept=".pdf,.docx,.xlsx,.csv,.txt"
+                            disabled={!permitido || lleno || subiendo}
+                            onChange={subir}
+                        />
+                        <span className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-border bg-background px-3.5 py-2 text-xs font-medium hover:bg-muted">
+                            {subiendo ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                            {subiendo ? 'Subiendo…' : 'Subir'}
+                        </span>
+                    </label>
+                </div>
+
+                {!permitido && (
+                    <div className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+                        <Lock className="size-3.5 mt-0.5 shrink-0" />
+                        <span>Va con la IA de los chats, que no está en {nombreDelComplemento}. Contacta con un administrador.</span>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                        <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                        <span>{error}</span>
+                    </div>
+                )}
+
+                {cargando ? (
+                    <p className="text-xs text-muted-foreground">Cargando…</p>
+                ) : documentos.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-xs text-muted-foreground">
+                        Todavía no has subido ninguno. Se aceptan PDF, Word, Excel, CSV y texto, hasta 10 MB.
+                    </p>
+                ) : (
+                    <div className="space-y-2">
+                        {documentos.map(d => {
+                            const estado = ESTADOS[d.estado] ?? ESTADOS.procesando;
+                            const { Icono } = estado;
+
+                            return (
+                                <div key={d.id} className="rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            {/* `break-all` y no `truncate`: el nombre del
+                                                archivo es lo único con lo que el admin
+                                                distingue dos tarifarios, y cortarlo a los
+                                                treinta caracteres los deja idénticos. */}
+                                            <p className="text-xs font-medium text-foreground break-all">{d.nombre}</p>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]">
+                                                <span className={`inline-flex items-center gap-1 ${estado.clase}`}>
+                                                    <Icono className={`size-3 ${estado.gira ? 'animate-spin' : ''}`} />
+                                                    {estado.texto}
+                                                </span>
+                                                <span className="text-muted-foreground/70">{d.tamano}</span>
+                                                {d.estado === 'listo' && (
+                                                    <span className="text-muted-foreground/70">
+                                                        {d.fragmentos} {d.fragmentos === 1 ? 'fragmento' : 'fragmentos'}
+                                                    </span>
+                                                )}
+                                                {/* La fecha se enseña siempre y no escondida en un
+                                                    tooltip: un tarifario viejo que nadie borró es
+                                                    peor que no tener nada, porque la IA va a citar
+                                                    precios que ya no existen sonando igual de
+                                                    segura. */}
+                                                <span className="text-muted-foreground/70">{fecha(d.subido_el)}</span>
+                                            </div>
+                                            {d.motivo && (
+                                                <p className="mt-1.5 text-[11px] text-destructive leading-relaxed">{d.motivo}</p>
+                                            )}
+                                        </div>
+
+                                        <div className="flex shrink-0 items-center gap-1">
+                                            {d.estado === 'fallido' && permitido && (
+                                                <button
+                                                    onClick={() => reprocesar(d)}
+                                                    className="rounded-lg px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                                                >
+                                                    Reintentar
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => borrar(d)}
+                                                title="Borrar"
+                                                className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                            >
+                                                <Trash2 className="size-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                    Un PDF escaneado —una foto del papel— no tiene texto y no se puede leer. Si pasa, te lo decimos aquí.
+                </p>
+            </div>
+        </Card>
+    );
+}
+
+/** «hace 2 días», que es lo que se quiere saber de un tarifario. */
+function fecha(iso) {
+    if (!iso) return '';
+
+    const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+
+    if (dias < 1) return 'hoy';
+    if (dias === 1) return 'ayer';
+    if (dias < 30) return `hace ${dias} días`;
+
+    return new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function Configuracion() {
     const [state, setState] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -573,6 +799,9 @@ function Configuracion() {
 
                     {/* Con qué instrucciones habla */}
                     <PromptCard state={state} busy={busy} save={save} />
+
+                    {/* De qué documentos saca lo que sabe */}
+                    <DocumentosCard permitido={complemento.chat} nombreDelComplemento={complemento.nombre} />
 
                     {/* IA de los chats */}
                     <Card>

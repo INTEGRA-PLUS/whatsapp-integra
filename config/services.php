@@ -279,4 +279,58 @@ return [
         'secret' => env('SECRET_ACTIVATION'),
     ],
 
+    /*
+     * El modelo que convierte texto en vectores, para buscar dentro de los
+     * documentos que sube una empresa.
+     *
+     * **Corre en el propio servidor y no en Ollama Cloud**, que no ofrece
+     * ningún modelo de embeddings: su catálogo en la nube son modelos de chat.
+     * Y aunque lo ofreciera, esta función va incluida en el complemento de IA
+     * sin cobrarse aparte, así que su coste tiene que ser fijo: un proveedor
+     * por token convierte cada mensaje de cada cliente en una factura variable
+     * sobre algo que no factura.
+     *
+     * Sin `url` configurada no se calcula ningún vector y la búsqueda cae a
+     * palabras sueltas. Es peor —no sabe que «préstamo» y «crédito» son lo
+     * mismo— pero contesta, que es mejor que no contestar.
+     *
+     * Cambiar de modelo obliga a reindexar: los vectores de dos modelos
+     * distintos no se pueden comparar entre sí. Lo hace `ia:revectorizar`.
+     *
+     * ## Por qué `paraphrase-multilingual` y no otro
+     *
+     * Medido en este mismo servidor, el 16-sep-2026, con la pregunta «quiero
+     * pedir un préstamo» contra un párrafo sobre créditos y otro sobre internet:
+     *
+     * | modelo                  | dim  | 1 pregunta | separación |
+     * |-------------------------|------|-----------:|-----------:|
+     * | all-minilm              |  384 |     0,62 s |     −0,013 |
+     * | paraphrase-multilingual |  768 |     0,42 s |      0,183 |
+     * | bge-m3                  | 1024 |     4,19 s |      0,142 |
+     *
+     * «Separación» es cuánto más se parece el párrafo del sinónimo que el que no
+     * viene a cuento. En `all-minilm` **sale negativa**: se parece más el
+     * equivocado, así que en español no sirve para nada por rápido que sea.
+     *
+     * Y «1 pregunta» corre **en cada mensaje entrante**, con el cliente
+     * esperando: los 4,19 s de `bge-m3` son cuatro segundos añadidos a cada
+     * respuesta, por una separación peor que la del modelo diez veces más
+     * rápido.
+     */
+    'embeddings' => [
+        'url' => env('EMBEDDINGS_URL'),
+        'model' => env('EMBEDDINGS_MODEL', 'paraphrase-multilingual'),
+        'timeout' => (int) env('EMBEDDINGS_TIMEOUT', 120),
+        /*
+         * Por debajo de esto, el fragmento no habla de lo que se preguntó.
+         *
+         * **Depende del modelo y hay que volver a medirlo al cambiarlo.** Con
+         * `paraphrase-multilingual` el sinónimo puntúa 0,401 y el texto ajeno
+         * 0,218: 0,30 deja pasar uno y corta el otro. Con otro modelo esos dos
+         * números son otros, y un umbral heredado deja entrar basura o no deja
+         * pasar nada, sin fallar ni avisar.
+         */
+        'minimo_parecido' => (float) env('EMBEDDINGS_MINIMO_PARECIDO', 0.30),
+    ],
+
 ];

@@ -38,6 +38,26 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Los documentos con los que una empresa entrena su IA.
+         *
+         * Privado y aparte de `s3_media` a propósito. Ese disco sirve las
+         * imágenes que se mandan por WhatsApp: el bucket se llama `public`, se
+         * escribe con visibilidad `'public'` y se sirve desde una URL abierta.
+         * Aquí entran reglamentos internos, tarifarios y manuales de atención:
+         * no pueden quedar detrás de una URL que adivine cualquiera.
+         *
+         * Se descargan por una ruta de Laravel que comprueba antes la empresa
+         * del usuario, nunca enlazando al fichero.
+         */
+        'ai_documentos' => [
+            'driver' => 'local',
+            'root' => storage_path('app/ai-documentos'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
