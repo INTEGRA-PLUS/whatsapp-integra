@@ -741,8 +741,14 @@ const ConversationItem = memo(({
                                 <CheckCircle2 className="size-3.5" />
                             </span>
                         )}
+                        {/* `min-w-0 flex-1`: sin esto el nombre cedía todo el
+                            ancho a la insignia del agente, que era `shrink-0`, y
+                            «Óscar Iván Bedoya» se quedaba en «Ó…» — que no
+                            identifica a nadie. El nombre es lo único por lo que
+                            se reconoce una fila, así que se queda con el espacio
+                            y lo que cede es la insignia. */}
                         <p className={clsx(
-                            "text-sm font-bold truncate",
+                            "min-w-0 flex-1 text-sm font-bold truncate",
                             conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
                         )}>
                             {contactFullName(conv.contact) || conv.name || conv.phone_number}
@@ -750,7 +756,7 @@ const ConversationItem = memo(({
                         {conv.assigned_agent && (
                             <span 
                                 title={`Asignado a ${conv.assigned_agent.name}`}
-                                className="shrink-0 text-[7px] leading-none bg-primary/10 text-accent-foreground px-1.5 py-1 rounded-md font-black uppercase tracking-tighter border border-primary/10"
+                                className="max-w-[56px] truncate text-[7px] leading-none bg-primary/10 text-accent-foreground px-1.5 py-1 rounded-md font-black uppercase tracking-tighter border border-primary/10"
                             >
                                 {conv.assigned_agent.name.split(' ')[0]}
                             </span>
