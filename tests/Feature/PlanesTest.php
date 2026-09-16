@@ -149,14 +149,14 @@ class PlanesTest extends TestCase
         $this->assertFalse($plan->seFactura());
         $this->assertFalse($plan->tieneIa());
 
-        // El CRM entero, eso sí: las cuatro extensiones sin modelo.
+        // El CRM entero, eso sí: las tres extensiones sin modelo.
         $this->assertTrue($plan->permiteExtension('agent_signature'));
         $this->assertTrue($plan->permiteExtension('follow_up'));
         $this->assertTrue($plan->permiteExtension('keyword_routing'));
-        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
 
-        // Y nada de IA.
+        // Y nada de IA, semáforo incluido.
         $this->assertFalse($plan->permiteExtension('conversation_summary'));
+        $this->assertFalse($plan->permiteExtension('sentiment_traffic_light'));
     }
 
     public function test_la_cortesia_no_se_factura_aunque_pase_el_tiempo(): void
@@ -229,9 +229,12 @@ class PlanesTest extends TestCase
     {
         $plan = PlanDeLaEmpresa::de($this->empresa(['plan' => 'avanzado']));
 
-        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
         $this->assertFalse($plan->permiteExtension('conversation_summary'));
+        $this->assertFalse($plan->permiteExtension('sentiment_traffic_light'));
         $this->assertFalse($plan->tieneIa());
+
+        // Pero el CRM entero sí, que es lo que paga.
+        $this->assertTrue($plan->permiteExtension('keyword_routing'));
     }
 
     /** El candado por la puerta de atrás: la extensión entra, el ajuste no. */
@@ -258,14 +261,12 @@ class PlanesTest extends TestCase
      * separar el CRM de la IA. Devolvía siempre una lista vacía — el candado
      * seguía cerrado, pero la pantalla no lo decía, que es la peor combinación.
      */
-    public function test_el_catalogo_distingue_la_extension_de_su_ajuste_con_ia(): void
+    public function test_el_catalogo_sabe_que_ajustes_quedan_cerrados(): void
     {
         $sin = PlanDeLaEmpresa::de($this->empresa(['ia' => 'ninguno']));
 
-        // La extensión es suya...
-        $this->assertTrue($sin->permiteExtension('sentiment_traffic_light'));
-
-        // ...pero su ajuste con IA no, y el catálogo tiene que poder decirlo.
+        // Sin complemento, el ajuste con IA del semáforo está cerrado — igual
+        // que la extensión entera desde que se movió al complemento.
         $this->assertSame(['usar_ia'], $sin->ajustesDeIaBloqueados('sentiment_traffic_light'));
 
         // Con complemento no queda ninguno bloqueado.
@@ -479,7 +480,7 @@ class PlanesTest extends TestCase
         $this->assertTrue($plan->sePasoDelTramo());
 
         // Y sigue pudiendo instalar todo lo suyo.
-        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
+        $this->assertTrue($plan->permiteExtension('keyword_routing'));
     }
 
     /**

@@ -39,6 +39,17 @@ use Inertia\Inertia;
  */
 class MiPlanController extends Controller
 {
+    /**
+     * Los flujos de IA, dichos como los entiende el cliente.
+     *
+     * En la configuración son `ai_chat` y `ai_menus` porque así se llaman los
+     * candados; en su pantalla eso no significa nada.
+     */
+    private const NOMBRE_DE_FLUJO = [
+        'ai_chat' => 'La IA responde los chats',
+        'ai_menus' => 'La IA resuelve contra tu ERP',
+    ];
+
     public function __construct(private ExtensionRegistry $registry) {}
 
     public function index(Request $request)
@@ -73,13 +84,22 @@ class MiPlanController extends Controller
             'nucleo' => config('planes.nucleo', []),
             'uso_ia' => ContadorDeIa::estado($company),
             'extensiones' => $extensiones,
+            // Las líneas van con lo demás: son la tercera cosa que decide si un
+            // plan le queda corto —`planSugerido()` las mira— y sin ellas la
+            // pantalla podía decirle «te quedas corto» sin enseñar en qué.
             'planes' => collect(config('planes.crm'))
                 ->map(fn (array $p, string $slug) => [
                     'slug' => $slug,
                     'nombre' => $p['nombre'],
                     'agentes' => $p['agentes'],
                     'contactos' => $p['contactos'],
+                    'lineas' => $p['lineas'],
                     'es_el_suyo' => $slug === $plan->slug(),
+                    // El que le tocaría por lo que de verdad usa. Es lo que
+                    // convierte «tienes más de lo que incluye tu plan» en algo
+                    // accionable: a cuál pasar, y qué gana con ello.
+                    'es_el_sugerido' => $slug === $plan->planSugerido()
+                        && $slug !== $plan->slug(),
                 ])
                 ->values(),
 
@@ -91,6 +111,16 @@ class MiPlanController extends Controller
                     'slug' => $slug,
                     'nombre' => $p['nombre'],
                     'es_el_suyo' => $slug === $plan->slugIa(),
+                    // Qué desbloquea cada nivel, por su nombre y no por su
+                    // slug: es lo que hace que «IA Esencial» signifique algo
+                    // para quien no sabe qué lleva dentro.
+                    'extensiones' => collect($p['extensiones'] ?? [])
+                        ->map(fn (string $slug) => $this->registry->find($slug)?->name())
+                        ->filter()
+                        ->values(),
+                    'flujos' => collect($p['flujos'] ?? [])
+                        ->map(fn (string $f) => self::NOMBRE_DE_FLUJO[$f] ?? $f)
+                        ->values(),
                 ])
                 ->values(),
         ]);

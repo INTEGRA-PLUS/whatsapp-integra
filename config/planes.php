@@ -122,7 +122,7 @@ return [
             'nombre' => 'IA Esencial',
             'precio' => 19,
             // Las dos que ya funcionan, están probadas y se enseñan en la demo.
-            'extensiones' => ['conversation_summary'],
+            'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
             'flujos' => [],
         ],
@@ -130,7 +130,7 @@ return [
         'completa' => [
             'nombre' => 'IA Completa',
             'precio' => 49,
-            'extensiones' => ['conversation_summary'],
+            'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
             // Las caras: aquí es donde el crédito del plan empieza a importar.
             'flujos' => ['ai_menus', 'ai_chat'],
@@ -143,14 +143,25 @@ return [
     | Las extensiones que van con el CRM
     |--------------------------------------------------------------------------
     |
-    | Las cuatro que no llaman a ningún modelo. Van en los tres planes de CRM:
-    | se venden en paquete, nunca sueltas —un precio por extensión multiplica
-    | las combinaciones que hay que cobrar, explicar y sostener—.
+    | Las tres que no llaman a ningún modelo. Van en los tres planes de CRM: se
+    | venden en paquete, nunca sueltas —un precio por extensión multiplica las
+    | combinaciones que hay que cobrar, explicar y sostener—.
     |
-    | El semáforo entra aquí porque su primera capa es un diccionario en PHP y
-    | funciona sin modelo: hoy colorea conversaciones en producción sin llamar a
-    | nadie. Lo que exige complemento es el ajuste «usar_ia», no la extensión.
-    | Ver el semáforo funcionando es lo que hace que quieran la IA.
+    | **El semáforo NO está aquí, y es una decisión comercial, no técnica.**
+    | Técnicamente podría: su primera capa es un diccionario en PHP y colorea
+    | sin llamar a ningún modelo. Estuvo en el CRM por eso, con el argumento de
+    | que verlo funcionando es lo que hace que quieran la IA.
+    |
+    | Se movió al complemento el 15-sep-2026 por estrategia: es la función de IA
+    | que mejor se ve —caritas de colores en la bandeja, sin tener que abrir
+    | nada— y por tanto la que mejor la vende. Regalarla es regalar el mejor
+    | escaparate que hay.
+    |
+    | El coste lo permite: son 0,00032 USD por análisis, ~26 USD al mes para
+    | toda la base. Entra en el nivel Esencial, el de 19.
+    |
+    | Las tres empresas que lo tenían instalado al moverlo ya tenían complemento,
+    | así que a nadie se le quitó nada.
     |
     | Una extensión que no esté ni aquí ni en ningún nivel de `ia` no la puede
     | instalar nadie, que es el comportamiento seguro al publicar una nueva: se
@@ -163,7 +174,6 @@ return [
         'agent_signature',
         'follow_up',
         'keyword_routing',
-        'sentiment_traffic_light',
     ],
 
     'nucleo' => [

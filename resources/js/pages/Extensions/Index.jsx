@@ -191,26 +191,6 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
 
             <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{extension.description}</p>
 
-            {/* «La tienes, pero su parte con IA no.»
-                Es el caso del semáforo, y el que más confusión ha causado: la
-                extensión se instala y colorea con un diccionario, sin llamar a
-                ningún modelo, y lo único que exige complemento es «afinar con
-                IA». Con el botón «Instalar» a secas, la pregunta «¿el semáforo
-                no es con IA?» sale una y otra vez, y la respuesta —«sí y no»—
-                sólo se veía entrando a los ajustes.
-
-                Va aquí arriba y no junto al botón porque es información sobre
-                QUÉ es la extensión, no sobre qué puedes hacer con ella. */}
-            {extension.ia_parcial && (
-                <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-info/10 px-2.5 py-2 text-[12px] leading-relaxed text-info">
-                    <Sparkles className="mt-0.5 size-3.5 shrink-0" />
-                    <span>
-                        <span className="font-semibold">Funciona sin IA.</span>{' '}
-                        Afinarla con inteligencia artificial necesita el complemento.
-                    </span>
-                </p>
-            )}
-
             {/* El `flex-1` se mueve de la descripción a esta fila: con la mini
                 debajo, el hueco que estira la tarjeta hasta la altura de la
                 rejilla tiene que quedar entre la maqueta y los botones, o las

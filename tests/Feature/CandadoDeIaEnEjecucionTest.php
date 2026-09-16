@@ -66,20 +66,22 @@ class CandadoDeIaEnEjecucionTest extends TestCase
     }
 
     /**
-     * El semáforo con `usar_ia` encendido de antes deja de llamar al modelo.
+     * El semáforo entero exige complemento, no sólo su ajuste con IA.
      *
-     * Y **no se apaga el semáforo**: la capa de léxico sigue coloreando sin
-     * modelo, que es lo que hace que el cliente quiera la capa 2.
+     * Estuvo en el CRM hasta el 15-sep-2026 con el argumento de que su primera
+     * capa es un diccionario y funciona sin modelo. Se movió al complemento por
+     * estrategia comercial: es la función de IA que mejor se ve —caritas de
+     * colores en la bandeja, sin abrir nada— y por tanto la que mejor la vende.
+     *
+     * El candado en ejecución sigue haciendo falta: quien lo tenía instalado de
+     * antes no deja de tenerlo, y sin esto seguiría llamando al modelo.
      */
-    public function test_el_semaforo_deja_de_afinar_sin_complemento(): void
+    public function test_el_semaforo_exige_complemento(): void
     {
-        $company = $this->empresa(['ia' => 'ninguno']);
-        $plan = PlanDeLaEmpresa::de($company);
+        $plan = PlanDeLaEmpresa::de($this->empresa(['ia' => 'ninguno']));
 
+        $this->assertFalse($plan->permiteExtension('sentiment_traffic_light'));
         $this->assertFalse($plan->permiteAjuste('sentiment_traffic_light', 'usar_ia'));
-
-        // Pero la extensión sigue siendo suya: va con el CRM.
-        $this->assertTrue($plan->permiteExtension('sentiment_traffic_light'));
     }
 
     /**

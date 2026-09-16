@@ -50,6 +50,72 @@ class MiPlanTest extends TestCase
         return $user->fresh();
     }
 
+    /**
+     * La comparativa lleva las tres medidas, líneas incluidas.
+     *
+     * Son las tres que decide `planSugerido()`. Sin las líneas en la pantalla,
+     * a una empresa con dos líneas en un plan de una se le decía que se había
+     * quedado corta sin enseñarle en qué, y la única forma de saberlo era
+     * preguntar.
+     */
+    public function test_los_planes_traen_agentes_contactos_y_lineas(): void
+    {
+        $company = $this->empresa(['plan' => 'basico']);
+
+        $planes = $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertOk()
+            ->viewData('page')['props']['planes'];
+
+        foreach ($planes as $plan) {
+            $this->assertArrayHasKey('agentes', $plan);
+            $this->assertArrayHasKey('contactos', $plan);
+            $this->assertArrayHasKey('lineas', $plan, 'Las líneas no llegan a la pantalla.');
+        }
+    }
+
+    /**
+     * Y señala a cuál pasar cuando el suyo se le queda pequeño.
+     *
+     * Es lo que convierte «te has quedado corto» en algo accionable. El propio
+     * plan nunca se sugiere a sí mismo: un aviso que te recomienda quedarte
+     * donde estás enseña a no leer los avisos.
+     */
+    public function test_senala_el_plan_que_le_tocaria(): void
+    {
+        $company = $this->empresa(['plan' => 'basico']);
+        $this->contactos($company, config('planes.crm.basico.contactos') + 50);
+
+        $planes = collect($this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertOk()
+            ->viewData('page')['props']['planes']);
+
+        $sugerido = $planes->firstWhere('es_el_sugerido', true);
+
+        $this->assertNotNull($sugerido, 'No se sugiere ningún plan a quien se quedó corto.');
+        $this->assertFalse($sugerido['es_el_suyo'], 'Se le sugiere el plan en el que ya está.');
+    }
+
+    private function contactos(Company $company, int $cuantos): void
+    {
+        $filas = [];
+
+        for ($i = 0; $i < $cuantos; $i++) {
+            $filas[] = [
+                'company_id' => $company->id,
+                'name' => 'Contacto '.$i,
+                'phone_number' => '57300'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        foreach (array_chunk($filas, 500) as $lote) {
+            \Illuminate\Support\Facades\DB::table('contacts')->insert($lote);
+        }
+    }
+
     public function test_el_admin_ve_su_plan(): void
     {
         $company = $this->empresa(['plan' => 'pro']);
