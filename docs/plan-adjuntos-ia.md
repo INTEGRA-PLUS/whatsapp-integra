@@ -238,15 +238,47 @@ Tres entregas, cada una útil por su cuenta:
    trozos se usan de verdad — que es lo que dirá si esto funciona o sólo lo
    parece.
 
+## Decidido: va dentro de IA Completa, sin coste extra
+
+*16-sep-2026, Alejandro.* No se cobra aparte. Eso tiene una consecuencia técnica
+directa y es la que manda en la sección siguiente: si el ingreso por esta función
+es cero marginal, **el coste también tiene que ser fijo**, no por consulta. Un
+proveedor de embeddings que cobre por token convierte cada mensaje de cada
+cliente en una factura variable sobre una función que no factura.
+
+## Decidido: los embeddings se calculan en casa
+
+Hubo que averiguarlo y el resultado cambió el plan: **Ollama Cloud no ofrece
+ningún modelo de embeddings.** Su catálogo en la nube son modelos de chat
+—`gpt-oss`, `deepseek-v4-flash`, `minimax`, `glm`, `qwen3.5`, `gemma4`— y el
+filtro «Embedding» no devuelve ninguno de ellos. La cuenta que ya está conectada
+no sirve para esto.
+
+De las tres salidas:
+
+| | Coste | Calidad en español | Lo que añade |
+|---|---|---|---|
+| **Ollama local en el VPS** | Fijo (RAM y CPU que ya se pagan) | Buena | Un contenedor |
+| `FULLTEXT` de MySQL | Cero | Pobre: no sabe que «préstamo» y «crédito» son lo mismo | Nada |
+| Un proveedor externo | Por token | Buena | Otro proveedor, otra clave, otra factura |
+
+**Se elige el Ollama local**, y el motivo es el de arriba: es el único de los tres
+que da calidad con coste fijo, que es lo que pide una función incluida en el plan.
+El servidor da de sí — 6 núcleos, ~5 GB de RAM libres, 58 GB de disco, carga
+media 2,4 — y un modelo de 300M a 600M ocupa entre 0,4 y 1,2 GB.
+
+No hay ningún Ollama en el VPS todavía (nada escuchando en el 11434): es un
+contenedor nuevo, y es la única pieza de infraestructura que este plan añade.
+
+**Qué modelo.** `bge-m3` (567M) si la memoria lo permite —multilingüe de verdad y
+aguanta trozos largos—, y `paraphrase-multilingual` (278M) como opción ligera. La
+decisión **no hay que agonizarla**: si toda la conversión pasa por una sola clase,
+cambiar de modelo es reindexar, y reindexar es un job en segundo plano. Lo que sí
+importa es que esa clase exista desde el primer día y que nadie llame al modelo
+desde otro sitio.
+
 ## Lo que hace falta decidir
 
-- **¿Qué modelo de embeddings?** Lo natural es usar la cuenta de Ollama Cloud que
-  ya está conectada, pero hay que confirmar qué modelo expone. Si no hay ninguno,
-  el plan B es búsqueda por palabras con `FULLTEXT` de MySQL: peor calidad
-  —no entiende que «préstamo» y «crédito» son lo mismo— pero cero dependencias
-  nuevas y se puede cambiar después sin tocar el resto.
-- **¿Entra en IA Completa o es un complemento aparte?** Es el argumento más
-  fuerte frente a TecnoChat, que no lo tiene. Puede justificar su propio precio.
 - **¿Cinco archivos está bien?** Cinco es lo que pidió Alejandro. El tope que de
   verdad importa no es el número de archivos sino el de trozos — y un Excel de
   tres mil filas son tres mil trozos él solo, así que el tope tiene que contarse
