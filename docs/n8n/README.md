@@ -37,11 +37,12 @@ de reemplazar, cambia el `id` antes.
 | `whatsapp-resumen.json` | WhatsApp · Resumen de conversación | [`../resumen-de-conversacion.md`](../resumen-de-conversacion.md) |
 | `gateway-chat-validar-entrada.js` | 01 · Chatbot Gateway (Ingest), nodo `Validar entrada` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `gateway-chat-armar-job.js` | 01 · Chatbot Gateway (Ingest), nodo `Armar job` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
+| `worker-chat-preparar-contexto.js` | 02 · Chatbot Worker (Ollama), nodo `Preparar contexto` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.
 
-Los dos `.js` son **nodos sueltos, no flujos**: se pegan en el canvas
+Los `.js` son **nodos sueltos, no flujos**: se pegan en el canvas
 reemplazando el contenido entero del nodo que nombra el fichero. Están aquí
 porque son los dos únicos sitios del gateway donde el contrato del payload se
 escribe a mano, y olvidarse de ellos al añadir un campo es lo que causó el
@@ -98,3 +99,33 @@ conversación, no para lo largo del resumen, que es corto y fijo.
 El síntoma engaña: desde fuera parece que el flujo no responde o que la
 plataforma no está configurada. Las dos pistas están en la ejecución de n8n,
 `done_reason` y `eval_count`, no en el CRM.
+
+## Republicar un flujo que «ya estaba bien» no hace nada
+
+*16-sep-2026.* El nodo `Preparar contexto` del worker de chats llevaba desde el 14-sep guardado con el código
+correcto y los tres `n8n-worker` seguían ejecutando la versión anterior —la del prompt con «Integra» escrito a
+mano—, que es lo que se cuenta entero en
+[`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md).
+
+Lo que costó una vuelta de más fue el intento de arreglo: **abrir el flujo y darle a Publish sin tocar nada no
+sirve**. n8n descarta el guardado cuando no detecta diferencia, así que no escribe la fila y no avisa a los
+workers; desde la interfaz parece que se publicó. La forma de comprobarlo es la columna, no la pantalla:
+
+```sql
+select id, name, "updatedAt" from workflow_entity where id = '<id>';
+```
+
+Si `updatedAt` no se movió, no se publicó nada. Para destrabarlo hay que introducir un cambio real —vale un
+comentario— y volver a publicar. Por eso el fichero de esta carpeta lleva una nota fechada en la cabecera: es
+lo que garantiza que el pegado produzca diferencia.
+
+## Cuidado con la memoria al cambiar un prompt
+
+La `Memoria Redis` del worker guarda los últimos **10 turnos** por `session_key` durante **24 h**. Al arreglar
+el prompt, el primer cliente al que se probó siguió oyendo la identidad vieja: no venía del prompt nuevo sino
+de su propio historial, donde la IA ya se había presentado mal. Con un `user_id` nuevo salió correcto a la
+primera.
+
+Así que **para comprobar un cambio de prompt hay que estrenar sesión**, o se diagnostica como roto algo que ya
+está arreglado. Las sesiones contaminadas se limpian solas: a las 24 h por TTL, o antes porque el turno viejo
+se sale de la ventana de diez.
