@@ -1,0 +1,67 @@
+# El modelo que convierte texto en vectores, para buscar dentro de los
+# documentos que sube una empresa.
+#
+# ## Por qué es una pila aparte y no un servicio más del compose principal
+#
+# Porque `make fresh` y `make down` no pueden llevarse por delante los modelos
+# descargados: son cientos de megas y varios minutos de descarga cada vez. Es
+# además como está organizado este VPS —n8n, el portal y la landing son cada uno
+# su propia pila— y lo que permite reiniciar la aplicación sin tocar esto.
+#
+# Se levanta a mano, y sólo una vez:
+#
+#   scp docker-compose.ollama.yml root@178.238.224.239:/root/ollama/docker-compose.yml
+#   ssh root@178.238.224.239 'cd /root/ollama && docker compose up -d'
+#   ssh root@178.238.224.239 'docker exec ollama ollama pull bge-m3'
+#
+# ## Por qué NO publica ningún puerto
+#
+# **Ollama no tiene autenticación de ninguna clase.** Publicar el 11434 es dejar
+# a cualquiera en internet gastar la CPU de este servidor y leer lo que se le
+# mande. Sin `ports`, sólo lo alcanzan los contenedores de la misma red, que es
+# exactamente lo que hace falta: la aplicación lo llama por `http://ollama:11434`.
+#
+# La red es la del compose principal y se declara `external`: esta pila no la
+# crea, se engancha a la que ya existe. Si algún día se renombra el proyecto,
+# aquí hay que cambiarla o el contenedor arranca aislado y sin dar ningún error
+# visible — la aplicación simplemente dejará de calcular vectores y buscará por
+# palabras.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    networks: [backend]
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      # Este modelo sólo hace embeddings: descargarlo de memoria entre consultas
+      # obliga a releerlo del disco en la siguiente, y la siguiente llega con un
+      # cliente esperando al otro lado de WhatsApp.
+      OLLAMA_KEEP_ALIVE: 24h
+      # Uno cargado y una petición a la vez. El servidor tiene seis núcleos
+      # compartidos con la base de datos, las colas y n8n: sin este freno, una
+      # tanda de vectorización se los come enteros y de eso se entera el resto.
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_NUM_PARALLEL: 1
+    deploy:
+      resources:
+        limits:
+          # bge-m3 son ~1,2 GB cargado. El tope es para que un modelo grande
+          # subido por error no se lleve la memoria de la base de datos.
+          memory: 3g
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  backend:
+    name: whatsapp-integra_backend
+    external: true
+
+volumes:
+  ollama_models:
