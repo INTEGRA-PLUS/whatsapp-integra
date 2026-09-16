@@ -6,6 +6,7 @@ use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Support\AiAssistantProfile;
+use App\Support\Documentos\ConocimientoParaLaPregunta;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use App\Support\ContadorDeIa;
@@ -97,7 +98,7 @@ class WhatsAppChatAiClient
                     // `puede_ejecutar` en false: este flujo conversa y no
                     // tiene herramientas. Es lo que le dice al prompt que no
                     // confirme acciones que no puede llevar a cabo.
-                    'asistente' => AiAssistantProfile::payload($instance->company_id, false),
+                    'asistente' => $this->perfil($instance->company_id, $message),
                 ]);
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ El flujo de chat IA no respondió', [
@@ -126,6 +127,32 @@ class WhatsAppChatAiClient
         }
 
         return $decision;
+    }
+
+    /**
+     * Quién es la IA de esta empresa, y qué sabe **para este mensaje**.
+     *
+     * El conocimiento no es fijo: al texto que la empresa escribió a mano se le
+     * suman los trozos de sus documentos que responden a lo que acaba de
+     * preguntar el cliente. Por eso se arma aquí, donde se tiene el mensaje, y
+     * no dentro de `AiAssistantProfile::payload()`, que no lo ve.
+     *
+     * Van en el campo `conocimiento` que ya viaja, y no en uno nuevo, porque
+     * añadir un campo al contrato con n8n cuesta tres sitios —aquí y los dos
+     * nodos del gateway, que reconstruyen el objeto con una lista blanca— y
+     * olvidarse de uno se pierde sin error y sin log. Ya pasó el 16-sep-2026.
+     */
+    private function perfil(int $companyId, string $message): array
+    {
+        $perfil = AiAssistantProfile::payload($companyId, false);
+
+        $perfil['conocimiento'] = ConocimientoParaLaPregunta::para(
+            $companyId,
+            $message,
+            (string) ($perfil['conocimiento'] ?? '')
+        );
+
+        return $perfil;
     }
 
     /**

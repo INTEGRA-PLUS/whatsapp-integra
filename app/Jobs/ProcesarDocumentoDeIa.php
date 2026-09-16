@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\AiDocumento;
 use App\Models\AiFragmento;
+use App\Services\Embeddings;
 use App\Support\Documentos\DocumentoIlegible;
 use App\Support\Documentos\ExtraerTexto;
 use Illuminate\Bus\Queueable;
@@ -134,12 +135,21 @@ class ProcesarDocumentoDeIa implements ShouldQueue
                 AiFragmento::insert($lote);
             }
 
+            // Sigue en `procesando` si hay que vectorizar: hasta que tiene
+            // sus vectores el documento no está listo para buscar, y decir
+            // «Listo» antes de tiempo es prometer respuestas que todavía no
+            // salen. Sin modelo configurado se busca por palabras, que no
+            // necesita nada más: ahí sí está listo ya.
             $documento->update([
-                'estado' => 'listo',
+                'estado' => Embeddings::configurado() ? 'procesando' : 'listo',
                 'motivo' => null,
                 'fragmentos' => count($filas),
             ]);
         });
+
+        if (Embeddings::configurado()) {
+            VectorizarDocumentoDeIa::dispatch($documento->id);
+        }
     }
 
     private function marcarFallido(AiDocumento $documento, string $motivo): void

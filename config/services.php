@@ -279,4 +279,28 @@ return [
         'secret' => env('SECRET_ACTIVATION'),
     ],
 
+    /*
+     * El modelo que convierte texto en vectores, para buscar dentro de los
+     * documentos que sube una empresa.
+     *
+     * **Corre en el propio servidor y no en Ollama Cloud**, que no ofrece
+     * ningún modelo de embeddings: su catálogo en la nube son modelos de chat.
+     * Y aunque lo ofreciera, esta función va incluida en el complemento de IA
+     * sin cobrarse aparte, así que su coste tiene que ser fijo: un proveedor
+     * por token convierte cada mensaje de cada cliente en una factura variable
+     * sobre algo que no factura.
+     *
+     * Sin `url` configurada no se calcula ningún vector y la búsqueda cae a
+     * palabras sueltas. Es peor —no sabe que «préstamo» y «crédito» son lo
+     * mismo— pero contesta, que es mejor que no contestar.
+     *
+     * Cambiar de modelo obliga a reindexar: los vectores de dos modelos
+     * distintos no se pueden comparar entre sí. Lo hace `ia:revectorizar`.
+     */
+    'embeddings' => [
+        'url' => env('EMBEDDINGS_URL'),
+        'model' => env('EMBEDDINGS_MODEL', 'bge-m3'),
+        'timeout' => (int) env('EMBEDDINGS_TIMEOUT', 120),
+    ],
+
 ];

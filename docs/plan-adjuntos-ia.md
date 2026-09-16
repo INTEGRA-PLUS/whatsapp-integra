@@ -286,3 +286,53 @@ desde otro sitio.
   verdad importa no es el número de archivos sino el de trozos — y un Excel de
   tres mil filas son tres mil trozos él solo, así que el tope tiene que contarse
   ahí y no en la cantidad de ficheros.
+
+---
+
+## Entrega 2, hecha el 16-sep-2026
+
+Lo que se buscó, se encontró y llegó al modelo. Las piezas:
+
+| Pieza | Qué hace |
+|---|---|
+| `Embeddings` | La **única** puerta al modelo de vectores. Nunca lanza: si no responde, devuelve nulos |
+| `VectorizarDocumentoDeIa` | Calcula los vectores en tandas, volviéndose a despachar hasta acabar |
+| `BuscarFragmentos` | Los cinco trozos que responden a la pregunta. Con vectores, o por palabras |
+| `ConocimientoParaLaPregunta` | Junta lo escrito a mano con los trozos, cada uno con su cita |
+| `ia:revectorizar` | Para cuando se cambie de modelo |
+
+### Las cuatro decisiones que importan
+
+**Una sola puerta al modelo.** Los vectores de dos modelos distintos no se pueden
+comparar entre sí, así que cambiar de modelo obliga a reindexar. Con una sola
+clase eso es una variable de entorno y un comando; repartido por tres sitios es
+una búsqueda que devuelve resultados absurdos **sin fallar ni avisar**.
+
+**Sin vectores también se contesta.** Si no hay modelo configurado, o se cayó, o
+el documento se subió antes de que lo hubiera, se busca por palabras. Es peor
+—no sabe que «préstamo» y «crédito» son lo mismo— pero contesta, y eso es mejor
+que dejar al cliente sin respuesta por no poder hacer una búsqueda que es una
+mejora, no un requisito. Por eso un documento que se quedó sin vectores queda en
+`listo` y no en `fallido`: esconderlo sería esconder algo que sí sirve.
+
+**Hay un mínimo de parecido (0,35).** Sin él siempre salen cinco fragmentos,
+también cuando la pregunta no tiene nada que ver: un «hola» arrastraría los cinco
+párrafos menos malos y el modelo contestaría con el reglamento a quien sólo
+saludaba.
+
+**Los fragmentos viajan en el campo `conocimiento` que ya existía**, no en uno
+nuevo. Un campo nuevo cuesta tres sitios —`WhatsAppChatAiClient`, `Validar
+entrada` y `Armar job`— y olvidarse de uno se pierde en silencio. Es exactamente
+lo que pasó el 16-sep por la mañana.
+
+### Lo que hay que tocar fuera del repo
+
+1. **Un contenedor de Ollama en el VPS.** Es la única infraestructura que añade
+   todo el plan. No había ninguno (nada escuchando en el 11434).
+2. **`EMBEDDINGS_URL` en `.env.docker`.** Sin ella no se calcula ningún vector y
+   la búsqueda cae a palabras — funciona, pero es la mitad de lo que se quería.
+3. **El nodo `Preparar contexto` de n8n**, con el tope del conocimiento subido de
+   4.000 a 12.000 caracteres. Está en `docs/n8n/worker-chat-preparar-contexto.js`.
+   El número está en dos sitios a la vez —aquí y en
+   `ConocimientoParaLaPregunta::MAXIMO`— y si se cambia uno hay que cambiar el
+   otro, o Laravel manda más de lo que el nodo deja pasar.
