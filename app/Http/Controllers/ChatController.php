@@ -394,10 +394,11 @@ class ChatController extends Controller
                         ->whereColumn('m.conversation_id', 'whatsapp_conversations.id')
                         ->where('m.direction', 'inbound')
                         ->where('m.is_internal', false)
-                        ->whereRaw('m.created_at = (
+                        ->whereRaw("m.created_at = (
                             select max(created_at) from whatsapp_messages
-                            where conversation_id = whatsapp_conversations.id and is_internal = 0
-                        )');
+                            where conversation_id = whatsapp_conversations.id
+                              and direction in ('inbound', 'outbound') and is_internal = 0
+                        )");
                 });
         }
     }

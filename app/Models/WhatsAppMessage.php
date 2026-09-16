@@ -202,6 +202,36 @@ class WhatsAppMessage extends Model
         return ! empty($this->media_url) || $this->resolvableMediaId() !== null;
     }
 
+    /**
+     * Lo que de verdad se dijeron el cliente y la empresa.
+     *
+     * Deja fuera las dos cosas que el cliente nunca vio, y son distintas aunque
+     * lo parezcan:
+     *
+     *   - las **notas privadas** entre agentes — `is_internal`, 378 en producción
+     *   - los **avisos del hilo** —«conversación reabierta», «cerrada»—, que
+     *     `ConversationNotice` graba con `is_internal` en FALSE a propósito y
+     *     son 14.784
+     *
+     * Ese desajuste ya costó dos fallos silenciosos: filtrar por `is_internal`
+     * parece excluir «lo interno» y en realidad deja pasar el 97% de ello.
+     *
+     * Se comprueban las DOS, y no sólo `direction`, porque una nota privada no
+     * tiene por qué llevar `direction = 'internal'`: hoy en producción todas lo
+     * llevan, pero nada lo obliga y hay código que las guarda como salientes.
+     * La condición es «lo que el cliente vio», y para eso tienen que cumplirse
+     * las dos cosas a la vez.
+     *
+     * Quien quiera las notas privadas las pide por `is_internal`, que para eso
+     * está: aquí lo que se quita es todo lo que no fue una conversación.
+     */
+    public function scopeVisiblesParaElCliente($query)
+    {
+        return $query
+            ->whereIn('direction', ['inbound', 'outbound'])
+            ->where('is_internal', false);
+    }
+
     public function scopeInbound($query)
     {
         return $query->where('direction', 'inbound');

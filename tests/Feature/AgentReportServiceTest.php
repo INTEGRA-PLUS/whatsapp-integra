@@ -144,6 +144,68 @@ class AgentReportServiceTest extends TestCase
         $this->assertSame(0, $informe['totals']['response_count']);
     }
 
+    /**
+     * Un aviso del hilo no borra el cliente que estaba esperando.
+     *
+     * «Conversación reabierta», «cerrada»: los graba el sistema con
+     * `is_internal` en FALSE, así que el filtro de siempre no los quitaba. Y
+     * como tampoco tienen `sent_by`, el bucle los tomaba por «mensaje de otro
+     * agente» y descartaba el pendiente: el tiempo de respuesta de esa
+     * conversación no se medía y el agente aparecía atendiendo menos de lo que
+     * atendió.
+     */
+    public function test_un_aviso_del_hilo_no_se_come_el_tiempo_de_respuesta(): void
+    {
+        [$company, $instance] = $this->empresaConLinea();
+        $agente = $this->agente($company, 'Ana');
+        $conv = $this->conversacion($instance);
+
+        $this->mensaje($conv, 'inbound', null, now()->subMinutes(10));
+        $this->aviso($conv, now()->subMinutes(9));
+        $this->mensaje($conv, 'outbound', $agente->id, now()->subMinutes(8));
+
+        $informe = $this->servicio->build($company->id, now()->subDay(), now()->addDay());
+
+        $this->assertSame(1, $informe['totals']['response_count'], 'El aviso del hilo se comió la medición.');
+        $this->assertSame(1, $informe['totals']['outbound']);
+    }
+
+    /** Y tampoco cuenta como el último que habló. */
+    public function test_un_aviso_del_hilo_no_cuenta_como_ultimo_mensaje(): void
+    {
+        [$company, $instance] = $this->empresaConLinea();
+        $agente = $this->agente($company, 'Ana');
+        $conv = $this->conversacion($instance, ['assigned_to' => $agente->id, 'status' => 'open']);
+
+        $this->mensaje($conv, 'inbound', null, now()->subMinutes(30));
+        $this->aviso($conv, now()->subMinutes(5));
+
+        $informe = $this->servicio->build($company->id, now()->subDay(), now()->addDay());
+        $ana = collect($informe['agents'])->firstWhere('name', 'Ana');
+
+        $this->assertSame(
+            1,
+            $ana['unanswered_count'],
+            'La conversación dejó de contar como sin responder porque el último mensaje era un aviso.'
+        );
+    }
+
+    /** Un aviso del hilo, como lo graba ConversationNotice. */
+    private function aviso(WhatsAppConversation $conv, CarbonInterface $cuando): WhatsAppMessage
+    {
+        return WhatsAppMessage::create([
+            'conversation_id' => $conv->id,
+            'wamid' => 'wamid.'.Str::random(10),
+            'type' => 'system',
+            'content' => 'Conversación reabierta: el cliente volvió a escribir',
+            'direction' => 'internal',
+            'is_internal' => false,
+            'status' => 'sent',
+            'sent_by' => null,
+            'sent_at' => $cuando,
+        ]);
+    }
+
     public function test_el_detalle_de_un_agente_cuadra_con_el_resumen(): void
     {
         [$company, $instance] = $this->empresaConLinea();

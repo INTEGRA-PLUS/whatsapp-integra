@@ -73,7 +73,14 @@ class ChatAwaitingReplyTest extends TestCase
 
     private function mensaje(WhatsAppConversation $conv, string $direction, array $attributes = []): void
     {
-        WhatsAppMessage::create(array_merge([
+        // `created_at` no es fillable, así que `create()` lo ignora y todos los
+        // mensajes del test acabarían con el mismo instante. La carpeta
+        // «Desatendidas» compara justo por esa columna para saber cuál es el
+        // último: sin esto, empatan todos y el test no prueba nada.
+        $creadoEn = $attributes['created_at'] ?? null;
+        unset($attributes['created_at']);
+
+        $mensaje = WhatsAppMessage::create(array_merge([
             'conversation_id' => $conv->id,
             'wamid' => 'wamid.'.Str::random(10),
             'type' => 'text',
@@ -83,6 +90,10 @@ class ChatAwaitingReplyTest extends TestCase
             'is_internal' => false,
             'sent_at' => now()->subMinutes(45),
         ], $attributes));
+
+        if ($creadoEn) {
+            $mensaje->forceFill(['created_at' => $creadoEn])->save();
+        }
     }
 
     private function pedirLista(): array
@@ -215,6 +226,60 @@ class ChatAwaitingReplyTest extends TestCase
         $this->mensaje($conv, 'inbound', ['status' => 'read']);
 
         $this->assertNull($this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
+    }
+
+    /**
+     * La carpeta «Desatendidas» no se vacía por un aviso del hilo.
+     *
+     * Busca la conversación cuyo ÚLTIMO mensaje es del cliente, y el «último» lo
+     * decidía un `max(created_at)` que sólo descartaba `is_internal`. Como los
+     * avisos del hilo lo llevan en false, bastaba con que se colara uno detrás
+     * —una reapertura, un cierre y vuelta a abrir— para que la conversación
+     * desapareciera de la carpeta con el cliente todavía esperando. Es la
+     * pantalla donde se mira precisamente eso.
+     */
+    public function test_la_carpeta_desatendidas_no_se_vacia_por_un_aviso(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'inbound', [
+            'sent_at' => now()->subMinutes(50),
+            'created_at' => now()->subMinutes(50),
+        ]);
+        $this->mensaje($conv, 'internal', [
+            'type' => 'system',
+            'content' => 'Conversación reabierta: el cliente volvió a escribir',
+            'is_internal' => false,
+            'sent_at' => now()->subMinutes(40),
+            'created_at' => now()->subMinutes(40),
+        ]);
+
+        $ids = collect($this->actingAs($this->agente)
+            ->getJson('/api/chat/conversations?instance_id='.$this->instance->id.'&filter=unattended')
+            ->assertOk()
+            ->json('data'))->pluck('id');
+
+        $this->assertTrue($ids->contains($conv->id), 'La conversación se cayó de Desatendidas por el aviso.');
+    }
+
+    /** Y una que sí está atendida sigue sin aparecer. */
+    public function test_la_carpeta_desatendidas_no_trae_las_contestadas(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'inbound', [
+            'sent_at' => now()->subMinutes(50),
+            'created_at' => now()->subMinutes(50),
+        ]);
+        $this->mensaje($conv, 'outbound', [
+            'sent_at' => now()->subMinutes(40),
+            'created_at' => now()->subMinutes(40),
+        ]);
+
+        $ids = collect($this->actingAs($this->agente)
+            ->getJson('/api/chat/conversations?instance_id='.$this->instance->id.'&filter=unattended')
+            ->assertOk()
+            ->json('data'))->pluck('id');
+
+        $this->assertFalse($ids->contains($conv->id));
     }
 
     private function campoDe(array $data, int $conversationId, string $campo): mixed

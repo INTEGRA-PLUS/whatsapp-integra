@@ -83,7 +83,7 @@ class DashboardController extends Controller
                 'conversation_id',
                 WhatsAppConversation::whereIn('instance_id', $idsActivas)->select('id')
             )
-            ->where('is_internal', false)
+            ->visiblesParaElCliente()
             ->selectRaw('direction, COUNT(*) as total')
             ->groupBy('direction')
             ->pluck('total', 'direction');
@@ -142,7 +142,7 @@ class DashboardController extends Controller
                 'conversation_id',
                 WhatsAppConversation::whereIn('instance_id', $idsActivas)->select('id')
             )
-            ->where('is_internal', false)
+            ->visiblesParaElCliente()
             ->selectRaw('DATE(whatsapp_messages.created_at) as dia, direction, COUNT(*) as total')
             ->groupBy('dia', 'direction')
             ->get();

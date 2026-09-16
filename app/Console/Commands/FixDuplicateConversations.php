@@ -185,8 +185,10 @@ class FixDuplicateConversations extends Command
      */
     private function refreshSurvivor(WhatsAppConversation $survivor, string $digits): void
     {
+        // El último que vio el cliente, no el último aviso del hilo: esto va a
+        // parar al `last_message` que se lee en la lista de chats.
         $last = WhatsAppMessage::where('conversation_id', $survivor->id)
-            ->where('is_internal', false)
+            ->visiblesParaElCliente()
             ->orderByDesc('created_at')
             ->first();
 

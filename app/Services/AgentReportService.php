@@ -288,6 +288,13 @@ class AgentReportService
         $filas = WhatsAppMessage::query()
             ->join('whatsapp_conversations', 'whatsapp_conversations.id', '=', 'whatsapp_messages.conversation_id')
             ->whereIn('whatsapp_conversations.instance_id', $instanceIds)
+            // Sólo lo conversado. Un aviso del hilo no es ni entrante ni
+            // saliente, pero tampoco tiene `sent_by`, así que el bucle de abajo
+            // lo tomaba por «mensaje de otro agente» y descartaba el cliente que
+            // estaba esperando: el tiempo de respuesta de esa conversación no se
+            // medía. Filtrando por `is_internal` no se caía ninguno, porque los
+            // avisos lo llevan en false.
+            ->whereIn('whatsapp_messages.direction', ['inbound', 'outbound'])
             ->where('whatsapp_messages.is_internal', false)
             ->whereBetween('whatsapp_messages.created_at', [$from, $to])
             ->orderBy('whatsapp_messages.conversation_id')
@@ -350,7 +357,11 @@ class AgentReportService
             $ultimos = WhatsAppMessage::query()
                 ->selectRaw('MAX(id) as id')
                 ->whereIn('conversation_id', $tanda)
-                ->where('is_internal', false)
+                // Y aquí el mismo cuidado: se lee la DIRECCIÓN del último para
+                // saber quién habló al final, así que un aviso del hilo colado
+                // ahí devolvía «internal» y la conversación no contaba ni como
+                // esperando ni como contestada.
+                ->visiblesParaElCliente()
                 ->groupBy('conversation_id')
                 ->pluck('id');
 
