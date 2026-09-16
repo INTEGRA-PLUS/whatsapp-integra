@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
     AlertTriangle, BadgeCheck, CheckCircle2, ChevronDown, Eye, EyeOff, FileText, KeyRound,
     ListChecks, Loader2, Lock, MessageCircle, Plus, Save, ShieldAlert, ShieldCheck, Sparkles,
-    Trash2, UserCheck, XCircle,
+    ToggleRight, Trash2, UserCheck, XCircle,
 } from 'lucide-react';
 
 /**
@@ -35,6 +35,69 @@ function Card({ children, className = '' }) {
     return (
         <div className={`rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm shadow-sm ${className}`}>
             {children}
+        </div>
+    );
+}
+
+/**
+ * La cabecera de una tarjeta, con su color.
+ *
+ * El color no es decoración: agrupa. Teal es quién es la IA, índigo lo que
+ * sabe, ámbar a quién le pasa el chat. Con siete tarjetas iguales en gris,
+ * encontrar dónde se cambia el horario cuesta leerlas todas.
+ */
+const COLORES = {
+    teal: 'text-teal-600 dark:text-teal-400',
+    indigo: 'text-indigo-600 dark:text-indigo-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    sky: 'text-sky-600 dark:text-sky-400',
+};
+
+/** El título que separa una columna o un bloque de tarjetas. */
+function SeccionTitulo({ Icono, color = 'teal', titulo, detalle }) {
+    return (
+        <div className="flex items-center gap-2.5">
+            <Icono className={`size-4 ${COLORES[color] ?? COLORES.teal}`} />
+            <h2 className="text-sm font-semibold text-foreground">{titulo}</h2>
+            {detalle && (
+                <>
+                    <span className="text-muted-foreground/40" aria-hidden="true">·</span>
+                    <span className="text-xs text-muted-foreground">{detalle}</span>
+                </>
+            )}
+        </div>
+    );
+}
+
+function CabeceraDeTarjeta({ Icono, color = 'teal', titulo, detalle }) {
+    return (
+        <div>
+            <div className="flex items-center gap-2">
+                <Icono className={`size-4 ${COLORES[color] ?? COLORES.teal}`} />
+                <p className="text-sm font-semibold text-foreground">{titulo}</p>
+            </div>
+            {detalle && (
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{detalle}</p>
+            )}
+        </div>
+    );
+}
+
+const BOTONES = {
+    teal: 'bg-teal-600 hover:bg-teal-500 text-white',
+    indigo: 'bg-indigo-600 hover:bg-indigo-500 text-white',
+};
+
+/** El pie de una tarjeta que se guarda. Avisa de cambios pendientes. */
+function GuardarTarjeta({ dirty, busy, color = 'teal', onClick }) {
+    return (
+        <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-5">
+            {dirty && <span className="text-[11px] text-muted-foreground">Hay cambios sin guardar</span>}
+            <Button onClick={onClick} disabled={busy || !dirty} className={`gap-2 ${BOTONES[color] ?? BOTONES.teal}`}>
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                <Save className="size-4" />
+                Guardar
+            </Button>
         </div>
     );
 }
@@ -73,6 +136,20 @@ function AiSwitch({ checked, disabled, onChange }) {
  * de texto y guardar en cada letra dejaría a los clientes hablando con un
  * asistente a medio renombrar.
  */
+const LONGITUDES = {
+    conciso: { icono: '⚡', titulo: 'Conciso', detalle: 'Cierra rápido, de una a tres frases' },
+    equilibrado: { icono: '⚖️', titulo: 'Equilibrado', detalle: 'Consultivo, en párrafos cortos' },
+    detallado: { icono: '📖', titulo: 'Detallado', detalle: 'Explica con viñetas: soporte o precios' },
+};
+
+/**
+ * Quién es la IA: nombre, trato, tono y cuánto se extiende.
+ *
+ * Sólo la identidad. Lo que la IA **sabe** —el conocimiento, los documentos, las
+ * instrucciones— vive en la otra columna, y la separación no es estética: son
+ * dos cosas que se llenan con distinta cabeza. Esto son cuatro campos cortos que
+ * se rellenan una vez; aquello se revisa cada vez que cambia el negocio.
+ */
 function AsistenteCard({ state, busy, save }) {
     const saved = state.assistant;
     const max = saved.limits;
@@ -81,12 +158,10 @@ function AsistenteCard({ state, busy, save }) {
         nombre_asistente: a.nombre_asistente ?? '',
         tratamiento: a.tratamiento ?? 'tu',
         tono: a.tono ?? '',
-        conocimiento: a.conocimiento ?? '',
-        limites: [...(a.limites ?? [])],
+        longitud: a.longitud ?? 'equilibrado',
     });
 
     const [draft, setDraft] = useState(() => asDraft(saved));
-    const [nuevo, setNuevo] = useState('');
 
     // Al guardar, el backend devuelve el perfil saneado —recortado, sin
     // duplicados—: el formulario tiene que mostrar eso y no lo que se escribió.
@@ -94,13 +169,6 @@ function AsistenteCard({ state, busy, save }) {
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(asDraft(saved));
     const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
-
-    function addLimite() {
-        const v = nuevo.trim();
-        if (!v || draft.limites.length >= max.limites || draft.limites.includes(v)) return;
-        set('limites', [...draft.limites, v]);
-        setNuevo('');
-    }
 
     // La vista previa se arma aquí mientras hay cambios sin guardar; en cuanto
     // se guarda manda la del backend, que es la que refleja lo que de verdad
@@ -115,29 +183,26 @@ function AsistenteCard({ state, busy, save }) {
     return (
         <Card>
             <div className="p-6 space-y-5">
-                <div>
-                    <div className="flex items-center gap-2">
-                        <BadgeCheck className="size-4 text-teal-600 dark:text-teal-400" />
-                        <p className="text-sm font-semibold text-foreground">Cómo se presenta</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                        Aplica a las dos IA. Si no pones nada, se presenta como el asistente de tu
-                        empresa sin nombre propio.
-                    </p>
-                </div>
+                <CabeceraDeTarjeta
+                    Icono={BadgeCheck}
+                    color="teal"
+                    titulo="Cómo se presenta"
+                    detalle="Aplica a las dos IA. Si no pones nombre, se presenta como el asistente de tu empresa."
+                />
 
-                {/* Vista previa: lo que el cliente va a leer */}
-                <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
-                    <p className="text-[11px] font-medium text-muted-foreground">Se presentará como</p>
+                {/* Lo que el cliente va a leer, antes de que lo lea. */}
+                <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 px-4 py-3">
+                    <p className="text-[11px] font-medium text-teal-700 dark:text-teal-400">Se presentará como</p>
                     <p className="text-sm text-foreground mt-1">{preview}</p>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-2">
                     <div className="space-y-2">
-                        <label className="block text-xs font-medium text-muted-foreground">
+                        <label className="block text-xs font-medium text-muted-foreground" htmlFor="asistente-nombre">
                             Nombre del asistente <span className="text-muted-foreground/60">(opcional)</span>
                         </label>
                         <input
+                            id="asistente-nombre"
                             value={draft.nombre_asistente}
                             onChange={e => set('nombre_asistente', e.target.value)}
                             maxLength={max.nombre_asistente}
@@ -147,20 +212,20 @@ function AsistenteCard({ state, busy, save }) {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="block text-xs font-medium text-muted-foreground">Cómo trata al cliente</label>
+                        <span className="block text-xs font-medium text-muted-foreground">Cómo trata al cliente</span>
                         <div className="flex gap-2">
-                            {[['tu', 'Tú'], ['usted', 'Usted']].map(([value, label]) => (
+                            {(saved.treatments ?? ['tu', 'usted']).map(t => (
                                 <button
-                                    key={value}
+                                    key={t}
                                     type="button"
-                                    onClick={() => set('tratamiento', value)}
-                                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
-                                        draft.tratamiento === value
-                                            ? 'border-teal-500 bg-teal-500/10 text-teal-700 dark:text-teal-300 font-medium'
+                                    onClick={() => set('tratamiento', t)}
+                                    className={`flex-1 rounded-xl border px-3 py-2.5 text-sm transition ${
+                                        draft.tratamiento === t
+                                            ? 'border-teal-500/60 bg-teal-500/10 text-foreground'
                                             : 'border-border text-muted-foreground hover:text-foreground'
                                     }`}
                                 >
-                                    {label}
+                                    {t === 'usted' ? 'De usted' : 'De tú'}
                                 </button>
                             ))}
                         </div>
@@ -168,8 +233,9 @@ function AsistenteCard({ state, busy, save }) {
                 </div>
 
                 <div className="space-y-2">
-                    <label className="block text-xs font-medium text-muted-foreground">Tono</label>
+                    <label className="block text-xs font-medium text-muted-foreground" htmlFor="asistente-tono">Tono</label>
                     <input
+                        id="asistente-tono"
                         value={draft.tono}
                         onChange={e => set('tono', e.target.value)}
                         maxLength={max.tono}
@@ -178,31 +244,114 @@ function AsistenteCard({ state, busy, save }) {
                     />
                 </div>
 
+                {/* Cuánto se extiende. No es estético: en WhatsApp un párrafo de
+                    más hace que el cliente deje de leer, y uno de menos deja una
+                    consulta de precios a medias. */}
+                <div className="space-y-2">
+                    <span className="block text-xs font-medium text-muted-foreground">Cuánto se extiende al responder</span>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                        {(saved.longitudes ?? Object.keys(LONGITUDES)).map(id => {
+                            const o = LONGITUDES[id];
+                            if (!o) return null;
+                            const activa = draft.longitud === id;
+
+                            return (
+                                <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => set('longitud', id)}
+                                    className={`rounded-xl border p-3 text-left transition ${
+                                        activa
+                                            ? 'border-teal-500/60 bg-teal-500/10'
+                                            : 'border-border/60 hover:border-border hover:bg-muted/30'
+                                    }`}
+                                >
+                                    <p className="text-xs font-medium text-foreground">
+                                        <span className="mr-1">{o.icono}</span>{o.titulo}
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{o.detalle}</p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <GuardarTarjeta dirty={dirty} busy={busy} onClick={() => save({ assistant: draft }, 'Perfil del asistente guardado.')} />
+            </div>
+        </Card>
+    );
+}
+
+/**
+ * Lo que la IA sabe del negocio, escrito a mano.
+ *
+ * Separado de la identidad a propósito: esto se revisa cada vez que cambian los
+ * horarios o los precios, y aquello se rellena una vez. Junto en una sola
+ * tarjeta, cada cambio de horario obligaba a pasar por delante del nombre del
+ * asistente.
+ */
+function ConocimientoCard({ state, busy, save }) {
+    const saved = state.assistant;
+    const max = saved.limits;
+
+    const asDraft = a => ({
+        conocimiento: a.conocimiento ?? '',
+        limites: [...(a.limites ?? [])],
+    });
+
+    const [draft, setDraft] = useState(() => asDraft(saved));
+    const [nuevo, setNuevo] = useState('');
+
+    useEffect(() => { setDraft(asDraft(saved)); }, [JSON.stringify(saved)]);
+
+    const dirty = JSON.stringify(draft) !== JSON.stringify(asDraft(saved));
+    const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+    function addLimite() {
+        const v = nuevo.trim();
+        if (!v || draft.limites.length >= max.limites || draft.limites.includes(v)) return;
+        set('limites', [...draft.limites, v]);
+        setNuevo('');
+    }
+
+    return (
+        <Card>
+            <div className="p-6 space-y-5">
+                <CabeceraDeTarjeta
+                    Icono={Sparkles}
+                    color="indigo"
+                    titulo="Qué sabe de tu empresa"
+                    detalle="Horarios, sedes, servicios, preguntas frecuentes. Sólo podrá afirmar lo que esté aquí."
+                />
+
                 <div className="space-y-2">
                     <div className="flex items-baseline justify-between gap-3">
-                        <label className="block text-xs font-medium text-muted-foreground">Qué sabe de tu empresa</label>
-                        <span className="text-[11px] text-muted-foreground/70">
+                        <label className="block text-xs font-medium text-muted-foreground" htmlFor="conocimiento">
+                            Escríbelo a mano
+                        </label>
+                        <span className="text-[11px] tabular-nums text-muted-foreground/70">
                             {draft.conocimiento.length}/{max.conocimiento}
                         </span>
                     </div>
                     <textarea
+                        id="conocimiento"
                         value={draft.conocimiento}
                         onChange={e => set('conocimiento', e.target.value)}
                         maxLength={max.conocimiento}
-                        rows={6}
+                        rows={7}
                         placeholder={'Horarios de atención\nSedes y direcciones\nServicios que ofrecen\nPreguntas frecuentes'}
-                        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40 resize-y"
+                        className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 resize-y"
                     />
                     <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
-                        Sólo podrá afirmar lo que escribas aquí. De lo que no esté, dirá que no lo sabe
-                        con certeza y ofrecerá pasar el chat a un agente.
+                        De lo que no esté, dirá que no lo sabe con certeza y ofrecerá pasar el chat a una persona.
+                        Para documentos largos, súbelos abajo en vez de pegarlos aquí.
                     </p>
                 </div>
 
                 <div className="space-y-2">
-                    <label className="block text-xs font-medium text-muted-foreground">
+                    <span className="block text-xs font-medium text-muted-foreground">
                         De qué no debe hablar <span className="text-muted-foreground/60">({draft.limites.length}/{max.limites})</span>
-                    </label>
+                    </span>
 
                     {draft.limites.length > 0 && (
                         <div className="space-y-2">
@@ -230,7 +379,7 @@ function AsistenteCard({ state, busy, save }) {
                             maxLength={max.limite}
                             disabled={draft.limites.length >= max.limites}
                             placeholder="No dar plazos de entrega"
-                            className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-teal-500/40 disabled:opacity-50"
+                            className="flex-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:opacity-50"
                         />
                         <Button
                             type="button"
@@ -244,18 +393,7 @@ function AsistenteCard({ state, busy, save }) {
                     </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 border-t border-border/60 pt-5">
-                    {dirty && <span className="text-[11px] text-muted-foreground">Hay cambios sin guardar</span>}
-                    <Button
-                        onClick={() => save({ assistant: draft }, 'Perfil del asistente guardado.')}
-                        disabled={busy || !dirty}
-                        className="gap-2 bg-teal-600 hover:bg-teal-500 text-white"
-                    >
-                        {busy && <Loader2 className="size-4 animate-spin" />}
-                        <Save className="size-4" />
-                        Guardar
-                    </Button>
-                </div>
+                <GuardarTarjeta dirty={dirty} busy={busy} color="indigo" onClick={() => save({ assistant: draft }, 'Conocimiento guardado.')} />
             </div>
         </Card>
     );
@@ -1087,116 +1225,151 @@ function Configuracion() {
                 </Card>
             ) : (
                 <>
-                    {/* Quién es la IA de esta empresa */}
-                    <AsistenteCard state={state} busy={busy} save={save} />
+                    {/* Dos columnas, y el reparto no es arbitrario: a la
+                        izquierda **quién es** la IA y **cómo se comporta** —se
+                        configura una vez y casi no se vuelve—, a la derecha
+                        **qué sabe**, que se revisa cada vez que cambian los
+                        horarios, los precios o el reglamento.
 
-                    {/* Con qué instrucciones habla */}
-                    <PromptCard state={state} busy={busy} save={save} />
+                        Antes eran siete tarjetas iguales apiladas en una
+                        columna estrecha: para cambiar un horario había que
+                        pasar por delante del nombre del asistente, del prompt
+                        y de dos interruptores. */}
+                    <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+                        <div className="space-y-6">
+                            <SeccionTitulo
+                                Icono={ToggleRight}
+                                color="sky"
+                                titulo="Estado"
+                                detalle="Dónde se hace cargo la IA"
+                            />
 
-                    {/* De qué documentos saca lo que sabe */}
-                    <DocumentosCard permitido={complemento.chat} nombreDelComplemento={complemento.nombre} />
-
-                    {/* A quién le llega el chat cuando la IA se rinde */}
-                    <TraspasoCard state={state} busy={busy} save={save} />
-
-                    {/* IA de los chats */}
-                    <Card>
-                        <div className="p-6">
-                            <div className="flex items-start justify-between gap-6">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <MessageCircle className="size-4 text-accent-foreground" />
-                                        <p className="text-sm font-semibold text-foreground">IA en los chats</p>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                                        Conversa con el cliente cuando escribe algo que ningún menú reconoce. No toca
-                                        datos ni ejecuta acciones: solo responde y, si no puede, deja el chat a un agente.
-                                    </p>
-                                    {!platform.chat_configured && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
-                                            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-                                            <span>Falta configurar el flujo de chats en el servidor.</span>
-                                        </div>
-                                    )}
-                                    {/* El complemento barato —semáforo y resumen—
-                                        no trae esto: una conversación de chat con
-                                        IA cuesta trece veces un análisis de
-                                        semáforo. Se dice aquí en vez de dejar que
-                                        pulse y se coma un 402. */}
-                                    {!complemento.chat && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">
-                                            <Lock className="size-3.5 mt-0.5 shrink-0" />
-                                            <span>No incluido en {complemento.nombre}. Contacta con un administrador.</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <AiSwitch
-                                    checked={state.chat.enabled}
-                                    disabled={busy || !platform.chat_configured || (!complemento.chat && !state.chat.enabled)}
-                                    onChange={v => save({ chat_enabled: v }, v ? 'IA de chats activada.' : 'IA de chats desactivada.')}
-                                />
-                            </div>
-                        </div>
-                    </Card>
-
-                    {/* IA de los menús */}
-                    <Card>
-                        <div className="p-6">
-                            <div className="flex items-start justify-between gap-6">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <ListChecks className="size-4 text-accent-foreground" />
-                                        <p className="text-sm font-semibold text-foreground">IA en los menús</p>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                                        Entiende lo que pide el cliente y lo resuelve contra Integra: consulta su
-                                        factura, radica una falla o le envía el enlace de pago.
-                                    </p>
-                                    {!platform.menus_configured && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
-                                            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
-                                            <span>Falta configurar el flujo de menús en el servidor.</span>
-                                        </div>
-                                    )}
-                                    {!complemento.menus && (
-                                        <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">
-                                            <Lock className="size-3.5 mt-0.5 shrink-0" />
-                                            <span>No incluido en {complemento.nombre}. Contacta con un administrador.</span>
-                                        </div>
-                                    )}
-                                </div>
-                                <AiSwitch
-                                    checked={state.menus.enabled}
-                                    disabled={busy || !platform.menus_configured || (!complemento.menus && !state.menus.enabled)}
-                                    onChange={v => save({ menus_enabled: v }, v ? 'IA de menús activada.' : 'IA de menús desactivada.')}
-                                />
-                            </div>
-
-                            {state.menus.enabled && (
-                                <div className="mt-6 border-t border-border/60 pt-5">
-                                    <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
-                                    <p className="text-[11px] text-muted-foreground mt-1">
-                                        Consultar no compromete nada. Radicar y cobrar sí: concédelos solo si los necesitas.
-                                    </p>
-                                    <div className="mt-4 space-y-3">
-                                        {state.menus.available.map(key => {
-                                            const label = AI_PERMISSION_LABELS[key] ?? { title: key, desc: '' };
-                                            const on = state.menus.permissions.includes(key);
-                                            return (
-                                                <div key={key} className="flex items-start justify-between gap-6">
-                                                    <div className="min-w-0">
-                                                        <p className="text-sm text-foreground">{label.title}</p>
-                                                        <p className="text-[11px] text-muted-foreground mt-0.5">{label.desc}</p>
-                                                    </div>
-                                                    <AiSwitch checked={on} disabled={busy} onChange={() => togglePermission(key)} />
+                            {/* IA de los chats */}
+                            <Card>
+                                <div className="p-6">
+                                    <div className="flex items-start justify-between gap-6">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <MessageCircle className="size-4 text-accent-foreground" />
+                                                <p className="text-sm font-semibold text-foreground">IA en los chats</p>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                                Conversa con el cliente cuando escribe algo que ningún menú reconoce. No toca
+                                                datos ni ejecuta acciones: solo responde y, si no puede, deja el chat a un agente.
+                                            </p>
+                                            {!platform.chat_configured && (
+                                                <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
+                                                    <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                                    <span>Falta configurar el flujo de chats en el servidor.</span>
                                                 </div>
-                                            );
-                                        })}
+                                            )}
+                                            {/* El complemento barato —semáforo y resumen—
+                                                no trae esto: una conversación de chat con
+                                                IA cuesta trece veces un análisis de
+                                                semáforo. Se dice aquí en vez de dejar que
+                                                pulse y se coma un 402. */}
+                                            {!complemento.chat && (
+                                                <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+                                                    <Lock className="size-3.5 mt-0.5 shrink-0" />
+                                                    <span>No incluido en {complemento.nombre}. Contacta con un administrador.</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <AiSwitch
+                                            checked={state.chat.enabled}
+                                            disabled={busy || !platform.chat_configured || (!complemento.chat && !state.chat.enabled)}
+                                            onChange={v => save({ chat_enabled: v }, v ? 'IA de chats activada.' : 'IA de chats desactivada.')}
+                                        />
                                     </div>
                                 </div>
-                            )}
+                            </Card>
+
+                            {/* IA de los menús */}
+                            <Card>
+                                <div className="p-6">
+                                    <div className="flex items-start justify-between gap-6">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <ListChecks className="size-4 text-accent-foreground" />
+                                                <p className="text-sm font-semibold text-foreground">IA en los menús</p>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                                                Entiende lo que pide el cliente y lo resuelve contra Integra: consulta su
+                                                factura, radica una falla o le envía el enlace de pago.
+                                            </p>
+                                            {!platform.menus_configured && (
+                                                <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
+                                                    <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                                    <span>Falta configurar el flujo de menús en el servidor.</span>
+                                                </div>
+                                            )}
+                                            {!complemento.menus && (
+                                                <div className="mt-3 flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+                                                    <Lock className="size-3.5 mt-0.5 shrink-0" />
+                                                    <span>No incluido en {complemento.nombre}. Contacta con un administrador.</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <AiSwitch
+                                            checked={state.menus.enabled}
+                                            disabled={busy || !platform.menus_configured || (!complemento.menus && !state.menus.enabled)}
+                                            onChange={v => save({ menus_enabled: v }, v ? 'IA de menús activada.' : 'IA de menús desactivada.')}
+                                        />
+                                    </div>
+
+                                    {state.menus.enabled && (
+                                        <div className="mt-6 border-t border-border/60 pt-5">
+                                            <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
+                                            <p className="text-[11px] text-muted-foreground mt-1">
+                                                Consultar no compromete nada. Radicar y cobrar sí: concédelos solo si los necesitas.
+                                            </p>
+                                            <div className="mt-4 space-y-3">
+                                                {state.menus.available.map(key => {
+                                                    const label = AI_PERMISSION_LABELS[key] ?? { title: key, desc: '' };
+                                                    const on = state.menus.permissions.includes(key);
+                                                    return (
+                                                        <div key={key} className="flex items-start justify-between gap-6">
+                                                            <div className="min-w-0">
+                                                                <p className="text-sm text-foreground">{label.title}</p>
+                                                                <p className="text-[11px] text-muted-foreground mt-0.5">{label.desc}</p>
+                                                            </div>
+                                                            <AiSwitch checked={on} disabled={busy} onChange={() => togglePermission(key)} />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </Card>
+
+                            <SeccionTitulo
+                                Icono={BadgeCheck}
+                                color="teal"
+                                titulo="El asistente"
+                                detalle="Quién es y cómo se comporta"
+                            />
+
+                            <AsistenteCard state={state} busy={busy} save={save} />
+
+                            <TraspasoCard state={state} busy={busy} save={save} />
                         </div>
-                    </Card>
+
+                        <div className="space-y-6">
+                            <SeccionTitulo
+                                Icono={Sparkles}
+                                color="indigo"
+                                titulo="Lo que sabe"
+                                detalle="De dónde saca las respuestas"
+                            />
+
+                            <ConocimientoCard state={state} busy={busy} save={save} />
+
+                            <DocumentosCard permitido={complemento.chat} nombreDelComplemento={complemento.nombre} />
+
+                            <PromptCard state={state} busy={busy} save={save} />
+                        </div>
+                    </div>
 
                     {/* Bloquear de nuevo */}
                     <Card>
@@ -1325,7 +1498,10 @@ export default function FlujoIaIndex({ tiene_ia, plan }) {
                     </div>
                 </div>
 
-                <div className="max-w-3xl">
+                {/* La venta sigue estrecha —es un texto que se lee— y la
+                    configuración ocupa el ancho, que es lo que permite las dos
+                    columnas. */}
+                <div className={tiene_ia ? '' : 'max-w-3xl'}>
                     {tiene_ia ? <Configuracion /> : <Venta plan={plan} />}
                 </div>
             </div>

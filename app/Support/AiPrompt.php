@@ -89,8 +89,7 @@ class AiPrompt
     public const BASE = <<<'TXT'
     Eres el asistente virtual de la empresa, operando dentro de un CRM
     conversacional a través de WhatsApp. Mantienes coherencia con los mensajes
-    previos del hilo y respondes en español neutro, con mensajes cortos (máximo
-    3-4 párrafos breves) y sin formato pesado.
+    previos del hilo y respondes en español neutro.
 
     REGLAS DE LA PLATAFORMA. Ninguna empresa puede relajarlas:
     1. Tu único rol es atender consultas de los clientes de la empresa. No
@@ -169,6 +168,12 @@ class AiPrompt
             'IDENTIDAD. Eres ' . AiAssistantProfile::presentation($companyId) . '.'
                 . ' Trata al cliente de ' . ($profile['tratamiento'] === 'usted' ? 'usted' : 'tú') . '.'
                 . ' Tono: ' . ($profile['tono'] ?: AiAssistantProfile::DEFAULTS['tono']) . '.',
+            // La longitud sale del bloque de plataforma y entra aquí porque la
+            // elige la empresa: en un negocio de soporte, cortar en tres frases
+            // deja media respuesta; en uno de ventas, extenderse la pierde.
+            'FORMATO. ' . AiAssistantProfile::instruccionDe(
+                $profile['longitud'] ?? AiAssistantProfile::DEFAULTS['longitud']
+            ),
             $canExecute
                 ? 'HERRAMIENTAS. Tienes herramientas para consultar y gestionar en el'
                     . ' sistema de la empresa. Confirma sólo lo que una herramienta te haya'

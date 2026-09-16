@@ -162,6 +162,7 @@ class AiFlowSettingsController extends Controller
             'assistant' => 'sometimes|array',
             'assistant.nombre_asistente' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_NAME,
             'assistant.tratamiento' => ['sometimes', Rule::in(AiAssistantProfile::TREATMENTS)],
+            'assistant.longitud' => ['sometimes', Rule::in(AiAssistantProfile::LONGITUDES)],
             'assistant.tono' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_TONE,
             'assistant.conocimiento' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_KNOWLEDGE,
             'assistant.limites' => 'sometimes|array|max:' . AiAssistantProfile::MAX_LIMITS,
@@ -327,6 +328,7 @@ class AiFlowSettingsController extends Controller
                 // saberlo.
                 'presentacion' => AiAssistantProfile::presentation($company->id),
                 'treatments' => AiAssistantProfile::TREATMENTS,
+                'longitudes' => AiAssistantProfile::LONGITUDES,
                 'limits' => [
                     'nombre_asistente' => AiAssistantProfile::MAX_NAME,
                     'tono' => AiAssistantProfile::MAX_TONE,

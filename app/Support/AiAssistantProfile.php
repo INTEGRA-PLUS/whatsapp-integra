@@ -30,6 +30,17 @@ class AiAssistantProfile
     /** Tratamientos que el flujo sabe aplicar. */
     public const TREATMENTS = ['tu', 'usted'];
 
+    /**
+     * Cuánto se extiende la IA al responder.
+     *
+     * No es una preferencia estética: en WhatsApp, un párrafo de más hace que
+     * el cliente deje de leer, y uno de menos deja una consulta de precios a
+     * medias. Depende del negocio, así que lo elige la empresa.
+     *
+     * El texto de cada una viaja al prompt tal cual desde `instruccionDe()`.
+     */
+    public const LONGITUDES = ['conciso', 'equilibrado', 'detallado'];
+
     public const MAX_NAME = 40;
     public const MAX_TONE = 120;
     public const MAX_KNOWLEDGE = 4000;
@@ -48,6 +59,10 @@ class AiAssistantProfile
         'nombre_asistente' => '',
         'tratamiento' => 'tu',
         'tono' => 'cordial, claro y profesional',
+        // Equilibrado y no conciso: es lo más parecido a lo que el flujo hacía
+        // antes de que esto se pudiera elegir, así que quien no lo toque no
+        // nota ningún cambio en cómo le responde su IA.
+        'longitud' => 'equilibrado',
         'conocimiento' => '',
         'limites' => [],
         'instrucciones' => '',
@@ -151,6 +166,9 @@ class AiAssistantProfile
                 ? $input['tratamiento']
                 : self::DEFAULTS['tratamiento'],
             'tono' => self::line($input['tono'] ?? '', self::MAX_TONE) ?: self::DEFAULTS['tono'],
+            'longitud' => in_array($input['longitud'] ?? null, self::LONGITUDES, true)
+                ? $input['longitud']
+                : self::DEFAULTS['longitud'],
             'conocimiento' => self::text($input['conocimiento'] ?? '', self::MAX_KNOWLEDGE),
             'limites' => collect($limits)
                 ->map(fn ($l) => self::line(is_scalar($l) ? (string) $l : '', self::MAX_LIMIT))
@@ -167,6 +185,31 @@ class AiAssistantProfile
                 is_scalar($input['instrucciones'] ?? null) ? (string) $input['instrucciones'] : ''
             ),
         ];
+    }
+
+    /**
+     * La instrucción de formato que corresponde a cada longitud.
+     *
+     * Está escrita en términos de **lo que el cliente ve en su WhatsApp** y no
+     * en tokens ni caracteres: un modelo obedece mucho mejor «una a tres
+     * frases» que «unos 200 caracteres», y lo segundo además no se puede
+     * comprobar de un vistazo.
+     *
+     * Este texto es el espejo de `instruccionDeLongitud()` en el nodo
+     * `Preparar contexto`. Si se toca uno hay que tocar el otro; manda el nodo,
+     * así que lo que se rompe si no es la vista previa del panel.
+     */
+    public static function instruccionDe(string $longitud): string
+    {
+        return match ($longitud) {
+            'conciso' => 'Responde en una a tres frases. Ve al grano y cierra rápido:'
+                . ' nada de introducciones ni de resúmenes de lo que acabas de decir.',
+            'detallado' => 'Puedes extenderte hasta cinco o seis párrafos breves cuando'
+                . ' haga falta, y usar viñetas cortas para precios, requisitos o pasos.'
+                . ' Aun así, nunca escribas un muro de texto sin separaciones.',
+            default => 'Mensajes cortos: máximo tres o cuatro párrafos breves, sin'
+                . ' markdown pesado ni bloques largos.',
+        };
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppAiClient;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\AiAssistantProfile;
+use App\Support\AiPrompt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -359,5 +360,41 @@ class AiAssistantProfileTest extends TestCase
             ->assertStatus(403);
 
         $this->assertSame('', AiAssistantProfile::settings($this->company->id)['nombre_asistente']);
+    }
+
+    /**
+     * La longitud de respuesta viaja al flujo y cambia el prompt.
+     *
+     * No es una preferencia estética: en WhatsApp un párrafo de más hace que el
+     * cliente deje de leer, y uno de menos deja una consulta de precios a
+     * medias. Depende del negocio, y por eso la elige la empresa.
+     */
+    public function test_la_longitud_elegida_llega_al_prompt(): void
+    {
+        $company = Company::create([
+            'name' => 'Fibra XYZ', 'slug' => 'fibra-longitud-'.uniqid(), 'active' => true,
+        ]);
+
+        // Por defecto, lo mismo que hacía el flujo antes de que esto existiera.
+        $this->assertSame('equilibrado', AiAssistantProfile::settings($company->id)['longitud']);
+        $this->assertStringContainsString('tres o cuatro párrafos', AiPrompt::compose($company->id, false));
+
+        AiAssistantProfile::save($company->id, ['longitud' => 'conciso']);
+
+        $this->assertSame('conciso', AiAssistantProfile::payload($company->id, false)['longitud']);
+        $this->assertStringContainsString('una a tres frases', AiPrompt::compose($company->id, false));
+    }
+
+    /** Una longitud inventada cae al valor por defecto y no llega al prompt. */
+    public function test_una_longitud_desconocida_no_se_cuela(): void
+    {
+        $company = Company::create([
+            'name' => 'Fibra XYZ', 'slug' => 'fibra-longitud-mala-'.uniqid(), 'active' => true,
+        ]);
+
+        AiAssistantProfile::save($company->id, ['longitud' => 'kilométrico']);
+
+        $this->assertSame('equilibrado', AiAssistantProfile::settings($company->id)['longitud']);
+        $this->assertStringNotContainsString('kilométrico', AiPrompt::compose($company->id, false));
     }
 }
