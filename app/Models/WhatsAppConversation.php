@@ -492,15 +492,25 @@ class WhatsAppConversation extends Model
         $this->increment('unread_count');
     }
 
+    /**
+     * Las dos letras del avatar.
+     *
+     * `mb_substr` y no `substr`: el segundo corta BYTES, y en UTF-8 una vocal
+     * con tilde ocupa dos. «Óscar Iván Bedoya» salía como «?!» en la bandeja
+     * —medio carácter roto que el navegador pinta como interrogante— y lo mismo
+     * le pasaba a «Úsuga», «Ángela» o «Íngrid», que de raros no tienen nada en
+     * Colombia. Se vio montando la cuenta de demostración.
+     */
     public function getInitialsAttribute()
     {
         $name = $this->name ?? $this->phone_number ?? 'U';
-        $words = explode(' ', $name);
+        $words = preg_split('/\s+/', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [$name];
+
         if (count($words) >= 2) {
-            return strtoupper(substr($words[0], 0, 1).substr($words[1], 0, 1));
+            return mb_strtoupper(mb_substr($words[0], 0, 1).mb_substr($words[1], 0, 1));
         }
 
-        return strtoupper(substr($name, 0, 2));
+        return mb_strtoupper(mb_substr($name, 0, 2));
     }
 
     public function scopeOpen($query)
