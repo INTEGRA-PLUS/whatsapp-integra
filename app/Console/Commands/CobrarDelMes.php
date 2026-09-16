@@ -36,18 +36,24 @@ class CobrarDelMes extends Command
 
         if ($datos['cobrar'] === []) {
             $this->warn('No hay a quién cobrarle este mes.');
-            $this->line('Es lo esperado mientras todas las empresas estén en cortesía:');
-            $this->line('la transición se hace cambiando `cobro` a `activo` desde el panel maestro.');
+            $this->line('Es lo esperado: casi toda la base llegó con Integra y el CRM va dentro');
+            $this->line('de lo que ya paga por el ERP. Empiezan a aparecer aquí el día que');
+            $this->line('contratan el complemento de IA, que es la venta que se busca.');
         } else {
             $this->table(
-                ['Empresa', 'Plan', 'Tramo', 'Reales', 'USD/mes', 'Aviso'],
+                ['Empresa', 'Plan CRM', 'IA', 'Concepto', 'Contactos', 'Agentes', 'USD/mes', 'Aviso'],
                 collect($datos['cobrar'])->map(fn (array $f) => [
                     $f['empresa'],
                     $f['plan'],
-                    $f['tramo'] ? number_format($f['tramo']) : '—',
+                    $f['ia'],
+                    // Decirlo aquí evita que quien factura se pregunte por qué
+                    // este cliente paga menos que el de al lado: su CRM va
+                    // dentro del ERP y aquí sólo se le cobra el complemento.
+                    $f['solo_ia'] ? 'sólo IA' : 'CRM + IA',
                     number_format($f['contactos_reales']),
-                    $f['usd'] ? '$'.$f['usd'] : 'a cotizar',
-                    $f['se_paso'] ? '⚠ pasado del tramo' : '',
+                    $f['agentes_reales'],
+                    $f['usd'] ? '$'.$f['usd'] : 'sin plan',
+                    $f['se_paso_de'] ? '⚠ pasado de '.implode(' y ', $f['se_paso_de']) : '',
                 ])->all()
             );
 
@@ -56,7 +62,7 @@ class CobrarDelMes extends Command
             $this->line('  <fg=green>Total:</> $'.number_format($datos['total_usd']).' USD/mes');
 
             if ($datos['sin_tramo']) {
-                $this->warn("  {$datos['sin_tramo']} sin tramo asignado: hay que cotizarlas a mano.");
+                $this->warn("  {$datos['sin_tramo']} con el cobro activo y precio cero: hay que ponerles plan.");
             }
         }
 
