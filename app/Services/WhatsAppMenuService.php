@@ -102,7 +102,7 @@ class WhatsAppMenuService
             return $this->handOverToAi($instance, $conversation, $messageData, $wamid);
         }
 
-        if ($this->isInCooldown($menu, $conversation)) {
+        if ($this->isInCooldown($menu, $conversation, $reabierta)) {
             Log::channel('whatsapp')->info('⏭️ Menú omitido: en cooldown', [
                 'menu_id' => $menu->id,
                 'conversation_id' => $conversation->id,
@@ -507,8 +507,22 @@ class WhatsAppMenuService
             ?? null;
     }
 
-    private function isInCooldown(WhatsAppMenu $menu, WhatsAppConversation $conversation): bool
-    {
+    private function isInCooldown(
+        WhatsAppMenu $menu,
+        WhatsAppConversation $conversation,
+        bool $reabierta = false
+    ): bool {
+        // Una conversación que se cerró y el cliente reabre escribiendo empieza
+        // de cero: la espera existe para no repetir el menú si escribe tres
+        // veces seguidas, no para castigar a quien vuelve al rato.
+        //
+        // Sin esto, el saludo de la reapertura se anunciaba y no salía —«el
+        // menú se disparó pero está en cooldown»— y quedaba imposible de
+        // probar: cerrar y reabrir es justo lo que uno hace para probarlo.
+        if ($reabierta) {
+            return false;
+        }
+
         $minutes = $menu->cooldown_minutes ?? 0;
 
         if ($minutes <= 0) {

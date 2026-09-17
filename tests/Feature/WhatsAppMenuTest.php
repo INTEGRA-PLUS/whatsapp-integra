@@ -1006,6 +1006,12 @@ class WhatsAppMenuTest extends TestCase
             'match_types' => ['welcome'],
             // En 0 el reloj no saluda nunca: lo que saluda aquí es la reapertura.
             'saludar_de_nuevo_horas' => 0,
+            // Y con la espera entre envíos puesta, que es lo que trae de
+            // fábrica: la reapertura tiene que poder saltársela. Sin esto el
+            // saludo se disparaba y se quedaba «en cooldown», que es
+            // exactamente lo que hace imposible probarlo —cerrar y reabrir es
+            // lo que uno hace para probar.
+            'cooldown_minutes' => 60,
         ]);
 
         $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
