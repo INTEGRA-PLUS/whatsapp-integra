@@ -38,10 +38,25 @@ de reemplazar, cambia el `id` antes.
 | `gateway-chat-validar-entrada.js` | 01 · Chatbot Gateway (Ingest), nodo `Validar entrada` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `gateway-chat-armar-job.js` | 01 · Chatbot Gateway (Ingest), nodo `Armar job` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `worker-chat-preparar-contexto.js` | 02 · Chatbot Worker (Ollama), nodo `Preparar contexto` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
-| `worker-chat-responder.js` | 02 · Chatbot Worker (Ollama), nodo `Responder` | este fichero |
+| `worker-chat-formatear-respuesta.js` | 02 · Chatbot Worker (Ollama), nodo `Formatear respuesta` | este fichero |
+| `worker-chat-formatear-fallback.js` | 02 · Chatbot Worker (Ollama), nodo `Formatear fallback` | este fichero |
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.
+
+## Qué nodo toca cuando añades un campo al contrato
+
+*17-sep-2026.* El worker arma su salida **campo por campo** en tres nodos
+—`Formatear respuesta`, `Formatear fallback` y `Respuesta degradada`— y de ahí
+en adelante `Guardar resultado` y `Publicar en canal` serializan `$json` entero
+(`JSON.stringify($json)`), igual que `Responder respuesta` en el gateway.
+
+Eso significa que **un campo nuevo sólo hay que nombrarlo en esos tres nodos**;
+lo demás lo deja pasar. Y también que si te olvidas de uno, el campo desaparece
+justo en la rama que menos se prueba: el modelo primario caído.
+
+Es la misma trampa que el `asistente` del 16-sep, pero en el otro extremo del
+flujo.
 
 Los `.js` son **nodos sueltos, no flujos**: se pegan en el canvas
 reemplazando el contenido entero del nodo que nombra el fichero. Están aquí
