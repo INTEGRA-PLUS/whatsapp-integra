@@ -844,6 +844,24 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             onMove={delta => moveOption(index, delta)}
                         />
                     ))}
+
+                    {/* El mismo botón que arriba, al final de la lista. Una
+                        opción ocupa media pantalla —acciones, «Qué pasa», el
+                        texto, la vista previa—, así que con dos o tres ya hay
+                        que subir hasta la cabecera para añadir la siguiente, y
+                        volver a bajar a rellenarla. Es el mismo viaje que se
+                        ahorró con «Nuevo menú». */}
+                    <button
+                        type="button"
+                        onClick={addOption}
+                        disabled={options.length >= limits.max_rows}
+                        className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border/70 py-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-muted/30 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                    >
+                        <Plus className="size-3.5" />
+                        {options.length >= limits.max_rows
+                            ? `Ya tienes el máximo de ${limits.max_rows} opciones`
+                            : 'Añadir otra opción'}
+                    </button>
                 </div>
 
                 {/* ── Paso 4: ajustes y guardar ── */}
