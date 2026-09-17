@@ -318,6 +318,78 @@ class MenuReviewTest extends TestCase
     }
 
     /** @param list<array<string, mixed>> $options */
+    /**
+     * Un submenú del que no se puede volver.
+     *
+     * El cliente entra en «Crédito», ve cuatro cosas que no eran lo suyo y se
+     * queda ahí: para volver tiene que acordarse de escribir una palabra clave
+     * que nadie le ha dicho. Los menús buenos de WhatsApp cierran siempre con
+     * «Ir al menú anterior».
+     *
+     * @test
+     */
+    public function un_submenu_sin_vuelta_se_avisa(): void
+    {
+        $company = $this->bareCompany();
+
+        $submenu = WhatsAppMenu::create([
+            'company_id' => $company->id, 'name' => 'Crédito',
+            'body_text' => '¿Qué necesitas?', 'is_root' => false,
+            'match_types' => [], 'active' => true,
+        ]);
+        $submenu->options()->create([
+            'position' => 0, 'title' => 'Cuota del mes',
+            'action_type' => 'reply_text', 'reply_text' => 'Tu cuota es…',
+        ]);
+
+        $raiz = $this->menuWith($company, [['title' => 'Crédito', 'action_type' => 'submenu']]);
+        $raiz->options->first()->update(['target_menu_id' => $submenu->id]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities()
+        );
+
+        $aviso = collect($issues)->firstWhere('menu', 'Crédito');
+
+        $this->assertNotNull($aviso, 'Tiene que avisar del submenú sin salida.');
+        $this->assertSame(MenuReview::WARNING, $aviso['level'], 'Es un aviso: el menú responde, sólo deja atrapado.');
+        $this->assertStringContainsString('no se puede volver', $aviso['says']);
+    }
+
+    /** Con una opción que vuelve a otro menú, no hay nada que avisar. */
+    public function test_un_submenu_con_vuelta_no_se_avisa(): void
+    {
+        $company = $this->bareCompany();
+
+        $submenu = WhatsAppMenu::create([
+            'company_id' => $company->id, 'name' => 'Crédito',
+            'body_text' => '¿Qué necesitas?', 'is_root' => false,
+            'match_types' => [], 'active' => true,
+        ]);
+
+        $raiz = $this->menuWith($company, [['title' => 'Crédito', 'action_type' => 'submenu']]);
+        $raiz->options->first()->update(['target_menu_id' => $submenu->id]);
+
+        $submenu->options()->create([
+            'position' => 0, 'title' => 'Cuota del mes',
+            'action_type' => 'reply_text', 'reply_text' => 'Tu cuota es…',
+        ]);
+        $submenu->options()->create([
+            'position' => 1, 'title' => 'Volver',
+            'action_type' => 'submenu', 'target_menu_id' => $raiz->id,
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities()
+        );
+
+        $this->assertNull(
+            collect($issues)->first(fn ($i) => str_contains($i['says'], 'no se puede volver'))
+        );
+    }
+
     private function menuWith(Company $company, array $options): WhatsAppMenu
     {
         $menu = WhatsAppMenu::create([

@@ -107,6 +107,16 @@ class MenuReview
         $byMissing = [];
 
         foreach ($menus as $menu) {
+            if ($aviso = self::submenuSinVuelta($menu, $menus)) {
+                $issues[] = $aviso + [
+                    'menu_id' => $menu->id,
+                    'menu' => $menu->name,
+                    'option_id' => null,
+                    'option' => null,
+                    'action' => ['kind' => 'menu', 'label' => 'Añadir la vuelta'],
+                ];
+            }
+
             foreach ($menu->options as $option) {
                 if (! $tokenDead && $missing = IntegraCapabilities::missingFor($option, $capabilities)) {
                     $key = implode('|', $missing);
@@ -216,6 +226,58 @@ class MenuReview
      * @param \Illuminate\Support\Collection<int, WhatsAppMenu> $menus
      * @return list<array{level: string, says: string, fix: string}>
      */
+    /**
+     * Un submenú del que no se puede volver.
+     *
+     * El cliente entra en «Crédito», ve cuatro cosas que no eran lo suyo, y se
+     * queda ahí: para volver al menú principal tiene que acordarse de escribir
+     * una palabra clave que nadie le ha dicho. Los menús buenos de WhatsApp
+     * —Bancolombia, por ejemplo— cierran **siempre** con «Ir al menú anterior».
+     *
+     * Vale cualquiera de las dos salidas: una opción que abra otro menú, o una
+     * que pase a un asesor. Lo que no vale es ninguna.
+     *
+     * Es un aviso y no un bloqueo: el menú responde perfectamente, sólo deja al
+     * cliente en un callejón.
+     *
+     * @param \Illuminate\Support\Collection $menus
+     * @return ?array{level: string, says: string, fix: string}
+     */
+    private static function submenuSinVuelta(WhatsAppMenu $menu, $menus): ?array
+    {
+        // Sólo los submenús: de un menú raíz se sale escribiendo, porque el
+        // cliente llegó ahí escribiendo.
+        if ($menu->is_root || $menu->options->isEmpty()) {
+            return null;
+        }
+
+        // Un submenú al que no llega nadie es otro problema, y ya se avisa
+        // desde la opción que lo abre.
+        $alcanzable = $menus->contains(
+            fn (WhatsAppMenu $m) => $m->options->contains(
+                fn (WhatsAppMenuOption $o) => (int) $o->target_menu_id === (int) $menu->id
+            )
+        );
+
+        if (! $alcanzable) {
+            return null;
+        }
+
+        $tieneSalida = $menu->options->contains(
+            fn (WhatsAppMenuOption $o) => in_array($o->action_type, ['submenu', 'handoff'], true)
+        );
+
+        if ($tieneSalida) {
+            return null;
+        }
+
+        return [
+            'level' => self::WARNING,
+            'says' => 'De este submenú no se puede volver: el cliente que entra no tiene cómo salir.',
+            'fix' => 'Añádele una última opción «Volver» con la acción «Abrir otro menú» apuntando al menú principal. También vale una que pase a un asesor.',
+        ];
+    }
+
     private static function optionIssues(
         WhatsAppMenu $menu,
         WhatsAppMenuOption $option,
