@@ -1414,8 +1414,13 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                         // existe —y que es justo la que habría que venderle—.
                         const bloqueado = (group === 'integra' && !integra.connected)
                             || (group === 'ia' && !iaDisponible);
+                        // Mandaba a «IA que responde» y no era el camino
+                        // más corto: el selector de arriba de esta misma
+                        // pantalla —«Menú + IA» o «Con IA»— enciende «IA en los
+                        // chats» al aplicarse (ModoDeAtencion::aplicar). Manda
+                        // a la otra pantalla a quien lo tiene a un clic.
                         const motivo = group === 'ia'
-                            ? 'enciende «IA en los chats» en «IA que responde»'
+                            ? 'elige «Menú + IA» arriba en esta pantalla'
                             : 'conecta Integra para usarlas';
                         const etiqueta = bloqueado
                             ? `${GROUP_LABELS[group]} — ${motivo}`
@@ -1470,8 +1475,10 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                 <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="size-3.5 shrink-0 mt-px" />
                     <span>
-«IA en los chats» está apagada —no es la misma que «IA para los menús»—, así que hoy
-                        esta opción pasa el chat a un asesor en vez de responder. Enciéndela en «IA que responde».
+«IA en los chats» está apagada, así que hoy esta opción pasa el chat a un asesor en vez
+                        de responder. Se enciende eligiendo <strong>«Menú + IA»</strong> —o «Con IA»— arriba en esta
+                        pantalla, o desde «IA que responde», donde además se ve en qué se diferencia de
+                        «IA para los menús».
                     </span>
                 </p>
             )}

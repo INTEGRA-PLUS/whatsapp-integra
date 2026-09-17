@@ -292,7 +292,7 @@ class MenuReview
             $issues[] = [
                 'level' => self::WARNING,
                 'says' => 'La contesta la IA, pero «IA en los chats» está apagada: hoy esta opción pasa el chat a un asesor.',
-                'fix' => 'Enciende «IA en los chats» en «IA que responde» —no es la misma que «IA para los menús»—, o cámbiale la acción.',
+                'fix' => 'Elige «Menú + IA» en «¿Cómo quieres atender?», arriba en esta misma pantalla —o enciende «IA en los chats» en «IA que responde»—. O cámbiale la acción.',
             ];
         }
 
