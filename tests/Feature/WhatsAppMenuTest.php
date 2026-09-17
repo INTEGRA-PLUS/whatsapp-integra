@@ -1026,4 +1026,80 @@ class WhatsAppMenuTest extends TestCase
         $this->assertSame(2, (int) $menu->refresh()->fires_count);
         $this->assertSame('open', WhatsAppConversation::first()->status, 'Y el chat queda abierto otra vez.');
     }
+
+    // ------------------------------------------------------------------
+    // Cómo se vuelve al menú
+    // ------------------------------------------------------------------
+
+    /**
+     * Lo que contesta una opción dice cómo volver a ver la lista.
+     *
+     * El cliente toca «Horarios», lee la respuesta y se queda ahí: para volver
+     * tiene que subir en el chat y desplegar un menú de hace cinco mensajes.
+     *
+     * @test
+     */
+    public function la_respuesta_de_una_opcion_dice_como_volver(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Horarios'], [
+            'match_types' => ['welcome', 'contains'],
+            'trigger_text' => 'menu, opciones',
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first(), 'wamid.B'))->assertOk();
+
+        $respuesta = collect($this->textsSent())->last();
+
+        $this->assertStringContainsString('Respuesta de Horarios', $respuesta);
+        $this->assertStringContainsString('Escribe *menu* para volver a las opciones', $respuesta);
+    }
+
+    /**
+     * Pero NO se promete si no hay ningún menú escuchando esa palabra.
+     *
+     * Decir «escribe menu» donde nadie contesta a «menu» es peor que no decir
+     * nada: el cliente lo escribe, no pasa nada, y deja de creerse el resto.
+     *
+     * @test
+     */
+    public function sin_palabras_clave_no_se_promete_la_vuelta(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Horarios'], [
+            'match_types' => ['welcome'],
+            'trigger_text' => null,
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first(), 'wamid.B'))->assertOk();
+
+        $this->assertStringNotContainsString('para volver a las opciones', collect($this->textsSent())->last());
+    }
+
+    /** Y un traspaso a una persona tampoco lo dice: ahí viene alguien detrás. */
+    public function test_el_traspaso_no_dice_como_volver(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Hablar con alguien'], [
+            'match_types' => ['welcome', 'contains'],
+            'trigger_text' => 'menu',
+        ]);
+        $menu->options->first()->update([
+            'action_type' => 'handoff',
+            'reply_text' => 'Te paso con una persona.',
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $menu->options->first(), 'wamid.B'))->assertOk();
+
+        $this->assertStringNotContainsString('para volver a las opciones', collect($this->textsSent())->last());
+    }
 }

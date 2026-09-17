@@ -844,6 +844,59 @@ class ProcessWhatsAppMenu implements ShouldQueue
         ], fn ($v) => $v !== null && $v !== '');
     }
 
+    /**
+     * Cómo se vuelve al menú, dicho al final de lo que contesta una opción.
+     *
+     * El cliente toca «Horarios», lee la respuesta, y se queda ahí: para volver
+     * a ver la lista tiene que subir en el chat y desplegar un menú de hace
+     * cinco mensajes, o adivinar una palabra clave que nadie le dijo. Los menús
+     * buenos de WhatsApp —Bancolombia— cierran siempre con cómo volver.
+     *
+     * Sólo se dice si es **verdad**: hace falta un menú encendido que se
+     * dispare con palabras, y se usa la primera suya. Prometer «escribe menu»
+     * donde no hay ningún menú escuchando esa palabra es peor que no decir nada.
+     *
+     * Devuelve el texto tal cual cuando no aplica.
+     */
+    private function conVueltaAlMenu(Instance $instance, string $texto, array $metadata): string
+    {
+        $optionId = $metadata['menu_option_id'] ?? null;
+
+        if (! $optionId || trim($texto) === '') {
+            return $texto;
+        }
+
+        $option = WhatsAppMenuOption::find($optionId);
+
+        // Un traspaso a una persona, un submenú o una opción sin acción no
+        // dejan al cliente en un callejón: en los tres casos viene algo detrás.
+        if (! $option || in_array($option->action_type, ['handoff', 'submenu', WhatsAppMenuOption::ACTION_NONE], true)) {
+            return $texto;
+        }
+
+        $palabra = WhatsAppMenu::active()
+            ->root()
+            ->where('company_id', $instance->company_id)
+            ->where(function ($q) use ($instance) {
+                $q->whereNull('instance_id')->orWhere('instance_id', $instance->id);
+            })
+            ->has('options')
+            ->get()
+            ->flatMap(fn (WhatsAppMenu $m) => $m->keywords())
+            ->first();
+
+        if (! $palabra) {
+            return $texto;
+        }
+
+        // Si ya lo dice el propio texto de la empresa, no se repite.
+        if (str_contains(mb_strtolower($texto), mb_strtolower($palabra))) {
+            return $texto;
+        }
+
+        return $texto."\n\n_Escribe *".$palabra."* para volver a las opciones._";
+    }
+
     private function deliverText(
         Instance $instance,
         WhatsAppConversation $conversation,
@@ -851,6 +904,8 @@ class ProcessWhatsAppMenu implements ShouldQueue
         string $text,
         array $metadata
     ): void {
+        $text = $this->conVueltaAlMenu($instance, $text, $metadata);
+
         $result = $meta->sendMessage(
             $instance->phone_number_id,
             $conversation->recipientId(),
