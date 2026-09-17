@@ -207,6 +207,16 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     </div>
                 </div>
 
+
+                {/* La decisión va primero: qué recibe un cliente cuando
+                    escribe. Todo lo demás de esta pantalla son detalles de esa
+                    decisión, y leerlos antes obliga a deducir qué habría que
+                    cambiar. */}
+                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'ai', 'integra'] })} />
+
+                {/* Y debajo, el paso a paso de esa decisión. */}
+                <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
+
                 <AiSwitch ai={ai} integra={integra} />
 
                 {menus.length > 0 && (
@@ -216,23 +226,18 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     }} />
                 )}
 
-                {/* Sólo a quien le sirve: si ya tiene las opciones de
-                    autoservicio puestas, el botón no haría nada visible. */}
-                {integra.puede_aplicar_plantilla && <PlantillaIsp conectado={integra.connected} />}
-
-                {/* Primero la decisión —cómo quiere atender— y debajo el
-                    detalle de qué pasa paso a paso. Al revés, el admin tiene
-                    que leerse ocho pasos para deducir qué debería cambiar. */}
-                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'ai'] })} />
-
-                <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
+                {/* Integra sólo aparece para quien lo usa. Una barbería no tiene
+                    por qué enterarse de que existe un ERP de ISPs. */}
+                {integra.usa && integra.puede_aplicar_plantilla && (
+                    <PlantillaIsp conectado={integra.connected} />
+                )}
 
                 {menus.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
                         <ListTree className="size-12 text-muted-foreground/40 mb-4" />
                         <p className="text-lg font-medium text-foreground">Aún no tienes menús</p>
                         <p className="text-sm text-muted-foreground mt-1">
-                            Por ejemplo: al primer mensaje del cliente, ofrecerle "Consultar factura", "Pagar en línea" o "Hablar con un asesor".
+                            Por ejemplo: al primer mensaje del cliente, ofrecerle "Ver precios", "Horarios y ubicación" o "Hablar con una persona".
                         </p>
                         <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2 mt-5">
                             <HelpCircle className="size-4" /> Ver cómo se arma uno
@@ -2116,9 +2121,11 @@ function AiSwitch({ ai, integra = {} }) {
                 </Button>
             </div>
 
-            {/* Los permisos sólo se muestran con la IA encendida: apagada, no
-                hay nada que acotar y sólo serían tres casillas sin efecto. */}
-            {encendida && catalogo.length > 0 && (
+            {/* Los permisos sólo se muestran con la IA encendida —apagada no
+                hay nada que acotar— y sólo a quien usa Integra: los tres lo
+                consultan, así que para una barbería son tres casillas sobre un
+                ERP de ISPs que no ha contratado. */}
+            {encendida && catalogo.length > 0 && integra.usa && (
                 <div className="mt-4 border-t pt-4">
                     <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -2127,7 +2134,7 @@ function AiSwitch({ ai, integra = {} }) {
                     {/* Estos tres permisos consultan Integra. Sin conectarlo no
                         hacen nada, y una casilla marcada que no ejecuta nada es
                         una promesa que el cliente no va a ver cumplida. */}
-                    {integra.connected === false && (
+                    {integra.usa && integra.connected === false && (
                         <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
                             <Plug className="size-3.5 shrink-0 mt-px" />
                             Estos tres consultan tu software Integra, que no está conectado: hoy la IA pasa

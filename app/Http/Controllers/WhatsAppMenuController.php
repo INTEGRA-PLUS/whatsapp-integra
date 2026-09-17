@@ -42,6 +42,14 @@ class WhatsAppMenuController extends Controller
             // como botones o como lista?"), y se deduce del número de opciones.
             ->each(fn (WhatsAppMenu $menu) => $menu->setAttribute('format', $menu->format()));
 
+        // Integra es un extra para ISPs. Quien no lo usa no debe leer ni una
+        // palabra sobre él: ni permisos de IA que lo consultan, ni avisos de si
+        // está conectado, ni la plantilla. Se decide una vez y manda en toda la
+        // pantalla.
+        $integraConectado = Integra::connected($user->company_id);
+        $tieneAutoservicio = $this->yaTieneAutoservicio($menus);
+        $usaIntegra = $integraConectado || $tieneAutoservicio;
+
         $instances = Instance::where('company_id', $user->company_id)
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -74,11 +82,18 @@ class WhatsAppMenuController extends Controller
             // el formulario lo avisa en vez de dejar que el admin arme un menú
             // que en producción sólo va a derivar chats a un asesor.
             'integra' => [
-                'connected' => Integra::connected($user->company_id),
+                'connected' => $integraConectado,
                 // ¿Le serviría de algo la plantilla de ISP? Sólo si NO tiene ya
                 // las opciones de autoservicio puestas. Ofrecérsela a quien ya
                 // las tiene es un botón que no hace nada visible.
-                'puede_aplicar_plantilla' => ! $this->yaTieneAutoservicio($menus),
+                'puede_aplicar_plantilla' => $usaIntegra && ! $tieneAutoservicio,
+                // **La llave de todo lo que menciona Integra en esta pantalla.**
+                //
+                // Una barbería no tiene por qué enterarse de que existe un ERP
+                // de ISPs, ni de si está conectado. Integra sólo aparece para
+                // quien lo usa: lo tiene conectado, o tiene puestas en su menú
+                // las opciones que lo consultan.
+                'usa' => $usaIntegra,
             ],
             // Qué le pasa hoy a un cliente que escribe. La pregunta «¿sale
             // primero un menú o la IA?» no tenía respuesta en ninguna pantalla,

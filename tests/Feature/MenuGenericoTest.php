@@ -127,6 +127,46 @@ class MenuGenericoTest extends TestCase
         $this->assertSame($textosAntes, $menu->body_text);
     }
 
+    /**
+     * Una barbería no ve ni una palabra sobre Integra.
+     *
+     * Ni los permisos de la IA que lo consultan, ni si está conectado, ni la
+     * plantilla. Integra es un ERP de ISPs: para quien no lo usa, cada mención
+     * es una pregunta que no sabe responder («¿tengo que contratar eso?»).
+     *
+     * La llave es una sola —`integra.usa`— y vale lo mismo en toda la pantalla:
+     * lo tiene conectado, o tiene puestas las opciones que lo consultan.
+     */
+    public function test_una_barberia_no_ve_nada_de_integra(): void
+    {
+        $company = Company::create(['name' => 'Barbería', 'slug' => 'barberia', 'active' => true]);
+        $this->comoAdmin($company);
+
+        $integra = $this->get(route('whatsapp-menus.index'))
+            ->assertOk()
+            ->viewData('page')['props']['integra'];
+
+        $this->assertFalse($integra['usa'], 'Sin Integra conectado y sin opciones suyas, no se menciona.');
+        $this->assertFalse($integra['puede_aplicar_plantilla'], 'Ni se le ofrece la plantilla.');
+    }
+
+    /** Y en cuanto tiene las opciones puestas, sí: ahí el aviso le sirve. */
+    public function test_con_opciones_de_autoservicio_integra_si_aparece(): void
+    {
+        $company = Company::create(['name' => 'Fibra', 'slug' => 'fibra-usa', 'active' => true]);
+        $this->comoAdmin($company);
+
+        $this->post(route('whatsapp-menus.plantilla-isp'))->assertRedirect();
+
+        $integra = $this->get(route('whatsapp-menus.index'))
+            ->assertOk()
+            ->viewData('page')['props']['integra'];
+
+        $this->assertTrue($integra['usa']);
+        // Y ya no se le ofrece la plantilla: ya la tiene.
+        $this->assertFalse($integra['puede_aplicar_plantilla']);
+    }
+
     private function usaIntegra(WhatsAppMenu $menu): bool
     {
         return $menu->options->contains(
