@@ -65,7 +65,21 @@ const fillVars = text => (text ?? '')
     .split('{wa_id}').join(SAMPLE.wa_id);
 
 /** Mismo recorte que hace el backend antes de mandar el menú a Meta. */
-const cut = (text, max) => (text.length > max ? text.slice(0, max) : text);
+/**
+ * Recorta como recorta WhatsApp, pero **sin partir un emoji**.
+ *
+ * `slice` cuenta unidades UTF-16 y un emoji ocupa dos, así que cortar por en
+ * medio deja medio carácter y el cliente ve un «▯». `Array.from` recorre por
+ * caracteres de verdad.
+ */
+const cut = (text, max) => {
+    const letras = Array.from(text ?? '');
+
+    return letras.length > max ? letras.slice(0, max).join('') : (text ?? '');
+};
+
+/** Cuántos caracteres de verdad tiene, contando cada emoji como uno. */
+const largo = text => Array.from(text ?? '').length;
 
 /**
  * Los selects devuelven strings y el backend espera enteros en los ids de
@@ -575,7 +589,6 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
     // Como botón sólo caben 20 caracteres, pero el campo admite 24 porque en
     // lista sí caben. Añadir una cuarta opción cambia el formato del menú, así
     // que el aviso aparece y desaparece solo según cuántas opciones haya.
-    const tooLongForButton = !isList && options.some(o => o.title.length > limits.max_button_title);
 
     const setOption = (index, patch) => setForm(f => ({
         ...f,
@@ -850,12 +863,6 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                         con un emoji (ej: 📄 Consultar factura).
                     </p>
 
-                    {tooLongForButton && (
-                        <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
-                            <AlertTriangle className="size-3.5 shrink-0 mt-px" />
-                            Como botón sólo se muestran {limits.max_button_title} caracteres del título. Los más largos se recortarán.
-                        </p>
-                    )}
 
                     {isList && (
                         <Field label="Texto del botón que abre la lista" value={form.list_button_text}
@@ -1468,6 +1475,15 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
     // enseñar nada.
     const tone = GROUP_TONES[meta?.group] ?? GROUP_TONES.core;
 
+    // Lo que el cliente verá de verdad del título, y qué se pierde. WhatsApp
+    // recorta por su cuenta y sin avisar: 20 caracteres como botón, 24 en lista.
+    const limiteVisible = isList ? limits.max_row_title : limits.max_button_title;
+    const recortado = largo(option.title) > limiteVisible ? cut(option.title, limiteVisible) : null;
+    // El caso que trajo esto: el título cabe justo y el emoji se queda fuera.
+    // Decir «acórtalo» ahí no sirve —no sobra texto, sobra el sitio del emoji—.
+    const sePierdeEmoji = recortado !== null
+        && /\p{Extended_Pictographic}/u.test(option.title.slice(recortado.length));
+
     // Lo que va mal en esta opción, con las mismas palabras que la revisión de
     // arriba: si el aviso te trajo hasta aquí, tienes que reconocerlo.
     const problem = describeOption(option, actionMeta,
@@ -1524,6 +1540,23 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                     </button>
                 </div>
             </div>
+
+            {/* El aviso vivía arriba, uno solo para todo el menú y sin decir de
+                qué opción hablaba: «Como botón sólo se muestran 20 caracteres».
+                Con «Horarios de atención 📅» —20 justos más el emoji— el emoji
+                desaparecía de la vista previa y no había forma de saber por qué.
+                Ahora va en la opción y enseña el resultado exacto. */}
+            {recortado !== null && (
+                <p className="flex items-start gap-1.5 text-[11px] text-warning">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                    <span>
+                        {isList ? 'En la lista' : 'Como botón'} sólo caben {limiteVisible} caracteres, así que
+                        el cliente verá «<strong>{recortado}</strong>». {sePierdeEmoji
+                            ? 'El emoji del final no entra: ponlo al principio del título y sí se verá.'
+                            : 'Acórtalo si quieres que se lea entero.'}
+                    </span>
+                </p>
+            )}
 
             {broken && (
                 <p className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
