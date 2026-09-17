@@ -37,7 +37,7 @@ export const MATCH_HELP = {
         // contacto, contando desde siempre. Un cliente que ya te escribió hace
         // meses no vuelve a recibirlo nunca, y probar con tu propio número —que
         // ya escribió— hace pensar que el menú está roto.
-        when: 'La primerísima vez que ese contacto te escribe, diga lo que diga. Sólo una vez en la vida: quien ya te escribió alguna vez no vuelve a recibirlo.',
+        when: 'La primera vez que ese contacto te escribe, diga lo que diga. Y otra vez cuando vuelve tras un silencio largo, o cuando escribe después de que el chat se cerrara.',
         example: 'Buenas tardes',
     },
     contains: {

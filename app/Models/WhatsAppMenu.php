@@ -77,9 +77,18 @@ class WhatsAppMenu extends Model
      * en la vida del contacto— y se deja a mano porque hay negocios a los que
      * saludar dos veces les parece un error del sistema.
      */
-    public function tocaSaludar(?float $horasDeSilencio): bool
+    public function tocaSaludar(?float $horasDeSilencio, bool $reabierta = false): bool
     {
         if ($horasDeSilencio === null) {
+            return true;
+        }
+
+        // Un chat cerrado que el cliente reabre escribiendo **siempre** vuelve a
+        // saludarse, aunque cerrara hace cinco minutos y aunque las horas estén
+        // en 0. Cerrar es un acto deliberado de la empresa que dice «esto se
+        // terminó»; que el cliente escriba después es empezar de nuevo, y es la
+        // señal más clara que hay — mucho mejor que un reloj.
+        if ($reabierta) {
             return true;
         }
 

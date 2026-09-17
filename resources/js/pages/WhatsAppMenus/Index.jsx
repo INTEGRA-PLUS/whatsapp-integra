@@ -1061,9 +1061,10 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                                 value={form.saludar_de_nuevo_horas}
                                 onChange={v => setForm(f => ({ ...f, saludar_de_nuevo_horas: v }))}
                                 hint={
-                                    Number(form.saludar_de_nuevo_horas) === 0
-                                        ? 'En 0 saluda una sola vez en la vida de cada cliente: quien ya te escribió alguna vez no lo recibe nunca más.'
-                                        : `Si un cliente que ya te había escrito vuelve tras ${form.saludar_de_nuevo_horas || 24} h de silencio, le sale el menú otra vez. Pon 0 para saludar sólo la primera vez en su vida.`
+                                    (Number(form.saludar_de_nuevo_horas) === 0
+                                        ? 'En 0 no vuelve a saludar por tiempo: quien ya te escribió no lo recibe otra vez por mucho que tarde en volver. '
+                                        : `Si un cliente que ya te había escrito vuelve tras ${form.saludar_de_nuevo_horas || 24} h de silencio, le sale el menú otra vez. Pon 0 para no saludar nunca por tiempo. `)
+                                    + 'Aparte del tiempo, siempre vuelve a saludar si el chat se cerró y el cliente escribe de nuevo: cerrar es decir «esto se terminó», y volver a escribir es empezar otra conversación.'
                                 }
                                 error={errors?.saludar_de_nuevo_horas}
                             />

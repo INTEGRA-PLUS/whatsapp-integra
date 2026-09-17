@@ -933,7 +933,7 @@ class WhatsAppWebhookController extends Controller
                 // recibiría el menú y encima el texto de bienvenida, que es
                 // justamente lo que el menú venía a reemplazar.
                 $handledByMenu = !$handledOutOfHours
-                    && $this->menuService->handleInbound($instance, $conversation, $messageData, $wamid);
+                    && $this->menuService->handleInbound($instance, $conversation, $messageData, $wamid, $reopenedByCustomer);
 
                 if (!$handledOutOfHours && !$handledByMenu) {
                     $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);

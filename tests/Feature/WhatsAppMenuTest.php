@@ -948,14 +948,16 @@ class WhatsAppMenuTest extends TestCase
     }
 
     /**
-     * Y con 0 se comporta como antes: una sola vez en la vida.
+     * Con 0 el reloj no saluda nunca, por mucho que tarde en volver.
      *
      * Se deja a mano porque hay negocios a los que saludar dos veces al mismo
-     * cliente les parece un error del sistema.
+     * cliente les parece un error del sistema. Lo que sigue saludando aun con 0
+     * es la reapertura de un chat cerrado, que es una decisión de la empresa y
+     * no un reloj.
      *
      * @test
      */
-    public function con_cero_horas_saluda_una_sola_vez_en_la_vida(): void
+    public function con_cero_horas_no_saluda_por_tiempo(): void
     {
         $instance = $this->metaInstance();
         WhatsAppMenu::where('company_id', $instance->company_id)->delete();
@@ -983,5 +985,39 @@ class WhatsAppMenuTest extends TestCase
                 'created_at' => $m->created_at?->subHours($horas),
             ])->saveQuietly();
         });
+    }
+
+    /**
+     * Un chat cerrado que el cliente reabre escribiendo vuelve a saludarse.
+     *
+     * Es la señal más clara que hay, y mejor que cualquier reloj: cerrar es un
+     * acto deliberado de la empresa que dice «esto se terminó», así que el
+     * mensaje siguiente empieza otra conversación. Pasa aunque cerrara hace
+     * cinco minutos y aunque las horas estén en 0.
+     *
+     * @test
+     */
+    public function un_chat_cerrado_que_el_cliente_reabre_vuelve_a_saludarse(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Una'], [
+            'match_types' => ['welcome'],
+            // En 0 el reloj no saluda nunca: lo que saluda aquí es la reapertura.
+            'saludar_de_nuevo_horas' => 0,
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count);
+
+        // El asesor termina y cierra.
+        WhatsAppConversation::first()->update(['status' => 'closed', 'assigned_to' => null]);
+
+        // Y el cliente vuelve al rato: es una conversación nueva.
+        $this->postSignedWebhook($this->inbound($instance, 'Buenas, otra cosa', 'wamid.B'))->assertOk();
+
+        $this->assertSame(2, (int) $menu->refresh()->fires_count);
+        $this->assertSame('open', WhatsAppConversation::first()->status, 'Y el chat queda abierto otra vez.');
     }
 }

@@ -36,7 +36,11 @@ class WhatsAppMenuService
         Instance $instance,
         WhatsAppConversation $conversation,
         array $messageData,
-        string $wamid
+        string $wamid,
+        // Este mensaje reabrió un chat que estaba cerrado. Lo sabe el webhook y
+        // sólo él: para cuando llegamos aquí la conversación ya está en «open» y
+        // el rastro del cierre está borrado, así que no hay forma de deducirlo.
+        bool $reabierta = false
     ): bool {
         // Con un agente encima o el hilo cerrado, el bot se calla: nada peor que
         // un menú interrumpiendo una conversación que ya está atendiendo alguien.
@@ -83,7 +87,7 @@ class WhatsAppMenuService
         }
 
         // 3. ¿Algún menú se dispara con este mensaje?
-        $menu = $this->findTriggeredMenu($instance, $conversation, (string) ($messageData['content'] ?? ''), $wamid);
+        $menu = $this->findTriggeredMenu($instance, $conversation, (string) ($messageData['content'] ?? ''), $wamid, $reabierta);
 
         if (!$menu) {
             // 4. Nadie reconoció el mensaje. Es el caso más común y el que peor
@@ -184,7 +188,8 @@ class WhatsAppMenuService
         Instance $instance,
         WhatsAppConversation $conversation,
         string $text,
-        string $wamid
+        string $wamid,
+        bool $reabierta = false
     ): ?WhatsAppMenu {
         // El corte lo pone cada menú, así que se calcula por menú y no una
         // vez para todos: dos menús de la misma empresa pueden querer saludar
@@ -206,7 +211,7 @@ class WhatsAppMenuService
             ->sort(WhatsAppMenu::ordenDeDisparo(...))
             ->values()
             ->first(fn (WhatsAppMenu $m) => $m->qualifies($text, [
-                'is_first_inbound' => $m->tocaSaludar($silencio),
+                'is_first_inbound' => $m->tocaSaludar($silencio, $reabierta),
             ]));
     }
 
