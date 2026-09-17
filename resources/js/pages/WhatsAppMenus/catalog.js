@@ -32,7 +32,12 @@ export const MATCH_OPTIONS = [
 /** Cuándo se dispara cada tipo, con un ejemplo de mensaje que lo activa. */
 export const MATCH_HELP = {
     welcome: {
-        when: 'El cliente escribe por primera vez, diga lo que diga.',
+        // «Por primera vez» se leía como «cada vez que empieza una
+        // conversación», y no es eso: es el PRIMER mensaje entrante de ese
+        // contacto, contando desde siempre. Un cliente que ya te escribió hace
+        // meses no vuelve a recibirlo nunca, y probar con tu propio número —que
+        // ya escribió— hace pensar que el menú está roto.
+        when: 'La primerísima vez que ese contacto te escribe, diga lo que diga. Sólo una vez en la vida: quien ya te escribió alguna vez no vuelve a recibirlo.',
         example: 'Buenas tardes',
     },
     contains: {

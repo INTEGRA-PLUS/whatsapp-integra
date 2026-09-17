@@ -851,6 +851,15 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                                     te escribe»: ese panel no elige nada, cuenta lo que marques aquí. Puedes
                                     marcar varias.
                                 </p>
+                                {/* La causa número uno de «configuré el menú y
+                                    no salta»: se prueba con el propio número,
+                                    que suele tener un asesor asignado de alguna
+                                    prueba anterior, y el bot calla a propósito. */}
+                                <p className="text-[11px] text-muted-foreground">
+                                    Marques lo que marques, <strong className="text-foreground">si el chat ya
+                                    tiene un asesor asignado el bot se calla</strong>. Para probar, quita la
+                                    asignación de esa conversación primero.
+                                </p>
                             </>
                         )}
 
