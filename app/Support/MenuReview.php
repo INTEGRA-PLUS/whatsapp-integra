@@ -61,15 +61,29 @@ class MenuReview
             ];
         }
 
-        if (($capabilities['connected'] ?? false) === false) {
+        // Integra es un **extra**, no un requisito. Un menú responde
+        // perfectamente sin él: responder con un mensaje, con una imagen, abrir
+        // un submenú o pasar a un asesor no consultan nada de fuera. Este aviso
+        // era un bloqueo rojo que decía «impide que tu menú responda», y hacía
+        // pensar que sin Integra el menú no sirve — que es exactamente lo
+        // contrario de lo que este producto quiere vender.
+        //
+        // Así que sólo aparece si la empresa **tiene puestas** opciones de
+        // autoservicio, y aparece como aviso, no como bloqueo: esas opciones no
+        // se quedan mudas, derivan a un asesor.
+        $deAutoservicio = self::cuantasSonDeIntegra($menus);
+
+        if (! $integraConectado && $deAutoservicio > 0) {
             $issues[] = [
                 'menu_id' => null,
                 'menu' => null,
                 'option_id' => null,
                 'option' => null,
-                'level' => self::BLOCKER,
-                'says' => 'Tu software Integra no está conectado, así que las opciones de autoservicio derivarán al cliente a un asesor.',
-                'fix' => 'Conéctalo con tu usuario y contraseña de Integra.',
+                'level' => self::WARNING,
+                'says' => $deAutoservicio === 1
+                    ? 'Tienes 1 opción de autoservicio que hoy deriva a un asesor en vez de resolverse sola.'
+                    : 'Tienes '.$deAutoservicio.' opciones de autoservicio que hoy derivan a un asesor en vez de resolverse solas.',
+                'fix' => 'Conecta Integra y las resuelven solas: consultar la factura, radicar la falla, enviar el enlace de pago. El resto del menú funciona igual sin conectarlo.',
                 'action' => ['kind' => 'integrations', 'label' => 'Conectar Integra'],
             ];
         }
@@ -111,6 +125,27 @@ class MenuReview
         usort($issues, fn ($a, $b) => ($a['level'] === self::BLOCKER ? 0 : 1) <=> ($b['level'] === self::BLOCKER ? 0 : 1));
 
         return $issues;
+    }
+
+    /**
+     * Cuántas opciones de autoservicio hay puestas en los menús.
+     *
+     * Se cuenta para no avisar de Integra a quien no lo usa: una peluquería con
+     * un menú de «Pedir cita / Ver precios / Hablar con alguien» no tiene por
+     * qué leer nada sobre un ERP de ISPs.
+     *
+     * @param \Illuminate\Support\Collection<int, WhatsAppMenu> $menus
+     */
+    private static function cuantasSonDeIntegra($menus): int
+    {
+        return $menus->sum(
+            fn (WhatsAppMenu $menu) => $menu->options->filter(
+                fn (WhatsAppMenuOption $o) => array_key_exists(
+                    (string) $o->action_type,
+                    WhatsAppMenuOption::INTEGRA_ACTIONS
+                )
+            )->count()
+        );
     }
 
     /**

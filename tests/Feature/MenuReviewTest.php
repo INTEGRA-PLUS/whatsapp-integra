@@ -221,10 +221,17 @@ class MenuReviewTest extends TestCase
             ['connected' => false, 'checked' => false, 'can' => [], 'error' => null]
         );
 
-        // El único aviso es que Integra no está conectado, con su botón. Ni una
-        // sola acusación de "te falta el permiso X".
+        // El único aviso es sobre Integra, con su botón. Ni una sola acusación
+        // de "te falta el permiso X".
+        //
+        // Y es un **aviso**, no un bloqueo: sin Integra esas opciones no se
+        // quedan mudas, derivan a un asesor. Llamarlo bloqueo hacía pensar que
+        // sin Integra el menú entero no sirve, cuando responder con un mensaje,
+        // con una imagen o pasar a un asesor no consultan nada de fuera.
         $this->assertCount(1, $issues);
-        $this->assertStringContainsString('no está conectado', $issues[0]['says']);
+        $this->assertSame(MenuReview::WARNING, $issues[0]['level']);
+        $this->assertStringContainsString('autoservicio', $issues[0]['says']);
+        $this->assertStringContainsString('deriva a un asesor', $issues[0]['says']);
         $this->assertSame('integrations', $issues[0]['action']['kind']);
         $this->assertStringNotContainsString('permiso', $issues[0]['fix']);
     }
@@ -284,10 +291,10 @@ class MenuReviewTest extends TestCase
     }
 
     /** @param array<string, bool> $can */
-    private function capabilities(array $can = []): array
+    private function capabilities(array $can = [], bool $connected = true): array
     {
         return [
-            'connected' => true,
+            'connected' => $connected,
             'checked' => true,
             'can' => $can + ['contactos' => true, 'facturas' => true, 'contratos' => true, 'radicados' => true],
             'error' => null,
@@ -332,6 +339,61 @@ class MenuReviewTest extends TestCase
         }
 
         return $menu->load('options');
+    }
+
+    /**
+     * Un negocio que no usa Integra no lee ni una palabra sobre Integra.
+     *
+     * Es el caso de cualquiera que no sea un ISP: una peluquería con «Pedir
+     * cita / Ver precios / Hablar con alguien» no tiene por qué encontrarse un
+     * cartel rojo sobre un ERP que no ha contratado. El menú funciona entero
+     * sin Integra —responder con un mensaje, con una imagen, abrir un submenú,
+     * pasar a un asesor no consultan nada de fuera— y la pantalla tiene que
+     * decir eso, no lo contrario.
+     */
+    public function test_un_negocio_sin_opciones_de_integra_no_ve_avisos_de_integra(): void
+    {
+        $company = $this->bareCompany();
+
+        $this->menuWith($company, [
+            ['title' => 'Ver precios', 'action_type' => 'reply_text', 'reply_text' => 'Corte 30.000, tinte 80.000.'],
+            ['title' => 'Hablar con alguien', 'action_type' => 'handoff'],
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities([], connected: false)
+        );
+
+        $this->assertSame([], $issues, 'Un menú que no usa Integra está listo, y punto.');
+    }
+
+    /**
+     * Y quien SÍ las usa lee un aviso, no un bloqueo.
+     *
+     * Esas opciones no se quedan mudas: derivan a un asesor. Llamarlo bloqueo
+     * es decirle que su menú no responde cuando responde.
+     */
+    public function test_con_opciones_de_integra_el_aviso_no_es_un_bloqueo(): void
+    {
+        $company = $this->bareCompany();
+
+        $this->menuWith($company, [
+            ['title' => 'Mis facturas', 'action_type' => 'consultar_factura'],
+            ['title' => 'Hablar con alguien', 'action_type' => 'handoff'],
+        ]);
+
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities([], connected: false)
+        );
+
+        $this->assertCount(1, $issues);
+        $this->assertSame(MenuReview::WARNING, $issues[0]['level']);
+        $this->assertStringContainsString('1 opción de autoservicio', $issues[0]['says']);
+        // Y se dice que el resto del menú funciona igual: es lo que evita que
+        // alguien concluya que sin Integra esto no sirve.
+        $this->assertStringContainsString('El resto del menú funciona igual', $issues[0]['fix']);
     }
 
     private function companyWithIntegra(): Company

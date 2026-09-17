@@ -207,7 +207,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     </div>
                 </div>
 
-                <AiSwitch ai={ai} />
+                <AiSwitch ai={ai} integra={integra} />
 
                 {menus.length > 0 && (
                     <ReviewPanel onEditMenu={(id, optionId) => {
@@ -1607,9 +1607,6 @@ function ReviewPanel({ onEditMenu }) {
                             ? `${blockers.length} ${blockers.length === 1 ? 'cosa impide' : 'cosas impiden'} que tu menú responda`
                             : `${warnings.length} ${warnings.length === 1 ? 'detalle' : 'detalles'} por revisar`}
                 </span>
-                {capabilities.connected === false && (
-                    <span className="text-xs text-muted-foreground">· Integra no está conectado</span>
-                )}
                 <ChevronDown className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
 
@@ -1999,7 +1996,7 @@ WhatsAppMenusIndex.layout = page => <AppLayout breadcrumb={['Menús de WhatsApp'
  * Vive en esta pantalla y no en Integraciones porque es la IA *de los menús*:
  * se enciende donde se configuran, y así se lee junto a lo que complementa.
  */
-function AiSwitch({ ai }) {
+function AiSwitch({ ai, integra = {} }) {
     const [busy, setBusy] = useState(false);
     const encendida = ai.enabled === true;
     const permisos = ai.permissions ?? [];
@@ -2074,6 +2071,16 @@ function AiSwitch({ ai }) {
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                         Lo que no le concedas, la IA lo pasa a un asesor en vez de hacerlo por su cuenta.
                     </p>
+                    {/* Estos tres permisos consultan Integra. Sin conectarlo no
+                        hacen nada, y una casilla marcada que no ejecuta nada es
+                        una promesa que el cliente no va a ver cumplida. */}
+                    {integra.connected === false && (
+                        <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
+                            <Plug className="size-3.5 shrink-0 mt-px" />
+                            Estos tres consultan tu software Integra, que no está conectado: hoy la IA pasa
+                            esas peticiones a un asesor. El resto de lo que hace la IA no depende de esto.
+                        </p>
+                    )}
                     <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
                         {catalogo.map(permiso => {
                             const activo = permisos.includes(permiso.value);
