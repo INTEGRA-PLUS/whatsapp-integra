@@ -120,7 +120,7 @@ const emptyForm = () => ({
  */
 const hayBorrador = form => JSON.stringify(form) !== JSON.stringify(emptyForm());
 
-export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, ai = {}, orden = {} }) {
+export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, orden = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
@@ -149,6 +149,14 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     // Cuando se entra desde un aviso de la revisión, la opción que hay que
     // corregir: el formulario baja hasta ella y la resalta.
     const [focusOption, setFocusOption] = useState(null);
+
+    // Y al abrir el formulario se vuelve a preguntar, porque el otro camino
+    // para encender la IA está en OTRA pantalla: quien la enciende en «IA que
+    // responde» y vuelve a una pestaña ya cargada no dispara ningún reload, y
+    // se encontraba la ficha bloqueada igual.
+    function refrescarLaIa() {
+        router.reload({ only: ['orden', 'iaDisponible'] });
+    }
 
     function payload(form) {
         return {
@@ -216,6 +224,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         });
         setFocusOption(focusOptionId);
         setPasoEditar(focusOptionId != null ? 2 : 0);
+        refrescarLaIa();
         setEditing(menu);
     }
 
@@ -234,7 +243,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
                             <HelpCircle className="size-4" /> ¿Cómo funciona?
                         </Button>
-                        <Button onClick={() => setShowCreate(true)} className="gap-2">
+                        <Button onClick={() => { refrescarLaIa(); setShowCreate(true); }} className="gap-2">
                             <Plus className="size-4" /> Nuevo menú
                         </Button>
                     </div>
@@ -245,7 +254,13 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     escribe. Todo lo demás de esta pantalla son detalles de esa
                     decisión, y leerlos antes obliga a deducir qué habría que
                     cambiar. */}
-                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'ai', 'integra'] })} />
+                {/* `iaDisponible` TIENE que ir en esta lista. Elegir «Con IA»
+                    enciende la IA en el servidor, pero un reload parcial sólo
+                    trae los props que se le nombran: sin él la ficha «Que
+                    responda la IA» seguía bloqueada, diciendo que encendieras
+                    algo que acababas de encender. Un `only` es una lista que se
+                    queda corta cada vez que aparece un prop nuevo. */}
+                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'integra', 'iaDisponible'] })} />
 
                 {/* Y debajo, el paso a paso de esa decisión. */}
                 <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
@@ -324,7 +339,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                             sigue la lista». */}
                         <button
                             type="button"
-                            onClick={() => setShowCreate(true)}
+                            onClick={() => { refrescarLaIa(); setShowCreate(true); }}
                             className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 text-muted-foreground transition hover:border-border hover:bg-muted/30 hover:text-foreground"
                         >
                             <Plus className="size-5" />
