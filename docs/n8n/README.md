@@ -38,6 +38,7 @@ de reemplazar, cambia el `id` antes.
 | `gateway-chat-validar-entrada.js` | 01 · Chatbot Gateway (Ingest), nodo `Validar entrada` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `gateway-chat-armar-job.js` | 01 · Chatbot Gateway (Ingest), nodo `Armar job` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `worker-chat-preparar-contexto.js` | 02 · Chatbot Worker (Ollama), nodo `Preparar contexto` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
+| `worker-chat-responder.js` | 02 · Chatbot Worker (Ollama), nodo `Responder` | este fichero |
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.

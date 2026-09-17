@@ -1,6 +1,16 @@
 // ---------------------------------------------------------------
 // Prepara el contexto del turno.
 //
+// 17-sep-2026: la IA puede PEDIR que el chat pase a un asesor.
+// Hasta hoy lo decía en su texto —«procedo a comunicarlo con un
+// asesor»— y no pasaba nada: el CRM devolvía siempre `reply`, nadie
+// quedaba asignado, y el cliente había dado su cédula para nada.
+// Ahora el CRM sabe derivar; lo que falta es que el modelo lo diga de
+// una forma que se pueda leer. Como Ollama Cloud ignora `format` (ver
+// README), el contrato va escrito en el prompt: una última línea con
+// un marcador. El nodo `Responder` la saca del texto y la convierte en
+// `handoff: true`.
+//
 // 16-sep-2026 (4): la longitud de la respuesta la elige la empresa
 // (conciso / equilibrado / detallado) en vez de ser fija para todas.
 //
@@ -124,6 +134,23 @@ function buildSystemPrompt(a) {
     a.puede_ejecutar
       ? 'Puedes ejecutar las acciones que tengas disponibles como herramientas, pero sólo esas: confirma únicamente lo que la herramienta te devuelva como hecho, y nunca prometas una acción para la que no tengas herramienta.'
       : 'No confirmes acciones (pedidos, cambios, cancelaciones) que requieran ejecución real; deriva a un agente cuando aplique.'
+  );
+
+  // Cómo se pide un asesor.
+  //
+  // El marcador va en una línea aparte y al final porque el nodo
+  // `Responder` lo recorta del texto: si fuera en medio, al cliente le
+  // llegaría la frase partida. Y se nombra literal —no se confía en un
+  // esquema— porque Ollama Cloud ignora `format` (README).
+  //
+  // La regla de no prometer es la mitad importante: sin ella el modelo
+  // dice «lo comunico con un asesor» igual, marcador o no, y entonces
+  // la promesa vuelve a ser mentira la mitad de las veces.
+  lineas.push(
+    'Si el cliente pide hablar con una persona, o su caso necesita a alguien del equipo, o no puedes resolverlo con la información de la empresa: termina tu respuesta con una última línea que sea exactamente «#ASESOR# » seguida de UNA frase que resuma qué necesita el cliente. Ejemplo: «#ASESOR# Pregunta por los aportes sociales: quiere montos y condiciones.»',
+    'Esa línea es para el sistema, no para el cliente: escríbela sólo cuando de verdad haga falta un asesor, nunca más de una vez, y nunca la expliques ni la menciones en tu texto.',
+    'Y no prometas nunca que vas a pasar el chat, que has registrado datos o que alguien escribirá, si no has escrito esa línea: sin ella no pasa nada y el cliente se queda esperando.',
+    'No pidas cédula, nombre completo ni datos personales para «agilizar» un traspaso: el asesor los pide si los necesita.'
   );
 
   // Los límites de la empresa SUMAN a los de la plataforma. Van
