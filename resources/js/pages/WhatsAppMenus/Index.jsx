@@ -123,6 +123,7 @@ const emptyForm = () => ({
     list_button_text: 'Ver opciones',
     active: true,
     cooldown_minutes: 60,
+    saludar_de_nuevo_horas: 24,
     options: [emptyOption()],
 });
 
@@ -194,6 +195,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 && (form.match_types ?? []).includes('welcome'),
             match_types: form.is_root ? form.match_types : [],
             cooldown_minutes: form.cooldown_minutes === '' ? 0 : Number(form.cooldown_minutes),
+            saludar_de_nuevo_horas: form.saludar_de_nuevo_horas === '' ? 0 : Number(form.saludar_de_nuevo_horas),
             options: form.options.map(o => ({
                 ...o,
                 target_menu_id: o.action_type === 'submenu' && o.target_menu_id !== ''
@@ -239,6 +241,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
             list_button_text: menu.list_button_text ?? 'Ver opciones',
             active: !!menu.active,
             cooldown_minutes: menu.cooldown_minutes ?? 60,
+            saludar_de_nuevo_horas: menu.saludar_de_nuevo_horas ?? 24,
             options: (menu.options ?? []).map(o => ({
                 id: o.id,
                 title: o.title ?? '',
@@ -1049,6 +1052,23 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                     <ResumenMenu form={form} options={options} isList={isList} limits={limits} menus={menus} />
 
                     <div className="grid grid-cols-2 gap-3">
+                        {/* Sólo para el que saluda: en un menú de palabras clave
+                            este campo no significa nada y sólo estorba. */}
+                        {form.is_root && (form.match_types ?? []).includes('welcome') && (
+                            <Field
+                                label="Volver a saludar tras (horas sin escribir)"
+                                type="number"
+                                value={form.saludar_de_nuevo_horas}
+                                onChange={v => setForm(f => ({ ...f, saludar_de_nuevo_horas: v }))}
+                                hint={
+                                    Number(form.saludar_de_nuevo_horas) === 0
+                                        ? 'En 0 saluda una sola vez en la vida de cada cliente: quien ya te escribió alguna vez no lo recibe nunca más.'
+                                        : `Si un cliente que ya te había escrito vuelve tras ${form.saludar_de_nuevo_horas || 24} h de silencio, le sale el menú otra vez. Pon 0 para saludar sólo la primera vez en su vida.`
+                                }
+                                error={errors?.saludar_de_nuevo_horas}
+                            />
+                        )}
+
                         <Field label="Espera entre envíos (minutos)" type="number" value={form.cooldown_minutes}
                             onChange={v => setForm(f => ({ ...f, cooldown_minutes: v }))}
                             hint="Evita reenviar el mismo menú si el cliente escribe varias veces seguidas."

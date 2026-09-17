@@ -908,4 +908,80 @@ class WhatsAppMenuTest extends TestCase
             ]],
         ];
     }
+
+    // ------------------------------------------------------------------
+    // Volver a saludar a quien regresa
+    // ------------------------------------------------------------------
+
+    /**
+     * «Bienvenida» ya no es irrepetible.
+     *
+     * Era literal: el primer mensaje entrante de ese contacto contando desde
+     * siempre. Quien escribió una vez hace meses no volvía a recibir el saludo
+     * jamás, y probarlo con el propio número era imposible en cuanto lo habías
+     * usado una vez — la causa número uno de «configuré el menú y no salta».
+     *
+     * @test
+     */
+    public function vuelve_a_saludar_a_quien_regresa_tras_el_silencio(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Una'], [
+            'match_types' => ['welcome'],
+            'saludar_de_nuevo_horas' => 24,
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count, 'Su primer mensaje: saluda.');
+
+        // Escribe otra vez seguido: no se le vuelve a saludar.
+        $this->postSignedWebhook($this->inbound($instance, 'Ahí sigo', 'wamid.B'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count, 'A mitad de conversación no se saluda.');
+
+        // Se va y vuelve dos días después.
+        $this->envejecerLoEntrante(48);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Buenas de nuevo', 'wamid.C'))->assertOk();
+        $this->assertSame(2, (int) $menu->refresh()->fires_count, 'Vuelve tras el silencio: se le saluda otra vez.');
+    }
+
+    /**
+     * Y con 0 se comporta como antes: una sola vez en la vida.
+     *
+     * Se deja a mano porque hay negocios a los que saludar dos veces al mismo
+     * cliente les parece un error del sistema.
+     *
+     * @test
+     */
+    public function con_cero_horas_saluda_una_sola_vez_en_la_vida(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Una'], [
+            'match_types' => ['welcome'],
+            'saludar_de_nuevo_horas' => 0,
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count);
+
+        $this->envejecerLoEntrante(24 * 30);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Buenas, un mes después', 'wamid.C'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count, 'Con 0 no se saluda dos veces nunca.');
+    }
+
+    /** Retrasa lo ya recibido, para simular que el cliente se fue y volvió. */
+    private function envejecerLoEntrante(int $horas): void
+    {
+        WhatsAppMessage::where('direction', 'inbound')->get()->each(function (WhatsAppMessage $m) use ($horas) {
+            $m->forceFill([
+                'sent_at' => $m->sent_at?->subHours($horas),
+                'created_at' => $m->created_at?->subHours($horas),
+            ])->saveQuietly();
+        });
+    }
 }

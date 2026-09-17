@@ -186,7 +186,10 @@ class WhatsAppMenuService
         string $text,
         string $wamid
     ): ?WhatsAppMenu {
-        $context = ['is_first_inbound' => $this->isFirstInbound($conversation, $wamid)];
+        // El corte lo pone cada menú, así que se calcula por menú y no una
+        // vez para todos: dos menús de la misma empresa pueden querer saludar
+        // con ritmos distintos.
+        $silencio = $this->horasDeSilencio($conversation, $wamid);
 
         return WhatsAppMenu::active()
             ->root()
@@ -202,7 +205,9 @@ class WhatsAppMenuService
             // diciendo cosas distintas.
             ->sort(WhatsAppMenu::ordenDeDisparo(...))
             ->values()
-            ->first(fn (WhatsAppMenu $m) => $m->qualifies($text, $context));
+            ->first(fn (WhatsAppMenu $m) => $m->qualifies($text, [
+                'is_first_inbound' => $m->tocaSaludar($silencio),
+            ]));
     }
 
     /**
@@ -422,14 +427,59 @@ class WhatsAppMenuService
             ->delay(now()->addSeconds(ProcessWhatsAppAi::debounceSeconds()));
     }
 
-    private function isFirstInbound(WhatsAppConversation $conversation, string $wamid): bool
+    /**
+     * ¿Toca saludar con el menú de bienvenida?
+     *
+     * Antes era literal: **el primer mensaje entrante de esa conversación,
+     * contando desde siempre**. Un cliente que escribió una vez hace meses no
+     * volvía a recibir el saludo jamás, y probarlo con el propio número era
+     * imposible en cuanto lo habías usado una vez — la causa número uno de
+     * «configuré el menú de bienvenida y no salta».
+     *
+     * Ahora también saluda a quien **vuelve después de un silencio largo**, que
+     * es cuando una persona espera que la saluden otra vez. El corte son 24 h,
+     * el mismo que usa Meta para la ventana de atención: si lleva un día sin
+     * escribir, esto es una conversación nueva a todos los efectos.
+     *
+     * La marca de tiempo sale de `COALESCE(sent_at, created_at)` y no de
+     * `created_at` a secas: cuando Meta reintenta durante días y suelta la cola
+     * de golpe, `created_at` es de hoy y `sent_at` de hace tres, y mirar sólo el
+     * primero saludaría a alguien a mitad de conversación.
+     *
+     * Devuelve `null` si es su primerísimo mensaje —no hay silencio que medir,
+     * y ese caso saluda siempre—; si no, las horas que llevaba callado.
+     */
+    private function horasDeSilencio(WhatsAppConversation $conversation, string $wamid): ?float
     {
-        $first = WhatsAppMessage::where('conversation_id', $conversation->id)
+        $entrantes = WhatsAppMessage::where('conversation_id', $conversation->id)
             ->where('direction', 'inbound')
             ->orderBy('id')
-            ->first();
+            ->get(['id', 'wamid', 'sent_at', 'created_at']);
 
-        return $first !== null && $first->wamid === $wamid;
+        $actual = $entrantes->firstWhere('wamid', $wamid);
+
+        // Sin el mensaje delante no se puede afirmar que sea un saludo nuevo, y
+        // ante la duda no se saluda: reenviar el menú a mitad de conversación es
+        // peor que no mandarlo.
+        if ($actual === null) {
+            return 0.0;
+        }
+
+        $anterior = $entrantes->filter(fn ($m) => $m->id < $actual->id)->last();
+
+        // Su primerísimo mensaje: el caso de siempre, y saluda pase lo que pase.
+        if ($anterior === null) {
+            return null;
+        }
+
+        $antes = $anterior->sent_at ?? $anterior->created_at;
+        $ahora = $actual->sent_at ?? $actual->created_at;
+
+        if ($antes === null || $ahora === null) {
+            return 0.0;
+        }
+
+        return (float) $antes->diffInHours($ahora, absolute: true);
     }
 
     /** ¿El mensaje entrante es el toque sobre un botón o fila de un menú nuestro? */

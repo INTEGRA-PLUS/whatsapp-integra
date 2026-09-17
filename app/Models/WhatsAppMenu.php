@@ -51,6 +51,7 @@ class WhatsAppMenu extends Model
         'match_types',
         'active',
         'cooldown_minutes',
+        'saludar_de_nuevo_horas',
         'fires_count',
         'last_fired_at',
     ];
@@ -60,9 +61,32 @@ class WhatsAppMenu extends Model
         'active' => 'boolean',
         'match_types' => 'array',
         'cooldown_minutes' => 'integer',
+        'saludar_de_nuevo_horas' => 'integer',
         'fires_count' => 'integer',
         'last_fired_at' => 'datetime',
     ];
+
+    /**
+     * ¿A este menú le toca saludar, con las horas que el cliente llevaba
+     * callado?
+     *
+     * `null` es su primerísimo mensaje: se saluda siempre, venga de donde venga
+     * la configuración.
+     *
+     * `saludar_de_nuevo_horas = 0` es el comportamiento antiguo —una sola vez
+     * en la vida del contacto— y se deja a mano porque hay negocios a los que
+     * saludar dos veces les parece un error del sistema.
+     */
+    public function tocaSaludar(?float $horasDeSilencio): bool
+    {
+        if ($horasDeSilencio === null) {
+            return true;
+        }
+
+        $cada = (int) ($this->saludar_de_nuevo_horas ?? 24);
+
+        return $cada > 0 && $horasDeSilencio >= $cada;
+    }
 
     public function company()
     {

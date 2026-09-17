@@ -450,6 +450,7 @@ class WhatsAppMenuController extends Controller
             'trigger_text' => $hasKeyword ? $data['trigger_text'] : null,
             'match_types' => $types,
             'active' => $data['active'] ?? true,
+            'saludar_de_nuevo_horas' => (int) ($data['saludar_de_nuevo_horas'] ?? 24),
             'cooldown_minutes' => $data['cooldown_minutes'] ?? 60,
         ];
     }
@@ -579,6 +580,8 @@ class WhatsAppMenuController extends Controller
             // El relevo de la bienvenida: sin esto el guardado se rechaza y se
             // explica de quién habría que quitarla.
             'reemplazar_bienvenida' => 'sometimes|boolean',
+            // 0 = sólo la primera vez en la vida del contacto (lo de antes).
+            'saludar_de_nuevo_horas' => 'nullable|integer|min:0|max:720',
             'match_types' => 'array',
             'match_types.*' => 'in:' . implode(',', WhatsAppMenu::MATCH_TYPES),
             'trigger_text' => 'nullable|string|max:1000',
