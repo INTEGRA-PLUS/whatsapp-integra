@@ -159,10 +159,25 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         router.reload({ only: ['orden', 'iaDisponible'] });
     }
 
-    function payload(form) {
+    /** El menú que hoy saluda en esa instancia, si lo hay y no es éste. */
+    function quienSaluda(form, ignoreId = null) {
+        const instanceId = form.instance_id === '' ? null : Number(form.instance_id);
+
+        return menus.find(m => m.is_root
+            && (m.match_types ?? []).includes('welcome')
+            && (m.instance_id ?? null) === instanceId
+            && String(m.id) !== String(ignoreId)) ?? null;
+    }
+
+    function payload(form, ignoreId = null) {
         return {
             ...form,
             instance_id: form.instance_id === '' ? null : Number(form.instance_id),
+            // Sólo viaja cuando de verdad hay un relevo que hacer: así el
+            // servidor sigue rechazando un duplicado que llegue de otro sitio
+            // sin que nadie lo haya decidido.
+            reemplazar_bienvenida: !!quienSaluda(form, ignoreId)
+                && (form.match_types ?? []).includes('welcome'),
             match_types: form.is_root ? form.match_types : [],
             cooldown_minutes: form.cooldown_minutes === '' ? 0 : Number(form.cooldown_minutes),
             options: form.options.map(o => ({
@@ -187,7 +202,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
 
     function handleEdit(e) {
         e.preventDefault();
-        router.put(route('whatsapp-menus.update', editing.id), payload(editForm), {
+        router.put(route('whatsapp-menus.update', editing.id), payload(editForm, editing.id), {
             onSuccess: () => setEditing(null),
         });
     }
@@ -548,10 +563,14 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
     const showTrigger = form.is_root && selectedTypes.some(t => KEYWORD_TYPES.includes(t));
 
     const currentInstanceId = form.instance_id === '' ? null : Number(form.instance_id);
-    const welcomeTakenByOther = menus.some(m =>
+    // `?? null` en los dos lados: un menú de «todas las instancias» guarda
+    // null, y sin normalizar `undefined === null` daba falso y el aviso no
+    // salía justo en el caso más común.
+    const welcomeOwner = menus.find(m =>
         m.is_root && (m.match_types ?? []).includes('welcome') &&
-        m.id !== editingId && m.instance_id === currentInstanceId
-    );
+        String(m.id) !== String(editingId) && (m.instance_id ?? null) === currentInstanceId
+    ) ?? null;
+    const welcomeTakenByOther = welcomeOwner !== null;
 
     // Como botón sólo caben 20 caracteres, pero el campo admite 24 porque en
     // lista sí caben. Añadir una cuarta opción cambia el formato del menú, así
@@ -712,7 +731,14 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                                     {grupo.valores.map(value => {
                                         const opt = MATCH_OPTIONS.find(o => o.value === value);
                                         const isSelected = selectedTypes.includes(value);
-                                        const disabled = value === 'welcome' && !isSelected && welcomeTakenByOther;
+                                        // Ya no se bloquea. Bloquearla dejaba
+                                        // encerrado a quien quería CAMBIAR cuál
+                                        // saluda: para eso había que salir,
+                                        // editar el otro menú y adivinar que lo
+                                        // que tocaba allí era desmarcar una
+                                        // casilla. Se deja marcar y se cuenta la
+                                        // consecuencia con nombre y apellido.
+                                        const disabled = false;
                                         return (
                                             <label key={value}
                                                 className={`flex items-start gap-2 text-sm ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
@@ -720,9 +746,9 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                                                     onChange={() => toggleType(value)} />
                                                 <span className="min-w-0">
                                                     <span className="text-foreground">{opt.label}</span>
-                                                    {disabled && (
+                                                    {value === 'welcome' && welcomeTakenByOther && (
                                                         <span className="ml-1.5 text-[11px] text-muted-foreground">
-                                                            (ya hay uno para esta instancia)
+                                                            (hoy saluda «{welcomeOwner.name}»)
                                                         </span>
                                                     )}
                                                     <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
@@ -739,6 +765,24 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             ))}
                         </div>
                     )}
+                        {/* Sólo uno puede saludar: si hubiera dos, el primer
+                            mensaje dispararía uno u otro según el orden de
+                            creación. Antes eso era un error al guardar y sin
+                            salida; ahora es una decisión, tomada antes y con el
+                            nombre del que la pierde. */}
+                        {form.is_root && welcomeTakenByOther && selectedTypes.includes('welcome') && (
+                            <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
+                                <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                                <span>
+                                    Sólo un menú puede saludar. Al guardar, <strong>«{welcomeOwner.name}»</strong> dejará
+                                    de hacerlo y saludará éste.{' '}
+                                    {(welcomeOwner.match_types ?? []).some(t => KEYWORD_TYPES.includes(t))
+                                        ? 'Seguirá respondiendo a sus palabras clave; no se apaga ni se borra.'
+                                        : 'Como no tiene palabras clave, dejará de salir solo: se abrirá únicamente desde otra opción. No se apaga ni se borra.'}
+                                </span>
+                            </p>
+                        )}
+
                         {errors?.match_types && <p className="text-xs text-destructive">{errors.match_types}</p>}
                     </div>
 

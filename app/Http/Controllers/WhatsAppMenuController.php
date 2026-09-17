@@ -308,11 +308,17 @@ class WhatsAppMenuController extends Controller
         $user = auth()->user();
         $data = $this->validateData($request, $user->company_id);
 
-        if ($conflict = $this->welcomeConflict($data, $user->company_id)) {
-            return $conflict;
+        $queSaluda = $this->welcomeConflict($data, $user->company_id);
+
+        if ($queSaluda && ! $request->boolean('reemplazar_bienvenida')) {
+            return $this->pideConfirmarLaBienvenida($queSaluda);
         }
 
-        DB::transaction(function () use ($data, $user) {
+        DB::transaction(function () use ($data, $user, $queSaluda) {
+            if ($queSaluda) {
+                $this->cederLaBienvenida($queSaluda);
+            }
+
             $menu = WhatsAppMenu::create($this->menuAttributes($data) + ['company_id' => $user->company_id]);
             $this->syncOptions($menu, $data['options']);
         });
@@ -330,11 +336,17 @@ class WhatsAppMenuController extends Controller
 
         $data = $this->validateData($request, $user->company_id, $menu->id);
 
-        if ($conflict = $this->welcomeConflict($data, $user->company_id, $menu->id)) {
-            return $conflict;
+        $queSaluda = $this->welcomeConflict($data, $user->company_id, $menu->id);
+
+        if ($queSaluda && ! $request->boolean('reemplazar_bienvenida')) {
+            return $this->pideConfirmarLaBienvenida($queSaluda);
         }
 
-        DB::transaction(function () use ($menu, $data) {
+        DB::transaction(function () use ($menu, $data, $queSaluda) {
+            if ($queSaluda) {
+                $this->cederLaBienvenida($queSaluda);
+            }
+
             $menu->update($this->menuAttributes($data));
             $this->syncOptions($menu, $data['options']);
         });
@@ -440,26 +452,65 @@ class WhatsAppMenuController extends Controller
      * Sólo un menú de bienvenida por instancia: si hubiera dos, el primer
      * mensaje del cliente dispararía uno u otro según el orden de creación, que
      * es justo el tipo de comportamiento que nadie logra explicarse después.
+     *
+     * Devuelve el menú que ya la tiene, para poder nombrarlo. Antes devolvía un
+     * error y punto —«Ya existe un menú de bienvenida para esta instancia»— sin
+     * decir cuál ni dejar salida: el admin que quería **cambiar** cuál saluda se
+     * quedaba encerrado, porque para llegar a este formulario había que ir a
+     * editar el otro menú y adivinar que lo que había que hacer allí era
+     * desmarcarle una casilla.
      */
-    private function welcomeConflict(array $data, int $companyId, $ignoreId = null)
+    private function welcomeConflict(array $data, int $companyId, $ignoreId = null): ?WhatsAppMenu
     {
         if (!($data['is_root'] ?? true) || !in_array('welcome', $data['match_types'] ?? [], true)) {
             return null;
         }
 
-        $exists = WhatsAppMenu::where('company_id', $companyId)
+        // El filtro de «welcome» se hace en PHP y no con whereJsonContains:
+        // con dos tipos guardados —`["welcome","contains"]`— la consulta no lo
+        // encontraba, y el relevo se saltaba dejando DOS menús saludando, que
+        // es justo lo que esta comprobación existe para impedir. Es además el
+        // idiomático del proyecto (ModoDeAtencion hace lo mismo).
+        return WhatsAppMenu::where('company_id', $companyId)
             ->where('instance_id', $data['instance_id'] ?? null)
             ->where('is_root', true)
-            ->whereJsonContains('match_types', 'welcome')
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
-            ->exists();
+            ->get()
+            ->first(fn (WhatsAppMenu $m) => in_array('welcome', (array) $m->match_types, true));
+    }
 
-        if (!$exists) {
-            return null;
-        }
-
+    /**
+     * El error cuando no se confirmó el relevo.
+     *
+     * Nombra al menú que saluda hoy: «ya existe uno» obliga a salir a buscar
+     * cuál de los seis es.
+     */
+    private function pideConfirmarLaBienvenida(WhatsAppMenu $queSaluda)
+    {
         return back()->withErrors([
-            'match_types' => 'Ya existe un menú de bienvenida para esta instancia.',
+            'match_types' => '«'.$queSaluda->name.'» ya es el menú de bienvenida de esta instancia.'
+                .' Marca la casilla de abajo si quieres que salude éste en su lugar.',
+        ]);
+    }
+
+    /**
+     * El menú que saludaba deja de hacerlo, para que salude otro.
+     *
+     * **No se apaga ni se borra**: sólo pierde el disparo de bienvenida. Si
+     * tenía palabras clave sigue respondiendo a ellas, y si no, se queda como
+     * un menú que sólo se abre desde otra opción — que es recuperable con una
+     * casilla, mientras que apagarlo por nuestra cuenta no lo parece.
+     */
+    private function cederLaBienvenida(WhatsAppMenu $menu): void
+    {
+        $menu->update([
+            'match_types' => array_values(array_diff((array) $menu->match_types, ['welcome'])),
+        ]);
+
+        Log::channel('whatsapp')->info('👋 La bienvenida cambia de menú', [
+            'company_id' => $menu->company_id,
+            'menu_id' => $menu->id,
+            'nombre' => $menu->name,
         ]);
     }
 
@@ -473,6 +524,9 @@ class WhatsAppMenuController extends Controller
             'footer_text' => 'nullable|string|max:' . WhatsAppMenu::MAX_FOOTER,
             'list_button_text' => 'nullable|string|max:' . WhatsAppMenu::MAX_BUTTON_TITLE,
             'is_root' => 'boolean',
+            // El relevo de la bienvenida: sin esto el guardado se rechaza y se
+            // explica de quién habría que quitarla.
+            'reemplazar_bienvenida' => 'sometimes|boolean',
             'match_types' => 'array',
             'match_types.*' => 'in:' . implode(',', WhatsAppMenu::MATCH_TYPES),
             'trigger_text' => 'nullable|string|max:1000',

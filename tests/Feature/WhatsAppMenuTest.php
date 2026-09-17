@@ -764,4 +764,107 @@ class WhatsAppMenuTest extends TestCase
 
         return $instance->fresh();
     }
+
+    // ------------------------------------------------------------------
+    // Quién saluda: sólo uno, pero se puede relevar
+    // ------------------------------------------------------------------
+
+    /**
+     * Sin confirmar, no se crea — y se dice CUÁL saluda hoy.
+     *
+     * El error era «Ya existe un menú de bienvenida para esta instancia», que
+     * obliga a salir a mirar cuál de los seis es.
+     *
+     * @test
+     */
+    public function crear_otro_menu_de_bienvenida_pide_confirmar_y_nombra_al_que_saluda(): void
+    {
+        $instance = $this->metaInstance();
+        $this->comoAdminDe($instance);
+
+        // Toda empresa nace con el menú genérico sembrado, y ése también saluda:
+        // sin barrerlo, la prueba comprobaría el relevo de OTRO menú.
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $this->menu($instance, ['Una'], ['name' => 'Menú principal', 'instance_id' => null]);
+
+        $this->post(route('whatsapp-menus.store'), $this->nuevoMenuDeBienvenida())
+            ->assertSessionHasErrors('match_types');
+
+        $this->assertStringContainsString(
+            'Menú principal',
+            session('errors')->first('match_types'),
+            'El aviso tiene que nombrar al menú que saluda hoy.'
+        );
+
+        $this->assertFalse(
+            WhatsAppMenu::where('name', 'El nuevo')->exists(),
+            'Y no se crea nada a medias mientras no se confirme.'
+        );
+    }
+
+    /**
+     * Confirmando, el nuevo saluda y el viejo sólo pierde la bienvenida.
+     *
+     * No se apaga ni se borra: si tenía palabras clave sigue respondiendo a
+     * ellas. Apagarlo por nuestra cuenta sería una pérdida que no se ve venir.
+     *
+     * @test
+     */
+    public function confirmando_el_relevo_el_viejo_solo_pierde_la_bienvenida(): void
+    {
+        $instance = $this->metaInstance();
+        $this->comoAdminDe($instance);
+
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $viejo = $this->menu($instance, ['Una'], [
+            'name' => 'Menú principal',
+            'instance_id' => null,
+            'match_types' => ['welcome', 'contains'],
+            'trigger_text' => 'menu',
+        ]);
+
+        $this->post(
+            route('whatsapp-menus.store'),
+            $this->nuevoMenuDeBienvenida() + ['reemplazar_bienvenida' => true]
+        )->assertSessionHasNoErrors()->assertRedirect();
+
+        $viejo->refresh();
+
+        $this->assertSame(['contains'], array_values((array) $viejo->match_types));
+        $this->assertTrue((bool) $viejo->active, 'No se apaga: sólo deja de saludar.');
+
+        $nuevo = WhatsAppMenu::where('name', 'El nuevo')->firstOrFail();
+        $this->assertContains('welcome', (array) $nuevo->match_types);
+
+        // Y queda uno solo saludando, que es la razón de toda esta regla.
+        $this->assertSame(1, WhatsAppMenu::where('company_id', $instance->company_id)
+            ->where('is_root', true)
+            ->get()
+            ->filter(fn ($m) => in_array('welcome', (array) $m->match_types, true))
+            ->count());
+    }
+
+    /** @return array<string, mixed> */
+    private function nuevoMenuDeBienvenida(): array
+    {
+        return [
+            'name' => 'El nuevo',
+            'instance_id' => null,
+            'is_root' => true,
+            'match_types' => ['welcome'],
+            'trigger_text' => '',
+            'body_text' => 'Hola, ¿en qué te ayudo?',
+            'list_button_text' => 'Ver opciones',
+            'active' => true,
+            'cooldown_minutes' => 0,
+            'options' => [[
+                'title' => 'Hablar con alguien',
+                'action_type' => 'handoff',
+                'reply_text' => 'Te paso con una persona.',
+                'config' => ['assign_strategy' => 'inbox'],
+            ]],
+        ];
+    }
 }
