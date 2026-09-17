@@ -558,8 +558,24 @@ de lectura**. Un modelo de visión confunde un 8 con un 3 en un comprobante
 borroso, y la IA no debe afirmar una cifra leída así con la misma seguridad con
 la que cita el tarifario.
 
-### Lo que sigue sin entrar: el audio
+### El audio queda en espera (decidido el 17-sep-2026)
 
-3.213 al mes, el 3,1%. Whisper no está en Ollama, así que pide su propio
-contenedor y su propia CPU en un servidor donde la visión local ya demostró no
-caber. Es la siguiente pieza, y la que hay que decidir con números delante.
+**3.213 al mes, el 3,1% de lo que entra.** Se deja pendiente a propósito, y la
+opción **no se nombra en la pantalla**: anunciar algo que todavía no existe sólo
+abre una pregunta que nadie puede responder. Cuando entre, entrará con su propio
+interruptor al lado del de las fotos.
+
+Lo que habría que resolver antes, para cuando se retome:
+
+- **Whisper no está en Ollama.** No sirve el mismo camino que la visión —que se
+  resolvió sin infraestructura nueva porque la cuenta ya tenía modelos con
+  visión—. Pide su propio contenedor.
+- **Y la CPU no está.** La visión local ya demostró no caber en este servidor:
+  el modelo más pequeño que existe no terminó una imagen en diez minutos. El
+  audio consume más.
+- **La alternativa es un proveedor de transcripción**, con coste por minuto y
+  una factura nueva. Es la primera vez en todo esto que haría falta uno: los
+  embeddings corren en casa y la visión sale de la cuenta que ya se paga.
+
+Con 3.213 audios al mes es una decisión comercial, no técnica: cuánto vale
+atender ese 3% sin una persona.

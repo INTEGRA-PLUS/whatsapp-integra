@@ -970,9 +970,13 @@ function DocumentosCard({ permitido, nombreDelComplemento, leeDocumentos, altern
 
                     <div className="flex items-start justify-between gap-4 border-t border-border/50 pt-2">
                         <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            {/* Nada sobre audios: nombrar algo que no existe
+                                todavía sólo abre una pregunta que no se puede
+                                responder. Cuando entre, entrará con su propio
+                                interruptor aquí al lado. */}
                             <span className="text-foreground">Fotos.</span> Un comprobante de pago, una pantalla
                             de error, el aparato que no le funciona: la IA mira la foto y responde sobre lo que
-                            ve. Los audios todavía no: ésos siguen pasando a una persona.
+                            ve.
                             {!hayVision && (
                                 <span className="block mt-1 text-warning">
                                     Falta configurar el modelo que mira las fotos en el servidor. Avisa al equipo técnico.
