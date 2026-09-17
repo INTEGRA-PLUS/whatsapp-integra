@@ -198,14 +198,34 @@ class WhatsAppChatAiClient
             'degraded' => $body['degraded'] ?? null,
         ]);
 
+        // ¿El flujo pide pasar el chat a una persona?
+        //
+        // Hasta ahora esta rama devolvía SIEMPRE `reply`, así que el chat IA no
+        // podía derivar por mucho que lo dijera en su texto — y lo decía: «le
+        // registro sus datos y procedo a comunicarlo con un asesor», con el
+        // cliente dándole su cédula para nada. La promesa era fiction: nadie
+        // quedaba asignado.
+        //
+        // La tubería de derivar ya existía entera (`MenuActionResult::escalate`
+        // → `applyResult` → el reparto que la empresa eligió en «IA que
+        // responde»); lo único que faltaba era esta señal. Se aceptan las dos
+        // formas en que puede venir para no atarse a cómo se escriba el nodo.
+        $derivar = ($body['handoff'] ?? false) === true
+            || ($body['status'] ?? null) === 'handoff';
+
+        // Lo que el asesor lee al abrir el chat. Es mucho más útil que el aviso
+        // genérico: llega sabiendo qué pedía el cliente.
+        $nota = trim((string) ($body['note'] ?? $body['resumen'] ?? '')) ?: null;
+
         // La traza viaja con la burbuja, igual que en la IA de menús: sin ella
         // no hay forma de abrir el chat semanas después y saber con qué modelo
         // se contestó eso.
         return new AiDecision(
-            MenuActionResult::reply($answer),
-            null,
+            $derivar ? MenuActionResult::escalate($answer) : MenuActionResult::reply($answer),
+            $derivar ? $nota : null,
             array_filter([
                 'flujo' => 'chat',
+                'derivado' => $derivar ? 'sí' : null,
                 'modelo' => $body['model'] ?? null,
                 'degradacion' => ($body['degraded'] ?? false) === true ? 'sí' : null,
                 'trace_id' => $body['trace_id'] ?? null,

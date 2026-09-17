@@ -327,6 +327,46 @@ class AiChatIntegrationTest extends TestCase
         Queue::assertPushed(ProcessWhatsAppMenu::class);
     }
 
+    /**
+     * Si el flujo pide pasar a un asesor, se pasa de verdad.
+     *
+     * Antes esta rama devolvía SIEMPRE `reply`, así que el chat IA no podía
+     * derivar por mucho que lo dijera en su texto — y lo decía: «he registrado
+     * sus datos y procederé a comunicarlo con un asesor», con el cliente dando
+     * su cédula para nada y sin que nadie quedara asignado (17-sep-2026).
+     *
+     * @test
+     */
+    public function si_el_flujo_pide_un_asesor_el_chat_se_deriva(): void
+    {
+        Http::fake(['*' => Http::response([
+            'status' => 'handoff',
+            'answer' => 'Le comunico con un asesor.',
+            'note' => 'Pregunta por los aportes sociales; quiere montos y condiciones.',
+            'model' => 'gemma4:31b', 'latency_ms' => 900,
+        ], 200)]);
+
+        $decision = (new WhatsAppChatAiClient)
+            ->ask($this->instance, $this->conversation, 'ponme con un asesor', 'wamid.DERIVA');
+
+        $this->assertNotNull($decision);
+        $this->assertTrue($decision->result->handoff, 'La decisión tiene que derivar, no sólo contestar.');
+        $this->assertSame('Pregunta por los aportes sociales; quiere montos y condiciones.', $decision->note);
+    }
+
+    /** Y sin esa señal se contesta y ya: derivar por nuestra cuenta sería adivinar. */
+    public function test_sin_la_senal_del_flujo_no_se_deriva(): void
+    {
+        Http::fake(['*' => Http::response([
+            'status' => 'done', 'answer' => 'Claro que sí.', 'model' => 'gemma4:31b',
+        ], 200)]);
+
+        $decision = (new WhatsAppChatAiClient)
+            ->ask($this->instance, $this->conversation, 'hola', 'wamid.NODERIVA');
+
+        $this->assertFalse($decision->result->handoff);
+    }
+
     /** @test */
     public function entiende_la_respuesta_real_del_gateway(): void
     {
