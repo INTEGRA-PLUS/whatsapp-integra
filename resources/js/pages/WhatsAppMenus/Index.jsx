@@ -9,7 +9,7 @@ import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2, Bot,
-    Check, ChevronRight, Loader2, MessageSquare, Lock,
+    Check, ChevronRight, Loader2, MessageSquare, Lock, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MenuHelp from './MenuHelp';
@@ -136,7 +136,7 @@ const emptyForm = () => ({
  */
 const hayBorrador = form => JSON.stringify(form) !== JSON.stringify(emptyForm());
 
-export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, orden = {} }) {
+export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, orden = {}, puerta = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
     // acción) y el formulario (para el aviso por defecto de cada pendiente).
@@ -333,6 +333,8 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         if (menu) openEdit(menu, optionId);
                     }} />
                 )}
+
+                {puerta.se_puede_ofrecer && <PuertaDeEntrada abre={puerta.abre} />}
 
                 {/* Integra sólo aparece para quien lo usa. Una barbería no tiene
                     por qué enterarse de que existe un ERP de ISPs. */}
@@ -1589,6 +1591,58 @@ function EncenderLaIa({ estado = {}, className = '' }) {
                 Encender la IA
             </button>
             {error && <span className="w-full text-destructive">{error}</span>}
+        </div>
+    );
+}
+
+/**
+ * Que el cliente elija: el menú, o preguntar con sus palabras.
+ *
+ * Es el patrón del WhatsApp de Bancolombia —«1. Buscar en menú · 2. Preguntar,
+ * te respondo con inteligencia artificial»— y ya se podía armar a mano con lo
+ * que hay. Esto sólo evita el trabajo.
+ *
+ * Sólo se enseña con la IA disponible: sin ella no hay dos caminos que ofrecer
+ * y el menú tiene que salir directo, que es lo que ya pasa.
+ */
+function PuertaDeEntrada({ abre }) {
+    const [enviando, setEnviando] = useState(false);
+
+    function armar() {
+        setEnviando(true);
+        router.post(route('whatsapp-menus.puerta-de-entrada'), {}, {
+            preserveScroll: true,
+            onFinish: () => setEnviando(false),
+        });
+    }
+
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-dashed p-4">
+            <div className="flex items-start gap-3 min-w-0">
+                <div className="size-10 shrink-0 rounded-xl bg-muted flex items-center justify-center">
+                    <Sparkles className="size-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">
+                        ¿Que el cliente elija entre tu menú y preguntarte?
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-3xl">
+                        Al escribir recibirá dos botones: <strong className="text-foreground">Ver las opciones</strong>,
+                        que abre {abre ? <>«{abre}»</> : 'tu menú'} tal como está hoy, y{' '}
+                        <strong className="text-foreground">Preguntar algo</strong>, que lo atiende la IA con tu
+                        documentación.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1.5 max-w-3xl">
+                        {abre ? <>«{abre}»</> : 'Tu menú'} no se toca: conserva sus opciones y sus palabras clave, y
+                        sólo deja de ser quien saluda. Para deshacerlo, borra el menú «Puerta de entrada».
+                    </p>
+                </div>
+            </div>
+
+            <Button variant="outline" onClick={armar} disabled={enviando} className="gap-2 shrink-0">
+                {enviando ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                Armarla
+            </Button>
         </div>
     );
 }

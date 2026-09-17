@@ -97,6 +97,24 @@ class WhatsAppMenu extends Model
         return $cada > 0 && $horasDeSilencio >= $cada;
     }
 
+    /**
+     * Este menú deja de saludar, para que salude otro.
+     *
+     * **No se apaga ni se borra**: sólo pierde el disparo de bienvenida. Si
+     * tenía palabras clave sigue respondiendo a ellas, y si no, se queda como
+     * un menú que sólo se abre desde otra opción — que es recuperable con una
+     * casilla, mientras que apagarlo por nuestra cuenta no lo parece.
+     *
+     * Vive aquí porque lo hacen dos sitios: el relevo cuando creas otro menú
+     * de bienvenida, y la puerta de entrada al colocarse delante.
+     */
+    public function dejaDeSaludar(): void
+    {
+        $this->update([
+            'match_types' => array_values(array_diff((array) $this->match_types, ['welcome'])),
+        ]);
+    }
+
     public function company()
     {
         return $this->belongsTo(Company::class);

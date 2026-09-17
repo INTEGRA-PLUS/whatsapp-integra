@@ -10,6 +10,7 @@ use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Support\DefaultWhatsAppMenu;
 use App\Support\PlanDeLaEmpresa;
+use App\Support\PuertaDeEntrada;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\OrdenDeLaConversacion;
 use App\Support\UsaIntegra;
@@ -127,6 +128,12 @@ class WhatsAppMenuController extends Controller
             // viaje para encontrarse el interruptor en gris. Con esto, la propia
             // tarjeta ofrece el interruptor cuando se puede, y cuando no, dice
             // qué falta y quién puede resolverlo.
+            // ¿Se le puede ofrecer que el cliente elija entre el menú y la
+            // IA? Sin IA no hay dos caminos, así que ni se menciona.
+            'puerta' => [
+                'se_puede_ofrecer' => PuertaDeEntrada::seLePuedeOfrecer($company),
+                'abre' => PuertaDeEntrada::elQueSaluda($company)?->name,
+            ],
             'iaEstado' => [
                 'disponible' => $orden['ia_chat'],
                 'en_el_plan' => PlanDeLaEmpresa::de($company)->permiteFlujoIa('ai_chat'),
@@ -267,6 +274,31 @@ class WhatsAppMenuController extends Controller
      * No toca los textos del menú (cabecera, cuerpo, pie): son de la empresa y
      * a menudo llevan su nombre y su tono. Sólo trae las opciones.
      */
+    /**
+     * POST /whatsapp-menus/puerta-de-entrada
+     *
+     * Deja que el cliente elija entre el menú y preguntarle a la IA.
+     */
+    public function armarPuertaDeEntrada(Request $request)
+    {
+        $company = Company::findOrFail($request->user()->company_id);
+
+        if (! PuertaDeEntrada::seLePuedeOfrecer($company)) {
+            return back()->with('error', 'Ahora mismo no se puede armar: hace falta la IA encendida y un menú que salude.');
+        }
+
+        $puerta = PuertaDeEntrada::armar($company);
+
+        if (! $puerta) {
+            return back()->with('error', 'No se pudo armar la puerta de entrada. Inténtalo de nuevo.');
+        }
+
+        return back()->with(
+            'success',
+            'Listo: al escribir, tu cliente podrá elegir entre ver el menú o preguntarte. Revisa los textos antes de dejarlo así.'
+        );
+    }
+
     public function aplicarPlantillaIsp(Request $request)
     {
         $company = Company::findOrFail($request->user()->company_id);
@@ -556,9 +588,7 @@ class WhatsAppMenuController extends Controller
      */
     private function cederLaBienvenida(WhatsAppMenu $menu): void
     {
-        $menu->update([
-            'match_types' => array_values(array_diff((array) $menu->match_types, ['welcome'])),
-        ]);
+        $menu->dejaDeSaludar();
 
         Log::channel('whatsapp')->info('👋 La bienvenida cambia de menú', [
             'company_id' => $menu->company_id,

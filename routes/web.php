@@ -448,6 +448,8 @@ Route::middleware('auth')->group(function () {
         // forma de recuperar las cuatro sin escribirlas a mano.
         Route::post('/plantilla-isp', [WhatsAppMenuController::class, 'aplicarPlantillaIsp'])
             ->middleware('permission:whatsapp_menus.update')->name('plantilla-isp');
+        Route::post('/puerta-de-entrada', [WhatsAppMenuController::class, 'armarPuertaDeEntrada'])
+            ->middleware('permission:whatsapp_menus.update')->name('puerta-de-entrada');
         // El interruptor de la IA de los menús.
         Route::post('/ai', [WhatsAppMenuController::class, 'toggleAi'])
             ->middleware('permission:whatsapp_menus.update')->name('ai');
