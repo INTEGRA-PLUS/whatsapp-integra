@@ -258,6 +258,75 @@ class AiChatIntegrationTest extends TestCase
 
 
 
+    /**
+     * Si el cliente vuelve a escribir mientras el modelo piensa, su respuesta
+     * se tira.
+     *
+     * El caso real (17-sep-2026): el cliente mandó «Buenas tardes», ningún menú
+     * lo reconoció y fue al chat IA. Mientras el modelo tardaba 12 s, el chat se
+     * cerró, el cliente escribió «Hola» y eso sí disparó el menú de bienvenida.
+     * La respuesta de la IA llegó un segundo después del menú, y al cliente le
+     * llegaron **dos respuestas seguidas**, la segunda contestando a un mensaje
+     * ya superado.
+     *
+     * Se comprueba DESPUÉS de la espera del modelo a propósito: antes de
+     * preguntar la conversación todavía estaba al día.
+     *
+     * @test
+     */
+    public function una_respuesta_que_llega_tarde_no_se_envia(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response([
+            'status' => 'done', 'answer' => 'Buenas tardes, ¿en qué le ayudo?',
+            'model' => 'gemma4:31b', 'latency_ms' => 12500, 'degraded' => false,
+        ], 200)]);
+
+        $origen = WhatsAppMessage::create([
+            'conversation_id' => $this->conversation->id,
+            'wamid' => 'wamid.TARDE1',
+            'direction' => 'inbound', 'type' => 'text',
+            'content' => 'Buenas tardes', 'status' => 'delivered', 'sent_at' => now(),
+        ]);
+
+        // Mientras el modelo pensaba, el cliente escribió otra cosa.
+        WhatsAppMessage::create([
+            'conversation_id' => $this->conversation->id,
+            'wamid' => 'wamid.TARDE2',
+            'direction' => 'inbound', 'type' => 'text',
+            'content' => 'Hola', 'status' => 'delivered', 'sent_at' => now(),
+        ]);
+
+        (new ProcessWhatsAppChatAi(
+            $this->instance->id, $this->conversation->id, 'Buenas tardes', $origen->wamid
+        ))->handle(new WhatsAppChatAiClient);
+
+        Queue::assertNotPushed(ProcessWhatsAppMenu::class);
+    }
+
+    /** Y si nadie escribió encima, se envía como siempre. */
+    public function test_si_nadie_escribio_encima_la_respuesta_sale(): void
+    {
+        Queue::fake();
+        Http::fake(['*' => Http::response([
+            'status' => 'done', 'answer' => 'Claro que sí.',
+            'model' => 'gemma4:31b', 'latency_ms' => 700, 'degraded' => false,
+        ], 200)]);
+
+        WhatsAppMessage::create([
+            'conversation_id' => $this->conversation->id,
+            'wamid' => 'wamid.SOLO1',
+            'direction' => 'inbound', 'type' => 'text',
+            'content' => 'Buenas tardes', 'status' => 'delivered', 'sent_at' => now(),
+        ]);
+
+        (new ProcessWhatsAppChatAi(
+            $this->instance->id, $this->conversation->id, 'Buenas tardes', 'wamid.SOLO1'
+        ))->handle(new WhatsAppChatAiClient);
+
+        Queue::assertPushed(ProcessWhatsAppMenu::class);
+    }
+
     /** @test */
     public function entiende_la_respuesta_real_del_gateway(): void
     {

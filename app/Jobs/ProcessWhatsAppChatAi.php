@@ -72,6 +72,17 @@ class ProcessWhatsAppChatAi implements ShouldQueue
             return;
         }
 
+        // El cliente siguió hablando mientras esto esperaba en la cola: lo que
+        // se iba a preguntar ya está superado.
+        if ($this->elClienteYaSiguioHablando($conversation)) {
+            Log::channel('whatsapp')->info('⏭️ Chat IA omitido: el cliente escribió otra vez', [
+                'conversation_id' => $conversation->id,
+                'wamid' => $this->wamid,
+            ]);
+
+            return;
+        }
+
         // La respuesta va a tardar todavía más que esto: si la ventana ya está
         // al límite, preguntar es gastar una inferencia que no se podrá enviar.
         if (! $conversation->isWindowOpen()) {
@@ -109,6 +120,21 @@ class ProcessWhatsAppChatAi implements ShouldQueue
             return;
         }
 
+        // **Y otra vez aquí, que es la que de verdad importa.** El modelo tarda
+        // —12 s en el caso que destapó esto, hasta 180 s de timeout— y en ese
+        // rato el cliente puede haber escrito otra cosa y haber recibido ya una
+        // respuesta. Soltar ahora lo que se pensó para el mensaje anterior le
+        // llega como una segunda respuesta seguida, contestando a algo que ya
+        // no viene a cuento.
+        if ($this->elClienteYaSiguioHablando($conversation)) {
+            Log::channel('whatsapp')->info('🗑️ Respuesta del chat IA descartada: llegó tarde', [
+                'conversation_id' => $conversation->id,
+                'wamid' => $this->wamid,
+            ]);
+
+            return;
+        }
+
         ProcessWhatsAppMenu::dispatch(
             $instance->id,
             $conversation->id,
@@ -118,6 +144,33 @@ class ProcessWhatsAppChatAi implements ShouldQueue
             null,
             $decision
         );
+    }
+
+    /**
+     * ¿Ha entrado otro mensaje del cliente después del que originó la pregunta?
+     *
+     * Los entrantes de tipo `system` no cuentan: son los avisos de WhatsApp
+     * —un mensaje revocado, un fallo de entrega— y no es el cliente hablando.
+     */
+    private function elClienteYaSiguioHablando(WhatsAppConversation $conversation): bool
+    {
+        if ($this->wamid === '') {
+            return false;
+        }
+
+        $origen = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('wamid', $this->wamid)
+            ->first(['id']);
+
+        if ($origen === null) {
+            return false;
+        }
+
+        return WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'inbound')
+            ->where('type', '!=', 'system')
+            ->where('id', '>', $origen->id)
+            ->exists();
     }
 
     /**
