@@ -291,8 +291,8 @@ class MenuReview
         if ($option->action_type === WhatsAppMenuOption::ACTION_IA && ! $iaDisponible) {
             $issues[] = [
                 'level' => self::WARNING,
-                'says' => 'La contesta la IA, pero la IA no está disponible: hoy esta opción pasa el chat a un asesor.',
-                'fix' => 'Enciende la IA en «IA que responde», o cámbiale la acción.',
+                'says' => 'La contesta la IA, pero «IA en los chats» está apagada: hoy esta opción pasa el chat a un asesor.',
+                'fix' => 'Enciende «IA en los chats» en «IA que responde» —no es la misma que «IA para los menús»—, o cámbiale la acción.',
             ];
         }
 

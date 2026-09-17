@@ -111,6 +111,15 @@ const emptyForm = () => ({
     options: [emptyOption()],
 });
 
+/**
+ * ¿El borrador tiene algo dentro?
+ *
+ * Se compara contra un formulario recién nacido en vez de mirar campo a campo:
+ * añadir un campo al menú y olvidarse de añadirlo aquí haría que un borrador
+ * con ese campo lleno se tirara a la basura como si estuviera vacío.
+ */
+const hayBorrador = form => JSON.stringify(form) !== JSON.stringify(emptyForm());
+
 export default function WhatsAppMenusIndex({ menus, instances, agents, limits, actionTypes = [], statusSegments = [], integra = {}, ai = {}, orden = {} }) {
     const { errors } = usePage().props;
     // value → { label, group, reply }: lo usan la tarjeta (para nombrar la
@@ -128,6 +137,11 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         horarios: !!orden.horarios,
     };
     const [showCreate, setShowCreate] = useState(false);
+    // El paso del asistente vive aquí y no dentro del formulario porque cerrar
+    // el modal lo desmonta: si viviera dentro, volver a abrirlo devolvería al
+    // paso 1 con los tres pasos ya rellenos.
+    const [pasoCrear, setPasoCrear] = useState(0);
+    const [pasoEditar, setPasoEditar] = useState(0);
     const [showHelp, setShowHelp] = useState(false);
     const [editing, setEditing] = useState(null);
     const [createForm, setCreateForm] = useState(emptyForm);
@@ -201,6 +215,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
             })),
         });
         setFocusOption(focusOptionId);
+        setPasoEditar(focusOptionId != null ? 2 : 0);
         setEditing(menu);
     }
 
@@ -219,7 +234,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
                             <HelpCircle className="size-4" /> ¿Cómo funciona?
                         </Button>
-                        <Button onClick={() => { setCreateForm(emptyForm()); setShowCreate(true); }} className="gap-2">
+                        <Button onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nuevo menú
                         </Button>
                     </div>
@@ -286,7 +301,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                             sigue la lista». */}
                         <button
                             type="button"
-                            onClick={() => { setCreateForm(emptyForm()); setShowCreate(true); }}
+                            onClick={() => setShowCreate(true)}
                             className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 text-muted-foreground transition hover:border-border hover:bg-muted/30 hover:text-foreground"
                         >
                             <Plus className="size-5" />
@@ -318,6 +333,8 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 <Modal wide title="Nuevo menú" description="Define el mensaje, las opciones y cuándo aparece" onClose={() => setShowCreate(false)}>
                     <MenuForm
                         form={createForm} setForm={setCreateForm}
+                        paso={pasoCrear} setPaso={setPasoCrear}
+                        onDescartar={() => { setCreateForm(emptyForm()); setPasoCrear(0); }}
                         instances={instances} agents={agents} menus={menus} limits={limits} errors={errors}
                         actionTypes={actionTypes} actionMeta={actionMeta} integra={integra} statusSegments={statusSegments}
                         onSubmit={handleCreate} onCancel={() => setShowCreate(false)} submitLabel="Crear menú"
@@ -329,6 +346,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 <Modal wide title="Editar menú" description={`Modificar: ${editing.name}`} onClose={() => setEditing(null)}>
                     <MenuForm
                         form={editForm} setForm={setEditForm}
+                        paso={pasoEditar} setPaso={setPasoEditar}
                         instances={instances} agents={agents} menus={menus} limits={limits} errors={errors}
                         actionTypes={actionTypes} actionMeta={actionMeta} integra={integra} statusSegments={statusSegments}
                         editingId={editing.id} focusOption={focusOption}
@@ -466,13 +484,9 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
     );
 }
 
-function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, focusOption = null, onSubmit, onCancel, submitLabel }) {
+function MenuForm({ form, setForm, instances, agents, menus, limits, errors, actionTypes, actionMeta, integra = {}, statusSegments = [], editingId = null, focusOption = null, paso = 0, setPaso = () => {}, onDescartar = null, onSubmit, onCancel, submitLabel }) {
     const options = form.options ?? [];
     const mensajeRef = useRef(null);
-
-    // Cuando se entra desde un aviso de la revisión, el formulario abre
-    // directamente en las opciones: es donde está lo que hay que arreglar.
-    const [paso, setPaso] = useState(focusOption != null ? 2 : 0);
 
     // Si el servidor devuelve un error, el asistente va al paso donde está ese
     // campo. La clave del objeto de errores cambia en cada respuesta, así que
@@ -557,6 +571,24 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                 campo creaba el menú a medias. Guardar es el botón del último
                 paso, que llama a onSubmit a mano. */}
             <form onSubmit={e => e.preventDefault()} className="space-y-5 min-w-0">
+                {/* Cerrar el modal ya no tira el trabajo, pero un formulario a
+                    medias sin explicación se lee como un fallo —«¿por qué está
+                    esto escrito?»—. Se dice, y se ofrece la salida. */}
+                {onDescartar && hayBorrador(form) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed px-3 py-2">
+                        <p className="text-[11px] text-muted-foreground">
+                            Seguimos con lo que llevabas escrito. No se guarda nada hasta que crees el menú.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={onDescartar}
+                            className="text-[11px] font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        >
+                            Empezar de cero
+                        </button>
+                    </div>
+                )}
+
                 <PasosMenu paso={paso} setPaso={setPaso} listoHastaPaso={listoHastaPaso} />
 
                 {/* ── Paso 1: qué clase de menú es ── */}
@@ -1360,7 +1392,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                         const bloqueado = (group === 'integra' && !integra.connected)
                             || (group === 'ia' && !iaDisponible);
                         const motivo = group === 'ia'
-                            ? 'enciéndela en «IA que responde»'
+                            ? 'enciende «IA en los chats» en «IA que responde»'
                             : 'conecta Integra para usarlas';
                         const etiqueta = bloqueado
                             ? `${GROUP_LABELS[group]} — ${motivo}`
@@ -1415,8 +1447,8 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                 <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="size-3.5 shrink-0 mt-px" />
                     <span>
-                        La IA está apagada, así que hoy esta opción pasa el chat a un asesor en vez
-                        de responder. Enciéndela en «IA que responde».
+«IA en los chats» está apagada —no es la misma que «IA para los menús»—, así que hoy
+                        esta opción pasa el chat a un asesor en vez de responder. Enciéndela en «IA que responde».
                     </span>
                 </p>
             )}
@@ -2216,8 +2248,19 @@ function AiSwitch({ ai, integra = {} }) {
                         <Bot className="size-5" />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground">
-                            {encendida ? 'La IA está atendiendo' : 'IA para los menús'}
+                        {/* El nombre NO cambia al encenderse. Decía «La IA
+                            está atendiendo», y con la otra IA —la de los
+                            chats— apagada dos pantallas más allá, el resultado
+                            era leer «la IA está encendida» aquí y «enciende la
+                            IA» allá, sobre dos cosas distintas. Son dos, y cada
+                            una se llama por su nombre siempre. */}
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
+                            IA para los menús
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                encendida ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
+                            }`}>
+                                {encendida ? 'Encendida' : 'Apagada'}
+                            </span>
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
                             {encendida
@@ -2227,6 +2270,11 @@ function AiSwitch({ ai, integra = {} }) {
                         <p className="text-[11px] text-muted-foreground mt-1.5">
                             Tus menús y disparadores mandan sobre ella: la IA sólo entra cuando ninguno reconoce el mensaje.
                             Las cifras y las fechas las sigue calculando el sistema, no el modelo.
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1.5">
+                            No es la misma que <strong className="text-foreground">«IA en los chats»</strong>, que está en
+                            «IA que responde»: ésta <em>ejecuta opciones</em> del menú; aquélla <em>conversa</em> con tu
+                            documentación y es la que hace falta para la acción «Que responda la IA».
                         </p>
                         {!ai.available && (
                             <p className="text-[11px] text-warning mt-1.5">
@@ -2243,7 +2291,7 @@ function AiSwitch({ ai, integra = {} }) {
                     className="gap-2"
                 >
                     <Power className="size-4" />
-                    {encendida ? 'Apagar la IA' : 'Encender la IA'}
+                    {encendida ? 'Apagar' : 'Encender'}
                 </Button>
             </div>
 
