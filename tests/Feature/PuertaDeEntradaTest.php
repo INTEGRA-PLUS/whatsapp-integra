@@ -81,7 +81,33 @@ class PuertaDeEntradaTest extends TestCase
         $this->assertCount(2, $antiguo->options, 'Sus opciones no se tocan.');
     }
 
-    /** Y no se ofrece dos veces: la señal es que el que saluda ya tenga una opción de IA. */
+    /**
+     * Un menú de bienvenida con opciones de IA dentro NO es una puerta.
+     *
+     * Es el caso real que escondió el botón a quien lo pidió: cinco opciones,
+     * dos de ellas contestadas por la IA. Eso no le da a elegir al cliente
+     * entre dos caminos — le da cinco, como cualquier menú.
+     *
+     * @test
+     */
+    public function un_menu_con_opciones_de_ia_dentro_no_es_una_puerta(): void
+    {
+        $company = $this->empresa();
+        $menu = $this->menuQueSaluda($company);
+        $this->encenderIa($company);
+
+        $menu->options()->create([
+            'position' => 2, 'title' => 'Nuestros servicios',
+            'action_type' => WhatsAppMenuOption::ACTION_IA,
+        ]);
+
+        $this->assertTrue(
+            PuertaDeEntrada::seLePuedeOfrecer($company),
+            'Sigue sin tener puerta: la opción de IA es una más de su lista.'
+        );
+    }
+
+    /** Y no se ofrece dos veces: la señal es la forma —dos opciones, menú e IA—. */
     public function test_no_se_ofrece_si_ya_esta_armada(): void
     {
         $company = $this->empresa();

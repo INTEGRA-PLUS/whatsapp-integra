@@ -76,18 +76,28 @@ class PuertaDeEntrada
     }
 
     /**
-     * ¿El menú que saluda ya deja elegir?
+     * ¿El menú que saluda ES una puerta de entrada?
      *
-     * La señal es que entre sus opciones haya una de IA: eso es exactamente lo
-     * que la puerta añade, y da igual que la armara este botón o el admin a
-     * mano. Mirar un nombre de menú sería frágil —lo renombran— y volvería a
-     * ofrecer el botón a quien ya lo tiene.
+     * La forma es la señal: **exactamente dos opciones, una que abre otro menú
+     * y otra de IA**. Eso es una bifurcación y no otra cosa, y da igual que la
+     * armara este botón o el admin a mano.
+     *
+     * El primer intento fue «tiene alguna opción de IA» y escondía el botón a
+     * quien más lo quería: un menú de bienvenida con cinco opciones, dos de
+     * ellas contestadas por la IA, no le da a elegir nada al cliente —le da
+     * cinco caminos, como cualquier menú—. Y mirar el nombre sería peor: lo
+     * renombran y el botón reaparece proponiendo armar lo que ya existe.
      */
     public static function yaArmada(WhatsAppMenu $saluda): bool
     {
-        return $saluda->options->contains(
-            fn (WhatsAppMenuOption $o) => $o->action_type === WhatsAppMenuOption::ACTION_IA
-        );
+        if ($saluda->options->count() !== 2) {
+            return false;
+        }
+
+        $acciones = $saluda->options->pluck('action_type');
+
+        return $acciones->contains('submenu')
+            && $acciones->contains(WhatsAppMenuOption::ACTION_IA);
     }
 
     /**
