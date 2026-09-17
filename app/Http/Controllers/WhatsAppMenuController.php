@@ -10,6 +10,7 @@ use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Support\DefaultWhatsAppMenu;
 use App\Support\OrdenDeLaConversacion;
+use App\Support\UsaIntegra;
 use App\Services\Integra;
 use App\Services\IntegraCapabilities;
 use App\Services\IntegraClient;
@@ -33,6 +34,8 @@ class WhatsAppMenuController extends Controller
             return redirect()->route('master.index');
         }
 
+        $company = Company::findOrFail($user->company_id);
+
         $menus = WhatsAppMenu::where('company_id', $user->company_id)
             ->with(['instance:id,name', 'options.assignee:id,name', 'options.targetMenu:id,name'])
             ->orderByDesc('is_root')
@@ -42,13 +45,19 @@ class WhatsAppMenuController extends Controller
             // como botones o como lista?"), y se deduce del número de opciones.
             ->each(fn (WhatsAppMenu $menu) => $menu->setAttribute('format', $menu->format()));
 
-        // Integra es un extra para ISPs. Quien no lo usa no debe leer ni una
-        // palabra sobre él: ni permisos de IA que lo consultan, ni avisos de si
-        // está conectado, ni la plantilla. Se decide una vez y manda en toda la
-        // pantalla.
+        // Integra es un extra para ISPs. Una farmacia o una barbería no debe
+        // leer ni una palabra sobre él: ni permisos de IA que lo consultan, ni
+        // avisos de si está conectado, ni la plantilla.
+        //
+        // **La señal es si la empresa es cliente de Integra**, no si tiene
+        // puestas las opciones que lo consultan. Eso último se probó y no
+        // servía: el menú de fábrica antiguo se las sembró a las 49 empresas,
+        // así que la condición era verdadera siempre y no escondía nada a
+        // nadie. Un cliente nuevo que no venga de Integra no ve nada aunque
+        // herede un menú con esas opciones.
         $integraConectado = Integra::connected($user->company_id);
         $tieneAutoservicio = $this->yaTieneAutoservicio($menus);
-        $usaIntegra = $integraConectado || $tieneAutoservicio;
+        $usaIntegra = UsaIntegra::de($company);
 
         $instances = Instance::where('company_id', $user->company_id)
             ->orderBy('name')
@@ -550,16 +559,19 @@ class WhatsAppMenuController extends Controller
      */
     public function review(Request $request)
     {
-        $companyId = auth()->user()->company_id;
+        $company = Company::findOrFail(auth()->user()->company_id);
 
-        $capabilities = IntegraCapabilities::for($companyId, $request->boolean('fresh'));
+        $capabilities = IntegraCapabilities::for($company->id, $request->boolean('fresh'));
 
-        $menus = WhatsAppMenu::where('company_id', $companyId)->with('options')->get();
+        $menus = WhatsAppMenu::where('company_id', $company->id)->with('options')->get();
 
         return response()->json([
             'capabilities' => $capabilities,
             'labels' => IntegraCapabilities::LABELS,
-            'issues' => MenuReview::build($menus, $capabilities),
+            // Este panel carga por su cuenta, aparte de la pantalla, así que
+            // necesita la misma llave o acabaría siendo el único sitio que le
+            // habla de Integra a una farmacia. Ya pasó.
+            'issues' => MenuReview::build($menus, $capabilities, UsaIntegra::de($company)),
         ]);
     }
 

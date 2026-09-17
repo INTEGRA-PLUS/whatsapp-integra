@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Company;
 use App\Support\OrdenDeLaConversacion;
+use App\Support\UsaIntegra;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -41,6 +42,9 @@ class FlujoIaController extends Controller
             // «Menús de WhatsApp»: la duda aparece en las dos pantallas, y
             // mandar a la otra a leerlo es como no contarlo.
             'orden' => OrdenDeLaConversacion::de($company->id),
+            // La IA de los menús resuelve contra Integra: sin Integra no hace
+            // nada, y a una farmacia no le dice nada. Ver `UsaIntegra`.
+            'usa_integra' => UsaIntegra::de($company),
         ]);
     }
 }

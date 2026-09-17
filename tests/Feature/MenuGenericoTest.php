@@ -150,21 +150,57 @@ class MenuGenericoTest extends TestCase
         $this->assertFalse($integra['puede_aplicar_plantilla'], 'Ni se le ofrece la plantilla.');
     }
 
-    /** Y en cuanto tiene las opciones puestas, sí: ahí el aviso le sirve. */
-    public function test_con_opciones_de_autoservicio_integra_si_aparece(): void
+    /**
+     * A un cliente de Integra sí, aunque todavía no lo haya conectado.
+     *
+     * La señal es **venir de Integra**, no tener puestas las opciones que lo
+     * consultan. Se probó al revés y no servía: el menú de fábrica antiguo se
+     * las sembró a las 49 empresas de producción, así que esa condición era
+     * verdadera siempre y no escondía nada a nadie — ni a una farmacia.
+     *
+     * @test
+     */
+    public function a_un_cliente_de_integra_si_se_le_menciona(): void
     {
-        $company = Company::create(['name' => 'Fibra', 'slug' => 'fibra-usa', 'active' => true]);
+        $company = Company::create([
+            'name' => 'Fibra', 'slug' => 'fibra-usa', 'active' => true,
+            'viene_de_integra' => true,
+        ]);
         $this->comoAdmin($company);
-
-        $this->post(route('whatsapp-menus.plantilla-isp'))->assertRedirect();
 
         $integra = $this->get(route('whatsapp-menus.index'))
             ->assertOk()
             ->viewData('page')['props']['integra'];
 
         $this->assertTrue($integra['usa']);
-        // Y ya no se le ofrece la plantilla: ya la tiene.
-        $this->assertFalse($integra['puede_aplicar_plantilla']);
+        $this->assertTrue($integra['puede_aplicar_plantilla'], 'Y se le ofrece la plantilla, que es lo suyo.');
+    }
+
+    /**
+     * Y una farmacia que heredó un menú con opciones de Integra tampoco la ve.
+     *
+     * Es el caso que de verdad importa: las 49 empresas de producción arrastran
+     * esas opciones del menú de fábrica antiguo. Si la condición mirara el menú,
+     * seguirían leyendo sobre un ERP que no han contratado.
+     *
+     * @test
+     */
+    public function una_farmacia_con_opciones_heredadas_sigue_sin_ver_integra(): void
+    {
+        $company = Company::create([
+            'name' => 'Farmacia', 'slug' => 'farmacia', 'active' => true,
+            'viene_de_integra' => false,
+        ]);
+        $this->comoAdmin($company);
+
+        // Hereda el menú de ISP, como las 49 de producción.
+        $this->post(route('whatsapp-menus.plantilla-isp'))->assertRedirect();
+
+        $integra = $this->get(route('whatsapp-menus.index'))
+            ->assertOk()
+            ->viewData('page')['props']['integra'];
+
+        $this->assertFalse($integra['usa'], 'Tiene las opciones, pero no es cliente de Integra.');
     }
 
     private function usaIntegra(WhatsAppMenu $menu): bool

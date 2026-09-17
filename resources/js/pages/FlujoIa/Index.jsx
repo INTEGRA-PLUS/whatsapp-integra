@@ -1105,7 +1105,7 @@ function fecha(iso) {
     return new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function Configuracion() {
+function Configuracion({ usaIntegra = false }) {
     const [state, setState] = useState(null);
     const [loading, setLoading] = useState(true);
     const [secret, setSecret] = useState('');
@@ -1327,7 +1327,12 @@ function Configuracion() {
                                 </div>
                             </Card>
 
-                            {/* IA de los menús */}
+                            {/* IA de los menús. Sólo para quien usa Integra:
+                                esta IA existe para resolver contra él —consultar
+                                una factura, radicar una falla— así que sin
+                                Integra no hace absolutamente nada, y a una
+                                farmacia le sobra hasta el nombre. */}
+                            {usaIntegra && (
                             <Card>
                                 <div className="p-6">
                                     <div className="flex items-start justify-between gap-6">
@@ -1385,6 +1390,7 @@ function Configuracion() {
                                     )}
                                 </div>
                             </Card>
+                            )}
 
                             <SeccionTitulo
                                 Icono={BadgeCheck}
@@ -1539,7 +1545,7 @@ function Venta({ plan }) {
 
 /* ───────────────────────── La página ───────────────────────── */
 
-export default function FlujoIaIndex({ tiene_ia, plan, orden = {} }) {
+export default function FlujoIaIndex({ tiene_ia, plan, orden = {}, usa_integra = false }) {
     return (
         <AppLayout breadcrumb={['IA que responde']}>
             <Head title="IA que responde" />
@@ -1579,7 +1585,7 @@ export default function FlujoIaIndex({ tiene_ia, plan, orden = {} }) {
                     configuración ocupa el ancho, que es lo que permite las dos
                     columnas. */}
                 <div className={tiene_ia ? '' : 'max-w-3xl'}>
-                    {tiene_ia ? <Configuracion /> : <Venta plan={plan} />}
+                    {tiene_ia ? <Configuracion usaIntegra={usa_integra} /> : <Venta plan={plan} />}
                 </div>
             </div>
         </AppLayout>

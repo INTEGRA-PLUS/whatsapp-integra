@@ -31,7 +31,7 @@ class MenuReview
      * @param array{connected: bool, checked: bool, can: array<string, bool>, error: ?string} $capabilities
      * @return list<array{menu_id: ?int, menu: ?string, option: ?string, level: string, says: string, fix: string, action: ?array}>
      */
-    public static function build($menus, array $capabilities): array
+    public static function build($menus, array $capabilities, bool $usaIntegra = true): array
     {
         $issues = [];
 
@@ -42,11 +42,19 @@ class MenuReview
         // se pueden arreglar entre ruido que no.
         $integraConectado = (bool) ($capabilities['connected'] ?? false);
 
+        // Una farmacia que heredó el menú de fábrica antiguo arrastra sus
+        // opciones de autoservicio, y sin esto sería este panel el único sitio
+        // que le habla de un ERP de ISPs. Para ella esas opciones son «pasar a
+        // un asesor» y ya está: nada que revisar, nada que conectar.
+        if (! $usaIntegra) {
+            $integraConectado = false;
+        }
+
         // Un token revocado tumba TODOS los permisos a la vez, así que sacar un
         // aviso por cada opción y cada permiso llenaría la pantalla de ocho
         // líneas que dicen lo mismo y esconden las que sí son distintas. Es una
         // sola causa y una sola cosa que hacer: reconectar.
-        $tokenDead = ($capabilities['error'] ?? null) !== null;
+        $tokenDead = $usaIntegra && ($capabilities['error'] ?? null) !== null;
 
         if ($tokenDead) {
             $issues[] = [
@@ -73,7 +81,7 @@ class MenuReview
         // se quedan mudas, derivan a un asesor.
         $deAutoservicio = self::cuantasSonDeIntegra($menus);
 
-        if (! $integraConectado && $deAutoservicio > 0) {
+        if ($usaIntegra && ! $integraConectado && $deAutoservicio > 0) {
             $issues[] = [
                 'menu_id' => null,
                 'menu' => null,
