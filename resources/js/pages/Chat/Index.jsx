@@ -19,6 +19,7 @@ import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import SelectorInstancia from '@/components/selector-instancia';
 import { ResumenDialog } from '@/pages/Chat/ResumenDialog';
+import FichaIntegra from '@/components/FichaIntegra';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import {
@@ -1619,7 +1620,7 @@ function PaymentModal({ integration, conversation, onClose }) {
     );
 }
 
-export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 } }) {
+export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 }, usa_integra = false }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -6997,6 +6998,21 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {/* La ficha del cliente en el ERP. Se monta con el panel:
+                                                consultar Integra son varias llamadas y no vale la pena
+                                                hacerlas por cada chat que se abre, sólo cuando alguien
+                                                pide ver quién es.
+
+                                                Y sólo para quien tiene algo que ver con Integra: a una
+                                                farmacia, un bloque que únicamente puede decirle «no
+                                                conectado» le plantea una pregunta que no sabe responder.
+                                                Ver App\Support\UsaIntegra. */}
+                                            {usa_integra && (
+                                                <div className="border-t border-border/40 pt-5">
+                                                    <FichaIntegra conversationId={selectedConversation.id} />
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Acciones rápidas */}

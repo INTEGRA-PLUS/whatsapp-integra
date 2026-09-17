@@ -22,6 +22,7 @@ use App\Services\TemplateParameterGuard;
 use App\Services\WebhookDispatcher;
 use App\Support\ConversationNotice;
 use App\Support\Realtime;
+use App\Support\UsaIntegra;
 use App\Support\Sentimiento\Lectura;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -70,6 +71,13 @@ class ChatController extends Controller
             // el botón en el primer render: pedirlos aparte lo haría
             // aparecer medio segundo después, que es peor que no tenerlo.
             'resumen_ia' => $this->ajustesResumen($user->company_id),
+            // Si la ficha del cliente en el ERP se pinta o no. Va como prop y no
+            // la decide el propio panel porque la alternativa es que toda empresa
+            // ajena a Integra vea un bloque «Integra» que sólo puede decirle que
+            // no está conectado — la mención que `UsaIntegra` existe para evitar.
+            // Sin empresa no hay nada que preguntarle a `UsaIntegra`: el chat se
+            // abre igual (ver ChatSinEmpresaTest) y ahí no se pinta la ficha.
+            'usa_integra' => $user->company ? UsaIntegra::de($user->company) : false,
         ]);
     }
 

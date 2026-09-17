@@ -4,10 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Jobs\SyncContactsFromIntegra;
 use App\Models\CompanyIntegration;
+use App\Models\Instance;
+use App\Models\WhatsAppConversation;
+use App\Services\FichaDeClienteIntegra;
 use App\Services\Integra;
 use App\Services\IntegraClient;
 use App\Support\IntegrationProvider;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class IntegrationController extends Controller
@@ -488,6 +492,104 @@ class IntegrationController extends Controller
                 'observaciones' => $data['observaciones'] ?? "Pago registrado desde WhatsApp ({$agente})",
             ], $emitir ? ['emitir_electronica' => true] : [])),
         ]);
+    }
+
+    /**
+     * GET /api/integrations/integra/ficha?conversation_id= — la ficha del
+     * cliente en Integra para el panel del chat.
+     *
+     * Devuelve de una sola vez lo que el ERP sabe de quien escribe: datos,
+     * contratos y estado del servicio, facturas pendientes e historial, últimos
+     * pagos y radicados. Ver App\Services\FichaDeClienteIntegra.
+     *
+     * A diferencia del modal de pagos, NO exige el interruptor del disparador:
+     * ese enciende la acción de cobrar, y consultar no es cobrar. Basta con que
+     * la empresa tenga Integra conectado (Integra::respond).
+     *
+     * El aislamiento va por la instancia: la conversación se busca entre las de
+     * las líneas de la empresa del usuario, nunca por id a secas. Sin ese
+     * `whereIn` cualquiera podría pedir la ficha del cliente de otra empresa
+     * escribiendo el id de su conversación.
+     */
+    public function ficha(Request $request)
+    {
+        $data = $request->validate([
+            'conversation_id' => 'required|integer',
+            'refrescar' => 'nullable|boolean',
+        ]);
+
+        $companyId = $this->companyId();
+
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
+
+        $conversation = WhatsAppConversation::with('contact:id,identificacion,external_id')
+            ->whereIn('instance_id', $instanceIds)
+            ->find($data['conversation_id']);
+
+        if (! $conversation) {
+            return response()->json(['message' => 'Conversación no encontrada.'], 404);
+        }
+
+        // El cliente que oculta su número tras un nombre de usuario no se puede
+        // cruzar con el ERP: no hay por dónde buscarlo. Se dice, en vez de
+        // devolver una ficha vacía que parece un fallo de conexión.
+        $identificacion = $conversation->contact?->identificacion;
+        $telefono = $conversation->hasPhone() ? $conversation->phone_number : null;
+
+        if (! $identificacion && ! $telefono) {
+            return response()->json([
+                'buscable' => false,
+                'encontrado' => false,
+                'message' => 'Este chat no tiene número ni identificación con la que buscar en Integra.',
+            ]);
+        }
+
+        $llave = 'integra:ficha:'.$companyId.':'.($identificacion ?: $telefono);
+
+        if ($request->boolean('refrescar')) {
+            Cache::forget($llave);
+        }
+
+        if ($cacheada = Cache::get($llave)) {
+            return response()->json($cacheada);
+        }
+
+        return Integra::respond($companyId, function (IntegraClient $client) use ($identificacion, $telefono, $llave) {
+            $ficha = FichaDeClienteIntegra::armar($client, $identificacion, $telefono);
+
+            // Un minuto: lo justo para que abrir y cerrar el panel —o pasar por
+            // los tres chats del mismo cliente— no dispare siete peticiones al
+            // ERP, y lo bastante poco para que un pago que se acaba de registrar
+            // se vea al volver. El botón de refrescar no espera ni eso.
+            Cache::put($llave, $ficha, now()->addMinute());
+
+            return $ficha;
+        });
+    }
+
+    /**
+     * GET /api/integrations/integra/factura/{factura} — el detalle de una
+     * factura para el diálogo del panel: montos, ítems y contratos.
+     *
+     * El listado de la ficha manda las facturas en versión `light` —sin ítems—
+     * para no descargar el detalle de veinte facturas que nadie va a abrir.
+     * Esto es lo que responde "¿y esos $76.000 de qué son?".
+     *
+     * No hace falta acotar por empresa a mano: el token es el de la empresa del
+     * usuario e Integra sólo entrega facturas suyas. Pedir el id de otra empresa
+     * responde 404, que es lo que se traduce abajo.
+     */
+    public function factura(int $factura)
+    {
+        return Integra::respond($this->companyId(), function (IntegraClient $client) use ($factura) {
+            $detalle = $client->invoice($factura);
+
+            if (! $detalle) {
+                return response()->json(['message' => 'Integra no encontró esa factura.'], 404);
+            }
+
+            return $detalle;
+        });
     }
 
     /**

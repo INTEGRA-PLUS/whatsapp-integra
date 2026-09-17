@@ -30,6 +30,10 @@ use Illuminate\Support\Facades\Log;
  *        busca por nit, nombre/apellidos, celular, teléfonos y email; cada
  *        contacto trae total_por_pagar y sus facturas_pendientes resumidas
  *   GET  /api/v1/facturas/pendientes?nit=|cliente_id= (facturas.leer)
+ *   GET  /api/v1/facturas?cliente_id=|nit=              (facturas.leer)
+ *        historial completo (abiertas, cerradas y anuladas), paginado
+ *   GET  /api/v1/facturas/{factura}                     (facturas.leer)
+ *        detalle con los ítems cobrados y los contratos vinculados
  *   GET  /api/v1/pagos/catalogos                      (pagos.leer)
  *   POST /api/v1/facturas/{factura}/pagos             (pagos.registrar; + facturas.emitir
  *        si el pago lleva emitir_electronica, que convierte la factura a
@@ -555,6 +559,73 @@ class IntegraClient
             'cliente' => $res->json('meta.cliente'),
             'total_facturas' => (int) ($res->json('meta.total_facturas') ?? 0),
             'total_por_pagar' => (float) ($res->json('meta.total_por_pagar') ?? 0),
+        ];
+    }
+
+    /**
+     * Historial de facturas de un cliente: TODAS, no sólo las que deben.
+     *
+     * Es el complemento de pendingInvoices(): aquella responde "¿cuánto debe?",
+     * ésta responde "¿qué le hemos cobrado y qué ya pagó?", que es lo que el
+     * agente necesita ver en la ficha del chat antes de contestar un reclamo.
+     *
+     * Integra responde 404 de negocio cuando el documento no corresponde a
+     * ningún cliente; aquí eso es una lista vacía y no un fallo: el hilo puede
+     * ser de alguien que todavía no está en el ERP.
+     *
+     * @param array $params ['cliente_id' => ...] o ['nit' => ...], + estado, desde, hasta, por_pagina
+     * @return array{data: array, meta: array}
+     * @throws \RuntimeException
+     */
+    public function invoiceHistory(array $params): array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/facturas', array_filter(
+                $params,
+                fn ($v) => $v !== null && $v !== ''
+            ));
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return ['data' => [], 'meta' => []];
+            }
+            throw $e;
+        }
+
+        return [
+            'data' => $res->json('data') ?? [],
+            'meta' => $res->json('meta') ?? [],
+        ];
+    }
+
+    /**
+     * El detalle de UNA factura: montos, ítems (qué se le cobró línea por línea)
+     * y los contratos a los que va.
+     *
+     * Es lo único que responde "¿y esos $76.000 de qué son?", que es la pregunta
+     * que sigue siempre a "usted debe $76.000". El listado no lo trae: manda las
+     * facturas en versión `light`, sin ítems, para no cargar la página entera.
+     *
+     * Devuelve null si Integra no la conoce (404 de negocio). Como el token es
+     * el de la empresa, Integra sólo entrega facturas suyas: pedir el id de otra
+     * empresa responde 404, no la factura ajena.
+     *
+     * @return array{factura: array, cliente: ?array}|null
+     * @throws \RuntimeException
+     */
+    public function invoice(int $facturaId): ?array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/facturas/'.$facturaId);
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return null;
+            }
+            throw $e;
+        }
+
+        return [
+            'factura' => $res->json('data') ?? [],
+            'cliente' => $res->json('meta.cliente'),
         ];
     }
 

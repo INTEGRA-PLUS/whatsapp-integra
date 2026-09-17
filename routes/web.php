@@ -882,5 +882,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/invoice-payments/invoices', [IntegrationController::class, 'invoices']);
         Route::get('/invoice-payments/catalogs', [IntegrationController::class, 'catalogs']);
         Route::post('/invoice-payments/pay', [IntegrationController::class, 'pay']);
+
+        // La ficha del cliente en Integra que se pinta en el panel del chat.
+        // Sólo lee, así que va con la sesión como el resto de acciones de chat.
+        Route::get('/integra/ficha', [IntegrationController::class, 'ficha']);
+        Route::get('/integra/factura/{factura}', [IntegrationController::class, 'factura'])
+            ->whereNumber('factura');
     });
 });
