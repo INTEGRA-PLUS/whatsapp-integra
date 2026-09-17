@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Support\DefaultWhatsAppMenu;
+use App\Support\PlanDeLaEmpresa;
+use App\Services\WhatsAppChatAiClient;
 use App\Support\OrdenDeLaConversacion;
 use App\Support\UsaIntegra;
 use App\Services\Integra;
@@ -118,6 +120,18 @@ class WhatsAppMenuController extends Controller
             // Para el desplegable de acciones: la de IA se enseña siempre, pero
             // sólo se puede elegir si la IA está de verdad disponible.
             'iaDisponible' => $orden['ia_chat'],
+            // Y si no lo está, POR QUÉ. Mandar a otra pantalla «a encender un
+            // interruptor» sin saber si esa empresa puede encenderlo acaba en un
+            // viaje para encontrarse el interruptor en gris. Con esto, la propia
+            // tarjeta ofrece el interruptor cuando se puede, y cuando no, dice
+            // qué falta y quién puede resolverlo.
+            'iaEstado' => [
+                'disponible' => $orden['ia_chat'],
+                'en_el_plan' => PlanDeLaEmpresa::de($company)->permiteFlujoIa('ai_chat'),
+                'configurada' => WhatsAppChatAiClient::configured(),
+                'desbloqueada' => $company->aiFlowUnlocked(),
+                'complemento' => PlanDeLaEmpresa::de($company)->nombreIa(),
+            ],
             // El interruptor de la IA. Vive aquí y no en Integraciones porque
             // es la IA DE LOS MENÚS: se enciende donde se configuran.
             'ai' => [

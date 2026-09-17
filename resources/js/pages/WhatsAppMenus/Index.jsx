@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import ModoDeAtencion from '@/components/modo-de-atencion';
 import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
@@ -8,7 +9,7 @@ import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2, Bot,
-    Check, ChevronRight, Loader2, MessageSquare,
+    Check, ChevronRight, Loader2, MessageSquare, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MenuHelp from './MenuHelp';
@@ -1286,10 +1287,97 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
     );
 }
 
+/**
+ * Encender la IA sin salir de donde hace falta.
+ *
+ * El aviso mandaba a «Ajustes de la IA» a encender un interruptor. Dos
+ * problemas: es un viaje en mitad de un formulario a medias, y **puede acabar
+ * en un interruptor en gris** —si la empresa no tiene la IA en su plan, o si el
+ * flujo no está configurado en el servidor, allí tampoco se puede encender—.
+ *
+ * Así que primero se mira si esta empresa puede, y sólo entonces se ofrece el
+ * botón. Lo que no se puede resolver aquí se dice aquí, con quién lo resuelve:
+ * un administrador si es de plan, el equipo técnico si es del servidor.
+ *
+ * Al encenderla se recargan los props de IA y la ficha se desbloquea **con el
+ * modal abierto**: el borrador no se toca porque vive en el componente de la
+ * página, no en los props.
+ */
+function EncenderLaIa({ estado = {}, className = '' }) {
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState('');
+
+    const caja = `flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md px-2.5 py-2 text-[11px] ${className}`;
+
+    // No está en el complemento contratado: no hay nada que pulsar en ninguna
+    // pantalla, y decirlo aquí ahorra el viaje y la decepción.
+    if (estado.en_el_plan === false) {
+        return (
+            <p className={`${caja} bg-muted text-muted-foreground`}>
+                <Lock className="size-3.5 shrink-0" />
+                <span>No incluida en {estado.complemento ?? 'tu plan'}. Contacta con un administrador.</span>
+            </p>
+        );
+    }
+
+    // Esto no lo arregla el admin de la empresa: es del servidor.
+    if (estado.configurada === false) {
+        return (
+            <p className={`${caja} bg-warning/15 text-warning`}>
+                <AlertTriangle className="size-3.5 shrink-0" />
+                <span>Falta configurar el flujo de IA en el servidor. Avisa al equipo técnico.</span>
+            </p>
+        );
+    }
+
+    // El desbloqueo pide una clave de activación y vive en su pantalla: ahí sí
+    // hay que ir, y se dice para qué.
+    if (estado.desbloqueada === false) {
+        return (
+            <p className={`${caja} bg-warning/15 text-warning`}>
+                <AlertTriangle className="size-3.5 shrink-0" />
+                <span>
+                    La IA todavía no está activada para tu empresa.{' '}
+                    <a href={route('ia.index')} className="font-medium underline underline-offset-2">
+                        Actívala en Ajustes de la IA
+                    </a>.
+                </span>
+            </p>
+        );
+    }
+
+    function encender() {
+        setEnviando(true); setError('');
+
+        axios.put('/api/settings/ai-flow', { chat_enabled: true })
+            .then(() => router.reload({ only: ['orden', 'iaDisponible', 'iaEstado'] }))
+            .catch(err => setError(err.response?.data?.message ?? 'No se pudo encender la IA.'))
+            .finally(() => setEnviando(false));
+    }
+
+    return (
+        <div className={`${caja} border border-dashed border-border/70`}>
+            <span className="text-muted-foreground">
+                La IA está apagada. Enciéndela y podrás usarla aquí sin cambiar quién atiende el primer mensaje.
+            </span>
+            <button
+                type="button"
+                onClick={encender}
+                disabled={enviando}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+            >
+                {enviando ? <Loader2 className="size-3 animate-spin" /> : <Power className="size-3" />}
+                Encender la IA
+            </button>
+            {error && <span className="w-full text-destructive">{error}</span>}
+        </div>
+    );
+}
+
 function OptionRow({ index, option, focused = false, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
-    // Se lee de la página en vez de bajarlo por tres capas de props: es un
-    // booleano que sólo usa este desplegable y esta tarjeta.
-    const { iaDisponible = false } = usePage().props;
+    // Se lee de la página en vez de bajarlo por tres capas de props: sólo lo
+    // usan este desplegable y esta tarjeta.
+    const { iaDisponible = false, iaEstado = {} } = usePage().props;
     const ActionIcon = iconFor(option.action_type);
     const tituloRef = useRef(null);
     const respuestaRef = useRef(null);
@@ -1406,23 +1494,27 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                     // mitad de la razón para contratarlas.
                     const bloqueado = (group === 'integra' && !integra.connected)
                         || (group === 'ia' && !iaDisponible);
-                    // Decía «elige "Con IA" arriba», y eso es SALIRSE del menú:
-                    // ese modo apaga los menús que saltan. Mandaba a romper lo
-                    // que se estaba configurando para poder configurarlo. La IA
-                    // no se enciende eligiendo una puerta de entrada: se
-                    // enciende en sus ajustes, y desde ahí vale para las tres.
-                    const motivo = group === 'ia'
-                        ? 'Enciéndela en «Ajustes de la IA» y podrás usarla aquí sin dejar de responder con tu menú.'
-                        : 'Conecta Integra para que resuelvan solas; mientras tanto derivan a un asesor.';
-
                     return (
                         <div key={group}>
                             <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 {GROUP_LABELS[group] ?? group}
-                                {bloqueado && (
-                                    <span className="font-normal normal-case tracking-normal text-warning">{motivo}</span>
+                                {bloqueado && group === 'integra' && (
+                                    <span className="font-normal normal-case tracking-normal text-warning">
+                                        Conecta Integra para que resuelvan solas; mientras tanto derivan a un asesor.
+                                    </span>
                                 )}
                             </p>
+
+                            {/* Y si la bloqueada es la IA, aquí NO va un letrero:
+                                va el interruptor. Decía «enciéndela en Ajustes
+                                de la IA» y eso es un viaje a otra pantalla —que
+                                además puede acabar en un interruptor en gris, si
+                                esa empresa no tiene la IA en su plan—. Lo que se
+                                puede resolver aquí se resuelve aquí, y lo que no,
+                                se dice antes de mandar a nadie a ninguna parte. */}
+                            {bloqueado && group === 'ia' && (
+                                <EncenderLaIa estado={iaEstado} className="mb-1.5" />
+                            )}
                             <div className="grid gap-1.5 sm:grid-cols-2">
                                 {list.map(a => {
                                     const Icono = iconFor(a.value);
