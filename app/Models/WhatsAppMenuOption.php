@@ -294,13 +294,19 @@ class WhatsAppMenuOption extends Model
      * Catálogo para el formulario. Se arma aquí y no en el front para que al
      * añadir un tipo nuevo no haya que tocar dos listas que se desincronizan.
      *
-     * `$conIa` decide si aparece «Que responda la IA». No es un permiso: es que
-     * ofrecer una acción que la empresa no tiene contratada es prometer algo
-     * que al tocarlo deriva a un asesor.
+     * **«Que responda la IA» sale siempre, encendida o no.** Se probó a
+     * esconderla cuando la empresa no tenía el chat IA y el resultado fue el
+     * peor de los dos mundos: la acción no aparecía, nada explicaba por qué, y
+     * la leyenda de colores seguía nombrando un color que no se podía elegir.
+     * Quien no la ve no la va a pedir.
+     *
+     * Se hace lo mismo que con las de Integra: se enseñan, bloqueadas y con el
+     * motivo al lado. Saber que existen es la mitad de la razón para
+     * encenderlas.
      *
      * @return list<array{value: string, label: string, group: string, reply: string|null}>
      */
-    public static function catalog(bool $conIa = false): array
+    public static function catalog(): array
     {
         $catalog = [
             ['value' => 'reply_text', 'label' => 'Responder con un mensaje', 'group' => 'core', 'reply' => null],
@@ -327,14 +333,12 @@ class WhatsAppMenuOption extends Model
             ];
         }
 
-        if ($conIa) {
-            $catalog[] = [
-                'value' => self::ACTION_IA,
-                'label' => 'Que responda la IA',
-                'group' => 'ia',
-                'reply' => null,
-            ];
-        }
+        $catalog[] = [
+            'value' => self::ACTION_IA,
+            'label' => 'Que responda la IA',
+            'group' => 'ia',
+            'reply' => null,
+        ];
 
         $catalog[] = [
             'value' => self::ACTION_NONE,

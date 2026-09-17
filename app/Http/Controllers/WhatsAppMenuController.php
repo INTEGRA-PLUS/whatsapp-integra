@@ -59,8 +59,8 @@ class WhatsAppMenuController extends Controller
         $tieneAutoservicio = $this->yaTieneAutoservicio($menus);
         $usaIntegra = UsaIntegra::de($company);
 
-        // De aquí sale también si se puede ofrecer la acción «Que responda la
-        // IA»: es la misma condición que decide si la IA contesta de verdad
+        // De aquí sale también si la acción «Que responda la IA» se puede
+        // elegir: es la misma condición que decide si la IA contesta de verdad
         // —encendida, dentro del plan y con el flujo configurado en el
         // servidor—. Calcularla dos veces con dos criterios es justo cómo
         // aparecen las opciones que al tocarlas no hacen lo que prometen.
@@ -88,7 +88,7 @@ class WhatsAppMenuController extends Controller
             ],
             // El catálogo viaja desde el modelo: el formulario y la vista previa
             // se arman con él en vez de repetir la lista de tipos en el front.
-            'actionTypes' => WhatsAppMenuOption::catalog($orden['ia_chat']),
+            'actionTypes' => WhatsAppMenuOption::catalog(),
             // Qué parte del contrato puede mostrar cada opción de "Estado del
             // contrato": el select se arma con esto en vez de repetir la lista.
             'statusSegments' => collect(WhatsAppMenuOption::STATUS_SEGMENTS)
@@ -115,6 +115,9 @@ class WhatsAppMenuController extends Controller
             // primero un menú o la IA?» no tenía respuesta en ninguna pantalla,
             // y la respuesta cambia según lo que la empresa tenga puesto.
             'orden' => $orden,
+            // Para el desplegable de acciones: la de IA se enseña siempre, pero
+            // sólo se puede elegir si la IA está de verdad disponible.
+            'iaDisponible' => $orden['ia_chat'],
             // El interruptor de la IA. Vive aquí y no en Integraciones porque
             // es la IA DE LOS MENÚS: se enciende donde se configuran.
             'ai' => [

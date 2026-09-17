@@ -1244,6 +1244,9 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
 }
 
 function OptionRow({ index, option, focused = false, isList, limits, agents, submenuChoices, actionTypes = [], actionMeta = {}, integra = {}, catalogs = {}, statusSegments = [], errors, canMoveUp, canMoveDown, onChange, onRemove, onMove }) {
+    // Se lee de la página en vez de bajarlo por tres capas de props: es un
+    // booleano que sólo usa este desplegable y esta tarjeta.
+    const { iaDisponible = false } = usePage().props;
     const ActionIcon = iconFor(option.action_type);
     const tituloRef = useRef(null);
     const respuestaRef = useRef(null);
@@ -1349,10 +1352,20 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                         // cliente acaba derivado a un asesor— así que no se
                         // pueden elegir. Se enseñan igualmente, porque saber que
                         // existen es la mitad de la razón para conectar Integra.
-                        const bloqueado = group === 'integra' && !integra.connected;
+                        // Misma regla para las dos familias que dependen de
+                        // algo de fuera: se enseñan, no se pueden elegir, y el
+                        // porqué va en la etiqueta del grupo. Esconderlas deja
+                        // al admin buscando una opción que nadie le dijo que
+                        // existe —y que es justo la que habría que venderle—.
+                        const bloqueado = (group === 'integra' && !integra.connected)
+                            || (group === 'ia' && !iaDisponible);
+                        const motivo = group === 'ia'
+                            ? 'enciéndela en «IA que responde»'
+                            : 'conecta Integra para usarlas';
                         const etiqueta = bloqueado
-                            ? `${GROUP_LABELS[group]} — conecta Integra para usarlas`
+                            ? `${GROUP_LABELS[group]} — ${motivo}`
                             : (GROUP_LABELS[group] ?? group);
+                        const coletilla = group === 'ia' ? ' (requiere la IA)' : ' (requiere Integra)';
 
                         return (
                             <optgroup key={group} label={etiqueta}>
@@ -1366,7 +1379,7 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                                         // esconderle su propia opción es peor.
                                         disabled={bloqueado && option.action_type !== a.value}
                                     >
-                                        {a.label}{bloqueado && option.action_type !== a.value ? ' (requiere Integra)' : ''}
+                                        {a.label}{bloqueado && option.action_type !== a.value ? coletilla : ''}
                                     </option>
                                 ))}
                             </optgroup>
@@ -1398,6 +1411,16 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                 significado opuesto: aquí NO lo lee el cliente. Sin decirlo en
                 el sitio, el admin escribe la respuesta —«Abrimos de 8 a 6»— y
                 la IA acaba respondiendo a eso como si fuera la pregunta. */}
+            {option.action_type === 'ia' && !iaDisponible && (
+                <p className="flex items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-2 text-[11px] text-warning">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                    <span>
+                        La IA está apagada, así que hoy esta opción pasa el chat a un asesor en vez
+                        de responder. Enciéndela en «IA que responde».
+                    </span>
+                </p>
+            )}
+
             {option.action_type === 'ia' && (
                 <div className="space-y-1.5">
                     <textarea

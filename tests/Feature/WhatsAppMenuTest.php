@@ -689,14 +689,59 @@ class WhatsAppMenuTest extends TestCase
         }
     }
 
-    /** La acción sólo se ofrece a quien tiene la IA: prometerla sin ella es un botón que deriva. */
-    public function test_el_catalogo_solo_ofrece_la_ia_a_quien_la_tiene(): void
+    /**
+     * La acción se ofrece SIEMPRE, encendida la IA o no.
+     *
+     * Primero se escondió a quien no tenía el chat IA, y salió mal de las dos
+     * maneras: no aparecía, nada decía por qué, y la leyenda de colores seguía
+     * nombrando un color que no se podía elegir. Se enseña bloqueada y con el
+     * motivo, igual que las de Integra — quien no la ve no la va a pedir.
+     */
+    public function test_el_catalogo_siempre_ofrece_la_ia(): void
     {
-        $sinIa = collect(WhatsAppMenuOption::catalog(false))->pluck('value');
-        $conIa = collect(WhatsAppMenuOption::catalog(true))->pluck('value');
+        $valores = collect(WhatsAppMenuOption::catalog())->pluck('value');
 
-        $this->assertFalse($sinIa->contains(WhatsAppMenuOption::ACTION_IA));
-        $this->assertTrue($conIa->contains(WhatsAppMenuOption::ACTION_IA));
+        $this->assertTrue($valores->contains(WhatsAppMenuOption::ACTION_IA));
+    }
+
+    /** Y la pantalla dice si se puede elegir, que es lo que decide el desplegable. */
+    public function test_la_pantalla_dice_si_la_ia_esta_disponible(): void
+    {
+        $instance = $this->conChatIa();
+        $this->comoAdminDe($instance);
+
+        $props = $this->get(route('whatsapp-menus.index'))->assertOk()->viewData('page')['props'];
+
+        $this->assertTrue($props['iaDisponible']);
+        $this->assertTrue(
+            collect($props['actionTypes'])->pluck('value')->contains(WhatsAppMenuOption::ACTION_IA)
+        );
+    }
+
+    /** Sin IA encendida sigue apareciendo, pero marcada como no disponible. */
+    public function test_sin_ia_la_accion_aparece_pero_no_disponible(): void
+    {
+        $instance = $this->metaInstance();
+        $this->comoAdminDe($instance);
+
+        $props = $this->get(route('whatsapp-menus.index'))->assertOk()->viewData('page')['props'];
+
+        $this->assertFalse($props['iaDisponible']);
+        $this->assertTrue(
+            collect($props['actionTypes'])->pluck('value')->contains(WhatsAppMenuOption::ACTION_IA),
+            'Esconderla deja al admin buscando una opción que nadie le dijo que existe.'
+        );
+    }
+
+    private function comoAdminDe(Instance $instance): void
+    {
+        $user = User::create([
+            'company_id' => $instance->company_id,
+            'name' => 'Admin', 'email' => 'admin-menus-'.$instance->company_id.'@x.test',
+            'password' => 'secret', 'active' => true,
+        ]);
+
+        $this->actingAs($user);
     }
 
     /** Una instancia cuya empresa tiene el chat IA encendido y configurado. */
