@@ -372,4 +372,63 @@ class PermisosCatalogo
 
         return $claves;
     }
+
+    /**
+     * Qué puede hacer un rol, en una línea por módulo.
+     *
+     * Nace para la pantalla de crear usuarios, que enseñaba una tabla de
+     * permisos escrita a mano en el JSX —«Ver Chats», «Borrar Datos», con
+     * columnas Adm/Age/Usr— que no salía de ningún sitio: ni los roles eran los
+     * de la empresa, que cada una define los suyos, ni las marcas correspondían
+     * a los permisos reales. Quien elegía un rol leyendo esa tabla creía estar
+     * informado y no lo estaba.
+     *
+     * Se resume por módulo y no permiso a permiso porque un rol tiene sesenta y
+     * dos: la lista entera no la lee nadie, y lo que hace falta al elegir es
+     * «hasta dónde llega en cada área».
+     *
+     * Sólo devuelve los módulos donde el rol puede algo. Los que no, no se
+     * enumeran: una lista de treinta «sin acceso» esconde los cinco que importan.
+     *
+     * @param  list<string>  $permisos  Nombres de permiso del rol.
+     * @return list<array{modulo: string, nivel: string, etiqueta: string}>
+     */
+    public static function resumenDeRol(array $permisos): array
+    {
+        $suyos = array_flip($permisos);
+        $resumen = [];
+
+        foreach (self::grupos() as $grupo) {
+            foreach ($grupo['modulos'] as $modulo) {
+                $tiene = [];
+
+                foreach (['view', 'create', 'update', 'delete', 'run', 'send'] as $accion) {
+                    if (isset($suyos[$modulo['clave'].'.'.$accion])) {
+                        $tiene[] = $accion;
+                    }
+                }
+
+                if ($tiene === []) {
+                    continue;
+                }
+
+                // El nivel se lee de lo que puede hacer, con el mismo
+                // vocabulario que la pantalla de roles: quien reparte permisos
+                // ya conoce esas cuatro palabras.
+                $nivel = match (true) {
+                    in_array('delete', $tiene, true) => 'total',
+                    (bool) array_intersect(['create', 'update', 'run', 'send'], $tiene) => 'operar',
+                    default => 'ver',
+                };
+
+                $resumen[] = [
+                    'modulo' => $modulo['nombre'],
+                    'nivel' => $nivel,
+                    'etiqueta' => self::NIVELES[$nivel]['etiqueta'],
+                ];
+            }
+        }
+
+        return $resumen;
+    }
 }

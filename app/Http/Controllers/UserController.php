@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use App\Support\PermisosCatalogo;
 use Inertia\Inertia;
 use Spatie\Permission\Models\Role;
 
@@ -44,10 +45,22 @@ class UserController extends Controller
         $user = auth()->user();
         setPermissionsTeamId($user->company_id);
         
-        $roles = Role::where('company_id', $user->company_id)->get();
+        // Con sus permisos: la pantalla enseñaba una tabla escrita a mano en el
+        // JSX —«Ver Chats», «Borrar Datos», columnas Adm/Age/Usr— que no salía
+        // de ningún sitio. Ni los roles son esos en todas las empresas —cada una
+        // define los suyos— ni las marcas correspondían a los permisos reales.
+        $roles = Role::with('permissions:id,name')
+            ->where('company_id', $user->company_id)
+            ->get()
+            ->map(fn (Role $rol) => [
+                'id' => $rol->id,
+                'name' => $rol->name,
+                'permisos' => $rol->permissions->count(),
+                'resumen' => PermisosCatalogo::resumenDeRol($rol->permissions->pluck('name')->all()),
+            ]);
 
         return Inertia::render('Users/Create', [
-            'roles' => $roles
+            'roles' => $roles,
         ]);
     }
 

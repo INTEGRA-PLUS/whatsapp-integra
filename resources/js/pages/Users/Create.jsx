@@ -1,210 +1,246 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { 
-    UserPlus, 
-    ArrowLeft, 
-    User, 
-    Mail, 
-    Lock, 
-    ShieldCheck, 
-    UserCircle,
-    CheckCircle2,
-    Check,
-    X,
-    Shield,
-    Activity,
-    User as UserIcon,
-    TrendingUp
-} from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Shield, User as UserIcon, UserPlus } from 'lucide-react';
 
+/**
+ * Alta de un usuario de la empresa.
+ *
+ * Era una pantalla de dos columnas con esquinas de 3rem, campos de 48px sobre
+ * gris, títulos en negras y un panel negro a la derecha con una «Guía de
+ * permisos» — una tabla de seis filas y tres columnas (Adm/Age/Usr) escrita a
+ * mano en el JSX.
+ *
+ * Esa tabla era el verdadero problema, más que el estilo: **no salía de ningún
+ * sitio**. Los roles no son los mismos en todas las empresas —cada una define
+ * los suyos— y las marcas no correspondían a los permisos reales de nadie. Quien
+ * elegía un rol leyéndola creía estar informado y no lo estaba.
+ *
+ * Ahora lo que se enseña son los permisos de verdad del rol elegido, resumidos
+ * por módulo con el mismo vocabulario de la pantalla de roles: solo ver, operar,
+ * control total. Sale de `PermisosCatalogo::resumenDeRol()`.
+ */
 export default function Create({ roles }) {
     const { data, setData, post, processing, errors } = useForm({
         name: '',
         email: '',
         password: '',
-        role_id: roles.find(r => r.name.toLowerCase() === 'agent')?.id || roles.find(r => r.name.toLowerCase() === 'agente')?.id || (roles[0]?.id || ''),
+        role_id: roles.find(r => ['agent', 'agente'].includes(r.name.toLowerCase()))?.id ?? roles[0]?.id ?? '',
         active: true,
     });
 
-    const handleSubmit = (e) => {
+    const elegido = roles.find(r => r.id === data.role_id);
+
+    function enviar(e) {
         e.preventDefault();
         post(route('users.store'));
-    };
-
-    const PermissionRow = ({ label, admin, agent, user }) => (
-        <tr className="border-b last:border-0 border-border">
-            <td className="py-3 text-xs font-medium text-foreground">{label}</td>
-            <td className="py-3 text-center">{admin ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-            <td className="py-3 text-center">{agent ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-            <td className="py-3 text-center">{user ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-        </tr>
-    );
+    }
 
     return (
         <>
-            <Head title="Nuevo Usuario" />
-            <div className="max-w-6xl mx-auto p-6 lg:p-10">
-                <div className="flex items-center gap-4 mb-10">
-                    <Button asChild variant="outline" size="icon" className="rounded-full shadow-sm">
-                        <Link href={route('users.index')}>
+            <Head title="Nuevo usuario" />
+
+            <div className="flex max-w-3xl flex-col gap-6 p-6 lg:p-8">
+                <div className="flex items-center gap-3">
+                    <Button asChild variant="outline" size="icon" className="size-8 shrink-0">
+                        <Link href={route('users.index')} aria-label="Volver a usuarios">
                             <ArrowLeft className="size-4" />
                         </Link>
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-black tracking-tight text-foreground">Nuevo Miembro</h1>
-                        <p className="text-muted-foreground mt-1">Registra un nuevo colaborador en la plataforma.</p>
+                        <h1 className="text-2xl font-semibold text-foreground">Nuevo usuario</h1>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Entrará al CRM con este correo y su contraseña.
+                        </p>
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="grid lg:grid-cols-12 gap-8">
-                    {/* Columna Izquierda: Formularios (8 columnas) */}
-                    <div className="lg:col-span-8 space-y-8">
-                        <section className="bg-card border rounded-3xl p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                                    <User className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Datos Personales</h2>
-                            </div>
-                            
-                            <div className="grid sm:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Nombre Completo</label>
-                                    <div className="relative group">
-                                        <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                                        <input
-                                            type="text"
-                                            value={data.name}
-                                            onChange={e => setData('name', e.target.value)}
-                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                            placeholder="Ej: Alejandro Magno"
-                                            required
-                                        />
-                                    </div>
-                                    {errors.name && <p className="text-xs text-destructive font-medium ml-1">{errors.name}</p>}
-                                </div>
+                <form onSubmit={enviar} className="flex flex-col gap-6">
+                    <section className="rounded-xl border bg-card p-5">
+                        <h2 className="text-sm font-semibold text-foreground">Datos de la persona</h2>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Correo Corporativo</label>
-                                    <div className="relative group">
-                                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                                        <input
-                                            type="email"
-                                            value={data.email}
-                                            onChange={e => setData('email', e.target.value)}
-                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                            placeholder="alejandro@empresa.com"
-                                            required
-                                        />
-                                    </div>
-                                    {errors.email && <p className="text-xs text-destructive font-medium ml-1">{errors.email}</p>}
-                                </div>
-
-                                <div className="space-y-2 sm:col-span-2">
-                                    <label className="text-sm font-bold ml-1 text-primary flex items-center gap-2">
-                                        <Lock className="size-3.5" /> Contraseña de Acceso
-                                    </label>
-                                    <input
-                                        type="password"
-                                        value={data.password}
-                                        onChange={e => setData('password', e.target.value)}
-                                        className="w-full h-12 bg-muted border-transparent rounded-2xl px-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                        placeholder="Mínimo 8 caracteres"
-                                        required
-                                        minLength={8}
-                                    />
-                                    {errors.password && <p className="text-xs text-destructive font-medium ml-1">{errors.password}</p>}
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* Roles interactivos */}
-                        <section className="bg-card border rounded-3xl p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground flex items-center justify-center dark:bg-primary/20">
-                                    <ShieldCheck className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Asignación de Rol</h2>
-                            </div>
-
-                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {roles.map(role => (
-                                    <div 
-                                        key={role.id}
-                                        onClick={() => setData('role_id', role.id)}
-                                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all relative overflow-hidden group ${data.role_id === role.id ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-border dark:hover:border-border'}`}
-                                    >
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className={`size-10 rounded-xl flex items-center justify-center ${data.role_id === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                                                {role.name.toLowerCase() === 'admin' ? <Shield className="size-5" /> : <UserIcon className="size-5" />}
-                                            </div>
-                                            {data.role_id === role.id && <Check className="size-5 text-primary" />}
-                                        </div>
-                                        <h3 className="font-bold text-sm capitalize">{role.name}</h3>
-                                        <p className="text-[10px] text-muted-foreground mt-1">Acceso nivel {role.name}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    </div>
-
-                    {/* Columna Derecha: Guía de Permisos (4 columnas) */}
-                    <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-black dark:bg-black rounded-3xl p-8 text-white shadow-xl shadow-border dark:shadow-none sticky top-10">
-                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                                <TrendingUp className="size-5 text-primary" /> Guía de Permisos
-                            </h3>
-                            <div className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 p-2">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-white/10">
-                                            <th className="py-2 text-[10px] text-left text-muted-foreground font-black uppercase">Acción</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Adm</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Age</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Usr</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <PermissionRow label="Ver Chats" admin agent user />
-                                        <PermissionRow label="Responder" admin agent />
-                                        <PermissionRow label="Configuración" admin />
-                                        <PermissionRow label="Reportes" admin agent />
-                                        <PermissionRow label="Borrar Datos" admin />
-                                        <PermissionRow label="Gestión CRM" admin agent />
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div className="mt-8 space-y-6">
-                                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                                    <div>
-                                        <p className="text-sm font-bold">Acceso Activo</p>
-                                        <p className="text-[10px] text-muted-foreground">¿Habilitar sesión ahora?</p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setData('active', !data.active)}
-                                        className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${data.active ? 'bg-primary' : 'bg-muted'}`}
-                                    >
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-1 ${data.active ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
-                                        <UserPlus className="size-5 mr-2" /> FINALIZAR REGISTRO
-                                    </Button>
-                                    <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-white hover:bg-white/5 font-bold">
-                                        <Link href={route('users.index')}>Descartar cambios</Link>
-                                    </Button>
-                                </div>
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                            <Campo
+                                label="Nombre"
+                                value={data.name}
+                                onChange={v => setData('name', v)}
+                                placeholder="María Restrepo"
+                                error={errors.name}
+                                required
+                            />
+                            <Campo
+                                label="Correo"
+                                type="email"
+                                value={data.email}
+                                onChange={v => setData('email', v)}
+                                placeholder="maria@empresa.com"
+                                ayuda="Con este correo entrará al CRM."
+                                error={errors.email}
+                                required
+                            />
+                            <div className="sm:col-span-2">
+                                <Campo
+                                    label="Contraseña"
+                                    type="password"
+                                    value={data.password}
+                                    onChange={v => setData('password', v)}
+                                    autoComplete="new-password"
+                                    ayuda="Mínimo 8 caracteres. Podrá cambiarla cuando entre."
+                                    error={errors.password}
+                                    required
+                                />
                             </div>
                         </div>
+                    </section>
+
+                    <section className="rounded-xl border bg-card p-5">
+                        <h2 className="text-sm font-semibold text-foreground">Qué podrá hacer</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            El rol decide a qué pantallas entra y qué puede tocar en cada una.
+                        </p>
+
+                        <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+                            {roles.map(rol => {
+                                const activo = data.role_id === rol.id;
+
+                                return (
+                                    <button
+                                        key={rol.id}
+                                        type="button"
+                                        onClick={() => setData('role_id', rol.id)}
+                                        aria-pressed={activo}
+                                        className={clsx(
+                                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                                            activo ? 'border-primary bg-primary/[0.07]' : 'hover:border-primary/40'
+                                        )}
+                                    >
+                                        <div className={clsx(
+                                            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+                                            activo ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                                        )}>
+                                            {rol.name.toLowerCase() === 'admin'
+                                                ? <Shield className="size-4" />
+                                                : <UserIcon className="size-4" />}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-medium capitalize text-foreground">{rol.name}</p>
+                                            {/* El número de permisos, que es un dato y no
+                                                un adorno: es lo que distingue dos roles con
+                                                nombres parecidos. */}
+                                            <p className="text-xs tabular-nums text-muted-foreground">
+                                                {rol.permisos} {rol.permisos === 1 ? 'permiso' : 'permisos'}
+                                            </p>
+                                        </div>
+                                        {activo && <Check className="size-4 shrink-0 text-primary" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Lo que de verdad puede hacer el rol elegido, sacado de
+                            sus permisos. Sólo los módulos donde puede algo: una
+                            lista de treinta «sin acceso» esconde los cinco que
+                            importan. */}
+                        {elegido?.resumen?.length > 0 && (
+                            <div className="mt-4 rounded-lg border bg-muted/40 p-4">
+                                <p className="text-xs font-medium text-foreground">
+                                    Con el rol <span className="capitalize">{elegido.name}</span> podrá entrar a:
+                                </p>
+                                <ul className="mt-2.5 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                                    {elegido.resumen.map(area => (
+                                        <li key={area.modulo} className="flex items-baseline justify-between gap-3 text-xs">
+                                            <span className="text-foreground">{area.modulo}</span>
+                                            <span className={clsx(
+                                                'shrink-0',
+                                                area.nivel === 'total' ? 'text-warning' : 'text-muted-foreground'
+                                            )}>
+                                                {area.etiqueta}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                {/* «Control total» incluye borrar, y borrar en este
+                                    producto es de verdad: no hay papelera. */}
+                                {elegido.resumen.some(a => a.nivel === 'total') && (
+                                    <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+                                        <span className="text-warning">Control total</span> incluye eliminar, y aquí
+                                        los borrados no tienen vuelta atrás.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {elegido && elegido.resumen?.length === 0 && (
+                            <p className="mt-4 rounded-lg border border-warning/40 bg-warning/[0.07] px-4 py-3 text-xs text-foreground">
+                                Este rol no tiene ningún permiso asignado: quien lo tenga podrá entrar, pero no
+                                verá ninguna pantalla. Se le asignan en Roles.
+                            </p>
+                        )}
+                    </section>
+
+                    <section className="flex items-center justify-between gap-4 rounded-xl border bg-card p-5">
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">Puede entrar desde ya</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                Apagado, la cuenta queda creada pero no deja iniciar sesión.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={data.active}
+                            onClick={() => setData('active', !data.active)}
+                            className={clsx(
+                                'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors',
+                                data.active ? 'bg-primary' : 'bg-input'
+                            )}
+                        >
+                            <span className={clsx(
+                                'mt-1 inline-block size-4 rounded-full bg-white transition-transform',
+                                data.active ? 'translate-x-6' : 'translate-x-1'
+                            )} />
+                        </button>
+                    </section>
+
+                    <div className="flex items-center gap-2">
+                        <Button type="submit" disabled={processing} className="gap-2">
+                            {processing ? <Loader2 className="size-4 animate-spin" /> : <UserPlus className="size-4" />}
+                            Crear usuario
+                        </Button>
+                        <Button asChild type="button" variant="outline">
+                            <Link href={route('users.index')}>Cancelar</Link>
+                        </Button>
                     </div>
                 </form>
             </div>
         </>
+    );
+}
+
+function Campo({ label, value, onChange, type = 'text', placeholder = '', ayuda = '', error, required, autoComplete }) {
+    return (
+        <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                {label}
+                {!required && <span className="text-[10px] font-normal text-muted-foreground">(opcional)</span>}
+            </label>
+            <input
+                type={type}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={placeholder}
+                required={required}
+                autoComplete={autoComplete}
+                className={clsx(
+                    'h-10 w-full rounded-lg border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-ring/20',
+                    error ? 'border-destructive focus:border-destructive' : 'border-input focus:border-ring'
+                )}
+            />
+            {error
+                ? <p className="text-[11px] text-destructive">{error}</p>
+                : ayuda && <p className="text-[11px] leading-snug text-muted-foreground">{ayuda}</p>}
+        </div>
     );
 }
 
