@@ -47,6 +47,8 @@ class WhatsAppMenuController extends Controller
             // como botones o como lista?"), y se deduce del número de opciones.
             ->each(fn (WhatsAppMenu $menu) => $menu->setAttribute('format', $menu->format()));
 
+        $this->marcarQuienResponde($menus);
+
         // Integra es un extra para ISPs. Una farmacia o una barbería no debe
         // leer ni una palabra sobre él: ni permisos de IA que lo consultan, ni
         // avisos de si está conectado, ni la plantilla.
@@ -194,6 +196,53 @@ class WhatsAppMenuController extends Controller
      *
      * @param  \Illuminate\Support\Collection  $menus
      */
+    /**
+     * Cuál de los menús activos responde de verdad, y cuáles quedan tapados.
+     *
+     * Se pueden tener varios menús raíz encendidos a la vez, y la pantalla los
+     * enseñaba todos con la misma etiqueta «Activo» — sin decir que, cuando
+     * llega un mensaje, **se prueban en orden y responde el primero que
+     * encaja**. Con dos menús de bienvenida activos, uno se dispara siempre y el
+     * otro no se dispara nunca, y desde fuera los dos parecían funcionando.
+     *
+     * El orden es el mismo que usa el servicio al recibir el mensaje
+     * (`WhatsAppMenu::ordenDeDisparo`), no una copia: si cambia allí, esto
+     * cambia con él.
+     *
+     * Se marcan dos cosas distintas, porque son dos preguntas distintas:
+     *   - `responde_al_saludo`: quién atiende el primer mensaje de un cliente.
+     *     Sólo uno, y es el que la mayoría cree estar viendo.
+     *   - `tapado_por`: el menú que le gana. Con palabras clave distintas los
+     *     dos pueden dispararse —cada uno con lo suyo— así que esto sólo se
+     *     pone cuando el conflicto es real: los dos atienden el saludo.
+     */
+    private function marcarQuienResponde($menus): void
+    {
+        $raices = $menus
+            ->filter(fn (WhatsAppMenu $m) => $m->is_root && $m->active && $m->options->isNotEmpty())
+            ->sort(WhatsAppMenu::ordenDeDisparo(...))
+            ->values();
+
+        // Los que atienden un saludo, en el orden en que se probarían. El
+        // primero es el que responde; los demás, los que nadie verá.
+        $deBienvenida = $raices->filter(
+            fn (WhatsAppMenu $m) => in_array('welcome', $m->matchTypes(), true)
+        )->values();
+
+        $ganador = $deBienvenida->first();
+
+        foreach ($menus as $menu) {
+            $menu->setAttribute('responde_al_saludo', $ganador && $menu->id === $ganador->id);
+            $menu->setAttribute(
+                'tapado_por',
+                $ganador && $deBienvenida->contains(fn (WhatsAppMenu $m) => $m->id === $menu->id)
+                    && $menu->id !== $ganador->id
+                        ? $ganador->name
+                        : null
+            );
+        }
+    }
+
     private function yaTieneAutoservicio($menus): bool
     {
         return $menus->contains(

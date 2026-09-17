@@ -109,6 +109,25 @@ class WhatsAppMenu extends Model
      * la bienvenida, porque quien escribe "menu" está pidiendo algo concreto
      * mientras que la bienvenida es el saludo por defecto.
      */
+    /**
+     * En qué orden se prueban los menús raíz cuando llega un mensaje.
+     *
+     * Vivía escrito dentro de `WhatsAppMenuService` como un `sort()` inline. Se
+     * saca aquí porque la pantalla de menús necesita decir **cuál de los que
+     * están activos responde de verdad** —con dos menús de bienvenida activos,
+     * uno gana siempre y el otro no se dispara nunca— y calcularlo allí con su
+     * propia copia de la regla es garantía de que un día digan cosas distintas.
+     *
+     * El orden: el menú atado a esta instancia gana al genérico; entre iguales,
+     * la palabra clave gana a la bienvenida, y entre iguales, el más reciente.
+     */
+    public static function ordenDeDisparo(self $a, self $b): int
+    {
+        return [$a->instance_id === null ? 1 : 0, $a->priority(), -$a->created_at->timestamp]
+            <=>
+            [$b->instance_id === null ? 1 : 0, $b->priority(), -$b->created_at->timestamp];
+    }
+
     public function priority(): int
     {
         return count(array_intersect($this->matchTypes(), self::KEYWORD_TYPES)) > 0 ? 0 : 1;

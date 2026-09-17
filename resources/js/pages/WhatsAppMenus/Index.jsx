@@ -349,17 +349,69 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         </Button>
                     </div>
                 ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {menus.map(menu => (
-                            <MenuCard
-                                key={menu.id}
-                                menu={menu}
-                                menus={menus}
-                                actionMeta={actionMeta}
-                                onEdit={() => openEdit(menu)}
-                                onDelete={() => handleDelete(menu)}
-                            />
+                    <div className="flex flex-col gap-8">
+                        {/* Por ramas y no en una rejilla plana. Un submenú no
+                            compite con su menú: cuelga de él, y puesto al lado
+                            con la misma etiqueta «Activo» parecía otra puerta de
+                            entrada. Aquí se ve de dónde sale cada uno. */}
+                        {agruparEnArbol(menus).map(({ raiz, hijos }) => (
+                            <section key={raiz.id} className="flex flex-col gap-3">
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    <MenuCard
+                                        menu={raiz}
+                                        menus={menus}
+                                        actionMeta={actionMeta}
+                                        onEdit={() => openEdit(raiz)}
+                                        onDelete={() => handleDelete(raiz)}
+                                    />
+                                </div>
+
+                                {hijos.length > 0 && (
+                                    <div className="ml-3 border-l-2 border-border pl-5 sm:ml-5 sm:pl-7">
+                                        <p className="mb-3 text-xs text-muted-foreground">
+                                            Se abren desde <span className="font-medium text-foreground">{raiz.name}</span>
+                                        </p>
+                                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                            {hijos.map(hijo => (
+                                                <MenuCard
+                                                    key={hijo.id}
+                                                    menu={hijo}
+                                                    menus={menus}
+                                                    actionMeta={actionMeta}
+                                                    onEdit={() => openEdit(hijo)}
+                                                    onDelete={() => handleDelete(hijo)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
                         ))}
+
+                        {/* Los que no cuelgan de nadie. Van al final y con su
+                            aviso: un submenú al que no lleva ninguna opción no
+                            lo ve un cliente jamás. */}
+                        {huerfanos(menus).length > 0 && (
+                            <section className="flex flex-col gap-3">
+                                <p className="text-xs text-warning">
+                                    Sin ningún menú que lleve hasta ellos
+                                </p>
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {huerfanos(menus).map(menu => (
+                                        <MenuCard
+                                            key={menu.id}
+                                            menu={menu}
+                                            menus={menus}
+                                            actionMeta={actionMeta}
+                                            onEdit={() => openEdit(menu)}
+                                            onDelete={() => handleDelete(menu)}
+                                        />
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
                         {/* El mismo botón que arriba, al final de la lista.
                             Con varios menús hay que subir hasta la cabecera
@@ -379,6 +431,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                             <Plus className="size-5" />
                             <span className="text-sm font-medium">Nuevo menú</span>
                         </button>
+                    </div>
                     </div>
                 )}
             </div>
@@ -430,6 +483,40 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     );
 }
 
+/** A qué menús lleva este, por sus opciones de tipo submenú. */
+function hijosDe(menu, menus) {
+    const ids = (menu.options ?? [])
+        .filter(o => o.action_type === 'submenu' && o.target_menu_id)
+        .map(o => String(o.target_menu_id));
+
+    return menus.filter(m => ids.includes(String(m.id)));
+}
+
+/**
+ * Los menús agrupados por rama: cada raíz con los submenús que abre.
+ *
+ * Sólo un nivel, que es hasta donde llega el producto —un submenú no abre otro
+ * submenú— y hasta donde se entiende de un vistazo. Un submenú al que llegan dos
+ * menús distintos sale bajo los dos: esconderlo en uno haría creer que al otro
+ * no se llega.
+ */
+function agruparEnArbol(menus) {
+    return menus
+        .filter(m => m.is_root)
+        .map(raiz => ({ raiz, hijos: hijosDe(raiz, menus) }));
+}
+
+/** Submenús a los que no lleva ninguna opción: nadie puede llegar a ellos. */
+function huerfanos(menus) {
+    const alcanzables = new Set(
+        menus.flatMap(m => (m.options ?? [])
+            .filter(o => o.action_type === 'submenu' && o.target_menu_id)
+            .map(o => String(o.target_menu_id)))
+    );
+
+    return menus.filter(m => !m.is_root && !alcanzables.has(String(m.id)));
+}
+
 function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
     const options = menu.options ?? [];
     const isList = menu.format === 'list';
@@ -460,14 +547,43 @@ function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
                     </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${menu.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
-                        {menu.active ? 'Activo' : 'Inactivo'}
-                    </span>
+                    {/* «Activo» no basta cuando hay varios encendidos: se prueban
+                        en orden y responde el primero que encaja, así que dos
+                        menús de bienvenida activos son uno que contesta siempre y
+                        otro que no contesta nunca. Los dos decían «Activo». */}
+                    {menu.responde_al_saludo ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success dark:bg-success/30">
+                            <Power className="size-3" /> Responde al saludo
+                        </span>
+                    ) : menu.tapado_por ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
+                            <AlertTriangle className="size-3" /> No se dispara
+                        </span>
+                    ) : (
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${menu.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
+                            {menu.active ? 'Activo' : 'Inactivo'}
+                        </span>
+                    )}
                     <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                         {isList ? 'Lista' : 'Botones'}
                     </span>
                 </div>
             </div>
+
+            {/* El conflicto, dicho donde se ve y con la salida. Una etiqueta
+                que sólo diga «no se dispara» deja al admin buscando el porqué
+                entre todas las tarjetas. */}
+            {menu.tapado_por && (
+                <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/[0.07] px-3 py-2.5 text-xs">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+                    <span className="text-foreground">
+                        Cuando un cliente escribe por primera vez responde{' '}
+                        <span className="font-medium">{menu.tapado_por}</span>, no este. Los dos atienden el
+                        saludo y sólo contesta uno: apaga uno de los dos, o dale a este una palabra clave
+                        para que se dispare con ella.
+                    </span>
+                </div>
+            )}
 
             <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1.5">
                 <div className="text-muted-foreground">

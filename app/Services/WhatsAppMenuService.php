@@ -197,13 +197,10 @@ class WhatsAppMenuService
             ->has('options')
             ->with('options')
             ->get()
-            // El menú atado a esta instancia gana al genérico; entre iguales,
-            // la palabra clave gana a la bienvenida y el más reciente al resto.
-            ->sort(fn (WhatsAppMenu $a, WhatsAppMenu $b) =>
-                [$a->instance_id === null ? 1 : 0, $a->priority(), -$a->created_at->timestamp]
-                <=>
-                [$b->instance_id === null ? 1 : 0, $b->priority(), -$b->created_at->timestamp]
-            )
+            // El orden vive en el modelo: la pantalla de menús lo necesita para
+            // decir cuál responde, y dos copias de esta regla acabarían
+            // diciendo cosas distintas.
+            ->sort(WhatsAppMenu::ordenDeDisparo(...))
             ->values()
             ->first(fn (WhatsAppMenu $m) => $m->qualifies($text, $context));
     }
