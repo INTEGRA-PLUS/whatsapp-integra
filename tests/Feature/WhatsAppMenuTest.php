@@ -532,6 +532,47 @@ class WhatsAppMenuTest extends TestCase
     }
 
     /**
+     * Y la imagen tiene que SEGUIR ahí después de guardar.
+     *
+     * Se subía bien, el formulario la enseñaba y el cliente recibía sólo el pie
+     * de foto: al guardar, `optionConfig()` conservaba únicamente las claves que
+     * el tipo entiende y «reply_image» no estaba en esa lista, así que
+     * `image_url` se tiraba. La revisión acababa diciéndole «no tiene imagen» a
+     * quien acababa de subirla.
+     *
+     * Las otras pruebas de imagen escriben la opción con `update()` directo, así
+     * que ninguna pasaba por el guardado del formulario, que es donde se perdía.
+     *
+     * @test
+     */
+    public function la_imagen_sobrevive_al_guardado(): void
+    {
+        $instance = $this->metaInstance();
+
+        $this->actingAs($this->admin($instance))
+            ->post(route('whatsapp-menus.store'), [
+                'name' => 'Menú con cartel',
+                'body_text' => '¿En qué te ayudo?',
+                'is_root' => true,
+                'match_types' => ['contains'],
+                'trigger_text' => 'puntos',
+                'options' => [[
+                    'title' => 'Puntos de pago',
+                    'action_type' => WhatsAppMenuOption::ACTION_IMAGE,
+                    'reply_text' => 'Paga en cualquiera de estos puntos 👆',
+                    'config' => ['image_url' => 'https://cdn.test/puntos-de-pago.jpg'],
+                ]],
+            ])
+            ->assertSessionHasNoErrors()
+            ->assertRedirect();
+
+        $opcion = WhatsAppMenu::where('name', 'Menú con cartel')->firstOrFail()->options()->firstOrFail();
+
+        $this->assertSame('https://cdn.test/puntos-de-pago.jpg', $opcion->imageUrl());
+        $this->assertSame('Paga en cualquiera de estos puntos 👆', $opcion->reply_text);
+    }
+
+    /**
      * El primer usuario de una empresa recibe el rol admin con los permisos que
      * existan en ese momento (User::booted), así que hay que crearlos antes.
      */

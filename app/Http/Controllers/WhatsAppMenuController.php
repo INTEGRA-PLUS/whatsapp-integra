@@ -442,7 +442,10 @@ class WhatsAppMenuController extends Controller
             'header_text' => $data['header_text'] ?? null,
             'body_text' => $data['body_text'],
             'footer_text' => $data['footer_text'] ?? null,
-            'list_button_text' => $data['list_button_text'] ?: 'Ver opciones',
+            // `?? null` porque el campo es opcional en la validación: si no
+            // viene, leerlo a pelo revienta con un 500 en vez de usar el valor
+            // por defecto que hay justo al lado.
+            'list_button_text' => ($data['list_button_text'] ?? null) ?: 'Ver opciones',
             'is_root' => $isRoot,
             'trigger_text' => $hasKeyword ? $data['trigger_text'] : null,
             'match_types' => $types,
@@ -646,6 +649,13 @@ class WhatsAppMenuController extends Controller
 
         $keys = match ($option['action_type']) {
             'handoff' => ['assign_strategy'],
+            // FALTABA, y la imagen se subía bien pero se perdía al guardar: el
+            // tipo caía en `default => []`, así que `image_url` se descartaba y
+            // la opción quedaba con config null. El formulario la enseñaba —la
+            // tenía en memoria—, el cliente recibía sólo el pie de foto, y la
+            // revisión decía «es una opción de imagen y no tiene imagen» a quien
+            // acababa de subirla.
+            WhatsAppMenuOption::ACTION_IMAGE => ['image_url'],
             // El enlace de pago también lo usa "Reportar falla": cuando la
             // falla resulta ser un corte por mora, el cliente necesita pagar,
             // no un radicado.
