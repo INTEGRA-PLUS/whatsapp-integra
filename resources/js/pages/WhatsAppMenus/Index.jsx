@@ -800,7 +800,6 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                             error={errors?.list_button_text} />
                     )}
 
-                    <OptionLegend />
 
                     {options.map((option, index) => (
                         <OptionRow
@@ -1115,36 +1114,6 @@ function useIntegraCatalogs(enabled) {
  * consulta Integra, azul lo que resuelve la plataforma sola, ámbar lo que
  * todavía no existe.
  */
-/**
- * Qué significa el color de cada tarjeta.
- *
- * Un código de color sin leyenda es un adorno: el admin ve verdes y azules y se
- * pregunta por qué, que es exactamente lo que pasó. Explicado, se convierte en
- * información — de un vistazo se ve cuánto del menú depende de Integra.
- */
-function OptionLegend() {
-    const items = [
-        { tone: 'bg-success', label: 'Consulta Integra', hint: 'Necesita el complemento conectado' },
-        { tone: 'bg-info', label: 'Lo resuelve la plataforma', hint: 'Funciona siempre, sin depender de nadie' },
-        { tone: 'bg-violet-500', label: 'La contesta la IA', hint: 'Responde con los documentos y el contexto que le diste' },
-        { tone: 'bg-warning', label: 'Todavía no disponible', hint: 'Responde un aviso de «próximamente»' },
-        { tone: 'bg-muted', label: 'Sin acción', hint: 'El cliente la ve y no recibe nada' },
-    ];
-
-    return (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-md border border-dashed px-2.5 py-2">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Color de cada opción
-            </span>
-            {items.map(i => (
-                <span key={i.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground" title={i.hint}>
-                    <span className={`size-2.5 rounded-sm ${i.tone}`} />
-                    {i.label}
-                </span>
-            ))}
-        </div>
-    );
-}
 
 /**
  * El color de cada tarjeta de opción dice de qué familia es la acción.
@@ -1316,9 +1285,14 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
     // resulta ser un corte por mora, es lo único accionable que el cliente
     // puede hacer.
     const needsPaymentUrl = ['pagar_en_linea', 'reportar_falla'].includes(option.action_type);
+    // Once acciones en una lista, cuatro de ellas sobre un ERP de ISPs, a una
+    // peluquería no le ordenan nada: le dan diez cosas que descartar para
+    // encontrar la suya. Las familias que dependen de Integra sólo salen para
+    // quien usa Integra; el resto se queda con seis.
     const grouped = GROUP_ORDER
         .map(group => [group, actionTypes.filter(a => a.group === group)])
-        .filter(([, list]) => list.length > 0);
+        .filter(([group, list]) => list.length > 0
+            && (integra.usa || !['integra', 'pending'].includes(group)));
 
     // El color separa las tarjetas de un vistazo y además significa algo: qué
     // familia de acción es. Decorarlas al azar habría ordenado la vista sin
@@ -1398,54 +1372,67 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                 />
             )}
 
-            <div className="flex items-center gap-2">
-                <ActionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <Select value={option.action_type} onChange={v => onChange({ action_type: v })} className="h-8 text-xs">
-                    {grouped.map(([group, list]) => {
-                        // Las acciones de autoservicio consultan Integra: sin la
-                        // integración conectada no hacen lo que prometen —el
-                        // cliente acaba derivado a un asesor— así que no se
-                        // pueden elegir. Se enseñan igualmente, porque saber que
-                        // existen es la mitad de la razón para conectar Integra.
-                        // Misma regla para las dos familias que dependen de
-                        // algo de fuera: se enseñan, no se pueden elegir, y el
-                        // porqué va en la etiqueta del grupo. Esconderlas deja
-                        // al admin buscando una opción que nadie le dijo que
-                        // existe —y que es justo la que habría que venderle—.
-                        const bloqueado = (group === 'integra' && !integra.connected)
-                            || (group === 'ia' && !iaDisponible);
-                        // Mandaba a «IA que responde» y no era el camino
-                        // más corto: el selector de arriba de esta misma
-                        // pantalla —«Menú + IA» o «Con IA»— enciende «IA en los
-                        // chats» al aplicarse (ModoDeAtencion::aplicar). Manda
-                        // a la otra pantalla a quien lo tiene a un clic.
-                        const motivo = group === 'ia'
-                            ? 'elige «Menú + IA» arriba en esta pantalla'
-                            : 'conecta Integra para usarlas';
-                        const etiqueta = bloqueado
-                            ? `${GROUP_LABELS[group]} — ${motivo}`
-                            : (GROUP_LABELS[group] ?? group);
-                        const coletilla = group === 'ia' ? ' (requiere la IA)' : ' (requiere Integra)';
+            {/* Era un <select> de once entradas agrupadas, y con él la
+                leyenda de colores de arriba: para saber qué hacía una opción
+                había que abrir la lista, leerla, y luego traducir el color de
+                la tarjeta con una clave que estaba en otro sitio.
 
-                        return (
-                            <optgroup key={group} label={etiqueta}>
-                                {list.map(a => (
-                                    <option
-                                        key={a.value}
-                                        value={a.value}
-                                        // La que ya está elegida nunca se
-                                        // bloquea: una empresa pudo configurarla
-                                        // y desconectar Integra después, y
-                                        // esconderle su propia opción es peor.
-                                        disabled={bloqueado && option.action_type !== a.value}
-                                    >
-                                        {a.label}{bloqueado && option.action_type !== a.value ? coletilla : ''}
-                                    </option>
-                                ))}
-                            </optgroup>
-                        );
-                    })}
-                </Select>
+                Ahora las acciones se ven todas a la vez, con su icono, y la
+                que está elegida se reconoce sin abrir nada. El motivo de las
+                bloqueadas va en su propia ficha, donde se intenta pulsar. */}
+            <div className="space-y-2.5">
+                {grouped.map(([group, list]) => {
+                    // Las dos familias que dependen de algo de fuera se
+                    // enseñan sin poder elegirse: saber que existen es la
+                    // mitad de la razón para contratarlas.
+                    const bloqueado = (group === 'integra' && !integra.connected)
+                        || (group === 'ia' && !iaDisponible);
+                    const motivo = group === 'ia'
+                        ? 'Elige «Con IA» arriba en esta pantalla, o enciéndela en «IA que responde».'
+                        : 'Conecta Integra para que resuelvan solas; mientras tanto derivan a un asesor.';
+
+                    return (
+                        <div key={group}>
+                            <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {GROUP_LABELS[group] ?? group}
+                                {bloqueado && (
+                                    <span className="font-normal normal-case tracking-normal text-warning">{motivo}</span>
+                                )}
+                            </p>
+                            <div className="grid gap-1.5 sm:grid-cols-2">
+                                {list.map(a => {
+                                    const Icono = iconFor(a.value);
+                                    const elegida = option.action_type === a.value;
+                                    // La elegida nunca se bloquea: una empresa
+                                    // pudo configurarla y perder Integra
+                                    // después, y esconderle su propia opción es
+                                    // peor que enseñarla.
+                                    const noSePuede = bloqueado && !elegida;
+
+                                    return (
+                                        <button
+                                            key={a.value}
+                                            type="button"
+                                            disabled={noSePuede}
+                                            onClick={() => onChange({ action_type: a.value })}
+                                            className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition ${
+                                                elegida
+                                                    ? `${tone.card} border-l-[3px] font-medium text-foreground`
+                                                    : noSePuede
+                                                        ? 'border-dashed border-border/60 text-muted-foreground/50'
+                                                        : 'border-border/70 text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground'
+                                            }`}
+                                        >
+                                            <Icono className="size-3.5 shrink-0" />
+                                            <span className="min-w-0 flex-1">{a.label}</span>
+                                            {elegida && <Check className="size-3.5 shrink-0 text-foreground" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
 
             <OptionExplainer option={option} actionMeta={actionMeta} submenuChoices={submenuChoices} />

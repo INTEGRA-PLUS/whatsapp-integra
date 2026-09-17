@@ -10,7 +10,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Cómo quiere atender esta empresa: a mano, con menú, con IA, o con las dos.
+ * Cómo quiere atender esta empresa: a mano, con menú o con IA.
  *
  * Existe porque hasta ahora **eso no se elegía: se deducía**. Estaba repartido
  * entre el interruptor de la IA de chats, el de la de menús, el campo de
@@ -19,16 +19,27 @@ use Illuminate\Support\Facades\Log;
  * responder «quiero atención manual» sin saber antes que eso significa apagar
  * dos interruptores y vaciar un campo que está en otra pantalla.
  *
- * ## Los cuatro
+ * ## Los tres
  *
  * - **`manual`** — no responde nada automático. Todo mensaje queda para una
  *   persona. Es lo que quiere quien vende por WhatsApp a pulso.
- * - **`menu`** — el cliente elige de una lista. Nada de IA.
+ * - **`menu`** — el cliente elige de una lista. Es la puerta de entrada.
  * - **`ia`** — la IA conversa desde el primer mensaje. Los menús siguen
  *   existiendo, pero sólo se abren si alguien los ofrece.
- * - **`menu_ia`** — el menú va delante y la IA recoge lo que ningún menú
- *   reconoce. Es lo que la mayoría acaba queriendo, y hasta ahora se conseguía
- *   por accidente.
+ *
+ * ## Por qué ya no hay un cuarto, «menú + IA»
+ *
+ * Porque no era un modo, era el estado normal de `menu`: el menú delante y la
+ * IA recogiendo lo que ninguna opción reconoce. Tenerlo como tarjeta aparte
+ * obligaba a elegir entre «Con menú» y «Menú + IA» sin que la diferencia
+ * —tener o no la IA encendida— fuera visible en ninguna de las dos.
+ *
+ * Así que **`menu` ya no toca la IA**. La enciende y la apaga un único sitio,
+ * «IA que responde», y la tarjeta del modo cuenta qué significa eso hoy: con
+ * la IA encendida, lo que no encaje lo atiende ella; sin ella, queda para un
+ * asesor. La combinación se sigue pudiendo, deja de ser una cuarta decisión.
+ *
+ * `manual` sí la apaga: «no responde nada automático» no admite matices.
  *
  * ## Lo que NO hace
  *
@@ -48,9 +59,7 @@ class ModoDeAtencion
 
     public const IA = 'ia';
 
-    public const MENU_IA = 'menu_ia';
-
-    public const MODOS = [self::MANUAL, self::MENU, self::IA, self::MENU_IA];
+    public const MODOS = [self::MANUAL, self::MENU, self::IA];
 
     /** En cuál está hoy, mirando lo que de verdad está encendido. */
     public static function actual(Company $company): string
@@ -60,8 +69,10 @@ class ModoDeAtencion
         $menu = $orden['hay_disparadores'] || $orden['saluda_con_menu'];
         $ia = $orden['ia_chat'] || $orden['ia_menus'];
 
+        // El menú manda: si salta, el cliente lo ve primero, tenga la empresa
+        // la IA encendida o no. Que además la tenga es un detalle de ese modo,
+        // no un modo distinto.
         return match (true) {
-            $menu && $ia => self::MENU_IA,
             $menu => self::MENU,
             $ia => self::IA,
             default => self::MANUAL,
@@ -80,8 +91,7 @@ class ModoDeAtencion
      */
     public static function loQueCambiaria(Company $company, string $modo): array
     {
-        $quiereMenu = in_array($modo, [self::MENU, self::MENU_IA], true);
-        $quiereIa = in_array($modo, [self::IA, self::MENU_IA], true);
+        $quiereMenu = $modo === self::MENU;
 
         $saltan = self::menusQueSaltan($company->id);
 
@@ -92,12 +102,14 @@ class ModoDeAtencion
             'menus_a_apagar' => ! $quiereMenu
                 ? $saltan->where('active', true)->pluck('name')->values()->all()
                 : [],
+            // «Con menú» NO toca la IA: la enciende y la apaga «IA que
+            // responde», y tener las dos a la vez es lo normal, no un modo.
             'ia' => match (true) {
-                $quiereIa && ! self::iaEncendida($company->id) => 'encender',
-                ! $quiereIa && self::iaEncendida($company->id) => 'apagar',
+                $modo === self::IA && ! self::iaEncendida($company->id) => 'encender',
+                $modo === self::MANUAL && self::iaEncendida($company->id) => 'apagar',
                 default => null,
             },
-            'bloqueado' => $quiereIa ? self::porQueNoSePuedeEncenderLaIa($company) : null,
+            'bloqueado' => $modo === self::IA ? self::porQueNoSePuedeEncenderLaIa($company) : null,
         ];
     }
 
@@ -116,25 +128,30 @@ class ModoDeAtencion
             return $cambios;
         }
 
-        $quiereMenu = in_array($modo, [self::MENU, self::MENU_IA], true);
-        $quiereIa = in_array($modo, [self::IA, self::MENU_IA], true);
-
         self::menusQueSaltan($company->id)->each(
-            fn (WhatsAppMenu $m) => $m->update(['active' => $quiereMenu])
+            fn (WhatsAppMenu $m) => $m->update(['active' => $modo === self::MENU])
         );
 
-        // Sólo el chat: es el flujo conversacional y el que se entiende como
-        // «la IA». El de menús consulta Integra y se enciende aparte, en su
-        // propia pantalla, porque necesita permisos que esto no puede dar.
-        CompanyIntegration::updateOrCreate(
-            ['company_id' => $company->id, 'key' => CompanyIntegration::KEY_AI_CHAT],
-            ['enabled' => $quiereIa]
-        );
+        // `menu` no aparece aquí a propósito: es el modo que convive con la IA
+        // encendida o apagada, y decidirlo por él es lo que obligaba a tener
+        // una cuarta tarjeta. Sólo los extremos tocan el interruptor.
+        if ($modo === self::IA || $modo === self::MANUAL) {
+            $enciende = $modo === self::IA;
 
-        if (! $quiereIa) {
-            CompanyIntegration::where('company_id', $company->id)
-                ->where('key', CompanyIntegration::KEY_AI_MENUS)
-                ->update(['enabled' => false]);
+            // Sólo el chat: es el flujo conversacional y el que se entiende
+            // como «la IA». El de menús consulta Integra y se enciende aparte,
+            // en su propia pantalla, porque necesita permisos que esto no
+            // puede dar.
+            CompanyIntegration::updateOrCreate(
+                ['company_id' => $company->id, 'key' => CompanyIntegration::KEY_AI_CHAT],
+                ['enabled' => $enciende]
+            );
+
+            if (! $enciende) {
+                CompanyIntegration::where('company_id', $company->id)
+                    ->where('key', CompanyIntegration::KEY_AI_MENUS)
+                    ->update(['enabled' => false]);
+            }
         }
 
         Log::channel('whatsapp')->info('⚙️ Modo de atención cambiado', [

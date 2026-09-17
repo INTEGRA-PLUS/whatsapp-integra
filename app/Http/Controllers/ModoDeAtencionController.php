@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Elegir cómo atiende la empresa: a mano, con menú, con IA o con las dos.
+ * Elegir cómo atiende la empresa: a mano, con menú o con IA.
  *
  * Es un ajuste que toca dos mundos —los menús y la IA— y por eso no vive en
  * ninguno de los dos controladores: meterlo en el de menús dejaría a la pantalla

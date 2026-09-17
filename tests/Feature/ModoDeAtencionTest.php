@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Support\ModoDeAtencion;
+use App\Support\OrdenDeLaConversacion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
@@ -84,13 +85,24 @@ class ModoDeAtencionTest extends TestCase
         $this->assertSame(ModoDeAtencion::IA, ModoDeAtencion::actual($this->company));
     }
 
-    /** @test */
-    public function con_las_dos_cosas_el_modo_es_menu_mas_ia(): void
+    /**
+     * Con menú Y con IA el modo sigue siendo «Con menú».
+     *
+     * Antes había un cuarto modo, «Menú + IA», para justo este caso. Se quitó
+     * porque no era un modo: era el estado normal de «Con menú» cuando la
+     * empresa tiene la IA encendida, y como tarjeta aparte obligaba a elegir
+     * entre dos que sólo se diferenciaban en algo invisible en ambas.
+     *
+     * Manda el menú, que es lo que el cliente ve primero.
+     *
+     * @test
+     */
+    public function con_las_dos_cosas_manda_el_menu(): void
     {
         $this->menu('Menú principal', trigger: 'hola');
         $this->encenderIa();
 
-        $this->assertSame(ModoDeAtencion::MENU_IA, ModoDeAtencion::actual($this->company));
+        $this->assertSame(ModoDeAtencion::MENU, ModoDeAtencion::actual($this->company));
     }
 
     // ─── Aplicar un modo ─────────────────────────────────────────────────────
@@ -127,14 +139,37 @@ class ModoDeAtencionTest extends TestCase
     }
 
     /** @test */
-    public function pasar_a_menu_mas_ia_enciende_las_dos_cosas(): void
+    public function pasar_a_menu_enciende_los_menus_que_saltan(): void
     {
         $principal = $this->menu('Menú principal', trigger: 'hola', activo: false);
 
-        ModoDeAtencion::aplicar($this->company, ModoDeAtencion::MENU_IA);
+        ModoDeAtencion::aplicar($this->company, ModoDeAtencion::MENU);
 
         $this->assertTrue((bool) $principal->refresh()->active);
-        $this->assertSame(ModoDeAtencion::MENU_IA, ModoDeAtencion::actual($this->company));
+        $this->assertSame(ModoDeAtencion::MENU, ModoDeAtencion::actual($this->company));
+    }
+
+    /**
+     * Y «Con menú» NO toca la IA, ni para encenderla ni para apagarla.
+     *
+     * Es lo que permite que haya tres modos y no cuatro: la IA la manda un solo
+     * interruptor, en «IA que responde», y el menú convive con ella encendida o
+     * apagada. Si este modo la apagara, elegirlo le quitaría la IA a quien la
+     * paga sin habérselo pedido.
+     *
+     * @test
+     */
+    public function pasar_a_menu_no_apaga_la_ia_que_ya_estaba(): void
+    {
+        $this->menu('Menú principal', trigger: 'hola', activo: false);
+        $this->encenderIa();
+
+        ModoDeAtencion::aplicar($this->company, ModoDeAtencion::MENU);
+
+        $this->assertTrue(
+            OrdenDeLaConversacion::de($this->company->id)['ia_chat'],
+            'La IA sigue encendida: el modo del menú no es quién para apagarla.'
+        );
     }
 
     /** Pasar a IA apaga los menús que saltaban, para que no se adelanten. */

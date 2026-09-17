@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Bot, CheckCircle2, ListTree, Loader2, Sparkles, UserRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ListTree, Loader2, Sparkles, UserRound } from 'lucide-react';
 
 /**
- * Cómo quiere atender esta empresa, en una sola decisión.
+ * Cómo quiere atender esta empresa, en una sola decisión: a mano, con menú
+ * o con IA.
  *
  * Antes esto no se elegía: **se deducía**. Estaba repartido entre el interruptor
  * de la IA de chats, el de la de menús, las palabras clave de cada menú y el
@@ -20,34 +21,41 @@ import { AlertTriangle, Bot, CheckCircle2, ListTree, Loader2, Sparkles, UserRoun
  * es un botón que nadie pulsa dos veces.
  */
 
+/**
+ * Eran cuatro y había uno de más.
+ *
+ * «Menú + IA» no era un modo: era el estado normal de «Con menú» cuando la
+ * empresa tiene la IA encendida. Tenerlo como tarjeta aparte obligaba a elegir
+ * entre dos que sólo se diferenciaban en algo que no se veía en ninguna de las
+ * dos —si la IA está encendida— y además dejaba la mezcla como una decisión
+ * global, cuando lo que de verdad se mezcla se decide **opción por opción**
+ * dentro del menú: ésta la responde un texto tuyo, aquélla la responde la IA.
+ *
+ * Así que «Con menú» ya no toca la IA, y su texto cuenta qué significa hoy.
+ */
 const MODOS = [
     {
         id: 'manual',
         Icono: UserRound,
         titulo: 'Solo personas',
         resumen: 'No responde nada automático',
-        detalle: 'Todo mensaje que entre queda esperando a un asesor. Ni menús ni IA. Tus menús no se borran: dejan de saltar solos.',
+        detalle: () => 'Todo mensaje que entre queda esperando a un asesor. Ni menús ni IA. Tus menús no se borran: dejan de saltar solos.',
     },
     {
         id: 'menu',
         Icono: ListTree,
         titulo: 'Con menú',
         resumen: 'El cliente elige de una lista',
-        detalle: 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna queda para un asesor.',
+        detalle: iaOn => iaOn
+            ? 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna lo atiende la IA, que tienes encendida. Y dentro del menú decides opción por opción cuál responde con un texto tuyo y cuál la responde la IA.'
+            : 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna queda para un asesor.',
     },
     {
         id: 'ia',
         Icono: Sparkles,
         titulo: 'Con IA',
         resumen: 'Conversa desde el primer mensaje',
-        detalle: 'La IA entiende lo que pide con sus propias palabras y responde. Tus menús siguen existiendo, pero solo se abren si alguien los ofrece.',
-    },
-    {
-        id: 'menu_ia',
-        Icono: Bot,
-        titulo: 'Menú + IA',
-        resumen: 'El menú primero, la IA para el resto',
-        detalle: 'Sale el menú, y lo que ninguna opción reconozca lo atiende la IA en vez de quedarse sin respuesta. Es lo que elige la mayoría.',
+        detalle: () => 'La IA entiende lo que pide con sus propias palabras y responde. Tus menús siguen existiendo, pero solo se abren si alguien los ofrece.',
     },
 ];
 
@@ -58,6 +66,8 @@ export default function ModoDeAtencion({ alCambiar }) {
     const [guardando, setGuardando] = useState(null);
     const [confirmando, setConfirmando] = useState(null);
     const [error, setError] = useState('');
+    // Para que «Con menú» pueda contar qué le pasa hoy a lo que no encaja.
+    const [iaOn, setIaOn] = useState(false);
 
     useEffect(() => { cargar(); }, []);
 
@@ -66,6 +76,7 @@ export default function ModoDeAtencion({ alCambiar }) {
             const { data } = await axios.get('/api/atencion/modo');
             setModo(data.modo);
             setCambios(data.cambios ?? {});
+            setIaOn(!!(data.orden?.ia_chat || data.orden?.ia_menus));
         } catch {
             setError('No se pudo cargar cómo estás atendiendo ahora.');
         } finally {
@@ -79,6 +90,7 @@ export default function ModoDeAtencion({ alCambiar }) {
             const { data } = await axios.post('/api/atencion/modo', { modo: id });
             setModo(data.modo);
             setCambios(data.cambios ?? {});
+            setIaOn(!!(data.orden?.ia_chat || data.orden?.ia_menus));
             setConfirmando(null);
             alCambiar?.();
         } catch (err) {
@@ -113,7 +125,7 @@ export default function ModoDeAtencion({ alCambiar }) {
                 </p>
             )}
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-3">
                 {MODOS.map(({ id, Icono, titulo, resumen, detalle }) => {
                     const actual = modo === id;
                     const cambio = cambios[id] ?? {};
@@ -139,7 +151,7 @@ export default function ModoDeAtencion({ alCambiar }) {
                                 {actual && <CheckCircle2 className="ml-auto size-3.5 shrink-0 text-teal-500" />}
                             </div>
                             <p className="text-[11px] text-muted-foreground mt-1.5">{resumen}</p>
-                            <p className="text-[11px] text-muted-foreground/80 mt-2 leading-relaxed">{detalle}</p>
+                            <p className="text-[11px] text-muted-foreground/80 mt-2 leading-relaxed">{detalle(iaOn)}</p>
 
                             {bloqueado && (
                                 <p className="mt-2 text-[11px] text-warning leading-relaxed">{cambio.bloqueado}</p>
