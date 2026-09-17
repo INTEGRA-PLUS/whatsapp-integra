@@ -29,6 +29,26 @@ class WhatsAppMenuOption extends Model
     public const ACTION_NONE = 'none';
 
     /**
+     * Que conteste la IA, con la documentación que le dio la empresa.
+     *
+     * Hasta ahora la IA sólo entraba por la puerta de atrás: el último paso de
+     * `WhatsAppMenuService::handleInbound()`, cuando **ningún** menú reconocía
+     * el mensaje. Así que una empresa que había subido su tarifario, su
+     * reglamento y sus horarios no tenía manera de decir «esta opción la
+     * contesta la IA con eso» — tenía que copiar la respuesta a mano en un
+     * `reply_text` y volver a copiarla cada vez que cambiara el documento.
+     *
+     * El `reply_text` de esta opción no es un mensaje para el cliente: es **lo
+     * que hay que resolverle a la IA**. Si está vacío se usa el título de la
+     * opción, que casi siempre ya es la pregunta («Horarios de atención»).
+     *
+     * Y si la IA está apagada la opción **no calla**: pasa a un asesor, igual
+     * que hacen las acciones de Integra cuando el ERP no responde. Una opción
+     * que el cliente ve y que no contesta nada es el peor resultado posible.
+     */
+    public const ACTION_IA = 'ia';
+
+    /**
      * Acciones que consultan Integra 2.0.
      *
      * `reply` es el texto que acompaña a la respuesta (o la sustituye cuando la
@@ -76,6 +96,7 @@ class WhatsAppMenuOption extends Model
         'reply_text', self::ACTION_IMAGE, 'submenu', 'handoff',
         'consultar_factura', 'pagar_en_linea', 'reportar_falla', 'estado_servicio',
         'cambiar_clave',
+        self::ACTION_IA,
         self::ACTION_NONE,
     ];
 
@@ -259,7 +280,12 @@ class WhatsAppMenuOption extends Model
     /** ¿El tipo guarda un texto para el cliente? */
     public static function carriesText(string $actionType): bool
     {
-        return in_array($actionType, self::TEXT_CARRYING_TYPES, true)
+        // «ia» entra aquí por el mecanismo, no por el significado: guarda texto
+        // en la misma columna, pero ese texto no lo lee nunca el cliente —es la
+        // pregunta que se le hace a la IA—. Por eso no está en
+        // TEXT_CARRYING_TYPES, que sí significa «mensaje para el cliente».
+        return $actionType === self::ACTION_IA
+            || in_array($actionType, self::TEXT_CARRYING_TYPES, true)
             || array_key_exists($actionType, self::INTEGRA_ACTIONS)
             || array_key_exists($actionType, self::PENDING_ACTIONS);
     }
@@ -268,9 +294,13 @@ class WhatsAppMenuOption extends Model
      * Catálogo para el formulario. Se arma aquí y no en el front para que al
      * añadir un tipo nuevo no haya que tocar dos listas que se desincronizan.
      *
+     * `$conIa` decide si aparece «Que responda la IA». No es un permiso: es que
+     * ofrecer una acción que la empresa no tiene contratada es prometer algo
+     * que al tocarlo deriva a un asesor.
+     *
      * @return list<array{value: string, label: string, group: string, reply: string|null}>
      */
-    public static function catalog(): array
+    public static function catalog(bool $conIa = false): array
     {
         $catalog = [
             ['value' => 'reply_text', 'label' => 'Responder con un mensaje', 'group' => 'core', 'reply' => null],
@@ -294,6 +324,15 @@ class WhatsAppMenuOption extends Model
                 'label' => $meta['label'],
                 'group' => 'pending',
                 'reply' => $meta['reply'],
+            ];
+        }
+
+        if ($conIa) {
+            $catalog[] = [
+                'value' => self::ACTION_IA,
+                'label' => 'Que responda la IA',
+                'group' => 'ia',
+                'reply' => null,
             ];
         }
 

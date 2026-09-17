@@ -15,6 +15,7 @@ use App\Services\AgentAssignmentService;
 use App\Support\TraspasoAUnAsesor;
 use App\Services\MetaWhatsAppService;
 use App\Services\WhatsAppMenuActionService;
+use App\Services\WhatsAppChatAiClient;
 use App\Services\WhatsAppMenuService;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
@@ -187,6 +188,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
             $option->action_type === 'handoff' => $this->handoff($instance, $conversation, $option, $meta, $assignment),
             $option->action_type === WhatsAppMenuOption::ACTION_IMAGE => $this->replyWithImage($instance, $conversation, $option, $meta),
             $option->action_type === WhatsAppMenuOption::ACTION_NONE => $this->acknowledgeWithoutAction($conversation, $option),
+            $option->action_type === WhatsAppMenuOption::ACTION_IA => $this->askAiForOption($instance, $conversation, $option, $meta, $assignment),
             $option->usesIntegra() => $this->runIntegraAction($instance, $conversation, $option, $meta, $actions, $assignment),
             $option->isPending() => $this->replyWithPendingNotice($instance, $conversation, $option, $meta),
             default => $this->replyWithText($instance, $conversation, $option, $meta),
@@ -363,6 +365,93 @@ class ProcessWhatsAppMenu implements ShouldQueue
             'conversation_id' => $conversation->id,
             'menu_option_id' => $option->id,
             'title' => $option->title,
+        ]);
+    }
+
+    /**
+     * La opción se la pasa a la IA, que contesta con la documentación de la
+     * empresa.
+     *
+     * Lo que se le pregunta es el `reply_text` de la opción, y si está vacío el
+     * título: «Horarios de atención» ya es la pregunta, y obligar a escribirla
+     * dos veces sólo consigue que las dos se desincronicen.
+     *
+     * **La respuesta no sale de aquí.** El flujo de chat contesta por su
+     * callback, minutos después; este job sólo le entrega la pregunta. Por eso
+     * hace falta el wamid del mensaje entrante: sin él no hay forma de casar la
+     * respuesta con la conversación cuando vuelva, y preguntar sería tirar lo
+     * que conteste.
+     *
+     * Si la IA no está disponible —apagada, fuera del plan, o sin flujo
+     * configurado en el servidor— el chat pasa a un asesor. Es la misma regla
+     * que las acciones de Integra sin ERP conectado: el cliente ya tocó el
+     * botón, y el silencio se lee como un sistema roto.
+     */
+    private function askAiForOption(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        WhatsAppMenuOption $option,
+        MetaWhatsAppService $meta,
+        AgentAssignmentService $assignment
+    ): void {
+        WhatsAppMenuSession::close($conversation->id);
+
+        $pregunta = trim((string) $option->reply_text);
+        $pregunta = $pregunta !== '' ? $pregunta : trim((string) $option->title);
+
+        $puede = WhatsAppChatAiClient::enabledFor($instance->company_id)
+            && $this->inboundWamid !== ''
+            && $pregunta !== '';
+
+        if (! $puede) {
+            Log::channel('whatsapp')->warning('⚠️ Opción de IA sin IA disponible: pasa a un asesor', [
+                'conversation_id' => $conversation->id,
+                'menu_option_id' => $option->id,
+                'company_id' => $instance->company_id,
+                'sin_wamid' => $this->inboundWamid === '',
+                'sin_pregunta' => $pregunta === '',
+            ]);
+
+            // Y NO se reutiliza handoff(): éste manda el `reply_text` de la
+            // opción al cliente, y en una opción de IA ese campo es la pregunta
+            // interna —«resúmele el reglamento de retiros»—. Se le escaparía
+            // al cliente la instrucción en vez de una respuesta.
+            $this->claimAgent(
+                $instance,
+                $conversation,
+                $option,
+                // El reparto que la empresa eligió en «IA que responde», no
+                // el de la opción: la opción de IA no ofrece ese campo —sin él
+                // `assignStrategy()` devuelve «bandeja»— y dejar el chat sin
+                // dueño es la mitad de un traspaso. Es además el mismo reparto
+                // que usa la IA cuando se rinde, que es lo que esto es.
+                self::TRASPASO_DE_LA_EMPRESA,
+                'Opción de IA sin IA disponible: la eligió el cliente desde el menú',
+                $assignment
+            );
+
+            $this->deliverText(
+                $instance,
+                $conversation,
+                $meta,
+                'Dame un momento: te paso con alguien del equipo para resolverlo.',
+                ['menu_id' => $option->menu_id, 'menu_option_id' => $option->id]
+            );
+
+            return;
+        }
+
+        ProcessWhatsAppChatAi::dispatch(
+            $instance->id,
+            $conversation->id,
+            $pregunta,
+            $this->inboundWamid
+        );
+
+        Log::channel('whatsapp')->info('🤖 Menú: la opción se la resuelve la IA', [
+            'conversation_id' => $conversation->id,
+            'menu_option_id' => $option->id,
+            'pregunta' => $pregunta,
         ]);
     }
 

@@ -59,6 +59,13 @@ class WhatsAppMenuController extends Controller
         $tieneAutoservicio = $this->yaTieneAutoservicio($menus);
         $usaIntegra = UsaIntegra::de($company);
 
+        // De aquí sale también si se puede ofrecer la acción «Que responda la
+        // IA»: es la misma condición que decide si la IA contesta de verdad
+        // —encendida, dentro del plan y con el flujo configurado en el
+        // servidor—. Calcularla dos veces con dos criterios es justo cómo
+        // aparecen las opciones que al tocarlas no hacen lo que prometen.
+        $orden = OrdenDeLaConversacion::de($user->company_id);
+
         $instances = Instance::where('company_id', $user->company_id)
             ->orderBy('name')
             ->get(['id', 'name']);
@@ -81,7 +88,7 @@ class WhatsAppMenuController extends Controller
             ],
             // El catálogo viaja desde el modelo: el formulario y la vista previa
             // se arman con él en vez de repetir la lista de tipos en el front.
-            'actionTypes' => WhatsAppMenuOption::catalog(),
+            'actionTypes' => WhatsAppMenuOption::catalog($orden['ia_chat']),
             // Qué parte del contrato puede mostrar cada opción de "Estado del
             // contrato": el select se arma con esto en vez de repetir la lista.
             'statusSegments' => collect(WhatsAppMenuOption::STATUS_SEGMENTS)
@@ -107,7 +114,7 @@ class WhatsAppMenuController extends Controller
             // Qué le pasa hoy a un cliente que escribe. La pregunta «¿sale
             // primero un menú o la IA?» no tenía respuesta en ninguna pantalla,
             // y la respuesta cambia según lo que la empresa tenga puesto.
-            'orden' => OrdenDeLaConversacion::de($user->company_id),
+            'orden' => $orden,
             // El interruptor de la IA. Vive aquí y no en Integraciones porque
             // es la IA DE LOS MENÚS: se enciende donde se configuran.
             'ai' => [
@@ -571,7 +578,12 @@ class WhatsAppMenuController extends Controller
             // Este panel carga por su cuenta, aparte de la pantalla, así que
             // necesita la misma llave o acabaría siendo el único sitio que le
             // habla de Integra a una farmacia. Ya pasó.
-            'issues' => MenuReview::build($menus, $capabilities, UsaIntegra::de($company)),
+            'issues' => MenuReview::build(
+                $menus,
+                $capabilities,
+                UsaIntegra::de($company),
+                OrdenDeLaConversacion::de($company->id)['ia_chat'],
+            ),
         ]);
     }
 

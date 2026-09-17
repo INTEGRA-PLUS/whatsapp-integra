@@ -31,8 +31,12 @@ class MenuReview
      * @param array{connected: bool, checked: bool, can: array<string, bool>, error: ?string} $capabilities
      * @return list<array{menu_id: ?int, menu: ?string, option: ?string, level: string, says: string, fix: string, action: ?array}>
      */
-    public static function build($menus, array $capabilities, bool $usaIntegra = true): array
-    {
+    public static function build(
+        $menus,
+        array $capabilities,
+        bool $usaIntegra = true,
+        bool $iaDisponible = true
+    ): array {
         $issues = [];
 
         // Con Integra desconectado, sus opciones ya no hacen lo que prometen:
@@ -110,7 +114,7 @@ class MenuReview
                     $byMissing[$key]['options'][] = $option->title;
                 }
 
-                foreach (self::optionIssues($menu, $option, $menus, $integraConectado) as $issue) {
+                foreach (self::optionIssues($menu, $option, $menus, $integraConectado, $iaDisponible) as $issue) {
                     $issues[] = $issue + [
                         'menu_id' => $menu->id,
                         'menu' => $menu->name,
@@ -216,7 +220,8 @@ class MenuReview
         WhatsAppMenu $menu,
         WhatsAppMenuOption $option,
         $menus,
-        bool $integraConectado = true
+        bool $integraConectado = true,
+        bool $iaDisponible = true
     ): array {
         $issues = [];
 
@@ -276,6 +281,18 @@ class MenuReview
                 'level' => self::BLOCKER,
                 'says' => 'Responde con un mensaje, pero el mensaje está vacío.',
                 'fix' => 'Escribe lo que recibirá el cliente.',
+            ];
+        }
+
+        // Una opción de IA sobrevive a que la IA se apague, y es lo correcto:
+        // borrarla al vencer la suscripción haría perder el trabajo de armarla.
+        // Pero entonces deja de hacer lo que su título promete y pasa a un
+        // asesor, y eso hay que decirlo aquí y no descubrirlo por el log.
+        if ($option->action_type === WhatsAppMenuOption::ACTION_IA && ! $iaDisponible) {
+            $issues[] = [
+                'level' => self::WARNING,
+                'says' => 'La contesta la IA, pero la IA no está disponible: hoy esta opción pasa el chat a un asesor.',
+                'fix' => 'Enciende la IA en «IA que responde», o cámbiale la acción.',
             ];
         }
 

@@ -1071,6 +1071,7 @@ function OptionLegend() {
     const items = [
         { tone: 'bg-success', label: 'Consulta Integra', hint: 'Necesita el complemento conectado' },
         { tone: 'bg-info', label: 'Lo resuelve la plataforma', hint: 'Funciona siempre, sin depender de nadie' },
+        { tone: 'bg-violet-500', label: 'La contesta la IA', hint: 'Responde con los documentos y el contexto que le diste' },
         { tone: 'bg-warning', label: 'Todavía no disponible', hint: 'Responde un aviso de «próximamente»' },
         { tone: 'bg-muted', label: 'Sin acción', hint: 'El cliente la ve y no recibe nada' },
     ];
@@ -1103,6 +1104,10 @@ const GROUP_TONES = {
     core: {
         card: 'border-l-info bg-info/[0.04] dark:bg-info/[0.10]',
         badge: 'bg-info/15 text-info dark:bg-info/25',
+    },
+    ia: {
+        card: 'border-l-violet-500 bg-violet-500/[0.04] dark:bg-violet-500/[0.10]',
+        badge: 'bg-violet-500/15 text-violet-600 dark:bg-violet-500/25 dark:text-violet-300',
     },
     integra: {
         card: 'border-l-success bg-success/[0.04] dark:bg-success/[0.10]',
@@ -1386,6 +1391,28 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                         className="absolute right-1 top-1"
                         onElegir={emoji => onChange({ reply_text: insertarEnCursor(respuestaRef.current, option.reply_text ?? '', emoji) })}
                     />
+                </div>
+            )}
+
+            {/* Mismo campo de la base que «Responder con un mensaje» y
+                significado opuesto: aquí NO lo lee el cliente. Sin decirlo en
+                el sitio, el admin escribe la respuesta —«Abrimos de 8 a 6»— y
+                la IA acaba respondiendo a eso como si fuera la pregunta. */}
+            {option.action_type === 'ia' && (
+                <div className="space-y-1.5">
+                    <textarea
+                        value={option.reply_text ?? ''}
+                        onChange={e => onChange({ reply_text: e.target.value })}
+                        rows={2} maxLength={4096}
+                        placeholder={`Opcional. Si lo dejas vacío, la IA resuelve «${(option.title || 'el título de la opción').trim()}»`}
+                        className="flex w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    />
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                        Esto <strong className="text-foreground">no lo lee el cliente</strong>: es lo que le
+                        pides a la IA. Ella contesta con tu prompt, tu contexto y los documentos de
+                        «IA que responde», así que cuando cambies el documento cambia la respuesta,
+                        sin volver a escribirla aquí.
+                    </p>
                 </div>
             )}
 
@@ -1970,6 +1997,10 @@ function describeOption(option, actionMeta, target) {
                 : '⚠️ No tiene submenú elegido: al tocarla no pasaría nada.';
         case 'handoff':
             return 'El chat pasa a una persona y el bot deja de responder' + (text !== '' ? ', tras recibir «' + cut(text, 80) + '»' : '.');
+        case 'ia':
+            return 'La IA le responde con lo que le enseñaste, resolviendo «'
+                + cut(text !== '' ? text : (option.title ?? '').trim() || 'el título de la opción', 90)
+                + '». Tarda unos segundos más que un mensaje escrito, porque lo piensa.';
         case 'none':
             return '⚠️ La ve y la toca, pero no recibe nada. Sólo sirve para armar el menú.';
         case 'estado_servicio':

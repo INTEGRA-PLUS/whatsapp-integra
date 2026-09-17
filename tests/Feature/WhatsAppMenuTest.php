@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessWhatsAppChatAi;
 use App\Models\Company;
+use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppConversation;
@@ -12,6 +14,7 @@ use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -577,5 +580,143 @@ class WhatsAppMenuTest extends TestCase
             $option->update(['action_type' => $type]);
             $this->assertSame($type, $option->fresh()->action_type);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // «Que responda la IA»
+    // ------------------------------------------------------------------
+
+    /**
+     * Hasta ahora la IA sólo entraba cuando NINGÚN menú reconocía el mensaje.
+     *
+     * Así que una empresa que había subido su tarifario y su reglamento no
+     * tenía forma de decir «esta opción la contesta la IA con eso»: le tocaba
+     * copiar la respuesta a mano en un `reply_text` y volver a copiarla cada
+     * vez que cambiara el documento.
+     */
+    public function test_la_opcion_de_ia_le_pasa_la_pregunta_al_flujo_de_chat(): void
+    {
+        Queue::fake([ProcessWhatsAppChatAi::class]);
+
+        $instance = $this->conChatIa();
+        $menu = $this->menu($instance, ['Horarios de atención']);
+        $option = $menu->options->first();
+        $option->update(['action_type' => WhatsAppMenuOption::ACTION_IA, 'reply_text' => null]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        // Sin pregunta escrita se usa el título: «Horarios de atención» YA es la
+        // pregunta, y obligar a escribirla dos veces sólo consigue que las dos
+        // se desincronicen.
+        Queue::assertPushed(
+            ProcessWhatsAppChatAi::class,
+            fn (ProcessWhatsAppChatAi $job) => $job->message === 'Horarios de atención'
+                && $job->wamid !== ''
+        );
+    }
+
+    /** Y si escribes qué debe resolver, manda eso y no el título. */
+    public function test_la_pregunta_escrita_gana_al_titulo(): void
+    {
+        Queue::fake([ProcessWhatsAppChatAi::class]);
+
+        $instance = $this->conChatIa();
+        $menu = $this->menu($instance, ['Retiros']);
+        $option = $menu->options->first();
+        $option->update([
+            'action_type' => WhatsAppMenuOption::ACTION_IA,
+            'reply_text' => 'Explícale los requisitos para retirarse de la cooperativa.',
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        Queue::assertPushed(
+            ProcessWhatsAppChatAi::class,
+            fn (ProcessWhatsAppChatAi $job) => $job->message === 'Explícale los requisitos para retirarse de la cooperativa.'
+        );
+    }
+
+    /**
+     * Sin IA disponible la opción NO calla: pasa a un asesor.
+     *
+     * Misma regla que las acciones de Integra con el ERP caído. El cliente ya
+     * tocó el botón, y el silencio se lee como un sistema roto.
+     */
+    public function test_sin_ia_la_opcion_pasa_a_un_asesor(): void
+    {
+        $instance = $this->metaInstance();
+        User::create([
+            'company_id' => $instance->company_id,
+            'name' => 'Asesora', 'email' => 'asesora@x.test',
+            'password' => 'secret', 'active' => true,
+        ]);
+
+        $menu = $this->menu($instance, ['Horarios de atención']);
+        $option = $menu->options->first();
+        $option->update(['action_type' => WhatsAppMenuOption::ACTION_IA, 'reply_text' => null]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        $this->assertNotNull(WhatsAppConversation::first()->assigned_to);
+        $this->assertNotSame([], $this->textsSent(), 'Algo tiene que recibir: callarse es lo peor.');
+    }
+
+    /**
+     * Y en ese traspaso el cliente NO ve la pregunta interna.
+     *
+     * Es la trampa del campo: `reply_text` en una opción de IA es la
+     * instrucción —«explícale los requisitos»—, no un mensaje. Reutilizar el
+     * handoff de siempre se la habría mandado tal cual.
+     */
+    public function test_el_traspaso_no_le_ensena_al_cliente_la_pregunta_de_la_ia(): void
+    {
+        $instance = $this->metaInstance();
+        $menu = $this->menu($instance, ['Retiros']);
+        $option = $menu->options->first();
+        $option->update([
+            'action_type' => WhatsAppMenuOption::ACTION_IA,
+            'reply_text' => 'Explícale los requisitos para retirarse de la cooperativa.',
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola'))->assertOk();
+        $this->postSignedWebhook($this->inboundReply($instance, $option))->assertOk();
+
+        foreach ($this->textsSent() as $texto) {
+            $this->assertStringNotContainsString('Explícale los requisitos', $texto);
+        }
+    }
+
+    /** La acción sólo se ofrece a quien tiene la IA: prometerla sin ella es un botón que deriva. */
+    public function test_el_catalogo_solo_ofrece_la_ia_a_quien_la_tiene(): void
+    {
+        $sinIa = collect(WhatsAppMenuOption::catalog(false))->pluck('value');
+        $conIa = collect(WhatsAppMenuOption::catalog(true))->pluck('value');
+
+        $this->assertFalse($sinIa->contains(WhatsAppMenuOption::ACTION_IA));
+        $this->assertTrue($conIa->contains(WhatsAppMenuOption::ACTION_IA));
+    }
+
+    /** Una instancia cuya empresa tiene el chat IA encendido y configurado. */
+    private function conChatIa(): Instance
+    {
+        $instance = $this->metaInstance();
+
+        $instance->company->update(['plan' => 'basico', 'ia' => 'completa']);
+
+        CompanyIntegration::create([
+            'company_id' => $instance->company_id,
+            'key' => CompanyIntegration::KEY_AI_CHAT,
+            'enabled' => true,
+        ]);
+
+        config([
+            'services.ai_chat.webhook_url' => 'https://n8n.example.test/webhook/chat',
+            'services.ai_chat.api_key' => 'n8n_llave',
+        ]);
+
+        return $instance->fresh();
     }
 }

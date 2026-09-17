@@ -1,6 +1,6 @@
 import {
     MessageSquare, CornerDownRight, UserRound, FileText, CreditCard,
-    Wifi, Wrench, CircleSlash, Activity, Construction, Image,
+    Wifi, Wrench, CircleSlash, Activity, Construction, Image, Sparkles,
 } from 'lucide-react';
 
 /**
@@ -61,6 +61,7 @@ export const ACTION_ICONS = {
     cambiar_clave: Wifi,
     reportar_falla: Wrench,
     estado_servicio: Activity,
+    ia: Sparkles,
     none: CircleSlash,
 };
 
@@ -68,12 +69,17 @@ export const iconFor = value => ACTION_ICONS[value] ?? Construction;
 
 export const GROUP_LABELS = {
     core: 'Acciones',
+    ia: 'Inteligencia artificial',
     integra: 'Autoservicio (consulta Integra)',
     pending: 'Opciones de negocio (integración pendiente)',
     none: 'Otros',
 };
 
-export const GROUP_ORDER = ['core', 'integra', 'pending', 'none'];
+// La IA va justo detrás de las acciones básicas y delante de Integra: es la
+// alternativa natural a «Responder con un mensaje» —la misma pregunta, pero
+// contestada con lo que la empresa le enseñó— y enterrarla al final del
+// desplegable es la forma más fácil de que nadie descubra que existe.
+export const GROUP_ORDER = ['core', 'ia', 'integra', 'pending', 'none'];
 
 /**
  * Qué hace cada acción, en una frase.
@@ -118,6 +124,10 @@ export const ACTION_HELP = {
     cambiar_clave: {
         does: 'Todavía no cambia nada: responde un aviso de que la función está en camino.',
         needs: 'Tu propio texto, para que el cliente no quede sin salida.',
+    },
+    ia: {
+        does: 'La contesta la IA con lo que le enseñaste: tu prompt, tu contexto y los documentos que subiste en «IA que responde». Para lo que cambia —tarifas, horarios, requisitos, reglamento—: se actualiza el documento y la respuesta se actualiza sola, sin volver a escribirla aquí.',
+        needs: 'Nada, si el título ya es la pregunta («Horarios de atención»). Si quieres afinarla, escribe qué debe resolverle; ese texto NO lo lee el cliente.',
     },
     none: {
         does: 'El cliente toca y no recibe nada. Sólo para armar el menú antes de decidir qué hará cada opción.',
