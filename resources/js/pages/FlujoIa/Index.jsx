@@ -1344,8 +1344,15 @@ function Configuracion({ usaIntegra = false }) {
                                 esta IA existe para resolver contra él —consultar
                                 una factura, radicar una falla— así que sin
                                 Integra no hace absolutamente nada, y a una
-                                farmacia le sobra hasta el nombre. */}
-                            {usaIntegra && (
+                                farmacia le sobra hasta el nombre.
+
+                                Con una excepción: si ya está encendida, se
+                                enseña igual. Es el único interruptor que la
+                                apaga desde que la pantalla de menús dejó de
+                                tener el suyo, y esconder el interruptor de algo
+                                que está funcionando deja a la empresa sin forma
+                                de pararlo. */}
+                            {(usaIntegra || state.menus.enabled) && (
                             <Card>
                                 <div className="p-6">
                                     <div className="flex items-start justify-between gap-6">

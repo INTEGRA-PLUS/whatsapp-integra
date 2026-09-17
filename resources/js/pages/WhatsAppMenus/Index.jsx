@@ -250,7 +250,30 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 {/* Y debajo, el paso a paso de esa decisión. */}
                 <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
 
-                <AiSwitch ai={ai} integra={integra} />
+                {/* Aquí vivía además un interruptor suelto de «IA para los
+                    menús», y dejaba contradecir la decisión de arriba: se podía
+                    elegir «Solo personas» y encender la IA justo debajo, con la
+                    pantalla enseñando las dos cosas a la vez.
+
+                    Se va entero. En esta pantalla la decisión es el modo de
+                    atención y nada más; los dos interruptores de IA viven
+                    juntos en «IA que responde», que es el único sitio donde se
+                    ve en qué se diferencian. Un interruptor menos, y una
+                    contradicción menos. */}
+                {(orden.ia_chat || orden.ia_menus) && (
+                    <a
+                        href={route('ia.index')}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/50 px-5 py-3 text-left hover:bg-muted/30"
+                    >
+                        <span className="min-w-0">
+                            <span className="block text-sm font-medium text-foreground">Ajustes de la IA</span>
+                            <span className="block text-xs text-muted-foreground mt-0.5">
+                                Qué sabe de tu empresa, cómo se comporta, a quién le pasa el chat y cuál de las dos IA atiende.
+                            </span>
+                        </span>
+                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </a>
+                )}
 
                 {menus.length > 0 && (
                     <ReviewPanel onEditMenu={(id, optionId) => {
@@ -2208,148 +2231,6 @@ function PlantillaIsp({ conectado }) {
                 {enviando ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
                 Añadir esas opciones
             </Button>
-        </div>
-    );
-}
-
-function AiSwitch({ ai, integra = {} }) {
-    const [busy, setBusy] = useState(false);
-    const encendida = ai.enabled === true;
-    const permisos = ai.permissions ?? [];
-    const catalogo = ai.permissionCatalog ?? [];
-
-    function toggle() {
-        setBusy(true);
-        router.post(route('whatsapp-menus.ai'), { enabled: !encendida }, {
-            preserveScroll: true,
-            onFinish: () => setBusy(false),
-        });
-    }
-
-    function togglePermiso(value) {
-        const next = permisos.includes(value)
-            ? permisos.filter(p => p !== value)
-            : [...permisos, value];
-
-        setBusy(true);
-        router.post(route('whatsapp-menus.ai.permissions'), { permissions: next }, {
-            preserveScroll: true,
-            onFinish: () => setBusy(false),
-        });
-    }
-
-    return (
-        <div className={`rounded-xl border p-4 ${encendida ? 'border-primary/40 bg-primary/5' : 'bg-card'}`}>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-start gap-3 min-w-0">
-                    <div className={`size-10 shrink-0 rounded-xl flex items-center justify-center ${
-                        encendida ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-                    }`}>
-                        <Bot className="size-5" />
-                    </div>
-                    <div className="min-w-0">
-                        {/* El nombre NO cambia al encenderse. Decía «La IA
-                            está atendiendo», y con la otra IA —la de los
-                            chats— apagada dos pantallas más allá, el resultado
-                            era leer «la IA está encendida» aquí y «enciende la
-                            IA» allá, sobre dos cosas distintas. Son dos, y cada
-                            una se llama por su nombre siempre. */}
-                        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
-                            IA para los menús
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                encendida ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
-                            }`}>
-                                {encendida ? 'Encendida' : 'Apagada'}
-                            </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-                            <strong className="text-foreground">Ejecuta opciones del menú</strong>: entiende al cliente que
-                            escribe con sus propias palabras —«no me funciona el internet desde ayer»— y ejecuta la opción
-                            que corresponde, en vez de dejarlo sin respuesta. Si un agente toma el chat, se calla.
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-1.5 max-w-2xl">
-                            Tus menús y disparadores mandan sobre ella: sólo entra cuando ninguno reconoce el mensaje.
-                            Las cifras y las fechas las sigue calculando el sistema, no el modelo.
-                        </p>
-                        {/* Las dos IA entran en el MISMO momento, y las dos se
-                            describían con ese momento: se leían como dos
-                            interruptores de lo mismo. Lo que de verdad hay que
-                            saber es qué sabe hacer cada una y cuál gana. */}
-                        <p className="text-[11px] text-muted-foreground mt-1.5 max-w-2xl">
-                            Comparte ese momento con <strong className="text-foreground">«IA en los chats»</strong>
-                            {' '}(en «IA que responde»), que en vez de ejecutar <em>conversa</em> con tu documentación.
-                            {encendida
-                                ? ' Con las dos encendidas los mensajes de texto los atiende ésta; aquélla atiende los archivos y fotos, y las opciones con la acción «Que responda la IA».'
-                                : ' Con ésta apagada, es aquélla la que atiende.'}
-                        </p>
-                        {!ai.available && (
-                            <p className="text-[11px] text-warning mt-1.5">
-                                Falta configurar el flujo de IA en el servidor. Avisa al equipo técnico.
-                            </p>
-                        )}
-                    </div>
-                </div>
-
-                <Button
-                    variant={encendida ? 'outline' : 'default'}
-                    onClick={toggle}
-                    disabled={busy || (!encendida && !ai.available)}
-                    className="gap-2"
-                >
-                    <Power className="size-4" />
-                    {encendida ? 'Apagar' : 'Encender'}
-                </Button>
-            </div>
-
-            {/* Los permisos sólo se muestran con la IA encendida —apagada no
-                hay nada que acotar— y sólo a quien usa Integra: los tres lo
-                consultan, así que para una barbería son tres casillas sobre un
-                ERP de ISPs que no ha contratado. */}
-            {encendida && catalogo.length > 0 && integra.usa && (
-                <div className="mt-4 border-t pt-4">
-                    <p className="text-xs font-semibold text-foreground">Hasta dónde puede llegar</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Lo que no le concedas, la IA lo pasa a un asesor en vez de hacerlo por su cuenta.
-                    </p>
-                    {/* Estos tres permisos consultan Integra. Sin conectarlo no
-                        hacen nada, y una casilla marcada que no ejecuta nada es
-                        una promesa que el cliente no va a ver cumplida. */}
-                    {integra.usa && integra.connected === false && (
-                        <p className="mt-2 flex items-start gap-1.5 rounded-md bg-muted/40 px-2.5 py-2 text-[11px] text-muted-foreground">
-                            <Plug className="size-3.5 shrink-0 mt-px" />
-                            Estos tres consultan tu software Integra, que no está conectado: hoy la IA pasa
-                            esas peticiones a un asesor. El resto de lo que hace la IA no depende de esto.
-                        </p>
-                    )}
-                    <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
-                        {catalogo.map(permiso => {
-                            const activo = permisos.includes(permiso.value);
-                            return (
-                                <label
-                                    key={permiso.value}
-                                    className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 transition-colors ${
-                                        activo ? 'border-primary/40 bg-primary/10' : 'bg-card hover:bg-muted/50'
-                                    } ${busy ? 'pointer-events-none opacity-60' : ''}`}
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={activo}
-                                        disabled={busy}
-                                        onChange={() => togglePermiso(permiso.value)}
-                                        className="mt-0.5 size-3.5 shrink-0 accent-primary"
-                                    />
-                                    <span className="min-w-0">
-                                        <span className="block text-[12px] font-semibold text-foreground">{permiso.label}</span>
-                                        <span className="block text-[11px] leading-tight text-muted-foreground mt-0.5">
-                                            {permiso.description}
-                                        </span>
-                                    </span>
-                                </label>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
