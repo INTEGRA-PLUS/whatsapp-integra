@@ -40,6 +40,7 @@ de reemplazar, cambia el `id` antes.
 | `worker-chat-preparar-contexto.js` | 02 · Chatbot Worker (Ollama), nodo `Preparar contexto` | [`../prompt-entrenable-por-empresa.md`](../prompt-entrenable-por-empresa.md) |
 | `worker-chat-formatear-respuesta.js` | 02 · Chatbot Worker (Ollama), nodo `Formatear respuesta` | este fichero |
 | `worker-chat-formatear-fallback.js` | 02 · Chatbot Worker (Ollama), nodo `Formatear fallback` | este fichero |
+| `worker-chat-respuesta-degradada.js` | 02 · Chatbot Worker (Ollama), nodo `Respuesta degradada` | este fichero |
 
 Los demás flujos —semáforo, menús con IA, chatbot— se montaron a mano y todavía
 no están exportados aquí.
