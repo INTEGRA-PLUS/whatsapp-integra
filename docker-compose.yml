@@ -137,7 +137,7 @@ x-app-env: &app-env
   # hacia un asesor, que es lo que pasaba antes de esto.
   VISION_URL: ${VISION_URL:-https://ollama.com}
   VISION_TOKEN: ${VISION_TOKEN:-}
-  VISION_MODEL: ${VISION_MODEL:-qwen3.5:27b}
+  VISION_MODEL: ${VISION_MODEL:-deepseek-v4.1-flash}
   EMBEDDINGS_URL: ${EMBEDDINGS_URL:-}
   EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-paraphrase-multilingual}
   EMBEDDINGS_TIMEOUT: ${EMBEDDINGS_TIMEOUT:-120}

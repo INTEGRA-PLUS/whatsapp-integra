@@ -326,8 +326,25 @@ return [
      * seis núcleos compartidos. La visión local no es viable en este servidor.
      *
      * En la nube sí: la cuenta de Ollama que ya atiende los chats tiene modelos
-     * con visión (`gemma4`, `qwen3.5`, `glm-5.3-flash`), así que no hay ni
-     * proveedor nuevo ni factura nueva. Se paga por token, como el chat.
+     * con visión, así que no hay ni proveedor nuevo ni factura nueva. Se paga
+     * por token, como el chat.
+     *
+     * **El nombre del modelo hay que sacarlo de la cuenta, no del catálogo web**
+     * de ollama.com: allí se anuncian nombres que la cuenta no sirve. El primer
+     * intento fue con `qwen3.5:27b` y la respuesta fue
+     * `model 'qwen3.5:27b' not found`; lo que la cuenta ofrece es
+     * `qwen3.5:397b`. La lista de verdad sale de `GET /api/tags` con el token.
+     *
+     * Medido el 17-sep-2026 con una foto de comprobante de pago, los tres lo
+     * leyeron bien y `deepseek-v4.1-flash` fue el más rápido:
+     *
+     * | modelo                | tiempo |
+     * |-----------------------|-------:|
+     * | `deepseek-v4.1-flash` |  3,5 s |
+     * | `gemma4:31b`          |  4,2 s |
+     * | `glm-5.3-flash`       |  6,1 s |
+     *
+     * Y el tiempo importa: corre con un cliente esperando en WhatsApp.
      *
      * Sin `token` no se mira ninguna imagen y las fotos siguen su camino hacia
      * un asesor, que es lo que pasaba hasta ahora.
@@ -335,7 +352,7 @@ return [
     'vision' => [
         'url' => env('VISION_URL', 'https://ollama.com'),
         'token' => env('VISION_TOKEN'),
-        'model' => env('VISION_MODEL', 'qwen3.5:27b'),
+        'model' => env('VISION_MODEL', 'deepseek-v4.1-flash'),
         // Una imagen es más lenta que un texto, y esto corre con un cliente
         // esperando: más de esto y la ventana de 24 h se vuelve el problema.
         'timeout' => (int) env('VISION_TIMEOUT', 90),
