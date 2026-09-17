@@ -1296,9 +1296,22 @@ function Configuracion({ usaIntegra = false }) {
                                                 <MessageCircle className="size-4 text-accent-foreground" />
                                                 <p className="text-sm font-semibold text-foreground">IA en los chats</p>
                                             </div>
+                                            {/* Las dos tarjetas decían «cuando ningún menú
+                                                reconoce el mensaje», que es el MISMO momento, así
+                                                que se leían como dos interruptores de lo mismo —«es
+                                                redundante»—. Y es verdad que comparten momento: lo
+                                                que cambia es qué sabe hacer cada una, y cuál gana
+                                                si las dos están encendidas. Eso es lo que hay que
+                                                decir, no el momento. */}
                                             <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                                                Conversa con el cliente cuando escribe algo que ningún menú reconoce. No toca
-                                                datos ni ejecuta acciones: solo responde y, si no puede, deja el chat a un agente.
+                                                <strong className="text-foreground">Conversa con tu documentación</strong>: responde
+                                                con lo que le enseñaste aquí abajo. No toca datos ni ejecuta acciones, y si no
+                                                puede deja el chat a un agente.
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                                {state.menus.enabled
+                                                    ? 'Ojo: «IA en los menús» está encendida y manda sobre ésta en los mensajes de texto. Aquí atiende los archivos y las fotos que manda el cliente, y las opciones de menú con la acción «Que responda la IA».'
+                                                    : 'Entra cuando el cliente escribe algo que ningún menú reconoce, y también con los archivos y fotos que mande y con las opciones de menú que uses con la acción «Que responda la IA».'}
                                             </p>
                                             {!platform.chat_configured && (
                                                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">
@@ -1342,8 +1355,14 @@ function Configuracion({ usaIntegra = false }) {
                                                 <p className="text-sm font-semibold text-foreground">IA en los menús</p>
                                             </div>
                                             <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
-                                                Entiende lo que pide el cliente y lo resuelve contra Integra: consulta su
-                                                factura, radica una falla o le envía el enlace de pago.
+                                                <strong className="text-foreground">Ejecuta acciones</strong>: entiende lo que
+                                                pide el cliente y lo resuelve contra Integra —consulta su factura, radica una
+                                                falla, le envía el enlace de pago—.
+                                            </p>
+                                            <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                                                Comparte momento con «IA en los chats» —las dos entran cuando ningún menú
+                                                reconoce el mensaje— y con las dos encendidas{' '}
+                                                <strong className="text-foreground">atiende ésta</strong> los mensajes de texto.
                                             </p>
                                             {!platform.menus_configured && (
                                                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[11px] text-warning">

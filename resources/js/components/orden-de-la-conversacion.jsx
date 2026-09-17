@@ -77,10 +77,18 @@ export default function OrdenDeLaConversacion({
             clave: true,
         },
         {
+            // Aquí es donde se resuelve la duda de las dos IA: entran en el
+            // MISMO momento —éste— y sólo una atiende el texto. Decirlo en las
+            // dos tarjetas de ajustes no basta; el sitio donde se pregunta
+            // «¿quién contesta?» es esta lista.
             titulo: 'Nadie lo reconoció: entra la IA',
-            detalle: iaChat || iaMenus
-                ? 'Es el caso más común y para el que está la IA: «no me funciona el internet desde ayer» no usa ninguna palabra clave, así que ningún menú se dispara.'
-                : 'No tienes IA encendida, así que aquí responde la respuesta automática si la tienes, o el mensaje queda para un asesor.',
+            detalle: iaMenus && iaChat
+                ? 'Es el caso más común y para el que está la IA: «no me funciona el internet desde ayer» no usa ninguna palabra clave. Tienes las dos encendidas y entran en este mismo punto: el texto lo atiende «IA en los menús», que ejecuta opciones; «IA en los chats» atiende los archivos y fotos que mande el cliente, y las opciones con la acción «Que responda la IA».'
+                : iaMenus
+                    ? 'Es el caso más común y para el que está la IA: «no me funciona el internet desde ayer» no usa ninguna palabra clave. Lo atiende «IA en los menús», que entiende qué pide y ejecuta la opción que corresponde. No conversa: para responder con tu documentación hace falta «IA en los chats».'
+                    : iaChat
+                        ? 'Es el caso más común y para el que está la IA: «no me funciona el internet desde ayer» no usa ninguna palabra clave. Lo atiende «IA en los chats», que responde conversando con la documentación que le diste.'
+                        : 'No tienes IA encendida, así que aquí responde la respuesta automática si la tienes, o el mensaje queda para un asesor.',
             activo: iaChat || iaMenus,
             clave: true,
         },

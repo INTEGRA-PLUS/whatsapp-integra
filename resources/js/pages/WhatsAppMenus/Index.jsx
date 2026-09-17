@@ -2263,18 +2263,24 @@ function AiSwitch({ ai, integra = {} }) {
                             </span>
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-                            {encendida
-                                ? 'Cuando el cliente escribe con sus propias palabras y ningún menú lo reconoce, la IA entiende qué pide y ejecuta la opción que corresponde. Si un agente toma el chat, se calla.'
-                                : 'Entiende al cliente que escribe con sus propias palabras —"no me funciona el internet desde ayer"— y ejecuta la opción del menú que corresponde, en vez de dejarlo sin respuesta.'}
+                            <strong className="text-foreground">Ejecuta opciones del menú</strong>: entiende al cliente que
+                            escribe con sus propias palabras —«no me funciona el internet desde ayer»— y ejecuta la opción
+                            que corresponde, en vez de dejarlo sin respuesta. Si un agente toma el chat, se calla.
                         </p>
-                        <p className="text-[11px] text-muted-foreground mt-1.5">
-                            Tus menús y disparadores mandan sobre ella: la IA sólo entra cuando ninguno reconoce el mensaje.
+                        <p className="text-[11px] text-muted-foreground mt-1.5 max-w-2xl">
+                            Tus menús y disparadores mandan sobre ella: sólo entra cuando ninguno reconoce el mensaje.
                             Las cifras y las fechas las sigue calculando el sistema, no el modelo.
                         </p>
-                        <p className="text-[11px] text-muted-foreground mt-1.5">
-                            No es la misma que <strong className="text-foreground">«IA en los chats»</strong>, que está en
-                            «IA que responde»: ésta <em>ejecuta opciones</em> del menú; aquélla <em>conversa</em> con tu
-                            documentación y es la que hace falta para la acción «Que responda la IA».
+                        {/* Las dos IA entran en el MISMO momento, y las dos se
+                            describían con ese momento: se leían como dos
+                            interruptores de lo mismo. Lo que de verdad hay que
+                            saber es qué sabe hacer cada una y cuál gana. */}
+                        <p className="text-[11px] text-muted-foreground mt-1.5 max-w-2xl">
+                            Comparte ese momento con <strong className="text-foreground">«IA en los chats»</strong>
+                            {' '}(en «IA que responde»), que en vez de ejecutar <em>conversa</em> con tu documentación.
+                            {encendida
+                                ? ' Con las dos encendidas los mensajes de texto los atiende ésta; aquélla atiende los archivos y fotos, y las opciones con la acción «Que responda la IA».'
+                                : ' Con ésta apagada, es aquélla la que atiende.'}
                         </p>
                         {!ai.available && (
                             <p className="text-[11px] text-warning mt-1.5">
