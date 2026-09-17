@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use App\Support\PermisosCatalogo;
 use Inertia\Inertia;
@@ -73,7 +74,11 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'required|string|min:8',
-            'role_id' => 'required|exists:roles,id',
+            // Acotado a SU empresa. `exists:roles,id` a secas acepta el id de
+            // un rol de otro cliente: bastaba con cambiarlo en la petición para
+            // asignarle a un usuario propio los permisos de un rol ajeno. El
+            // aislamiento aquí no lo da ningún scope, lo da este `where`.
+            'role_id' => ['required', Rule::exists('roles', 'id')->where('company_id', $user->company_id)],
             'active' => 'boolean',
         ], [
             'email.unique' => 'Este correo ya está registrado. No se puede tener dos usuarios con el mismo correo.',
@@ -87,7 +92,8 @@ class UserController extends Controller
             'active' => $request->active ?? true,
         ]);
 
-        $role = Role::findById($request->role_id);
+        $role = Role::where('company_id', $user->company_id)
+            ->findOrFail($request->role_id);
         $newUser->assignRole($role);
 
         return redirect()->route('users.index')
@@ -103,13 +109,29 @@ class UserController extends Controller
         }
 
         setPermissionsTeamId($currentUser->company_id);
-        $roles = Role::where('company_id', $currentUser->company_id)->get();
+
+        // Con sus permisos, igual que en el alta: la pantalla enseñaba una tabla
+        // de permisos escrita a mano que no correspondía a los roles de nadie.
+        $roles = Role::with('permissions:id,name')
+            ->where('company_id', $currentUser->company_id)
+            ->get()
+            ->map(fn (Role $rol) => [
+                'id' => $rol->id,
+                'name' => $rol->name,
+                'permisos' => $rol->permissions->count(),
+                'resumen' => PermisosCatalogo::resumenDeRol($rol->permissions->pluck('name')->all()),
+            ]);
+
         $user->load('roles');
 
         return Inertia::render('Users/Edit', [
-            'user' => $user,
+            'user' => $user->only(['id', 'name', 'email', 'active', 'created_at']),
             'roles' => $roles,
-            'userRoleId' => $user->roles->first()?->id
+            'userRoleId' => $user->roles->first()?->id,
+            // Si es él mismo: quitarse el propio acceso o bajarse el rol deja a
+            // la empresa sin quien administre, y el que lo hace se entera al
+            // recargar.
+            'es_uno_mismo' => $user->id === $currentUser->id,
         ]);
     }
 
@@ -127,7 +149,11 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'password' => 'nullable|string|min:8',
-            'role_id' => 'required|exists:roles,id',
+            // Acotado a SU empresa. `exists:roles,id` a secas acepta el id de
+            // un rol de otro cliente: bastaba con cambiarlo en la petición para
+            // asignarle a un usuario propio los permisos de un rol ajeno. El
+            // aislamiento aquí no lo da ningún scope, lo da este `where`.
+            'role_id' => ['required', Rule::exists('roles', 'id')->where('company_id', $currentUser->company_id)],
             'active' => 'boolean',
         ], [
             'email.unique' => 'Este correo ya está registrado. No se puede tener dos usuarios con el mismo correo.',
@@ -143,10 +169,37 @@ class UserController extends Controller
             $data['password'] = Hash::make($request->password);
         }
 
+        // Qué cambió de verdad, antes de escribirlo. La pantalla prometía que
+        // «los cambios son registrados en la bitácora de auditoría» y no se
+        // registraba ninguno: cuando alguien apareciera con permisos que no le
+        // tocaban, no habría forma de saber quién se los dio.
+        $antes = $user->only(['name', 'email', 'active']);
+        $rolAnterior = $user->roles->first()?->name;
+
         $user->update($data);
 
-        $role = Role::findById($request->role_id);
+        $role = Role::where('company_id', $currentUser->company_id)
+            ->findOrFail($request->role_id);
         $user->syncRoles([$role]);
+
+        $cambios = array_keys(array_diff_assoc($user->only(['name', 'email', 'active']), $antes));
+
+        if ($rolAnterior !== $role->name) {
+            $cambios[] = 'rol: '.($rolAnterior ?? 'sin rol').' → '.$role->name;
+        }
+
+        if ($request->filled('password')) {
+            $cambios[] = 'contraseña';
+        }
+
+        if ($cambios !== []) {
+            Log::channel('whatsapp')->info('👤 Usuario modificado', [
+                'company_id' => $currentUser->company_id,
+                'usuario' => $user->id,
+                'cambios' => $cambios,
+                'por' => $currentUser->id,
+            ]);
+        }
 
         return redirect()->route('users.index')
             ->with('success', 'Usuario actualizado exitosamente');

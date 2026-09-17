@@ -1,220 +1,250 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { 
-    Save, 
-    ArrowLeft, 
-    User, 
-    Mail, 
-    Lock, 
-    ShieldCheck, 
-    UserCircle,
-    CheckCircle2,
-    Check,
-    X,
-    Shield,
-    Activity,
-    User as UserIcon,
-    History,
-    TrendingUp,
-    AlertCircle
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Loader2, Save, Shield, User as UserIcon } from 'lucide-react';
 
-export default function Edit({ user, roles, userRoleId }) {
+/**
+ * Editar a alguien del equipo.
+ *
+ * Tenía los mismos vicios que el alta —panel negro, esquinas de 3rem, campos de
+ * 48px sobre gris, «ACTUALIZAR DATOS» en mayúsculas— y la misma «Guía de
+ * permisos» escrita a mano que no correspondía a los roles de nadie.
+ *
+ * Y una frase que prometía lo que no había: «los cambios son registrados en la
+ * bitácora de auditoría». No se registraba ninguno. Ahora sí se registran, así
+ * que la frase se puede decir — y se dice con lo que de verdad se guarda.
+ */
+export default function Edit({ user, roles, userRoleId, es_uno_mismo }) {
     const { data, setData, put, processing, errors } = useForm({
         name: user.name,
         email: user.email,
         password: '',
-        role_id: userRoleId || (roles[0]?.id || ''),
+        role_id: userRoleId ?? roles[0]?.id ?? '',
         active: !!user.active,
     });
 
-    const handleSubmit = (e) => {
+    const elegido = roles.find(r => r.id === data.role_id);
+    const cambiaSuPropioAcceso = es_uno_mismo && (!data.active || data.role_id !== userRoleId);
+
+    function enviar(e) {
         e.preventDefault();
         put(route('users.update', user.id));
-    };
-
-    const PermissionRow = ({ label, admin, agent, user: isUser }) => (
-        <tr className="border-b last:border-0 border-border">
-            <td className="py-3 text-xs font-medium text-foreground">{label}</td>
-            <td className="py-3 text-center">{admin ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-            <td className="py-3 text-center">{agent ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-            <td className="py-3 text-center">{isUser ? <Check className="size-4 text-success mx-auto" /> : <X className="size-4 text-muted-foreground mx-auto" />}</td>
-        </tr>
-    );
+    }
 
     return (
         <>
             <Head title={`Editar: ${user.name}`} />
-            <div className="max-w-6xl mx-auto p-6 lg:p-10">
-                <div className="flex items-center gap-4 mb-10">
-                    <Button asChild variant="outline" size="icon" className="rounded-full shadow-sm">
-                        <Link href={route('users.index')}>
+
+            <div className="flex max-w-3xl flex-col gap-6 p-6 lg:p-8">
+                <div className="flex items-center gap-3">
+                    <Button asChild variant="outline" size="icon" className="size-8 shrink-0">
+                        <Link href={route('users.index')} aria-label="Volver a usuarios">
                             <ArrowLeft className="size-4" />
                         </Link>
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-black tracking-tight text-foreground">Editar Perfil</h1>
-                        <p className="text-muted-foreground mt-1">Gestiona los detalles y accesos de {user.name}.</p>
+                        <h1 className="text-2xl font-semibold text-foreground">{user.name}</h1>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            En el equipo desde el {new Date(user.created_at).toLocaleDateString('es-CO')}.
+                        </p>
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="grid lg:grid-cols-12 gap-8">
-                    {/* Columna Izquierda: Formularios */}
-                    <div className="lg:col-span-8 space-y-8">
-                        <section className="bg-card border rounded-3xl p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                                    <User className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Información de Cuenta</h2>
-                            </div>
-                            
-                            <div className="grid sm:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Nombre Completo</label>
-                                    <div className="relative group">
-                                        <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                                        <input
-                                            type="text"
-                                            value={data.name}
-                                            onChange={e => setData('name', e.target.value)}
-                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                            required
-                                        />
-                                    </div>
-                                    {errors.name && <p className="text-xs text-destructive font-medium ml-1">{errors.name}</p>}
-                                </div>
+                <form onSubmit={enviar} className="flex flex-col gap-6">
+                    <section className="rounded-xl border bg-card p-5">
+                        <h2 className="text-sm font-semibold text-foreground">Datos de la persona</h2>
 
-                                <div className="space-y-2">
-                                    <label className="text-sm font-bold ml-1">Correo Electrónico</label>
-                                    <div className="relative group">
-                                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                                        <input
-                                            type="email"
-                                            value={data.email}
-                                            onChange={e => setData('email', e.target.value)}
-                                            className="w-full h-12 bg-muted border-transparent rounded-2xl pl-11 pr-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                            required
-                                        />
-                                    </div>
-                                    {errors.email && <p className="text-xs text-destructive font-medium ml-1">{errors.email}</p>}
-                                </div>
-
-                                <div className="space-y-2 sm:col-span-2">
-                                    <div className="flex items-center justify-between ml-1 mb-2">
-                                        <label className="text-sm font-bold text-primary flex items-center gap-2">
-                                            <Lock className="size-3.5" /> Cambiar Contraseña
-                                        </label>
-                                        <span className="text-[10px] font-black bg-warning/15 text-warning dark:bg-warning/30 px-2 py-0.5 rounded-md uppercase">Opcional</span>
-                                    </div>
-                                    <input
-                                        type="password"
-                                        value={data.password}
-                                        onChange={e => setData('password', e.target.value)}
-                                        className="w-full h-12 bg-muted border-transparent rounded-2xl px-4 focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all text-sm font-medium"
-                                        placeholder="Dejar en blanco para no modificar"
-                                        minLength={8}
-                                    />
-                                    {errors.password && <p className="text-xs text-destructive font-medium ml-1">{errors.password}</p>}
-                                </div>
-                            </div>
-                        </section>
-
-                        <section className="bg-card border rounded-3xl p-8 shadow-sm">
-                            <div className="flex items-center gap-3 mb-8">
-                                <div className="size-10 rounded-xl bg-primary/15 text-accent-foreground flex items-center justify-center dark:bg-primary/20">
-                                    <ShieldCheck className="size-5" />
-                                </div>
-                                <h2 className="text-xl font-bold">Rol</h2>
-                            </div>
-
-                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {roles.map(role => (
-                                    <div 
-                                        key={role.id}
-                                        onClick={() => setData('role_id', role.id)}
-                                        className={`cursor-pointer rounded-2xl border-2 p-5 transition-all relative overflow-hidden group ${data.role_id === role.id ? 'border-primary bg-primary/5 ring-4 ring-primary/10' : 'border-border hover:border-border dark:hover:border-border'}`}
-                                    >
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className={`size-10 rounded-xl flex items-center justify-center ${data.role_id === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                                                {role.name.toLowerCase() === 'admin' ? <Shield className="size-5" /> : <UserIcon className="size-5" />}
-                                            </div>
-                                            {data.role_id === role.id && <Check className="size-5 text-primary" />}
-                                        </div>
-                                        <h3 className="font-bold text-sm capitalize">{role.name}</h3>
-                                        <p className="text-[10px] text-muted-foreground mt-1">Acceso nivel {role.name}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    </div>
-
-                    {/* Columna Derecha */}
-                    <div className="lg:col-span-4 space-y-6">
-                        <div className="bg-black dark:bg-black rounded-3xl p-8 text-white shadow-xl sticky top-10">
-                            <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-                                <TrendingUp className="size-5 text-primary" /> Permisos del Rol
-                            </h3>
-                            <div className="overflow-hidden rounded-2xl bg-white/5 border border-white/10 p-2">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-white/10">
-                                            <th className="py-2 text-[10px] text-left text-muted-foreground font-black uppercase">Acción</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Adm</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Age</th>
-                                            <th className="py-2 text-[10px] font-black uppercase">Usr</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <PermissionRow label="Ver Chats" admin agent user />
-                                        <PermissionRow label="Responder" admin agent />
-                                        <PermissionRow label="Configuración" admin />
-                                        <PermissionRow label="Reportes" admin agent />
-                                        <PermissionRow label="Borrar Datos" admin />
-                                        <PermissionRow label="Gestión CRM" admin agent />
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            <div className="mt-8 space-y-6">
-                                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                                    <div>
-                                        <p className="text-sm font-bold">Estado de Acceso</p>
-                                        <p className={`text-[10px] font-bold ${data.active ? 'text-success' : 'text-destructive'}`}>
-                                            {data.active ? 'Actualmente con acceso' : 'Acceso deshabilitado'}
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setData('active', !data.active)}
-                                        className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${data.active ? 'bg-primary' : 'bg-muted'}`}
-                                    >
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-1 ${data.active ? 'translate-x-6' : 'translate-x-1'}`} />
-                                    </button>
-                                </div>
-
-                                <div className="space-y-3">
-                                    <Button type="submit" size="lg" className="w-full h-14 rounded-2xl font-black text-md shadow-lg shadow-primary/20" disabled={processing}>
-                                        <Save className="size-5 mr-2" /> ACTUALIZAR DATOS
-                                    </Button>
-                                    <Button asChild variant="ghost" className="w-full text-muted-foreground hover:text-white hover:bg-white/5 font-bold">
-                                        <Link href={route('users.index')}>Regresar sin guardar</Link>
-                                    </Button>
-                                </div>
-                            </div>
-                            
-                            <div className="mt-8 pt-8 border-t border-white/10 flex items-start gap-3">
-                                <AlertCircle className="size-5 text-primary shrink-0" />
-                                <div className="text-[10px] text-muted-foreground leading-relaxed italic">
-                                    Creado el {new Date(user.created_at).toLocaleDateString()}. Los cambios son registrados en la bitácora de auditoría.
-                                </div>
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                            <Campo
+                                label="Nombre"
+                                value={data.name}
+                                onChange={v => setData('name', v)}
+                                error={errors.name}
+                                required
+                            />
+                            <Campo
+                                label="Correo"
+                                type="email"
+                                value={data.email}
+                                onChange={v => setData('email', v)}
+                                ayuda="Con este correo entra al CRM."
+                                error={errors.email}
+                                required
+                            />
+                            <div className="sm:col-span-2">
+                                <Campo
+                                    label="Contraseña"
+                                    type="password"
+                                    value={data.password}
+                                    onChange={v => setData('password', v)}
+                                    autoComplete="new-password"
+                                    ayuda="Déjala vacía para no cambiarla. Si la escribes, la de ahora deja de servir."
+                                    error={errors.password}
+                                />
                             </div>
                         </div>
+                    </section>
+
+                    <section className="rounded-xl border bg-card p-5">
+                        <h2 className="text-sm font-semibold text-foreground">Qué puede hacer</h2>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            El rol decide a qué pantallas entra y qué puede tocar en cada una.
+                        </p>
+
+                        <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+                            {roles.map(rol => {
+                                const activo = data.role_id === rol.id;
+
+                                return (
+                                    <button
+                                        key={rol.id}
+                                        type="button"
+                                        onClick={() => setData('role_id', rol.id)}
+                                        aria-pressed={activo}
+                                        className={clsx(
+                                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
+                                            activo ? 'border-primary bg-primary/[0.07]' : 'hover:border-primary/40'
+                                        )}
+                                    >
+                                        <div className={clsx(
+                                            'flex size-9 shrink-0 items-center justify-center rounded-lg',
+                                            activo ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                                        )}>
+                                            {rol.name.toLowerCase() === 'admin'
+                                                ? <Shield className="size-4" />
+                                                : <UserIcon className="size-4" />}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-medium capitalize text-foreground">{rol.name}</p>
+                                            <p className="text-xs tabular-nums text-muted-foreground">
+                                                {rol.permisos} {rol.permisos === 1 ? 'permiso' : 'permisos'}
+                                                {rol.id === userRoleId && ' · el que tiene ahora'}
+                                            </p>
+                                        </div>
+                                        {activo && <Check className="size-4 shrink-0 text-primary" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {elegido?.resumen?.length > 0 && (
+                            <div className="mt-4 rounded-lg border bg-muted/40 p-4">
+                                <p className="text-xs font-medium text-foreground">
+                                    Con el rol <span className="capitalize">{elegido.name}</span> entra a:
+                                </p>
+                                <ul className="mt-2.5 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                                    {elegido.resumen.map(area => (
+                                        <li key={area.modulo} className="flex items-baseline justify-between gap-3 text-xs">
+                                            <span className="text-foreground">{area.modulo}</span>
+                                            <span className={clsx(
+                                                'shrink-0',
+                                                area.nivel === 'total' ? 'text-warning' : 'text-muted-foreground'
+                                            )}>
+                                                {area.etiqueta}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                                {elegido.resumen.some(a => a.nivel === 'total') && (
+                                    <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+                                        <span className="text-warning">Control total</span> incluye eliminar, y aquí
+                                        los borrados no tienen vuelta atrás.
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {elegido && elegido.resumen?.length === 0 && (
+                            <p className="mt-4 rounded-lg border border-warning/40 bg-warning/[0.07] px-4 py-3 text-xs text-foreground">
+                                Este rol no tiene ningún permiso asignado: con él podrá entrar, pero no verá
+                                ninguna pantalla. Se le asignan en Roles.
+                            </p>
+                        )}
+                    </section>
+
+                    <section className="flex items-center justify-between gap-4 rounded-xl border bg-card p-5">
+                        <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">Puede entrar</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                {data.active
+                                    ? 'Su cuenta está activa y puede iniciar sesión.'
+                                    : 'Apagado, la cuenta se conserva pero no deja iniciar sesión.'}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={data.active}
+                            onClick={() => setData('active', !data.active)}
+                            className={clsx(
+                                'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors',
+                                data.active ? 'bg-primary' : 'bg-input'
+                            )}
+                        >
+                            <span className={clsx(
+                                'mt-1 inline-block size-4 rounded-full bg-white transition-transform',
+                                data.active ? 'translate-x-6' : 'translate-x-1'
+                            )} />
+                        </button>
+                    </section>
+
+                    {/* Editarse a uno mismo es el camino corto a quedarse fuera:
+                        quitarse el acceso o bajarse el rol se nota al recargar,
+                        y para entonces ya no se puede deshacer desde aquí. */}
+                    {cambiaSuPropioAcceso && (
+                        <div className="flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/[0.07] p-4">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                            <p className="text-xs leading-relaxed text-foreground">
+                                Estás cambiando tu propio acceso. Si te quitas permisos o desactivas tu cuenta,
+                                lo notarás al recargar y ya no podrás deshacerlo desde aquí: tendrá que hacerlo
+                                otro administrador.
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                        <Button type="submit" disabled={processing} className="gap-2">
+                            {processing ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                            Guardar cambios
+                        </Button>
+                        <Button asChild type="button" variant="outline">
+                            <Link href={route('users.index')}>Cancelar</Link>
+                        </Button>
                     </div>
+
+                    <p className="text-[11px] text-muted-foreground">
+                        Los cambios de datos, rol y contraseña quedan registrados con quién los hizo.
+                    </p>
                 </form>
             </div>
         </>
+    );
+}
+
+function Campo({ label, value, onChange, type = 'text', placeholder = '', ayuda = '', error, required, autoComplete }) {
+    return (
+        <div className="space-y-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                {label}
+                {!required && <span className="text-[10px] font-normal text-muted-foreground">(opcional)</span>}
+            </label>
+            <input
+                type={type}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={placeholder}
+                required={required}
+                autoComplete={autoComplete}
+                className={clsx(
+                    'h-10 w-full rounded-lg border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:ring-2 focus:ring-ring/20',
+                    error ? 'border-destructive focus:border-destructive' : 'border-input focus:border-ring'
+                )}
+            />
+            {error
+                ? <p className="text-[11px] text-destructive">{error}</p>
+                : ayuda && <p className="text-[11px] leading-snug text-muted-foreground">{ayuda}</p>}
+        </div>
     );
 }
 

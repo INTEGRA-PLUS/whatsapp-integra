@@ -145,4 +145,76 @@ class AltaDeUsuarioTest extends TestCase
 
         return null;
     }
+
+    /**
+     * No se puede asignar un rol de otra empresa.
+     *
+     * La validación era `exists:roles,id` a secas: aceptaba el id de CUALQUIER
+     * rol del sistema. Bastaba con cambiar ese número en la petición para darle
+     * a un usuario propio los permisos de un rol de otro cliente —incluido uno
+     * con control total— sin pasar por ninguna pantalla.
+     *
+     * El aislamiento aquí no lo da ningún scope global: lo da el `where` del
+     * controlador, y por eso se prueba desde fuera, mandando el id a mano.
+     */
+    public function test_no_se_puede_crear_un_usuario_con_un_rol_de_otra_empresa(): void
+    {
+        [$empresa, $admin] = $this->empresaConAdmin();
+        $this->rol($empresa, 'agente', ['chat.view']);
+
+        $otra = Company::create(['name' => 'Otra', 'slug' => 'otra', 'active' => true]);
+        $ajeno = $this->rol($otra, 'dios', ['chat.view', 'chat.delete', 'users.create']);
+
+        $this->actingAs($admin)
+            ->post('/users', [
+                'name' => 'Infiltrado',
+                'email' => 'infiltrado@fibra.test',
+                'password' => 'secreto123',
+                'role_id' => $ajeno->id,
+                'active' => true,
+            ])
+            ->assertSessionHasErrors('role_id');
+
+        $this->assertDatabaseMissing('users', ['email' => 'infiltrado@fibra.test']);
+    }
+
+    /** Y tampoco cambiándoselo a uno que ya existe. */
+    public function test_no_se_puede_cambiar_a_un_rol_de_otra_empresa(): void
+    {
+        [$empresa, $admin] = $this->empresaConAdmin();
+        $suyo = $this->rol($empresa, 'agente', ['chat.view']);
+
+        $otra = Company::create(['name' => 'Otra', 'slug' => 'otra', 'active' => true]);
+        $ajeno = $this->rol($otra, 'dios', ['chat.view', 'chat.delete']);
+
+        $victima = User::create([
+            'company_id' => $empresa->id,
+            'name' => 'Agente',
+            'email' => 'agente@fibra.test',
+            'password' => 'secret',
+            'active' => true,
+            'role' => 'agent',
+        ]);
+        // El team activo lo dejó `rol()` en la otra empresa al crear el rol
+        // ajeno: sin volver al suyo, la asignación se guardaría con el team
+        // equivocado y el test mediría otra cosa.
+        setPermissionsTeamId($empresa->id);
+        $victima->assignRole($suyo);
+
+        $this->actingAs($admin)
+            ->put('/users/'.$victima->id, [
+                'name' => 'Agente',
+                'email' => 'agente@fibra.test',
+                'role_id' => $ajeno->id,
+                'active' => true,
+            ])
+            ->assertSessionHasErrors('role_id');
+
+        // Spatie lee los roles del «team» activo, y el último que se fijó al
+        // crear el rol ajeno fue el de la otra empresa: sin esto, la relación
+        // vuelve vacía y el test diría que se quedó sin rol.
+        setPermissionsTeamId($empresa->id);
+
+        $this->assertSame('agente', $victima->fresh()->roles->first()?->name);
+    }
 }
