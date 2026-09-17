@@ -14,6 +14,12 @@ import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
  * es la tuya es peor que no tener ninguno, porque te hace buscar el fallo donde
  * no está.
  *
+ * **No configura nada.** Es un espejo: cada paso se enciende o se apaga según
+ * lo que esté marcado en «¿Cuándo aparece?» dentro de cada menú. Se leyó al
+ * revés la primera vez —«aquí dice que el menú siempre sale y dentro me dan la
+ * opción de que salga sólo con una condición»— así que los dos pasos que
+ * dependen de esa casilla dicen de dónde salen.
+ *
  * Se pinta en las dos pantallas que participan —«Menús de WhatsApp» y «IA que
  * responde»— porque la duda aparece en las dos, y mandar a la otra pantalla a
  * leerlo es como no contarlo.
@@ -57,16 +63,16 @@ export default function OrdenDeLaConversacion({
         {
             titulo: 'Si es su PRIMER mensaje y tienes menú de bienvenida, sale ese menú',
             detalle: saludaConMenu
-                ? 'Tienes un menú de bienvenida activo. No necesita ninguna palabra clave: salta en el primer mensaje escriba el cliente lo que escriba. Es la razón más común de que alguien encienda la IA, mande «hola» y reciba un menú.'
-                : 'No tienes ningún menú de bienvenida, así que el primer mensaje sigue bajando por esta lista como cualquier otro.',
+                ? 'Tienes un menú de bienvenida activo. No necesita ninguna palabra clave: salta en el primer mensaje escriba el cliente lo que escriba. Es la razón más común de que alguien encienda la IA, mande «hola» y reciba un menú. Se decide dentro de cada menú, en «¿Cuándo aparece?»: esto de aquí no configura nada, sólo te cuenta cómo queda.'
+                : 'No tienes ningún menú de bienvenida, así que el primer mensaje sigue bajando por esta lista como cualquier otro. Si quieres uno, márcalo dentro del menú, en «¿Cuándo aparece?».',
             activo: saludaConMenu,
             clave: true,
         },
         {
             titulo: 'Si escribe una palabra clave, sale el menú que la tenga',
             detalle: hayDisparadores
-                ? 'Tus menús tienen palabras clave como «menu», «factura» o «pagar». Si el mensaje las contiene, responde el menú y no la IA.'
-                : 'Ninguno de tus menús tiene palabras clave, así que hoy este paso nunca se dispara.',
+                ? 'Tus menús tienen palabras clave como «menu», «factura» o «pagar». Si el mensaje las contiene, responde el menú y no la IA. También sale de «¿Cuándo aparece?», en cada menú.'
+                : 'Ninguno de tus menús tiene palabras clave, así que hoy este paso nunca se dispara. Se le ponen a cada menú en «¿Cuándo aparece?».',
             activo: hayDisparadores,
             clave: true,
         },

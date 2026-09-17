@@ -16,12 +16,30 @@ import SelectorEmoji from '@/components/emoji/SelectorEmoji';
 import { insertarEnCursor } from '@/components/emoji/insertarEmoji';
 import ProviderConnectForm from '@/components/ProviderConnectForm';
 import {
-    MATCH_LABELS, MATCH_OPTIONS, KEYWORD_TYPES,
+    MATCH_LABELS, MATCH_OPTIONS, MATCH_HELP, KEYWORD_TYPES,
     GROUP_LABELS, GROUP_ORDER, iconFor,
     ACTION_SAMPLES, SEGMENT_SAMPLES,
 } from './catalog';
 
 
+
+/**
+ * Las dos maneras de que un menú salte, separadas a propósito.
+ *
+ * En una lista plana de cuatro casillas, «bienvenida» parecía una más de las
+ * otras tres, y el conjunto parecía repetir lo que ya cuenta el panel de «Qué
+ * pasa cuando alguien te escribe» — así lo leyó el primero que lo vio: «¿esto
+ * no es redundante?».
+ *
+ * No lo es, y la separación es lo que lo demuestra: la bienvenida **no mira lo
+ * que escribe el cliente** y sólo vale en su primer mensaje; las otras tres
+ * miran el texto y valen siempre. Son dos preguntas distintas, no cuatro
+ * variantes de la misma.
+ */
+const GRUPOS_DE_DISPARO = [
+    { titulo: 'Sin que el cliente pida nada', valores: ['welcome'] },
+    { titulo: 'Cuando el mensaje coincide con una palabra clave', valores: ['contains', 'exact', 'starts_with'] },
+];
 
 /** Estrategias de reparto del handoff (WhatsAppMenuOption::ASSIGN_*). */
 const ASSIGN_OPTIONS = [
@@ -255,6 +273,25 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                                 onDelete={() => handleDelete(menu)}
                             />
                         ))}
+
+                        {/* El mismo botón que arriba, al final de la lista.
+                            Con varios menús hay que subir hasta la cabecera
+                            para añadir otro, y con la pantalla ya larga —modo
+                            de atención, revisión, submenús— eso es un viaje de
+                            vuelta cada vez.
+
+                            Va DENTRO de la rejilla, como una tarjeta más: así
+                            cae justo detrás del último menú en vez de quedar
+                            colgado al fondo, y de lejos se lee como «aquí
+                            sigue la lista». */}
+                        <button
+                            type="button"
+                            onClick={() => { setCreateForm(emptyForm()); setShowCreate(true); }}
+                            className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 text-muted-foreground transition hover:border-border hover:bg-muted/30 hover:text-foreground"
+                        >
+                            <Plus className="size-5" />
+                            <span className="text-sm font-medium">Nuevo menú</span>
+                        </button>
                     </div>
                 )}
             </div>
@@ -573,23 +610,58 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                     )}
 
                     <div className="space-y-1.5">
-                        {form.is_root && <label className="text-sm font-medium text-foreground">¿Cuándo aparece?</label>}
+                        {/* Esto y el panel de «Qué pasa cuando alguien te
+                            escribe» parecían decir lo mismo con dos voces. No:
+                            aquel panel no configura nada, sólo lee en voz alta
+                            el resultado de estas casillas. Decirlo aquí es lo
+                            que convierte dos pantallas que se contradicen en
+                            una causa y su efecto. */}
+                        {form.is_root && (
+                            <>
+                                <label className="text-sm font-medium text-foreground">¿Cuándo aparece?</label>
+                                <p className="text-[11px] text-muted-foreground">
+                                    Es la decisión de la que sale el orden que resume «Qué pasa cuando alguien
+                                    te escribe»: ese panel no elige nada, cuenta lo que marques aquí. Puedes
+                                    marcar varias.
+                                </p>
+                            </>
+                        )}
 
                     {form.is_root && (
-                        <div className={`flex flex-col gap-1.5 rounded-md border p-2.5 ${errors?.match_types ? 'border-destructive' : 'border-input'}`}>
-                            {MATCH_OPTIONS.map(opt => {
-                                const isSelected = selectedTypes.includes(opt.value);
-                                const disabled = opt.value === 'welcome' && !isSelected && welcomeTakenByOther;
-                                return (
-                                    <label key={opt.value}
-                                        className={`flex items-center gap-2 text-sm ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
-                                        <input type="checkbox" checked={isSelected} disabled={disabled}
-                                            onChange={() => toggleType(opt.value)} />
-                                        <span>{opt.label}</span>
-                                        {disabled && <span className="text-[11px] text-muted-foreground">(ya hay uno para esta instancia)</span>}
-                                    </label>
-                                );
-                            })}
+                        <div className={`flex flex-col gap-3 rounded-md border p-2.5 ${errors?.match_types ? 'border-destructive' : 'border-input'}`}>
+                            {GRUPOS_DE_DISPARO.map(grupo => (
+                                <div key={grupo.titulo} className="space-y-1.5">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        {grupo.titulo}
+                                    </p>
+                                    {grupo.valores.map(value => {
+                                        const opt = MATCH_OPTIONS.find(o => o.value === value);
+                                        const isSelected = selectedTypes.includes(value);
+                                        const disabled = value === 'welcome' && !isSelected && welcomeTakenByOther;
+                                        return (
+                                            <label key={value}
+                                                className={`flex items-start gap-2 text-sm ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
+                                                <input type="checkbox" className="mt-1 shrink-0" checked={isSelected} disabled={disabled}
+                                                    onChange={() => toggleType(value)} />
+                                                <span className="min-w-0">
+                                                    <span className="text-foreground">{opt.label}</span>
+                                                    {disabled && (
+                                                        <span className="ml-1.5 text-[11px] text-muted-foreground">
+                                                            (ya hay uno para esta instancia)
+                                                        </span>
+                                                    )}
+                                                    <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                                                        {MATCH_HELP[value]?.when}
+                                                        {MATCH_HELP[value]?.example && (
+                                                            <> Ej.: «{MATCH_HELP[value].example}»</>
+                                                        )}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            ))}
                         </div>
                     )}
                         {errors?.match_types && <p className="text-xs text-destructive">{errors.match_types}</p>}
