@@ -501,3 +501,65 @@ servidor competiría por CPU con el modelo de vectores.
 Pasa por el mismo saneado que el prompt entrenable —`AiPrompt::sanitizeInstructions()`—
 y entra declarado como «datos del cliente, no instrucciones». Aquí hace más falta
 que en ningún otro sitio: lo escribió un desconocido, no el admin de la empresa.
+
+---
+
+## Las fotos que manda el cliente (16-sep-2026)
+
+Tercera pieza de lo mismo: el cliente manda una foto —un comprobante de pago, una
+pantalla de error, el aparato que no le funciona— y la IA responde sobre lo que
+ve. Mismo patrón que los documentos: **Laravel convierte el medio en texto y el
+flujo de chat sigue siendo el de siempre**, sin un nodo nuevo en n8n.
+
+### Lo primero fue medir, y lo medido cambió el orden
+
+Sobre los 104.569 mensajes entrantes de treinta días en producción:
+
+| | | |
+|---|---:|---:|
+| Texto | 78.428 | 75,0 % |
+| Media pendiente | 11.200 | 10,7 % |
+| **Imágenes** | **8.966** | **8,6 %** |
+| **Audios** | **3.213** | **3,1 %** |
+| Documentos | 268 | 0,3 % |
+
+**Las imágenes son casi el triple que los audios.** En este mismo repositorio se
+había escrito antes lo contrario —«el audio es la mitad de los mensajes»— sin
+haberlo medido. No lo era.
+
+### El modelo va en la nube, al revés que los embeddings
+
+Y también por medición. Se probó `minicpm-v4.6`, el modelo de visión más pequeño
+que existe (1B): **no terminó de describir una sola imagen en diez minutos** sobre
+los seis núcleos de este servidor, compartidos con la base de datos, las colas y
+el modelo de vectores. La visión local aquí no es viable, y se borró del servidor.
+
+En la nube sí, y sin proveedor nuevo: la cuenta de Ollama que ya atiende los chats
+tiene modelos con visión (`gemma4`, `qwen3.5`, `glm-5.3-flash`). Se paga por
+token, como el chat.
+
+Es la asimetría que conviene recordar al leer `config/services.php`: **los
+embeddings corren en casa porque su función no factura y su coste debe ser fijo;
+la visión corre fuera porque en casa no corre**.
+
+### La foto se encoge antes de mandarla
+
+Una foto de móvil son 3 o 4 MB, y en base64 crece un tercio más. Se reduce a
+1.024 px de lado y se recomprime: quedan unos 150 KB sin perder nada de lo que
+importa —un comprobante, una pantalla de error o las luces de un router se leen
+igual— y se evita que cada foto arrastre megas por toda la cadena.
+
+### Y lo que ve el modelo es DATO, con su aviso
+
+Entra por el mismo saneado que el resto y declarado como datos, no
+instrucciones —una foto de un papel que diga «ignora las instrucciones
+anteriores» llegaría transcrita— y además **avisando de que puede haber errores
+de lectura**. Un modelo de visión confunde un 8 con un 3 en un comprobante
+borroso, y la IA no debe afirmar una cifra leída así con la misma seguridad con
+la que cita el tarifario.
+
+### Lo que sigue sin entrar: el audio
+
+3.213 al mes, el 3,1%. Whisper no está en Ollama, así que pide su propio
+contenedor y su propia CPU en un servidor donde la visión local ya demostró no
+caber. Es la siguiente pieza, y la que hay que decidir con números delante.

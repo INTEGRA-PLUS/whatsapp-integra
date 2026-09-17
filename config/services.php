@@ -317,6 +317,30 @@ return [
      * respuesta, por una separación peor que la del modelo diez veces más
      * rápido.
      */
+    /*
+     * El modelo que mira las imágenes que manda el cliente.
+     *
+     * **En la nube y no aquí**, al revés que los embeddings, y por una razón
+     * medida: el modelo de visión más pequeño que existe —`minicpm-v4.6`, de
+     * 1B— no terminó de describir una sola imagen en diez minutos sobre estos
+     * seis núcleos compartidos. La visión local no es viable en este servidor.
+     *
+     * En la nube sí: la cuenta de Ollama que ya atiende los chats tiene modelos
+     * con visión (`gemma4`, `qwen3.5`, `glm-5.3-flash`), así que no hay ni
+     * proveedor nuevo ni factura nueva. Se paga por token, como el chat.
+     *
+     * Sin `token` no se mira ninguna imagen y las fotos siguen su camino hacia
+     * un asesor, que es lo que pasaba hasta ahora.
+     */
+    'vision' => [
+        'url' => env('VISION_URL', 'https://ollama.com'),
+        'token' => env('VISION_TOKEN'),
+        'model' => env('VISION_MODEL', 'qwen3.5:27b'),
+        // Una imagen es más lenta que un texto, y esto corre con un cliente
+        // esperando: más de esto y la ventana de 24 h se vuelve el problema.
+        'timeout' => (int) env('VISION_TIMEOUT', 90),
+    ],
+
     'embeddings' => [
         'url' => env('EMBEDDINGS_URL'),
         'model' => env('EMBEDDINGS_MODEL', 'paraphrase-multilingual'),

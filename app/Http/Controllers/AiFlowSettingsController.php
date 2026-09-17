@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\AiAssistantProfile;
 use App\Support\AiPrompt;
+use App\Support\Documentos\ImagenDelCliente;
 use App\Support\TraspasoAUnAsesor;
 use App\Support\DefaultAiMenusIntegration;
 use App\Support\PlanDeLaEmpresa;
@@ -164,6 +165,7 @@ class AiFlowSettingsController extends Controller
             'assistant.tratamiento' => ['sometimes', Rule::in(AiAssistantProfile::TREATMENTS)],
             'assistant.longitud' => ['sometimes', Rule::in(AiAssistantProfile::LONGITUDES)],
             'assistant.leer_documentos' => 'sometimes|boolean',
+            'assistant.ver_imagenes' => 'sometimes|boolean',
             'assistant.tono' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_TONE,
             'assistant.conocimiento' => 'sometimes|nullable|string|max:' . AiAssistantProfile::MAX_KNOWLEDGE,
             'assistant.limites' => 'sometimes|array|max:' . AiAssistantProfile::MAX_LIMITS,
@@ -310,6 +312,10 @@ class AiFlowSettingsController extends Controller
             // Para que el panel pueda decir "avisa al equipo técnico" en vez de
             // dejar al admin encendiendo un interruptor que no hace nada.
             'platform' => [
+                // El modelo que mira las fotos. No lo puede arreglar el admin
+                // de la empresa: es del equipo técnico, así que el interruptor
+                // se deshabilita en vez de dejarlo encender algo que no corre.
+                'vision_configured' => ImagenDelCliente::configurado(),
                 'secret_configured' => filled(config('services.ai_activation.secret')),
                 'menus_configured' => filled(config('services.ai_menus.webhook_url')),
                 'chat_configured' => WhatsAppChatAiClient::configured(),

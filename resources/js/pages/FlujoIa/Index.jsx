@@ -742,7 +742,7 @@ const ESTADOS = {
  * para siempre y recarga la página, que es como acaba subiendo el mismo
  * documento tres veces.
  */
-function DocumentosCard({ permitido, nombreDelComplemento, leeDocumentos, alternarLectura, guardandoLectura }) {
+function DocumentosCard({ permitido, nombreDelComplemento, leeDocumentos, alternarLectura, veImagenes, alternarImagenes, hayVision, guardando }) {
     const [documentos, setDocumentos] = useState([]);
     const [cargando, setCargando] = useState(true);
     const [subiendo, setSubiendo] = useState(false);
@@ -950,22 +950,41 @@ function DocumentosCard({ permitido, nombreDelComplemento, leeDocumentos, altern
 
                 {documentos.some(d => d.estado === 'listo') && <Probador permitido={permitido} />}
 
-                {/* El otro lado de lo mismo: archivos que la IA lee, pero los
-                    que manda el cliente. Va aquí y no en una tarjeta propia
-                    porque es la misma idea vista al revés. */}
-                <div className="flex items-start justify-between gap-4 rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3">
-                    <div className="min-w-0">
-                        <p className="text-xs font-medium text-foreground">Leer los archivos que mande el cliente</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                            Si te manda un PDF, un Word o un Excel, la IA lo lee y responde sobre él. Imágenes y
-                            audios no: ésos siguen pasando a una persona.
+                {/* El otro lado de lo mismo: lo que la IA lee, pero de lo que
+                    manda el cliente. Va aquí y no en una tarjeta propia porque
+                    es la misma idea vista al revés. */}
+                <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3.5">
+                    <p className="text-xs font-medium text-foreground">Lo que te manda el cliente</p>
+
+                    <div className="flex items-start justify-between gap-4">
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            <span className="text-foreground">Archivos.</span> Si te manda un PDF, un Word o un
+                            Excel, la IA lo lee y responde sobre él.
                         </p>
+                        <AiSwitch
+                            checked={leeDocumentos}
+                            disabled={!permitido || guardando}
+                            onChange={alternarLectura}
+                        />
                     </div>
-                    <AiSwitch
-                        checked={leeDocumentos}
-                        disabled={!permitido || guardandoLectura}
-                        onChange={alternarLectura}
-                    />
+
+                    <div className="flex items-start justify-between gap-4 border-t border-border/50 pt-2">
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            <span className="text-foreground">Fotos.</span> Un comprobante de pago, una pantalla
+                            de error, el aparato que no le funciona: la IA mira la foto y responde sobre lo que
+                            ve. Los audios todavía no: ésos siguen pasando a una persona.
+                            {!hayVision && (
+                                <span className="block mt-1 text-warning">
+                                    Falta configurar el modelo que mira las fotos en el servidor. Avisa al equipo técnico.
+                                </span>
+                            )}
+                        </p>
+                        <AiSwitch
+                            checked={veImagenes}
+                            disabled={!permitido || guardando || !hayVision}
+                            onChange={alternarImagenes}
+                        />
+                    </div>
                 </div>
             </div>
         </Card>
@@ -1389,10 +1408,16 @@ function Configuracion() {
                                 permitido={complemento.chat}
                                 nombreDelComplemento={complemento.nombre}
                                 leeDocumentos={!!state.assistant.leer_documentos}
-                                guardandoLectura={busy}
+                                veImagenes={!!state.assistant.ver_imagenes}
+                                hayVision={!!state.platform.vision_configured}
+                                guardando={busy}
                                 alternarLectura={v => save(
                                     { assistant: { leer_documentos: v } },
                                     v ? 'La IA leerá los archivos que manden tus clientes.' : 'La IA ya no leerá los archivos entrantes.'
+                                )}
+                                alternarImagenes={v => save(
+                                    { assistant: { ver_imagenes: v } },
+                                    v ? 'La IA mirará las fotos que manden tus clientes.' : 'La IA ya no mirará las fotos entrantes.'
                                 )}
                             />
 

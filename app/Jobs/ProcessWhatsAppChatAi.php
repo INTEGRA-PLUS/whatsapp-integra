@@ -7,6 +7,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsAppChatAiClient;
 use App\Support\Documentos\DocumentoDelCliente;
+use App\Support\Documentos\ImagenDelCliente;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -84,9 +85,13 @@ class ProcessWhatsAppChatAi implements ShouldQueue
         // El archivo se lee AQUÍ y no en el webhook: descargarlo y extraer su
         // texto son segundos, y el webhook de Meta es sincrónico —tardar ahí
         // acaba en un reintento y en el mismo mensaje entrando dos veces.
-        $mensaje = $this->documento !== []
-            ? DocumentoDelCliente::comoTexto($this->documento, $this->message)
-            : $this->message;
+        $mensaje = match (true) {
+            DocumentoDelCliente::esLegible($this->documento)
+                => DocumentoDelCliente::comoTexto($this->documento, $this->message),
+            ImagenDelCliente::esLegible($this->documento)
+                => ImagenDelCliente::comoTexto($this->documento, $this->message),
+            default => $this->message,
+        };
 
         if (trim($mensaje) === '') {
             return;

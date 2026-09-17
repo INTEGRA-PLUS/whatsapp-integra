@@ -67,6 +67,10 @@ class AiAssistantProfile
         // que paga la empresa, y es una capacidad nueva. Que la encienda quien
         // la quiera, no quien no se entere de que existe.
         'leer_documentos' => false,
+        // Las fotos son el 8,6% de lo que entra, casi el triple que los audios.
+        // Apagado igualmente: cada foto cuesta una llamada a un modelo de
+        // visión que paga la empresa.
+        'ver_imagenes' => false,
         'conocimiento' => '',
         'limites' => [],
         'instrucciones' => '',
@@ -174,6 +178,7 @@ class AiAssistantProfile
                 ? $input['longitud']
                 : self::DEFAULTS['longitud'],
             'leer_documentos' => (bool) ($input['leer_documentos'] ?? self::DEFAULTS['leer_documentos']),
+            'ver_imagenes' => (bool) ($input['ver_imagenes'] ?? self::DEFAULTS['ver_imagenes']),
             'conocimiento' => self::text($input['conocimiento'] ?? '', self::MAX_KNOWLEDGE),
             'limites' => collect($limits)
                 ->map(fn ($l) => self::line(is_scalar($l) ? (string) $l : '', self::MAX_LIMIT))
@@ -196,6 +201,12 @@ class AiAssistantProfile
     public static function leeDocumentos(int $companyId): bool
     {
         return (bool) (self::settings($companyId)['leer_documentos'] ?? false);
+    }
+
+    /** ¿Y que mire las fotos? */
+    public static function veImagenes(int $companyId): bool
+    {
+        return (bool) (self::settings($companyId)['ver_imagenes'] ?? false);
     }
 
     /**

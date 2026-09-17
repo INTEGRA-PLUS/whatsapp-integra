@@ -129,6 +129,15 @@ x-app-env: &app-env
   # Cambiar EMBEDDINGS_MODEL obliga a `php artisan ia:revectorizar --todos`: los
   # vectores de dos modelos distintos no se pueden comparar, y sin reindexar la
   # búsqueda devuelve fragmentos absurdos sin fallar ni avisar.
+  # El modelo que mira las imágenes que manda el cliente. En la nube y no en
+  # este servidor: el modelo de visión más pequeño que existe no terminó de
+  # describir una imagen en diez minutos sobre estos seis núcleos.
+  #
+  # Sin VISION_TOKEN no se mira ninguna imagen y las fotos siguen su camino
+  # hacia un asesor, que es lo que pasaba antes de esto.
+  VISION_URL: ${VISION_URL:-https://ollama.com}
+  VISION_TOKEN: ${VISION_TOKEN:-}
+  VISION_MODEL: ${VISION_MODEL:-qwen3.5:27b}
   EMBEDDINGS_URL: ${EMBEDDINGS_URL:-}
   EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-paraphrase-multilingual}
   EMBEDDINGS_TIMEOUT: ${EMBEDDINGS_TIMEOUT:-120}

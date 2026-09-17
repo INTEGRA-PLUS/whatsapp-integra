@@ -14,6 +14,7 @@ use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use App\Support\AiAssistantProfile;
 use App\Support\Documentos\DocumentoDelCliente;
+use App\Support\Documentos\ImagenDelCliente;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -341,14 +342,17 @@ class WhatsAppMenuService
         $conDocumento = DocumentoDelCliente::esLegible($messageData)
             && AiAssistantProfile::leeDocumentos($instance->company_id);
 
-        if ($text === '' && ! $conDocumento) {
+        $conImagen = ImagenDelCliente::esLegible($messageData)
+            && AiAssistantProfile::veImagenes($instance->company_id);
+
+        if ($text === '' && ! $conDocumento && ! $conImagen) {
             return false;
         }
 
-        // Con un archivo delante va el chat IA y no la de menús: aquélla
-        // resuelve peticiones concretas contra Integra —una factura, una
-        // falla— y un PDF no es ninguna de ésas.
-        if ($conDocumento) {
+        // Con un archivo o una foto delante va el chat IA y no la de menús:
+        // aquélla resuelve peticiones concretas contra Integra —una factura,
+        // una falla— y un PDF o un comprobante no son ninguna de ésas.
+        if ($conDocumento || $conImagen) {
             return $this->askChatAi($instance, $conversation, $text, $wamid, $messageData);
         }
 
