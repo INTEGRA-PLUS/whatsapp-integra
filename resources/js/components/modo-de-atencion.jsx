@@ -22,40 +22,45 @@ import { AlertTriangle, CheckCircle2, ListTree, Loader2, Sparkles, UserRound } f
  */
 
 /**
- * Eran cuatro y había uno de más.
+ * Los tres son **puertas de entrada**, no tres niveles de automatización.
  *
- * «Menú + IA» no era un modo: era el estado normal de «Con menú» cuando la
- * empresa tiene la IA encendida. Tenerlo como tarjeta aparte obligaba a elegir
- * entre dos que sólo se diferenciaban en algo que no se veía en ninguna de las
- * dos —si la IA está encendida— y además dejaba la mezcla como una decisión
- * global, cuando lo que de verdad se mezcla se decide **opción por opción**
- * dentro del menú: ésta la responde un texto tuyo, aquélla la responde la IA.
+ * Eran cuatro, y el cuarto —«Menú + IA»— sobraba: era el estado normal de «Con
+ * menú» con la IA encendida. Pero quitarlo dejó a la vista un problema más
+ * viejo, que es el que de verdad confundía: los tres se leían como «sin IA / con
+ * menú / con IA», así que elegir el menú parecía **renunciar** a la IA. Y no lo
+ * es: dentro del menú se decide opción por opción cuál responde un texto tuyo y
+ * cuál la responde la IA.
  *
- * Así que «Con menú» ya no toca la IA, y su texto cuenta qué significa hoy.
+ * Lo único que decide esta pregunta es **quién recibe el primer mensaje**: una
+ * persona, tu menú, o la IA. Que la IA esté disponible es otra cosa —un
+ * interruptor en «IA que responde»— y vale para las tres.
+ *
+ * Por eso los títulos son sustantivos —«Una persona», «Tu menú», «La IA»— y no
+ * modos de funcionamiento: lo que se elige es a quién le llega el cliente.
  */
 const MODOS = [
     {
         id: 'manual',
         Icono: UserRound,
-        titulo: 'Solo personas',
+        titulo: 'Una persona',
         resumen: 'No responde nada automático',
         detalle: () => 'Todo mensaje que entre queda esperando a un asesor. Ni menús ni IA. Tus menús no se borran: dejan de saltar solos.',
     },
     {
         id: 'menu',
         Icono: ListTree,
-        titulo: 'Con menú',
-        resumen: 'El cliente elige de una lista',
+        titulo: 'Tu menú',
+        resumen: 'Se despliega tu lista de opciones',
         detalle: iaOn => iaOn
-            ? 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna lo atiende la IA, que tienes encendida. Y dentro del menú decides opción por opción cuál responde con un texto tuyo y cuál la responde la IA.'
-            : 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna queda para un asesor.',
+            ? 'Al escribir recibe tus opciones y toca la que necesita. Dentro del menú decides opción por opción cuál responde con un texto tuyo y cuál la responde la IA, y lo que no encaje en ninguna también lo atiende ella.'
+            : 'Al escribir recibe tus opciones y toca la que necesita. Lo que no encaje en ninguna queda para un asesor. Con la IA encendida podrías además hacer que responda opciones concretas del menú.',
     },
     {
         id: 'ia',
         Icono: Sparkles,
-        titulo: 'Con IA',
-        resumen: 'Conversa desde el primer mensaje',
-        detalle: () => 'La IA entiende lo que pide con sus propias palabras y responde. Tus menús siguen existiendo, pero solo se abren si alguien los ofrece.',
+        titulo: 'La IA',
+        resumen: 'Conversa desde el primer mensaje, sin menú de por medio',
+        detalle: () => 'La IA entiende lo que pide con sus propias palabras y responde. Tus menús siguen existiendo, pero solo se abren si una opción los ofrece.',
     },
 ];
 
@@ -111,10 +116,10 @@ export default function ModoDeAtencion({ alCambiar }) {
     return (
         <div className="rounded-2xl border border-border/60 bg-card/50 p-5 space-y-4">
             <div>
-                <p className="text-sm font-semibold text-foreground">¿Cómo quieres atender?</p>
+                <p className="text-sm font-semibold text-foreground">¿Quién atiende el primer mensaje?</p>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                    Es lo primero que decide qué recibe un cliente cuando te escribe. Puedes cambiarlo
-                    cuando quieras y nada se borra.
+                    Sólo decide la puerta de entrada: a quién le llega un cliente que te escribe por
+                    primera vez. Puedes cambiarlo cuando quieras y nada se borra.
                 </p>
             </div>
 
@@ -164,6 +169,16 @@ export default function ModoDeAtencion({ alCambiar }) {
             {/* Qué va a pasar exactamente, antes de que pase. Con los nombres:
                 «se apagarán tres menús» no es información, «se apagará Menú
                 principal» sí. */}
+            {/* Sin esta línea, las tres tarjetas se leen como «sin IA / con
+                menú / con IA», y elegir el menú parece renunciar a la IA. Es la
+                confusión que trajo al usuario aquí dos veces. */}
+            <p className="border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground/80">
+                <strong className="text-foreground">La IA no es una de las tres.</strong> Aquí sólo se elige
+                quién contesta el primer mensaje. Tenerla encendida —eso se hace en «Ajustes de la IA»— es lo
+                que te deja usarla <strong className="text-foreground">dentro del menú</strong>, opción por
+                opción, y que recoja lo que ninguna opción reconozca.
+            </p>
+
             {confirmando && <Confirmacion
                 modo={MODOS.find(m => m.id === confirmando)}
                 cambio={cambios[confirmando] ?? {}}

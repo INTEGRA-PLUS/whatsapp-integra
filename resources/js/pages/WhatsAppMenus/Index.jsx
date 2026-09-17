@@ -275,20 +275,24 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     juntos en «IA que responde», que es el único sitio donde se
                     ve en qué se diferencian. Un interruptor menos, y una
                     contradicción menos. */}
-                {(orden.ia_chat || orden.ia_menus) && (
-                    <a
-                        href={route('ia.index')}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/50 px-5 py-3 text-left hover:bg-muted/30"
-                    >
-                        <span className="min-w-0">
-                            <span className="block text-sm font-medium text-foreground">Ajustes de la IA</span>
-                            <span className="block text-xs text-muted-foreground mt-0.5">
-                                Qué sabe de tu empresa, cómo se comporta, a quién le pasa el chat y cuál de las dos IA atiende.
-                            </span>
+                {/* Se enseña SIEMPRE, encendida la IA o no. Antes sólo salía
+                    con alguna encendida, y a la vez media pantalla decía
+                    «enciéndela en Ajustes de la IA»: el enlace desaparecía
+                    justo cuando hacía falta. */}
+                <a
+                    href={route('ia.index')}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/50 px-5 py-3 text-left hover:bg-muted/30"
+                >
+                    <span className="min-w-0">
+                        <span className="block text-sm font-medium text-foreground">Ajustes de la IA</span>
+                        <span className="block text-xs text-muted-foreground mt-0.5">
+                            {orden.ia_chat || orden.ia_menus
+                                ? 'Qué sabe de tu empresa, cómo se comporta, a quién le pasa el chat y cuál de las dos IA atiende.'
+                                : 'La tienes apagada. Enciéndela ahí para poder usarla dentro del menú, opción por opción, sin cambiar quién atiende el primer mensaje.'}
                         </span>
-                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    </a>
-                )}
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </a>
 
                 {menus.length > 0 && (
                     <ReviewPanel onEditMenu={(id, optionId) => {
@@ -1402,8 +1406,13 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                     // mitad de la razón para contratarlas.
                     const bloqueado = (group === 'integra' && !integra.connected)
                         || (group === 'ia' && !iaDisponible);
+                    // Decía «elige "Con IA" arriba», y eso es SALIRSE del menú:
+                    // ese modo apaga los menús que saltan. Mandaba a romper lo
+                    // que se estaba configurando para poder configurarlo. La IA
+                    // no se enciende eligiendo una puerta de entrada: se
+                    // enciende en sus ajustes, y desde ahí vale para las tres.
                     const motivo = group === 'ia'
-                        ? 'Elige «Con IA» arriba en esta pantalla, o enciéndela en «IA que responde».'
+                        ? 'Enciéndela en «Ajustes de la IA» y podrás usarla aquí sin dejar de responder con tu menú.'
                         : 'Conecta Integra para que resuelvan solas; mientras tanto derivan a un asesor.';
 
                     return (
@@ -1478,9 +1487,8 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
                     <AlertTriangle className="size-3.5 shrink-0 mt-px" />
                     <span>
 «IA en los chats» está apagada, así que hoy esta opción pasa el chat a un asesor en vez
-                        de responder. Se enciende eligiendo <strong>«Menú + IA»</strong> —o «Con IA»— arriba en esta
-                        pantalla, o desde «IA que responde», donde además se ve en qué se diferencia de
-                        «IA para los menús».
+                        de responder. Se enciende en <strong>«Ajustes de la IA»</strong>, y desde ahí funciona
+                        dentro del menú sin cambiar quién atiende el primer mensaje.
                     </span>
                 </p>
             )}
