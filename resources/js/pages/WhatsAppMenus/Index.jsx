@@ -349,89 +349,51 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         </Button>
                     </div>
                 ) : (
-                    <div className="flex flex-col gap-8">
-                        {/* Por ramas y no en una rejilla plana. Un submenú no
-                            compite con su menú: cuelga de él, y puesto al lado
-                            con la misma etiqueta «Activo» parecía otra puerta de
-                            entrada. Aquí se ve de dónde sale cada uno. */}
-                        {agruparEnArbol(menus).map(({ raiz, hijos }) => (
-                            <section key={raiz.id} className="flex flex-col gap-3">
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    <MenuCard
-                                        menu={raiz}
-                                        menus={menus}
-                                        actionMeta={actionMeta}
-                                        onEdit={() => openEdit(raiz)}
-                                        onDelete={() => handleDelete(raiz)}
-                                    />
-                                </div>
+                    /* Una lista de filas y no una rejilla de tarjetas. Con las
+                       tarjetas, cada menú ocupaba un tercio del ancho y dejaba
+                       dos tercios vacíos, con las opciones truncadas dentro de
+                       una torre de 600px. Aquí cada menú es una fila a todo el
+                       ancho, los submenús cuelgan indentados del suyo, y el
+                       detalle se despliega sólo cuando se pide: lo que hay que
+                       ver de un vistazo es qué menús hay y cuál responde, no el
+                       texto completo de los ocho botones de cada uno. */
+                    <div className="overflow-hidden rounded-xl border bg-card">
+                        <div className="divide-y divide-border">
+                            {agruparEnArbol(menus).map(({ raiz, hijos }) => (
+                                <FilaDeMenu
+                                    key={raiz.id}
+                                    menu={raiz}
+                                    menus={menus}
+                                    hijos={hijos}
+                                    actionMeta={actionMeta}
+                                    onEdit={openEdit}
+                                    onDelete={handleDelete}
+                                />
+                            ))}
 
-                                {hijos.length > 0 && (
-                                    <div className="ml-3 border-l-2 border-border pl-5 sm:ml-5 sm:pl-7">
-                                        <p className="mb-3 text-xs text-muted-foreground">
-                                            Se abren desde <span className="font-medium text-foreground">{raiz.name}</span>
-                                        </p>
-                                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                            {hijos.map(hijo => (
-                                                <MenuCard
-                                                    key={hijo.id}
-                                                    menu={hijo}
-                                                    menus={menus}
-                                                    actionMeta={actionMeta}
-                                                    onEdit={() => openEdit(hijo)}
-                                                    onDelete={() => handleDelete(hijo)}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </section>
-                        ))}
+                            {huerfanos(menus).map(menu => (
+                                <FilaDeMenu
+                                    key={menu.id}
+                                    menu={menu}
+                                    menus={menus}
+                                    hijos={[]}
+                                    actionMeta={actionMeta}
+                                    onEdit={openEdit}
+                                    onDelete={handleDelete}
+                                />
+                            ))}
+                        </div>
 
-                        {/* Los que no cuelgan de nadie. Van al final y con su
-                            aviso: un submenú al que no lleva ninguna opción no
-                            lo ve un cliente jamás. */}
-                        {huerfanos(menus).length > 0 && (
-                            <section className="flex flex-col gap-3">
-                                <p className="text-xs text-warning">
-                                    Sin ningún menú que lleve hasta ellos
-                                </p>
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {huerfanos(menus).map(menu => (
-                                        <MenuCard
-                                            key={menu.id}
-                                            menu={menu}
-                                            menus={menus}
-                                            actionMeta={actionMeta}
-                                            onEdit={() => openEdit(menu)}
-                                            onDelete={() => handleDelete(menu)}
-                                        />
-                                    ))}
-                                </div>
-                            </section>
-                        )}
-
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
-                        {/* El mismo botón que arriba, al final de la lista.
-                            Con varios menús hay que subir hasta la cabecera
-                            para añadir otro, y con la pantalla ya larga —modo
-                            de atención, revisión, submenús— eso es un viaje de
-                            vuelta cada vez.
-
-                            Va DENTRO de la rejilla, como una tarjeta más: así
-                            cae justo detrás del último menú en vez de quedar
-                            colgado al fondo, y de lejos se lee como «aquí
-                            sigue la lista». */}
+                        {/* El mismo botón que arriba, al final de la lista: con
+                            varios menús hay que subir hasta la cabecera para
+                            añadir otro, y eso es un viaje de vuelta cada vez. */}
                         <button
                             type="button"
                             onClick={() => { refrescarLaIa(); setShowCreate(true); }}
-                            className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 text-muted-foreground transition hover:border-border hover:bg-muted/30 hover:text-foreground"
+                            className="flex w-full items-center justify-center gap-2 border-t border-dashed border-border py-4 text-sm font-medium text-muted-foreground transition hover:bg-muted/30 hover:text-foreground"
                         >
-                            <Plus className="size-5" />
-                            <span className="text-sm font-medium">Nuevo menú</span>
+                            <Plus className="size-4" /> Nuevo menú
                         </button>
-                    </div>
                     </div>
                 )}
             </div>
@@ -517,158 +479,200 @@ function huerfanos(menus) {
     return menus.filter(m => !m.is_root && !alcanzables.has(String(m.id)));
 }
 
-function MenuCard({ menu, menus = [], actionMeta, onEdit, onDelete }) {
+/**
+ * Un menú, como fila de la lista.
+ *
+ * Sustituye a la tarjeta. Con tarjetas, cada menú ocupaba un tercio del ancho y
+ * dejaba dos tercios vacíos: las ocho opciones se truncaban dentro de una torre
+ * de 600px de alto y había que bajar toda la página para ver cuántos menús hay.
+ *
+ * Lo que se ve sin abrir nada es lo que se necesita a diario —qué menús hay,
+ * cuál responde, de cuál cuelga cada submenú— y el detalle se despliega sólo
+ * cuando se pide. Los submenús van dentro de la fila de su padre, indentados:
+ * un submenú no compite con su menú, cuelga de él.
+ */
+function FilaDeMenu({ menu, menus = [], hijos = [], actionMeta, onEdit, onDelete, anidada = false }) {
+    const [abierta, setAbierta] = useState(false);
     const options = menu.options ?? [];
-    const isList = menu.format === 'list';
 
     // De quién es este submenú: qué menús —y por qué opción— llevan hasta aquí.
-    // Sin esto, una tarjeta suelta que dice "sólo se abre desde otro menú" deja
-    // al admin adivinando cuál, y no hay forma de saberlo sin abrir los demás.
     const openedFrom = menu.is_root ? [] : menus.flatMap(other =>
         (other.options ?? [])
             .filter(o => o.action_type === 'submenu' && String(o.target_menu_id) === String(menu.id))
             .map(o => ({ menu: other.name, option: o.title, active: other.active }))
     );
 
+    const palabras = (menu.match_types ?? []).map(t => MATCH_LABELS[t] ?? t).join(' · ');
+
     return (
-        <div className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
-            <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-success/15">
-                        {menu.active
-                            ? <Power className="size-5 text-success" />
-                            : <PowerOff className="size-5 text-muted-foreground" />}
-                    </div>
-                    <div>
-                        <p className="font-semibold text-foreground text-sm">{menu.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                            {menu.instance ? `Instancia: ${menu.instance.name}` : 'Todas las instancias'}
-                        </p>
-                    </div>
+        <div className={anidada ? 'border-t border-border/60' : ''}>
+            <div className={`flex items-start gap-3 px-4 py-3.5 ${anidada ? 'pl-12' : ''}`}>
+                <button
+                    type="button"
+                    onClick={() => setAbierta(v => !v)}
+                    aria-expanded={abierta}
+                    aria-label={abierta ? 'Ocultar el contenido' : 'Ver el contenido'}
+                    className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                >
+                    <ChevronRight className={`size-4 transition-transform ${abierta ? 'rotate-90' : ''}`} />
+                </button>
+
+                <div className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                    menu.active ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground'
+                }`}>
+                    {menu.active ? <Power className="size-4" /> : <PowerOff className="size-4" />}
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                    {/* «Activo» no basta cuando hay varios encendidos: se prueban
-                        en orden y responde el primero que encaja, así que dos
-                        menús de bienvenida activos son uno que contesta siempre y
-                        otro que no contesta nunca. Los dos decían «Activo». */}
-                    {menu.responde_al_saludo ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success dark:bg-success/30">
-                            <Power className="size-3" /> Responde al saludo
-                        </span>
-                    ) : menu.tapado_por ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
-                            <AlertTriangle className="size-3" /> No se dispara
-                        </span>
-                    ) : (
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${menu.active ? 'bg-success/15 text-success dark:bg-success/30 dark:text-success' : 'bg-muted text-muted-foreground'}`}>
-                            {menu.active ? 'Activo' : 'Inactivo'}
-                        </span>
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-sm font-semibold text-foreground">{menu.name}</p>
+
+                        {/* «Activo» no basta cuando hay varios encendidos: se
+                            prueban en orden y responde el primero que encaja. */}
+                        {menu.responde_al_saludo ? (
+                            <Etiqueta tono="success">Responde al saludo</Etiqueta>
+                        ) : menu.tapado_por ? (
+                            <Etiqueta tono="warning">No se dispara</Etiqueta>
+                        ) : !menu.active ? (
+                            <Etiqueta tono="apagado">Apagado</Etiqueta>
+                        ) : null}
+                    </div>
+
+                    {/* Todo lo que se pregunta de un menú sin abrirlo, en una
+                        línea: dónde aplica, cuántas opciones tiene, cómo sale y
+                        con qué se dispara. */}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                        {menu.instance ? menu.instance.name : 'Todas las líneas'}
+                        {' · '}{options.length} {options.length === 1 ? 'opción' : 'opciones'}
+                        {' · '}{menu.format === 'list' ? 'Lista' : 'Botones'}
+                        {menu.is_root && palabras && <> · {palabras}</>}
+                        {menu.trigger_text && (
+                            <span className="font-mono text-foreground"> "{menu.trigger_text}"</span>
+                        )}
+                    </p>
+
+                    {menu.tapado_por && (
+                        <p className="mt-1.5 text-xs text-warning">
+                            Al primer mensaje responde <span className="font-medium">{menu.tapado_por}</span>, no
+                            este. Apaga uno de los dos, o dale a este una palabra clave.
+                        </p>
                     )}
-                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {isList ? 'Lista' : 'Botones'}
+
+                    {!menu.is_root && openedFrom.length === 0 && (
+                        <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning">
+                            <AlertTriangle className="mt-px size-3 shrink-0" />
+                            Ningún menú lleva aquí: los clientes no pueden llegar a este submenú.
+                        </p>
+                    )}
+
+                    {!menu.is_root && openedFrom.some(f => !f.active) && (
+                        <p className="mt-1.5 text-xs text-warning">
+                            El menú que lleva aquí está apagado.
+                        </p>
+                    )}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1">
+                    <span className="mr-1 hidden text-xs tabular-nums text-muted-foreground sm:inline">
+                        {menu.fires_count ?? 0} {(menu.fires_count ?? 0) === 1 ? 'envío' : 'envíos'}
                     </span>
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(menu)}>
+                        <Pencil className="size-3.5" /> Editar
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="Eliminar"
+                        onClick={() => onDelete(menu)}
+                    >
+                        <Trash2 className="size-3.5" />
+                    </Button>
                 </div>
             </div>
 
-            {/* El conflicto, dicho donde se ve y con la salida. Una etiqueta
-                que sólo diga «no se dispara» deja al admin buscando el porqué
-                entre todas las tarjetas. */}
-            {menu.tapado_por && (
-                <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/[0.07] px-3 py-2.5 text-xs">
-                    <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
-                    <span className="text-foreground">
-                        Cuando un cliente escribe por primera vez responde{' '}
-                        <span className="font-medium">{menu.tapado_por}</span>, no este. Los dos atienden el
-                        saludo y sólo contesta uno: apaga uno de los dos, o dale a este una palabra clave
-                        para que se dispare con ella.
-                    </span>
+            {/* El detalle. Las opciones van en dos columnas: en una sola, ocho
+                opciones son ocho renglones de página que hay que bajar. */}
+            {abierta && (
+                <div className={`border-t border-border/60 bg-muted/30 px-4 py-4 ${anidada ? 'pl-12' : 'pl-11'}`}>
+                    {menu.body_text && (
+                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                            {menu.body_text}
+                        </p>
+                    )}
+
+                    <ul className="mt-3 grid gap-x-8 gap-y-1 sm:grid-cols-2">
+                        {options.map((o, i) => {
+                            const meta = actionMeta?.[o.action_type];
+                            const target = o.action_type === 'submenu'
+                                ? menus.find(m => String(m.id) === String(o.target_menu_id))
+                                : null;
+
+                            return (
+                                <li key={o.id} className="truncate text-xs text-foreground/80">
+                                    {i + 1}. {o.title}
+                                    <span className="text-muted-foreground">
+                                        {' — '}
+                                        {target
+                                            ? <>abre <span className="text-foreground">{target.name}</span></>
+                                            : (meta?.label ?? o.action_type)}
+                                    </span>
+                                    {o.action_type === 'submenu' && !target && (
+                                        <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning">
+                                            sin destino
+                                        </span>
+                                    )}
+                                    {meta?.group === 'pending' && (
+                                        <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning">
+                                            pendiente
+                                        </span>
+                                    )}
+                                    {meta?.group === 'none' && (
+                                        <span className="ml-1 rounded bg-muted px-1 text-[9px] font-medium text-muted-foreground">
+                                            sin acción
+                                        </span>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+
+                    {menu.last_fired_at && (
+                        <p className="mt-3 text-[11px] text-muted-foreground">
+                            Último envío: {new Date(menu.last_fired_at).toLocaleString('es-CO')}
+                        </p>
+                    )}
                 </div>
             )}
 
-            <div className="rounded-lg bg-muted/50 px-3 py-2 text-xs space-y-1.5">
-                <div className="text-muted-foreground">
-                    {menu.is_root ? (
-                        <>
-                            {(menu.match_types ?? []).map(t => MATCH_LABELS[t] ?? t).join(' · ')}
-                            {menu.trigger_text && (
-                                <span className="font-mono text-foreground"> "{menu.trigger_text}"</span>
-                            )}
-                        </>
-                    ) : openedFrom.length > 0 ? (
-                        <div className="space-y-0.5">
-                            {openedFrom.map((from, i) => (
-                                <p key={i} className="flex items-start gap-1.5">
-                                    <CornerDownRight className="mt-px size-3 shrink-0" />
-                                    <span>
-                                        Se abre desde <span className="font-medium text-foreground">{from.menu}</span>
-                                        {' › '}<span className="text-foreground">{from.option}</span>
-                                        {!from.active && <span className="text-warning"> (ese menú está apagado)</span>}
-                                    </span>
-                                </p>
-                            ))}
-                        </div>
-                    ) : (
-                        <span className="flex items-start gap-1.5 text-warning">
-                            <AlertTriangle className="mt-px size-3 shrink-0" />
-                            Ningún menú lleva aquí todavía: los clientes no pueden llegar a este submenú.
-                        </span>
-                    )}
-                </div>
-                <div className="text-foreground whitespace-pre-wrap line-clamp-2">{menu.body_text}</div>
-                <ul className="space-y-0.5 pt-0.5">
-                    {options.map((o, i) => {
-                        const meta = actionMeta?.[o.action_type];
-                        // "Abrir otro menú" no dice cuál. El nombre del destino
-                        // es justo lo que hay que ver de un vistazo para
-                        // entender cómo encaja el menú con sus submenús.
-                        const target = o.action_type === 'submenu'
-                            ? menus.find(m => String(m.id) === String(o.target_menu_id))
-                            : null;
-
-                        return (
-                            <li key={o.id} className="text-foreground/80 truncate">
-                                {i + 1}. {o.title}
-                                <span className="text-muted-foreground">
-                                    {' — '}
-                                    {target
-                                        ? <>abre <span className="text-foreground">{target.name}</span></>
-                                        : (meta?.label ?? o.action_type)}
-                                </span>
-                                {o.action_type === 'submenu' && !target && (
-                                    <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning dark:bg-warning/30 dark:text-warning">
-                                        sin destino
-                                    </span>
-                                )}
-                                {meta?.group === 'pending' && (
-                                    <span className="ml-1 rounded bg-warning/15 px-1 text-[9px] font-medium text-warning dark:bg-warning/30 dark:text-warning">
-                                        pendiente
-                                    </span>
-                                )}
-                                {meta?.group === 'none' && (
-                                    <span className="ml-1 rounded bg-muted px-1 text-[9px] font-medium text-muted-foreground">
-                                        sin acción
-                                    </span>
-                                )}
-                            </li>
-                        );
-                    })}
-                </ul>
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground -mt-2">
-                <span>Enviado {menu.fires_count ?? 0} {(menu.fires_count ?? 0) === 1 ? 'vez' : 'veces'}</span>
-                {menu.last_fired_at && <span>Último: {new Date(menu.last_fired_at).toLocaleString()}</span>}
-            </div>
-
-            <div className="flex gap-2 pt-1">
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={onEdit}>
-                    <Pencil className="size-3.5" /> Editar
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:bg-destructive/10" onClick={onDelete}>
-                    <Trash2 className="size-3.5" />
-                </Button>
-            </div>
+            {/* Los submenús, dentro de la fila de su padre. */}
+            {hijos.map(hijo => (
+                <FilaDeMenu
+                    key={hijo.id}
+                    menu={hijo}
+                    menus={menus}
+                    hijos={[]}
+                    actionMeta={actionMeta}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    anidada
+                />
+            ))}
         </div>
+    );
+}
+
+function Etiqueta({ tono, children }) {
+    const tonos = {
+        success: 'bg-success/15 text-success dark:bg-success/25',
+        warning: 'bg-warning/15 text-warning',
+        apagado: 'bg-muted text-muted-foreground',
+    };
+
+    return (
+        <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${tonos[tono]}`}>
+            {children}
+        </span>
     );
 }
 
