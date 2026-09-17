@@ -527,9 +527,22 @@ class DefaultWhatsAppMenuTest extends TestCase
             ->first();
     }
 
+    /**
+     * Una empresa con la plantilla de ISP puesta.
+     *
+     * Desde el 16-sep-2026 las empresas nuevas nacen con el menú **genérico**
+     * —el que funciona para cualquier negocio sin conectar nada— y el de ISP se
+     * aplica a demanda. Este test es sobre la plantilla de ISP, así que se
+     * cambia una por otra a propósito.
+     */
     private function company(): Company
     {
-        return Company::create(['name' => 'Cmnet', 'slug' => 'cmnet', 'active' => true]);
+        $company = Company::create(['name' => 'Cmnet', 'slug' => 'cmnet', 'active' => true]);
+
+        WhatsAppMenu::where('company_id', $company->id)->delete();
+        DefaultWhatsAppMenu::createFor($company);
+
+        return $company;
     }
 
     private function metaInstance(Company $company): Instance

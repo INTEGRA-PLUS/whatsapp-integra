@@ -8,7 +8,7 @@ import {
     Plus, Pencil, Trash2, ListTree, Power, PowerOff, CornerDownRight,
     ChevronUp, ChevronDown, X, AlertTriangle, Smartphone, List, Construction,
     Plug, Users, HelpCircle, ImagePlus, CheckCircle2, Bot,
-    Check, ChevronRight, MessageSquare,
+    Check, ChevronRight, Loader2, MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MenuHelp from './MenuHelp';
@@ -215,6 +215,10 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                         if (menu) openEdit(menu, optionId);
                     }} />
                 )}
+
+                {/* Sólo a quien le sirve: si ya tiene las opciones de
+                    autoservicio puestas, el botón no haría nada visible. */}
+                {integra.puede_aplicar_plantilla && <PlantillaIsp conectado={integra.connected} />}
 
                 {/* Primero la decisión —cómo quiere atender— y debajo el
                     detalle de qué pasa paso a paso. Al revés, el admin tiene
@@ -1996,6 +2000,55 @@ WhatsAppMenusIndex.layout = page => <AppLayout breadcrumb={['Menús de WhatsApp'
  * Vive en esta pantalla y no en Integraciones porque es la IA *de los menús*:
  * se enciende donde se configuran, y así se lee junto a lo que complementa.
  */
+/**
+ * El ofrecimiento de la plantilla de ISP.
+ *
+ * Toda empresa nueva nace con el menú **genérico**: cuatro opciones que
+ * responden con texto o pasan a una persona, y que funcionan sin conectar nada.
+ * Era lo contrario antes —nacía con el de ISP— y una peluquería tenía que borrar
+ * cuatro opciones de facturas y radicados antes de poder usar la pantalla.
+ *
+ * Así que la plantilla de ISP deja de venir puesta y pasa a ofrecerse. Se enseña
+ * a todo el mundo y no sólo a quien tenga Integra conectado: se conecta DESPUÉS
+ * de armar el menú tantas veces como antes, y esconderla hasta entonces la haría
+ * invisible justo para quien la necesita.
+ */
+function PlantillaIsp({ conectado }) {
+    const [enviando, setEnviando] = useState(false);
+
+    function aplicar() {
+        setEnviando(true);
+        router.post(route('whatsapp-menus.plantilla-isp'), {}, {
+            preserveScroll: true,
+            onFinish: () => setEnviando(false),
+        });
+    }
+
+    return (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/60 bg-card p-4">
+            <div className="flex items-start gap-3 min-w-0">
+                <div className="size-10 shrink-0 rounded-xl bg-muted flex items-center justify-center">
+                    <Plug className="size-5 text-muted-foreground" />
+                </div>
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground">¿Eres un ISP con Integra?</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                        Añade al menú las opciones de autoservicio: consultar la factura, pagar en línea,
+                        reportar una falla y ver el estado del contrato. Tus opciones actuales y tus textos
+                        se quedan como están.
+                        {! conectado && ' Para que resuelvan solas hay que conectar Integra; mientras tanto derivan a un asesor.'}
+                    </p>
+                </div>
+            </div>
+
+            <Button variant="outline" onClick={aplicar} disabled={enviando} className="gap-2 shrink-0">
+                {enviando ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+                Añadir esas opciones
+            </Button>
+        </div>
+    );
+}
+
 function AiSwitch({ ai, integra = {} }) {
     const [busy, setBusy] = useState(false);
     const encendida = ai.enabled === true;

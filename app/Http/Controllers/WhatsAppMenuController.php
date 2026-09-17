@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
+use App\Support\DefaultWhatsAppMenu;
 use App\Support\OrdenDeLaConversacion;
 use App\Services\Integra;
 use App\Services\IntegraCapabilities;
@@ -15,6 +17,7 @@ use App\Support\DefaultAiMenusIntegration;
 use App\Support\MenuReview;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -72,6 +75,10 @@ class WhatsAppMenuController extends Controller
             // que en producción sólo va a derivar chats a un asesor.
             'integra' => [
                 'connected' => Integra::connected($user->company_id),
+                // ¿Le serviría de algo la plantilla de ISP? Sólo si NO tiene ya
+                // las opciones de autoservicio puestas. Ofrecérsela a quien ya
+                // las tiene es un botón que no hace nada visible.
+                'puede_aplicar_plantilla' => ! $this->yaTieneAutoservicio($menus),
             ],
             // Qué le pasa hoy a un cliente que escribe. La pregunta «¿sale
             // primero un menú o la IA?» no tenía respuesta en ninguna pantalla,
@@ -134,6 +141,62 @@ class WhatsAppMenuController extends Controller
      * (updateAiPermissions): encenderla no puede significar autorizarle de una
      * vez a radicar fallas y a disparar cobros.
      */
+    /**
+     * ¿Alguno de sus menús ya usa las opciones de autoservicio de Integra?
+     *
+     * @param  \Illuminate\Support\Collection  $menus
+     */
+    private function yaTieneAutoservicio($menus): bool
+    {
+        return $menus->contains(
+            fn ($menu) => collect($menu['options'] ?? [])->contains(
+                fn ($o) => array_key_exists(
+                    (string) ($o['action_type'] ?? ''),
+                    WhatsAppMenuOption::INTEGRA_ACTIONS
+                )
+            )
+        );
+    }
+
+    /**
+     * POST /whatsapp-menus/plantilla-isp
+     *
+     * Trae las opciones de autoservicio de Integra al menú principal.
+     *
+     * Existe porque toda empresa nueva nace con el menú **genérico** —el que
+     * funciona para cualquier negocio sin conectar nada— y un ISP necesitaba
+     * volver a escribir a mano las cuatro opciones que antes venían de fábrica.
+     *
+     * No toca los textos del menú (cabecera, cuerpo, pie): son de la empresa y
+     * a menudo llevan su nombre y su tono. Sólo trae las opciones.
+     */
+    public function aplicarPlantillaIsp(Request $request)
+    {
+        $company = Company::findOrFail($request->user()->company_id);
+
+        // Con menú principal se le añaden las opciones y se le respetan los
+        // textos; sin ninguno —porque los borró— se crea el de ISP entero. Antes
+        // esto respondía «crea uno primero», que es mandar a hacer a mano justo
+        // lo que el botón existe para evitar.
+        $resultado = DefaultWhatsAppMenu::applyTemplateInPlace($company)
+            ?: (DefaultWhatsAppMenu::createFor($company) ? ['creadas' => 0] : null);
+
+        if (! $resultado) {
+            return back()->with('error', 'No se pudo aplicar la plantilla. Inténtalo de nuevo.');
+        }
+
+        Log::channel('whatsapp')->info('🧩 Plantilla de ISP aplicada al menú', [
+            'company_id' => $company->id,
+            'user_id' => $request->user()->id,
+            'creadas' => $resultado['creadas'],
+        ]);
+
+        return back()->with(
+            'success',
+            'Listo: tu menú ya tiene las opciones de autoservicio. Revísalas antes de encenderlo.'
+        );
+    }
+
     public function toggleAi(Request $request)
     {
         $data = $request->validate(['enabled' => 'required|boolean']);

@@ -442,6 +442,12 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:whatsapp_menus.update')->name('update');
         Route::delete('/{menu}', [WhatsAppMenuController::class, 'destroy'])
             ->middleware('permission:whatsapp_menus.delete')->name('destroy');
+        // Trae las opciones de autoservicio de Integra al menú principal. Las
+        // empresas nuevas nacen con el menú genérico —el que funciona para
+        // cualquier negocio sin conectar nada—, así que un ISP necesita una
+        // forma de recuperar las cuatro sin escribirlas a mano.
+        Route::post('/plantilla-isp', [WhatsAppMenuController::class, 'aplicarPlantillaIsp'])
+            ->middleware('permission:whatsapp_menus.update')->name('plantilla-isp');
         // El interruptor de la IA de los menús.
         Route::post('/ai', [WhatsAppMenuController::class, 'toggleAi'])
             ->middleware('permission:whatsapp_menus.update')->name('ai');

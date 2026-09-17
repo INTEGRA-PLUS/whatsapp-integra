@@ -4,7 +4,7 @@ namespace App\Observers;
 
 use App\Models\Company;
 use App\Support\DefaultAiMenusIntegration;
-use App\Support\DefaultWhatsAppMenu;
+use App\Support\MenuGenerico;
 use Illuminate\Support\Facades\Log;
 
 class CompanyObserver
@@ -24,7 +24,11 @@ class CompanyObserver
         // Cada siembra en su propio try: si el menú falla, la tarjeta de IA se
         // crea igual. Encadenarlas haría que un fallo en la primera dejara a la
         // empresa sin ninguna de las dos.
-        $this->seed($company, 'el menú por defecto', fn () => DefaultWhatsAppMenu::createFor($company));
+        // El genérico y no el de ISP: aquél trae cuatro opciones que consultan
+        // Integra, y para una peluquería o un consultorio son cuatro cosas que
+        // borrar a mano antes de poder usar la pantalla. Quien sea ISP aplica la
+        // plantilla de Integra con un botón.
+        $this->seed($company, 'el menú por defecto', fn () => MenuGenerico::createFor($company));
         $this->seed($company, 'la integración de IA', fn () => DefaultAiMenusIntegration::createFor($company));
     }
 
