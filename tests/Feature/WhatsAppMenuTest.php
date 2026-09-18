@@ -1151,4 +1151,103 @@ class WhatsAppMenuTest extends TestCase
 
         return $sent;
     }
+
+    // ------------------------------------------------------------------
+    // Cuando hay una persona atendiendo
+    // ------------------------------------------------------------------
+
+    /**
+     * Si una asesora escribió, el bot se calla — aunque el chat no esté
+     * asignado.
+     *
+     * El caso real (18-sep-2026, Megastore): Deisy contestó a las 08:18 sin
+     * asignarse el chat, y el bot le contestó encima a las 08:19 y otra vez a
+     * las 08:22, mientras ella explicaba lo de la red de 5 GHz. Para el cliente
+     * eran dos voces a la vez.
+     *
+     * Asignarse es un gesto del CRM que mucha gente se salta; escribir es el
+     * hecho.
+     *
+     * @test
+     */
+    public function si_una_persona_escribio_el_bot_se_calla(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Horarios'], [
+            'match_types' => ['contains'],
+            'trigger_text' => 'menu',
+        ]);
+
+        $asesora = User::create([
+            'company_id' => $instance->company_id, 'name' => 'Deisy',
+            'email' => 'deisy@x.test', 'password' => 'secret', 'active' => true,
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'menu', 'wamid.A'))->assertOk();
+        $this->assertSame(1, (int) $menu->refresh()->fires_count, 'Antes de que entre nadie, el bot responde.');
+
+        // La asesora entra a la conversación SIN asignársela.
+        WhatsAppMessage::create([
+            'conversation_id' => WhatsAppConversation::first()->id,
+            'wamid' => 'wamid.DEISY', 'direction' => 'outbound', 'type' => 'text',
+            'content' => 'hola buenos días', 'status' => 'sent',
+            'sent_by' => $asesora->id, 'sent_at' => now(),
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'menu', 'wamid.B'))->assertOk();
+
+        $this->assertSame(
+            1,
+            (int) $menu->refresh()->fires_count,
+            'Con una persona escribiendo, el bot no vuelve a hablar por mucho que el cliente escriba la palabra clave.'
+        );
+
+        $this->assertNull(WhatsAppConversation::first()->assigned_to, 'Y sin estar asignada: escribir basta.');
+    }
+
+    /**
+     * Pero una asesora que atendió hace tres días no deja mudo al bot.
+     *
+     * Son las mismas 24 h de la ventana de Meta, que es la unidad natural de
+     * una conversación de WhatsApp.
+     *
+     * @test
+     */
+    public function una_persona_que_escribio_hace_dias_no_calla_al_bot(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Horarios'], [
+            'match_types' => ['contains'],
+            'trigger_text' => 'menu',
+        ]);
+
+        $asesora = User::create([
+            'company_id' => $instance->company_id, 'name' => 'Deisy',
+            'email' => 'deisy2@x.test', 'password' => 'secret', 'active' => true,
+        ]);
+
+        $conv = WhatsAppConversation::create([
+            'instance_id' => $instance->id,
+            'wa_id' => self::PHONE, 'phone_number' => self::PHONE,
+            'status' => 'open', 'last_message_at' => now()->subDays(3),
+        ]);
+
+        // `created_at` no es asignable en masa: hay que empujarlo después, o
+        // el mensaje queda con la fecha de hoy y la prueba comprueba lo
+        // contrario de lo que dice su nombre.
+        WhatsAppMessage::create([
+            'conversation_id' => $conv->id,
+            'wamid' => 'wamid.VIEJO', 'direction' => 'outbound', 'type' => 'text',
+            'content' => 'Ya quedó resuelto', 'status' => 'sent',
+            'sent_by' => $asesora->id, 'sent_at' => now()->subDays(3),
+        ])->forceFill(['created_at' => now()->subDays(3)])->saveQuietly();
+
+        $this->postSignedWebhook($this->inbound($instance, 'menu', 'wamid.HOY'))->assertOk();
+
+        $this->assertSame(1, (int) $menu->refresh()->fires_count);
+    }
 }

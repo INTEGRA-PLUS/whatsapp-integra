@@ -45,6 +45,24 @@ class WhatsAppMenuService
         // el rastro del cierre está borrado, así que no hay forma de deducirlo.
         bool $reabierta = false
     ): bool {
+        // Una persona está en la conversación: el bot se aparta.
+        //
+        // Esto NO es lo mismo que «asignada». Una asesora contestó a las 08:18
+        // sin asignarse el chat —el aviso «esta conversación no te está
+        // asignada» seguía en pantalla— y el bot le contestó encima a las 08:19
+        // y otra vez a las 08:22, mientras ella explicaba lo de la red de 5 GHz
+        // (18-sep-2026, Megastore). Para el cliente eran dos voces a la vez.
+        //
+        // Asignarse es un gesto del CRM que mucha gente no hace; escribir es el
+        // hecho. Así que lo que calla al bot es que alguien haya escrito.
+        if (! $reabierta && $this->hablaUnaPersona($conversation)) {
+            Log::channel('whatsapp')->info('🤫 El bot se calla: hay una persona atendiendo', [
+                'conversation_id' => $conversation->id,
+            ]);
+
+            return false;
+        }
+
         // Con un agente encima o el hilo cerrado, el bot se calla: nada peor que
         // un menú interrumpiendo una conversación que ya está atendiendo alguien.
         if ($conversation->assigned_to !== null || $conversation->status === 'closed') {
@@ -491,6 +509,37 @@ class WhatsAppMenuService
      * Devuelve `null` si es su primerísimo mensaje —no hay silencio que medir,
      * y ese caso saluda siempre—; si no, las horas que llevaba callado.
      */
+    /**
+     * ¿Hay una persona de carne y hueso atendiendo esta conversación?
+     *
+     * La señal es `sent_by`: los mensajes del bot lo llevan en null y los de un
+     * asesor con su id. Es el hecho, no la intención — asignarse el chat es un
+     * gesto del CRM que mucha gente se salta.
+     *
+     * Con dos límites, para que el bot vuelva cuando de verdad toca:
+     *
+     * - **Sólo las últimas 24 h.** Una asesora que atendió el martes no puede
+     *   dejar mudo al bot el viernes. Son las mismas 24 h de la ventana de
+     *   Meta, que es la unidad natural de una conversación de WhatsApp.
+     * - **Sólo desde la última reapertura.** Si el asesor cerró y el cliente
+     *   vuelve, eso es una conversación nueva: ahí el bot saluda otra vez.
+     */
+    private function hablaUnaPersona(WhatsAppConversation $conversation): bool
+    {
+        $reapertura = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'internal')
+            ->where('content', 'like', 'Conversación reabierta%')
+            ->latest('id')
+            ->value('id');
+
+        return WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'outbound')
+            ->whereNotNull('sent_by')
+            ->when($reapertura, fn ($q) => $q->where('id', '>', $reapertura))
+            ->where('created_at', '>=', now()->subHours(24))
+            ->exists();
+    }
+
     private function horasDeSilencio(WhatsAppConversation $conversation, string $wamid): ?float
     {
         $entrantes = WhatsAppMessage::where('conversation_id', $conversation->id)

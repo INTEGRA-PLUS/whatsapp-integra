@@ -85,6 +85,7 @@ import {
     CheckCircle2,
     CheckSquare,
     AlertTriangle,
+    Users,
     DollarSign,
     Mail,
     Reply,
@@ -5370,21 +5371,33 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         </div>
                                     </div>
 
-                                    {/* Banner: conversación sin asignar */}
+                                    {/* Sin asignar: una línea, no un cartel.
+                                        
+                                        Era una franja ámbar a todo el ancho con
+                                        triángulo de aviso, y pesaba más que el
+                                        mensaje del cliente que hay debajo: un
+                                        chat sin asignar es lo NORMAL en una
+                                        bandeja compartida, no una alarma. Al
+                                        tener el mismo color que los errores de
+                                        verdad, además, les quitaba fuerza.
+                                        
+                                        Y el texto era una pregunta retórica que
+                                        no decía nada —«¿quieres asignarla a ti
+                                        mismo?»—. Ahora dice lo que cambia si
+                                        pulsas: el chat pasa a ser tuyo y el bot
+                                        deja de responder. */}
                                     {!selectedConversation.assigned_to && (
-                                        <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
-                                                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
-                                                <span className="flex-1 leading-snug">
-                                                    Esta conversación no te está asignada. ¿Quieres asignarla a ti mismo?
-                                                </span>
-                                                <button
-                                                    onClick={() => assignConversationToMe(selectedConversation.id)}
-                                                    className="shrink-0 text-[11px] font-bold text-warning hover:underline"
-                                                >
-                                                    → Asignar a mí
-                                                </button>
-                                            </div>
+                                        <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-4 py-1.5 text-[11px] text-muted-foreground z-10">
+                                            <span className="flex items-center gap-1.5 min-w-0">
+                                                <Users className="size-3.5 shrink-0 opacity-70" />
+                                                <span className="truncate">Sin asignar · cualquiera del equipo puede responder</span>
+                                            </span>
+                                            <button
+                                                onClick={() => assignConversationToMe(selectedConversation.id)}
+                                                className="shrink-0 rounded-md border border-border/70 px-2 py-1 font-medium text-foreground transition hover:bg-background"
+                                            >
+                                                Atenderla yo
+                                            </button>
                                         </div>
                                     )}
 
