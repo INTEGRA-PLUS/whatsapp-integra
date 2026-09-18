@@ -10,6 +10,7 @@ use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMessage;
 use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
+use App\Support\NotaParaElAsesor;
 use App\Support\MenuActionResult;
 use App\Support\ContadorDeIa;
 use App\Support\PlanDeLaEmpresa;
@@ -170,7 +171,10 @@ class WhatsAppAiClient
         $step = $data['step'] ?? null;
         $context = is_array($data['context'] ?? null) ? $data['context'] : [];
         $meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
-        $note = trim((string) ($data['nota_asesor'] ?? '')) ?: null;
+        // Saneada: la escribe n8n y se pinta en el hilo, así que es texto de
+        // fuera que acaba en la pantalla del equipo. Llegó a traer seis líneas
+        // de traza de axios con rutas del servidor dentro.
+        $note = NotaParaElAsesor::limpia($data['nota_asesor'] ?? null);
 
         $pasos = [
             WhatsAppBotFlow::STEP_IDENTIFICATION,

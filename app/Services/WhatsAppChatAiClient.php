@@ -9,6 +9,7 @@ use App\Support\AiAssistantProfile;
 use App\Support\Documentos\ConocimientoParaLaPregunta;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
+use App\Support\NotaParaElAsesor;
 use App\Support\ContadorDeIa;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Support\Facades\Http;
@@ -215,7 +216,7 @@ class WhatsAppChatAiClient
 
         // Lo que el asesor lee al abrir el chat. Es mucho más útil que el aviso
         // genérico: llega sabiendo qué pedía el cliente.
-        $nota = trim((string) ($body['note'] ?? $body['resumen'] ?? '')) ?: null;
+        $nota = NotaParaElAsesor::limpia($body['note'] ?? $body['resumen'] ?? null);
 
         // La traza viaja con la burbuja, igual que en la IA de menús: sin ella
         // no hay forma de abrir el chat semanas después y saber con qué modelo
