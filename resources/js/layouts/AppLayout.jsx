@@ -1,10 +1,11 @@
+import { useEffect, useRef } from 'react';
 import { router, usePage } from '@inertiajs/react';
 import { AppSidebar } from '@/components/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import NotificationBell from '@/components/notification-bell';
 import AvisoNuevaVersion from '@/components/aviso-nueva-version';
-import { AvisosProvider } from '@/components/ui/toast';
+import { AvisosProvider, useAviso } from '@/components/ui/toast';
 
 function getDefaultOpen() {
     if (typeof document === 'undefined') return true;
@@ -24,6 +25,52 @@ function ImpersonatingBadge() {
             </button>
         </form>
     );
+}
+
+/**
+ * Los mensajes del servidor, como aviso flotante.
+ *
+ * Eran una banda a todo el ancho entre la barra superior y la pantalla: empujaba
+ * el contenido hacia abajo al aparecer, se quedaba puesta hasta la siguiente
+ * visita y no se parecía a nada del resto del producto —que ya tiene sus avisos
+ * flotantes, con los tokens de la marca, desde el tablero—.
+ *
+ * Aquí sólo se traducen: el `flash` de Laravel entra por `useAviso()` y sale
+ * como los demás avisos, arriba a la derecha y sin mover nada de sitio.
+ */
+function FlashComoAviso({ flash }) {
+    const aviso = useAviso();
+    const ultimo = useRef(null);
+
+    useEffect(() => {
+        const texto = flash?.success ?? flash?.error;
+
+        // Cuando no hay mensaje se olvida el anterior: así dos acciones seguidas
+        // con el mismo texto —«Usuario actualizado», «Usuario actualizado»— sí
+        // avisan las dos veces.
+        if (! texto) {
+            ultimo.current = null;
+
+            return;
+        }
+
+        // Inertia conserva las props compartidas en las recargas parciales, así
+        // que el mismo `flash` vuelve a llegar en cada una. Sin esta guarda, un
+        // aviso se repetiría cada vez que la pantalla pide sólo una parte.
+        const huella = (flash.success ? 'ok:' : 'err:') + texto;
+
+        if (ultimo.current === huella) return;
+
+        ultimo.current = huella;
+
+        if (flash.success) {
+            aviso.exito(texto);
+        } else {
+            aviso.error(texto);
+        }
+    }, [flash?.success, flash?.error]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return null;
 }
 
 export default function AppLayout({ children, breadcrumb }) {
@@ -63,21 +110,7 @@ export default function AppLayout({ children, breadcrumb }) {
                     </div>
                 </header>
 
-                {/* Flash messages */}
-                {(flash?.success || flash?.error) && (
-                    <div className="px-6 pt-4">
-                        {flash.success && (
-                            <div className="rounded-lg border border-success/30 bg-success/15 px-4 py-3 text-sm text-success dark:border-success/30 dark:bg-success/30 dark:text-success">
-                                {flash.success}
-                            </div>
-                        )}
-                        {flash.error && (
-                            <div className="rounded-lg border border-destructive/30 bg-destructive/15 px-4 py-3 text-sm text-destructive dark:border-destructive/30 dark:bg-destructive/30 dark:text-destructive">
-                                {flash.error}
-                            </div>
-                        )}
-                    </div>
-                )}
+                <FlashComoAviso flash={flash} />
 
                 {children}
                 <AvisoNuevaVersion />
