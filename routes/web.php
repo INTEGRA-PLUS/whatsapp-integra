@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MiPlanController;
+use App\Http\Controllers\PlanesController;
 use App\Http\Controllers\ResumenController;
 use App\Http\Controllers\AiDocumentoController;
 use App\Http\Controllers\AiFlowSettingsController;
@@ -503,6 +504,19 @@ Route::middleware('auth')->group(function () {
     // se deja sin marcar y deja al admin sin saber qué tiene contratado.
     Route::get('/mi-plan', [MiPlanController::class, 'index'])
         ->middleware('permission:extensions.view')->name('mi-plan');
+
+    // «Planes» — el catálogo entero, para comparar y pedir el cambio.
+    //
+    // Separado de «Mi plan» a propósito: aquello cuenta lo que tienes y esto lo
+    // que hay, y meterlas juntas obligaba a elegir entre enseñar tu consumo o
+    // enseñar la tabla. Mismo permiso, por lo mismo: quien puede ver en qué plan
+    // está puede ver a cuál podría pasarse.
+    Route::get('/planes', [PlanesController::class, 'index'])
+        ->middleware('permission:extensions.view')->name('planes');
+
+    // Pedir el cambio. No lo aplica: avisa a los master, que son quienes pueden.
+    Route::post('/planes/solicitar', [PlanesController::class, 'solicitar'])
+        ->middleware('permission:extensions.view')->name('planes.solicitar');
 
     // Extensiones — el catálogo y la ficha de cada extensión. Dos rutas para
     // todas: las pantallas se generan a partir del manifiesto de cada una.

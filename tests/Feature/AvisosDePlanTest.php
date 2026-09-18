@@ -267,6 +267,37 @@ class AvisosDePlanTest extends TestCase
         }
     }
 
+    /**
+     * Y los encuentra aunque no haya ningún equipo de Spatie puesto.
+     *
+     * Que es como corre de verdad: en un comando no hay sesión, así que
+     * `getPermissionsTeamId()` es `null` y `hasRole('master')` decía que no lo
+     * era nadie. Los demás tests no lo veían porque el helper `master()` deja el
+     * equipo puesto al asignar el rol, y el comando corría a continuación en el
+     * mismo proceso.
+     *
+     * En producción el resultado fue mudo y total: el 18-sep-2026 había 8 avisos
+     * pendientes, un master activo en la base y **cero** notificaciones enviadas
+     * en toda la historia de la tabla.
+     *
+     * @test
+     */
+    public function encuentra_a_los_master_sin_equipo_puesto(): void
+    {
+        Notification::fake();
+
+        $company = $this->empresa(['plan' => 'basico']);
+        $this->agentes($company, 9);
+        $this->master();
+
+        // Lo que pasa al arrancar un comando: nadie ha entrado, no hay equipo.
+        setPermissionsTeamId(null);
+
+        $this->artisan('planes:avisar')->assertSuccessful();
+
+        Notification::assertSentTimes(SystemNotification::class, 1);
+    }
+
     /** Un master de verdad: sin rol Spatie, `isMaster()` devuelve false. */
     private function master(): User
     {

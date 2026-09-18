@@ -47,6 +47,11 @@ class Suscripcion
             'plan' => $plan->slug(),
             'ia' => $plan->slugIa(),
             'ciclo' => $plan->ciclo(),
+            // Copia también: sin esto el recibo de un cliente de Integra que
+            // compra IA no puede explicar su importe —parecería que los 49 son
+            // el Pro más la IA— y una empresa que deje de venir de Integra el
+            // año que viene cambiaría lo que dice un recibo de este mes.
+            'crm_incluido' => $plan->incluidoEnIntegra(),
             'importe_usd' => $cubierto ? 0 : $plan->precioDelCiclo(),
             'periodo_desde' => $desde,
             'periodo_hasta' => $hasta,

@@ -245,6 +245,9 @@ class MiPlanController extends Controller
                 'desde' => optional($c->periodo_desde)->toDateString(),
                 'hasta' => optional($c->periodo_hasta)->toDateString(),
                 'concepto' => $c->concepto(),
+                // De dónde sale el importe. Es la respuesta a «¿y por qué pago
+                // 49?», que hasta ahora había que preguntarla.
+                'desglose' => $c->desglose(),
                 'importe_usd' => (int) $c->importe_usd,
                 'estado' => $c->estado,
                 'pagado_at' => optional($c->pagado_at)->toDateString(),

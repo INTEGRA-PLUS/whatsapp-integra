@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\User;
 use App\Notifications\SystemNotification;
 use App\Support\AvisosDePlan;
+use App\Support\Master;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -76,7 +77,10 @@ class AvisarDePlanes extends Command
             return self::SUCCESS;
         }
 
-        $masters = User::where('active', true)->get()->filter(fn (User $u) => $u->isMaster());
+        // Por la tabla y no por `isMaster()`: en un comando no hay equipo de
+        // Spatie puesto, así que `hasRole('master')` decía que no lo era nadie y
+        // este comando llevaba desde que existe avisando a cero personas.
+        $masters = Master::activos();
 
         if ($masters->isEmpty()) {
             // No es un error del comando: es que no hay a quién avisar. Se dice

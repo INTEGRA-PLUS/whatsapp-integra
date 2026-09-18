@@ -466,7 +466,21 @@ function Facturacion({ recibos = [] }) {
                                 <td className="whitespace-nowrap px-6 py-3 tabular-nums text-foreground">
                                     {fechaCorta(r.desde)} — {fechaCorta(r.hasta)}
                                 </td>
-                                <td className="px-6 py-3 text-muted-foreground">{r.concepto}</td>
+                                <td className="px-6 py-3">
+                                    <span className="text-muted-foreground">{r.concepto}</span>
+                                    {/* De dónde sale el importe. Sin esto, «$49»
+                                        junto a un nombre de plan no se puede
+                                        explicar sin preguntarlo. */}
+                                    {r.desglose?.length > 1 && (
+                                        <span className="mt-1 block text-xs text-muted-foreground/75">
+                                            {r.desglose.map(l => (
+                                                <span key={l.concepto} className="mr-3 inline-block whitespace-nowrap">
+                                                    {l.concepto}: {l.importe === null ? l.nota : `$${l.importe}`}
+                                                </span>
+                                            ))}
+                                        </span>
+                                    )}
+                                </td>
                                 <td className="whitespace-nowrap px-6 py-3 text-right tabular-nums font-medium text-foreground">
                                     {r.estado === 'cubierto' ? <span className="font-normal text-muted-foreground">Incluido</span> : `$${r.importe_usd}`}
                                 </td>

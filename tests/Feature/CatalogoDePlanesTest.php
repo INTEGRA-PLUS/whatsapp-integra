@@ -1,0 +1,149 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Company;
+use App\Models\User;
+use App\Notifications\SystemNotification;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Tests\TestCase;
+
+/**
+ * «Planes»: el catálogo entero, para comparar y para pedir el cambio.
+ *
+ * Lo que se protege: que pedir un cambio **no cambie nada** —no hay
+ * autoservicio, el precio se negocia— y que el aviso llegue a quien puede
+ * aplicarlo. Un botón que dijera «plan cambiado» y luego no cambiara nada es
+ * peor que no tenerlo.
+ */
+class CatalogoDePlanesTest extends TestCase
+{
+    use RefreshDatabase;
+
+    /** @test */
+    public function el_catalogo_trae_los_precios(): void
+    {
+        $company = $this->empresa(['plan' => 'basico']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/planes')
+            ->assertInertia(fn ($page) => $page
+                ->component('Planes/Index')
+                ->where('actual.crm', 'basico')
+                ->has('crm', 3)
+                ->where('crm.1.precio', config('planes.crm.pro.precio'))
+                ->has('ia', 3)
+                ->where('ia.2.precio', config('planes.ia.completa.precio'))
+            );
+    }
+
+    /**
+     * Al cliente de Integra se le dice que su CRM ya está pagado.
+     *
+     * Sin eso, ver «Pro $59» cuando llevas dos años sin pagarlo se lee como una
+     * subida de precio.
+     *
+     * @test
+     */
+    public function al_de_integra_se_le_marca_que_el_crm_va_incluido(): void
+    {
+        $company = $this->empresa(['plan' => 'pro', 'viene_de_integra' => true]);
+
+        $this->actingAs($this->admin($company))
+            ->get('/planes')
+            ->assertInertia(fn ($page) => $page->where('actual.incluido_en_integra', true));
+    }
+
+    /** Pedir un cambio avisa a los master y no toca el plan. */
+    public function test_pedir_un_cambio_avisa_y_no_cambia_nada(): void
+    {
+        Notification::fake();
+
+        $company = $this->empresa(['plan' => 'basico']);
+        $master = $this->master();
+
+        $this->actingAs($this->admin($company))
+            ->post('/planes/solicitar', ['crm' => 'pro'])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame('basico', $company->refresh()->plan, 'Pedirlo no lo aplica.');
+
+        Notification::assertSentTo($master, SystemNotification::class);
+    }
+
+    /** Pedir lo que ya se tiene no molesta a nadie. */
+    public function test_pedir_lo_que_ya_tiene_no_avisa(): void
+    {
+        Notification::fake();
+
+        $company = $this->empresa(['plan' => 'pro']);
+        $this->master();
+
+        $this->actingAs($this->admin($company))
+            ->post('/planes/solicitar', ['crm' => 'pro'])
+            ->assertSessionHas('error');
+
+        Notification::assertNothingSent();
+    }
+
+    /** Y un plan que no existe se rechaza. */
+    public function test_un_plan_inventado_se_rechaza(): void
+    {
+        $company = $this->empresa(['plan' => 'basico']);
+
+        $this->actingAs($this->admin($company))
+            ->post('/planes/solicitar', ['crm' => 'platino'])
+            ->assertSessionHasErrors('crm');
+    }
+
+    private function empresa(array $extra = []): Company
+    {
+        return Company::create(array_merge([
+            'name' => 'Fibra '.uniqid(),
+            'slug' => 'fibra-'.uniqid(),
+            'active' => true,
+        ], $extra));
+    }
+
+    private function master(): User
+    {
+        $empresa = $this->empresa();
+        $user = User::create([
+            'company_id' => $empresa->id,
+            'name' => 'Master',
+            'email' => 'm'.uniqid().'@test.test',
+            'password' => 'secret',
+            'active' => true,
+            'role' => 'master',
+        ]);
+
+        setPermissionsTeamId($empresa->id);
+        $rol = Role::firstOrCreate(['name' => 'master', 'company_id' => $empresa->id, 'guard_name' => 'web']);
+        $user->assignRole($rol);
+
+        return $user->fresh();
+    }
+
+    private function admin(Company $company): User
+    {
+        $user = User::create([
+            'company_id' => $company->id,
+            'name' => 'Admin',
+            'email' => 'a'.uniqid().'@test.test',
+            'password' => 'secret',
+            'active' => true,
+            'role' => 'admin',
+        ]);
+
+        setPermissionsTeamId($company->id);
+        $rol = Role::firstOrCreate(['name' => 'op', 'company_id' => $company->id, 'guard_name' => 'web']);
+        $rol->givePermissionTo(Permission::firstOrCreate(['name' => 'extensions.view', 'guard_name' => 'web']));
+        $user->assignRole($rol);
+
+        return $user->fresh();
+    }
+}

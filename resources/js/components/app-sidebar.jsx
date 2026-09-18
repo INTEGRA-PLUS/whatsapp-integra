@@ -25,6 +25,7 @@ import {
     ListTree,
     Blocks,
     BadgeCheck,
+    Table2,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -131,6 +132,7 @@ export function AppSidebar() {
                     { title: 'Integraciones', href: route('integrations.index'), icon: Webhook, show: hasPermission('integrations.view') },
                     { title: 'Extensiones', href: route('extensions.index'), icon: Blocks, show: hasPermission('extensions.view') },
                     { title: 'Mi plan', href: route('mi-plan'), icon: BadgeCheck, show: hasPermission('extensions.view') },
+                    { title: 'Planes', href: route('planes'), icon: Table2, show: hasPermission('extensions.view') },
                     { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
                     { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
                     { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },
