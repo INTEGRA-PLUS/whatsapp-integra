@@ -663,6 +663,10 @@ class MessageApiController extends Controller
 
         $components = $guard['components'];
 
+        // Con los componentes ya normalizados: el preview tiene que enseñar lo
+        // mismo que se manda, no lo que se pidió mandar.
+        $preview = $this->templateGuard->preview($instance, $templateName, $languageCode, $components);
+
         $result = $this->metaService->sendTemplate(
             $instance->phone_number_id,
             $to,
@@ -697,7 +701,12 @@ class MessageApiController extends Controller
                 // Solo las plantillas con adjunto necesitan la burbuja de
                 // plantilla; las de texto plano se siguen viendo como texto.
                 'type' => $headerMediaId ? 'template' : 'text',
-                'content' => "[Plantilla: $templateName]",
+                // El cuerpo ya resuelto, que es lo que el cliente lee en su
+                // teléfono. Guardar «[Plantilla: facturacion]» escondía los
+                // errores de parámetros del ERP: en Conecta Comunicaciones
+                // llevaban días llegando descolocados y en el chat no se veía.
+                // Si no hay catálogo se cae al nombre, como antes.
+                'content' => $preview ?? "[Plantilla: $templateName]",
                 'media_url' => $mediaUrl,
                 'media_id' => $headerMediaId,
                 'media_mime_type' => $mediaMimeType,
@@ -718,7 +727,7 @@ class MessageApiController extends Controller
             ]);
 
             $conversation->update([
-                'last_message' => "[Plantilla: $templateName]",
+                'last_message' => $preview ?? "[Plantilla: $templateName]",
                 'last_message_at' => now(),
             ]);
 

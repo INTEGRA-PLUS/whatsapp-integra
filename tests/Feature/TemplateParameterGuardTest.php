@@ -221,4 +221,63 @@ class TemplateParameterGuardTest extends TestCase
 
         $this->assertTrue($resultado['ok']);
     }
+
+    /**
+     * El cuerpo compuesto: lo que el cliente va a leer en su teléfono.
+     *
+     * Sin esto, los envíos que entran por la API —los del ERP— se guardaban como
+     * «[Plantilla: aviso_pago]». En Conecta Comunicaciones el ERP llevaba días
+     * mandando los parámetros descolocados, así que a los clientes les llegaba
+     * «tu factura ha sido generada bajo el número **y la fecha de vencimiento
+     * es 2026-09-27**», y en el CRM no se veía porque la burbuja sólo decía el
+     * nombre de la plantilla. Con el texto compuesto se ve el primer día.
+     */
+    public function test_compone_el_cuerpo_con_los_parametros(): void
+    {
+        $this->fakeGraph($this->catalogo());
+
+        $texto = $this->guard()->preview($this->instancia(), 'aviso_pago', 'es', [
+            ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'María']]],
+        ]);
+
+        $this->assertSame('Hola María, tu factura está lista.', $texto);
+    }
+
+    /**
+     * Un hueco sin valor se deja a la vista.
+     *
+     * Si el ERP manda un parámetro de menos, el `{{2}}` en el texto es la señal
+     * de que falta: sustituirlo por vacío dejaría una frase que se lee bien y
+     * esconde el error, que es justo cómo se pierden semanas.
+     */
+    public function test_un_parametro_que_falta_se_nota(): void
+    {
+        $this->fakeGraph([[
+            'id' => 'tpl-2',
+            'name' => 'dos_huecos',
+            'language' => 'es',
+            'status' => 'APPROVED',
+            'category' => 'UTILITY',
+            'components' => [['type' => 'BODY', 'text' => 'Hola {{1}}, tu factura {{2}} está lista.']],
+        ]]);
+
+        $texto = $this->guard()->preview($this->instancia(), 'dos_huecos', 'es', [
+            ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'María']]],
+        ]);
+
+        $this->assertSame('Hola María, tu factura {{2}} está lista.', $texto);
+    }
+
+    /**
+     * Sin catálogo no se inventa un texto.
+     *
+     * Quien llama decide el respaldo —el nombre de la plantilla— y así una caída
+     * de Graph no deja media frase guardada como si fuera lo que se envió.
+     */
+    public function test_sin_catalogo_no_hay_preview(): void
+    {
+        $this->fakeGraph([]);
+
+        $this->assertNull($this->guard()->preview($this->instancia(), 'no_existe', 'es', []));
+    }
 }

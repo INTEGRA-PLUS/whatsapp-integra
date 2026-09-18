@@ -423,6 +423,65 @@ class TemplateParameterGuard
         return count(array_unique($matches[1] ?? []));
     }
 
+    /**
+     * El cuerpo de la plantilla ya resuelto: lo que de verdad va a leer el
+     * cliente en su teléfono.
+     *
+     * Existe porque el chat guardaba «[Plantilla: facturacion]» en los envíos
+     * que entran por la API — los que manda el ERP— mientras que el chat y las
+     * campañas sí guardan el texto compuesto. La diferencia no es cosmética: en
+     * Conecta Comunicaciones el ERP llevaba días mandando los parámetros
+     * descolocados, así que a los clientes les llegaba «tu factura ha sido
+     * generada bajo el número **y la fecha de vencimiento es 2026-09-27**», y en
+     * el CRM no se veía porque la burbuja sólo decía el nombre de la plantilla.
+     * Con el texto compuesto, eso se ve el primer día con sólo abrir el chat.
+     *
+     * Devuelve `null` cuando no hay catálogo —sin `waba_id`, sin token, o Graph
+     * caído—: quien llama decide el respaldo. Aquí no se inventa un texto.
+     */
+    public function preview(Instance $instance, string $templateName, ?string $language, array $components): ?string
+    {
+        $definition = $this->definition($instance, $templateName, $language);
+
+        if (! $definition) {
+            return null;
+        }
+
+        $cuerpo = null;
+
+        foreach ($definition['components'] ?? [] as $componente) {
+            if (strtoupper($componente['type'] ?? '') === 'BODY') {
+                $cuerpo = (string) ($componente['text'] ?? '');
+                break;
+            }
+        }
+
+        if (blank($cuerpo)) {
+            return null;
+        }
+
+        $valores = [];
+
+        foreach ($this->normalize($components) as $componente) {
+            if (strtolower($componente['type'] ?? '') !== 'body') {
+                continue;
+            }
+
+            foreach ($componente['parameters'] ?? [] as $parametro) {
+                $valores[] = (string) ($parametro['text'] ?? '');
+            }
+        }
+
+        // Un {{n}} sin valor se deja tal cual y no se borra: si el ERP manda tres
+        // parámetros para una plantilla de cuatro, el hueco en el texto es la
+        // señal de que falta uno. Sustituirlo por vacío lo escondería.
+        return preg_replace_callback(
+            '/\{\{(\d+)\}\}/',
+            fn (array $coincidencia) => $valores[((int) $coincidencia[1]) - 1] ?? $coincidencia[0],
+            $cuerpo
+        );
+    }
+
     // ── Definición de la plantilla ───────────────────────────────────────────
 
     /**
