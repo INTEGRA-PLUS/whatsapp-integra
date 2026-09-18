@@ -4252,6 +4252,129 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         setSelectedInstanceId(id);
     }
 
+    /*
+     * Las tres listas de la cabecera, en un solo sitio.
+     *
+     * Se pintan dos veces: en su propio botón cuando hay pantalla, y dentro de
+     * «Más acciones» en el móvil. Escritas dos veces en un archivo de siete mil
+     * líneas, dentro de un mes dirían cosas distintas.
+     */
+    function itemsDeAgentes() {
+        return (
+            <>
+                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar Agente</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/5" />
+
+                {/* Unassign option */}
+                <DropdownMenuItem 
+                    onClick={() => assignConversation(selectedConversation.id, null)}
+                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
+                >
+                    <div className="size-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center group-hover:bg-destructive/15 group-hover:text-destructive transition-colors shadow-sm">
+                        <XIcon className="size-4" />
+                    </div>
+                    <div className="flex flex-col">
+                        <span className="text-xs font-bold leading-none mb-1">Sin Asignar</span>
+                        <span className="text-[9px] font-medium text-muted-foreground leading-none">Remover responsable</span>
+                    </div>
+                    {!selectedConversation.assigned_to && <Check className="size-4 text-accent-foreground ml-auto" />}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator className="bg-border/5" />
+                <div className="max-h-60 overflow-y-auto px-1 py-1">
+                    {companyUsers.map(u => (
+                        <DropdownMenuItem 
+                            key={u.id}
+                            onClick={() => assignConversation(selectedConversation.id, u.id)}
+                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
+                        >
+                            <div className={clsx(
+                                "size-8 rounded-lg flex items-center justify-center transition-all shadow-sm",
+                                Number(selectedConversation.assigned_to) === Number(u.id) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-accent-foreground"
+                            )}>
+                                <User className="size-4" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold leading-none mb-1">{u.name}</span>
+                                <span className="text-[9px] font-medium text-muted-foreground leading-none">{u.email}</span>
+                            </div>
+                            {Number(selectedConversation.assigned_to) === Number(u.id) && <Check className="size-4 text-accent-foreground ml-auto" />}
+                        </DropdownMenuItem>
+                    ))}
+                </div>
+            </>
+        );
+    }
+
+    function itemsDeEtiquetas() {
+        return (
+            <>
+                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar etiquetas</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/5" />
+                <div className="max-h-60 overflow-y-auto px-1 py-1">
+                    {tags.length === 0 ? (
+                        <p className="px-3 py-3 text-xs text-muted-foreground text-center">No hay etiquetas aún.</p>
+                    ) : tags.map(tag => {
+                        const active = (selectedConversation.tags || []).some(t => Number(t.id) === Number(tag.id));
+                        return (
+                            <DropdownMenuItem
+                                key={tag.id}
+                                onSelect={(e) => {
+                                    e.preventDefault();
+                                    if (active) detachTag(selectedConversation.id, tag.id);
+                                    else attachTag(selectedConversation.id, tag.id);
+                                }}
+                                className="flex items-center gap-3 py-2 px-3 cursor-pointer"
+                            >
+                                <span className="size-3 rounded-full shrink-0 ring-1 ring-black/5" style={{ backgroundColor: tag.color }} />
+                                <span className="text-xs font-bold leading-none flex-1 truncate">{tag.name}</span>
+                                {active && <Check className="size-4 text-accent-foreground ml-auto shrink-0" />}
+                            </DropdownMenuItem>
+                        );
+                    })}
+                </div>
+                <DropdownMenuSeparator className="bg-border/5" />
+                <DropdownMenuItem
+                    onSelect={(e) => {
+                        e.preventDefault();
+                        setTaggingConversationId(selectedConversation.id);
+                        setIsCreatingTag(true);
+                    }}
+                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-accent-foreground"
+                >
+                    <PlusCircle className="size-4" />
+                    <span className="text-xs font-bold">Crear etiqueta</span>
+                </DropdownMenuItem>
+            </>
+        );
+    }
+
+    function itemsDeMacros() {
+        return (
+            <>
+                <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Macros</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/5" />
+                <div className="max-h-60 overflow-y-auto px-1 py-1">
+                    {macros.map(macro => (
+                        <DropdownMenuItem
+                            key={macro.id}
+                            disabled={!!runningMacroId}
+                            onSelect={(e) => {
+                                e.preventDefault();
+                                runMacro(selectedConversation.id, macro.id);
+                            }}
+                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                        >
+                            <Wand2 className="size-4 text-muted-foreground" />
+                            <span className="text-xs font-bold flex-1 truncate">{macro.name}</span>
+                            {runningMacroId === macro.id && <Loader2 className="size-3.5 animate-spin shrink-0" />}
+                        </DropdownMenuItem>
+                    ))}
+                </div>
+            </>
+        );
+    }
+
     return (
         <>
             <Head title="Chat WhatsApp Business" />
@@ -5122,14 +5245,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* En el móvil las acciones se deslizan en horizontal en
-                                            vez de repartirse el ancho: son siete y ninguna sobra
-                                            —buscar, llamar, etiquetas, IA— así que esconderlas las
-                                            dejaría inalcanzables. La barra de desplazamiento se
-                                            oculta; el gesto se descubre al arrastrar. En pantalla
-                                            grande vuelve a `visible`, que es lo que necesitan los
-                                            desplegables para salirse del contenedor. */}
-                                        <div className="flex max-w-[50%] shrink-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:max-w-none sm:overflow-x-visible">
+                                        {/* En el móvil sólo quedan dos: cerrar y «Más acciones».
+                                            El resto se guarda dentro, con la misma lista de
+                                            agentes, etiquetas y macros que en pantalla grande.
+                                            
+                                            Antes eran siete deslizándose en horizontal, y el gesto
+                                            no se descubría: el séptimo —el propio menú de opciones,
+                                            con exportar y eliminar— quedaba fuera de la pantalla y
+                                            era inalcanzable en un móvil. Siete iconos apretados
+                                            tampoco son siete accesos: son un borrón. */}
+                                        <div className="flex shrink-0 items-center gap-1.5 sm:max-w-none">
                                             {/* Admin Assignment Button */}
                                             {isAdmin && (
                                                 <DropdownMenu>
@@ -5138,7 +5263,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         <button
                                                             aria-label={selectedConversation.assigned_agent ? `Asignado a ${selectedConversation.assigned_agent.name}` : 'Asignar agente'}
                                                             className={clsx(
-                                                                "size-9 flex items-center justify-center rounded-lg transition-colors",
+                                                                "size-9 hidden sm:flex items-center justify-center rounded-lg transition-colors",
                                                                 selectedConversation.assigned_to
                                                                     ? "text-accent-foreground bg-primary/10 hover:bg-primary/20"
                                                                     : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
@@ -5149,46 +5274,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     </DropdownMenuTrigger>
                                                     </TooltipAccion>
                                                     <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
-                                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar Agente</DropdownMenuLabel>
-                                                        <DropdownMenuSeparator className="bg-border/5" />
-                                                        
-                                                        {/* Unassign option */}
-                                                        <DropdownMenuItem 
-                                                            onClick={() => assignConversation(selectedConversation.id, null)}
-                                                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
-                                                        >
-                                                            <div className="size-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center group-hover:bg-destructive/15 group-hover:text-destructive transition-colors shadow-sm">
-                                                                <XIcon className="size-4" />
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-xs font-bold leading-none mb-1">Sin Asignar</span>
-                                                                <span className="text-[9px] font-medium text-muted-foreground leading-none">Remover responsable</span>
-                                                            </div>
-                                                            {!selectedConversation.assigned_to && <Check className="size-4 text-accent-foreground ml-auto" />}
-                                                        </DropdownMenuItem>
-                                                        
-                                                        <DropdownMenuSeparator className="bg-border/5" />
-                                                        <div className="max-h-60 overflow-y-auto px-1 py-1">
-                                                            {companyUsers.map(u => (
-                                                                <DropdownMenuItem 
-                                                                    key={u.id}
-                                                                    onClick={() => assignConversation(selectedConversation.id, u.id)}
-                                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer group"
-                                                                >
-                                                                    <div className={clsx(
-                                                                        "size-8 rounded-lg flex items-center justify-center transition-all shadow-sm",
-                                                                        Number(selectedConversation.assigned_to) === Number(u.id) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-accent-foreground"
-                                                                    )}>
-                                                                        <User className="size-4" />
-                                                                    </div>
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-xs font-bold leading-none mb-1">{u.name}</span>
-                                                                        <span className="text-[9px] font-medium text-muted-foreground leading-none">{u.email}</span>
-                                                                    </div>
-                                                                    {Number(selectedConversation.assigned_to) === Number(u.id) && <Check className="size-4 text-accent-foreground ml-auto" />}
-                                                                </DropdownMenuItem>
-                                                            ))}
-                                                        </div>
+                                                        {itemsDeAgentes()}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             )}
@@ -5200,7 +5286,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     <button
                                                         aria-label={selectedConversation.tags?.length ? `${selectedConversation.tags.length} etiqueta(s)` : 'Etiquetas'}
                                                         className={clsx(
-                                                            "relative size-9 flex items-center justify-center rounded-lg transition-colors",
+                                                            "relative size-9 hidden sm:flex items-center justify-center rounded-lg transition-colors",
                                                             selectedConversation.tags?.length
                                                                 ? "text-accent-foreground bg-primary/10 hover:bg-primary/20"
                                                                 : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
@@ -5216,42 +5302,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 </DropdownMenuTrigger>
                                                 </TooltipAccion>
                                                 <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
-                                                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Asignar etiquetas</DropdownMenuLabel>
-                                                    <DropdownMenuSeparator className="bg-border/5" />
-                                                    <div className="max-h-60 overflow-y-auto px-1 py-1">
-                                                        {tags.length === 0 ? (
-                                                            <p className="px-3 py-3 text-xs text-muted-foreground text-center">No hay etiquetas aún.</p>
-                                                        ) : tags.map(tag => {
-                                                            const active = (selectedConversation.tags || []).some(t => Number(t.id) === Number(tag.id));
-                                                            return (
-                                                                <DropdownMenuItem
-                                                                    key={tag.id}
-                                                                    onSelect={(e) => {
-                                                                        e.preventDefault();
-                                                                        if (active) detachTag(selectedConversation.id, tag.id);
-                                                                        else attachTag(selectedConversation.id, tag.id);
-                                                                    }}
-                                                                    className="flex items-center gap-3 py-2 px-3 cursor-pointer"
-                                                                >
-                                                                    <span className="size-3 rounded-full shrink-0 ring-1 ring-black/5" style={{ backgroundColor: tag.color }} />
-                                                                    <span className="text-xs font-bold leading-none flex-1 truncate">{tag.name}</span>
-                                                                    {active && <Check className="size-4 text-accent-foreground ml-auto shrink-0" />}
-                                                                </DropdownMenuItem>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <DropdownMenuSeparator className="bg-border/5" />
-                                                    <DropdownMenuItem
-                                                        onSelect={(e) => {
-                                                            e.preventDefault();
-                                                            setTaggingConversationId(selectedConversation.id);
-                                                            setIsCreatingTag(true);
-                                                        }}
-                                                        className="flex items-center gap-3 py-2.5 px-3 cursor-pointer text-accent-foreground"
-                                                    >
-                                                        <PlusCircle className="size-4" />
-                                                        <span className="text-xs font-bold">Crear etiqueta</span>
-                                                    </DropdownMenuItem>
+                                                    {itemsDeEtiquetas()}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
 
@@ -5262,38 +5313,20 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     <DropdownMenuTrigger asChild>
                                                         <button
                                                             aria-label="Ejecutar macro"
-                                                            className="size-9 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                                            className="size-9 hidden sm:flex items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                                         >
                                                             {runningMacroId ? <Loader2 className="size-[18px] animate-spin" /> : <Wand2 className="size-[18px]" />}
                                                         </button>
                                                     </DropdownMenuTrigger>
                                                     </TooltipAccion>
                                                     <DropdownMenuContent align="end" className="w-64 rounded-xl border-border/10 shadow-2xl">
-                                                        <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Macros</DropdownMenuLabel>
-                                                        <DropdownMenuSeparator className="bg-border/5" />
-                                                        <div className="max-h-60 overflow-y-auto px-1 py-1">
-                                                            {macros.map(macro => (
-                                                                <DropdownMenuItem
-                                                                    key={macro.id}
-                                                                    disabled={!!runningMacroId}
-                                                                    onSelect={(e) => {
-                                                                        e.preventDefault();
-                                                                        runMacro(selectedConversation.id, macro.id);
-                                                                    }}
-                                                                    className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
-                                                                >
-                                                                    <Wand2 className="size-4 text-muted-foreground" />
-                                                                    <span className="text-xs font-bold flex-1 truncate">{macro.name}</span>
-                                                                    {runningMacroId === macro.id && <Loader2 className="size-3.5 animate-spin shrink-0" />}
-                                                                </DropdownMenuItem>
-                                                            ))}
-                                                        </div>
+                                                        {itemsDeMacros()}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             )}
 
                                             {/* Separador sutil entre indicadores y acciones */}
-                                            <span className="w-px h-5 bg-border/40 mx-0.5" />
+                                            <span className="hidden sm:block w-px h-5 bg-border/40 mx-0.5" />
 
                                             {/* Cerrar / Reabrir conversación */}
                                             {selectedConversation.status === 'closed' ? (
@@ -5330,7 +5363,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     aria-label="Resumir la conversación con IA"
                                                     aria-expanded={resumenAbierto}
                                                     className={clsx(
-                                                        'flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold transition-colors',
+                                                        'hidden sm:flex items-center gap-2 h-9 px-3.5 rounded-lg text-[12px] font-bold transition-colors',
                                                         resumenAbierto
                                                             ? 'bg-info text-info-foreground'
                                                             : 'text-info hover:bg-info/10'
@@ -5345,13 +5378,13 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             )}
 
                                             {/* Separador entre la acción principal y las utilidades */}
-                                            <span className="w-px h-5 bg-border/40 mx-0.5" />
+                                            <span className="hidden sm:block w-px h-5 bg-border/40 mx-0.5" />
 
                                             <TooltipAccion texto="Historial de llamadas">
-                                                <button onClick={() => setShowCallHistory(true)} aria-label="Historial de llamadas" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
+                                                <button onClick={() => setShowCallHistory(true)} aria-label="Historial de llamadas" className="size-9 hidden sm:flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
                                             </TooltipAccion>
                                             <TooltipAccion texto="Buscar en esta conversación">
-                                                <button aria-label="Buscar en conversación" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
+                                                <button aria-label="Buscar en conversación" className="size-9 hidden sm:flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
                                             </TooltipAccion>
                                             <DropdownMenu>
                                                 <TooltipAccion texto="Más opciones">
@@ -5359,9 +5392,75 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         <button aria-label="Más opciones" className="size-9 flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"><MoreVertical className="size-[18px]" /></button>
                                                     </DropdownMenuTrigger>
                                                 </TooltipAccion>
-                                                <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/10 shadow-2xl">
+                                                <DropdownMenuContent align="end" className="w-60 rounded-xl border-border/10 shadow-2xl">
                                                     <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 px-3 py-2">Opciones</DropdownMenuLabel>
                                                     <DropdownMenuSeparator className="bg-border/5" />
+
+                                                    {/* Lo que en pantalla grande son botones sueltos
+                                                        de la cabecera. Aquí dentro y sólo en el
+                                                        móvil: son las mismas acciones y las mismas
+                                                        listas, no una versión recortada. */}
+                                                    <div className="sm:hidden">
+                                                        {isAdmin && (
+                                                            <DropdownMenuSub>
+                                                                <DropdownMenuSubTrigger className="flex items-center gap-3 py-2.5 px-3">
+                                                                    <UserPlus className="size-4 text-muted-foreground" />
+                                                                    <span className="text-xs font-bold">Asignar agente</span>
+                                                                </DropdownMenuSubTrigger>
+                                                                <DropdownMenuSubContent className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                                    {itemsDeAgentes()}
+                                                                </DropdownMenuSubContent>
+                                                            </DropdownMenuSub>
+                                                        )}
+
+                                                        <DropdownMenuSub>
+                                                            <DropdownMenuSubTrigger className="flex items-center gap-3 py-2.5 px-3">
+                                                                <TagIcon className="size-4 text-muted-foreground" />
+                                                                <span className="text-xs font-bold">Etiquetas</span>
+                                                                {selectedConversation.tags?.length > 0 && (
+                                                                    <span className="ml-auto mr-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-black leading-none">
+                                                                        {selectedConversation.tags.length}
+                                                                    </span>
+                                                                )}
+                                                            </DropdownMenuSubTrigger>
+                                                            <DropdownMenuSubContent className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                                {itemsDeEtiquetas()}
+                                                            </DropdownMenuSubContent>
+                                                        </DropdownMenuSub>
+
+                                                        {macros.length > 0 && (
+                                                            <DropdownMenuSub>
+                                                                <DropdownMenuSubTrigger className="flex items-center gap-3 py-2.5 px-3">
+                                                                    <Wand2 className="size-4 text-muted-foreground" />
+                                                                    <span className="text-xs font-bold">Macros</span>
+                                                                </DropdownMenuSubTrigger>
+                                                                <DropdownMenuSubContent className="w-64 rounded-xl border-border/10 shadow-2xl">
+                                                                    {itemsDeMacros()}
+                                                                </DropdownMenuSubContent>
+                                                            </DropdownMenuSub>
+                                                        )}
+
+                                                        {resumen_ia.activa && messages.length >= resumen_ia.minimo && (
+                                                            <DropdownMenuItem
+                                                                onClick={() => (resumenAbierto ? setResumenAbierto(false) : pedirResumen())}
+                                                                className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                            >
+                                                                <Sparkles className="size-4 text-info" />
+                                                                <span className="text-xs font-bold">{resumenAbierto ? 'Ocultar el resumen' : 'Resumir con IA'}</span>
+                                                            </DropdownMenuItem>
+                                                        )}
+
+                                                        <DropdownMenuItem
+                                                            onClick={() => setShowCallHistory(true)}
+                                                            className="flex items-center gap-3 py-2.5 px-3 cursor-pointer"
+                                                        >
+                                                            <PhoneCall className="size-4 text-muted-foreground" />
+                                                            <span className="text-xs font-bold">Historial de llamadas</span>
+                                                        </DropdownMenuItem>
+
+                                                        <DropdownMenuSeparator className="bg-border/5" />
+                                                    </div>
+
                                                     {selectedConversation.status === 'closed' ? (
                                                         <DropdownMenuItem
                                                             onClick={() => setConversationStatus(selectedConversation.id, 'reopen')}

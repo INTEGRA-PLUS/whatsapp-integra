@@ -13,15 +13,24 @@ function getDefaultOpen() {
     return match ? match[1] === 'true' : true;
 }
 
+/**
+ * El aviso de que estás dentro de la cuenta de otro.
+ *
+ * En el móvil la frase entera —«Suplantando — click para salir»— no cabe en una
+ * barra de 48 píxeles: se partía en tres líneas y se salía por el borde derecho,
+ * tapando la campana. Ahí queda sólo «Suplantando», que es lo que hay que ver de
+ * un vistazo; cómo se sale lo dice la pantalla en cuanto hay sitio.
+ */
 function ImpersonatingBadge() {
     return (
-        <form onSubmit={(e) => { e.preventDefault(); router.post(route('stop-impersonating')); }}>
+        <form className="shrink-0" onSubmit={(e) => { e.preventDefault(); router.post(route('stop-impersonating')); }}>
             <button
                 type="submit"
-                className="flex items-center gap-1.5 rounded-full bg-warning/15 px-3 py-1 text-xs font-medium text-warning hover:bg-warning/15 dark:text-warning"
+                title="Estás dentro de la cuenta de otro usuario. Pulsa para volver a la tuya."
+                className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-warning/15 px-2.5 sm:px-3 py-1 text-xs font-medium text-warning hover:bg-warning/15 dark:text-warning"
             >
-                <span className="size-1.5 rounded-full bg-warning animate-pulse" />
-                Suplantando — click para salir
+                <span className="size-1.5 shrink-0 rounded-full bg-warning animate-pulse" />
+                Suplantando<span className="hidden sm:inline"> — click para salir</span>
             </button>
         </form>
     );
@@ -84,8 +93,8 @@ export default function AppLayout({ children, breadcrumb }) {
             <AppSidebar />
             <SidebarInset>
                 {/* Top bar */}
-                <header className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border/50 px-4 transition-[width,height] ease-linear">
-                    <div className="flex flex-1 items-center gap-2">
+                <header className="flex h-12 shrink-0 items-center gap-2 overflow-hidden border-b border-sidebar-border/50 px-3 sm:px-4 transition-[width,height] ease-linear">
+                    <div className="flex flex-1 items-center gap-2 min-w-0">
                         <SidebarTrigger className="-ml-1" />
                         <Separator orientation="vertical" className="mr-2 h-4" />
                         {breadcrumb && (
@@ -100,7 +109,7 @@ export default function AppLayout({ children, breadcrumb }) {
                                 ))}
                             </nav>
                         )}
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-2 min-w-0">
                             {/* Slot para que la página monte sus controles acá (vía portal)
                                 en lugar de agregar una segunda barra propia. */}
                             <div id="app-topbar-actions" className="flex items-center gap-2" />
