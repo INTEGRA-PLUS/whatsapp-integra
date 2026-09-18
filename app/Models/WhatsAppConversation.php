@@ -24,6 +24,7 @@ class WhatsAppConversation extends Model
         'profile_pic_url',
         'last_message',
         'last_message_at',
+        'cierre_preguntado_at',
         'status',
         'kanban_column_id',
         'assigned_to',
@@ -46,6 +47,7 @@ class WhatsAppConversation extends Model
 
     protected $casts = [
         'last_message_at' => 'datetime',
+        'cierre_preguntado_at' => 'datetime',
         'closed_at' => 'datetime',
         'opt_out_requested_at' => 'datetime',
         'metadata' => 'array',

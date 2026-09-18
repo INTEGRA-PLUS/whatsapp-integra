@@ -1,6 +1,7 @@
 <?php
 
 use App\Extensions\AgentSignatureExtension;
+use App\Extensions\CierreAutomaticoExtension;
 use App\Extensions\FollowUpExtension;
 use App\Extensions\KeywordRoutingExtension;
 use App\Extensions\ResumenExtension;
@@ -35,6 +36,7 @@ return [
         AgentSignatureExtension::class,
         SentimientoExtension::class,
         ResumenExtension::class,
+        CierreAutomaticoExtension::class,
     ],
 
 ];
