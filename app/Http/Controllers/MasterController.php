@@ -380,14 +380,20 @@ class MasterController extends Controller
                             ->flatMap(fn (string $f) => (array) config("planes.flujos.{$f}", [$f]))
                             ->values(),
 
-                        // La diferencia en una palabra, y sale de los datos y no
-                        // de un texto escrito aparte: lo que separa un nivel del
-                        // otro es si la IA además HABLA con el cliente, y eso es
-                        // exactamente tener flujos o no tenerlos. Escribirlo a
-                        // mano se desincronizaría el día que se mueva una
-                        // función de nivel — que ya ha pasado hoy con el
-                        // semáforo.
-                        'contesta' => ($nivel['flujos'] ?? []) !== [],
+                        // La diferencia en una frase, sacada de los datos y no
+                        // escrita aparte: escribirla a mano se desincroniza el
+                        // día que se mueva una función de nivel, y ya ha pasado
+                        // dos veces —el semáforo y la IA que resuelve—.
+                        //
+                        // Eran dos estados y ahora son tres: desde que `ai_menus`
+                        // está en Esencial, «tiene flujos» ya no significa «habla
+                        // con el cliente». Lo que lo significa es `ai_chat`, y
+                        // resolver una consulta no es lo mismo que conversar.
+                        'que_hace' => match (true) {
+                            in_array('ai_chat', $nivel['flujos'] ?? [], true) => 'conversa con tus clientes',
+                            ($nivel['flujos'] ?? []) !== [] => 'les resuelve contra tu ERP',
+                            default => 'te ayuda a atenderlos',
+                        },
                     ];
                 })
                 ->values(),

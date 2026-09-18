@@ -85,13 +85,22 @@ class CandadoDeIaEnEjecucionTest extends TestCase
     }
 
     /**
-     * Los dos flujos caros exigen el complemento Completa, no cualquiera.
+     * Conversar exige el complemento Completa; resolver contra el ERP, no.
      *
-     * Una conversación de chat con IA cuesta trece veces un análisis de
-     * semáforo. Si el complemento Esencial los abriera, el margen del nivel
-     * barato se lo comería el flujo caro.
+     * Hasta el 18-sep-2026 los dos flujos eran de Completa, con este motivo:
+     * una conversación de chat con IA cuesta trece veces un análisis de
+     * semáforo, y abrirlos en el nivel barato se comía su margen.
+     *
+     * El argumento sigue en pie para `ai_chat` y por eso no se ha movido. Lo que
+     * cambió es `ai_menus`: resolver contra el ERP tiene un techo —una consulta,
+     * una respuesta, y si no puede se rinde— mientras que conversar no lo tiene.
+     * Y Esencial sin él eran el resumen y el semáforo, dos funciones que ve el
+     * equipo del cliente y ninguna que vea SU cliente.
+     *
+     * Si esto se rompe mirando el consumo real, lo que hay que mover es
+     * `ai_menus` de vuelta, no subir el precio del nivel.
      */
-    public function test_los_flujos_caros_exigen_el_complemento_completo(): void
+    public function test_conversar_exige_el_complemento_completo(): void
     {
         $sin = PlanDeLaEmpresa::de($this->empresa(['ia' => 'ninguno']));
         $esencial = PlanDeLaEmpresa::de($this->empresa(['ia' => 'esencial']));
@@ -99,9 +108,11 @@ class CandadoDeIaEnEjecucionTest extends TestCase
 
         foreach (['ai_menus', 'ai_chat'] as $flujo) {
             $this->assertFalse($sin->permiteFlujoIa($flujo), "Sin complemento no debería abrir {$flujo}.");
-            $this->assertFalse($esencial->permiteFlujoIa($flujo), "Esencial no debería abrir {$flujo}.");
             $this->assertTrue($completa->permiteFlujoIa($flujo), "Completa tendría que abrir {$flujo}.");
         }
+
+        $this->assertTrue($esencial->permiteFlujoIa('ai_menus'), 'Esencial resuelve contra el ERP.');
+        $this->assertFalse($esencial->permiteFlujoIa('ai_chat'), 'Pero no conversa: eso es lo que separa los dos niveles.');
     }
 
     /**

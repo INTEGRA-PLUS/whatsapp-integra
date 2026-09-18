@@ -124,7 +124,17 @@ return [
             // Las dos que ya funcionan, están probadas y se enseñan en la demo.
             'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
-            'flujos' => [],
+            // La que resuelve contra el ERP, desde el 18-sep-2026. Antes este
+            // nivel eran el resumen y el semáforo: dos funciones que ve el
+            // equipo del cliente y ninguna que vea SU cliente, y por 19 dólares
+            // eso no se sostiene.
+            //
+            // Se puede separar de `ai_chat` porque son dos interruptores y el
+            // orden está fijado: primero la que resuelve y, sólo si no se hace
+            // cargo, la que conversa. Sin `ai_chat` el turno vuelve a la
+            // respuesta automática o a un asesor, así que este nivel no deja a
+            // nadie charlando con el cliente.
+            'flujos' => ['ai_menus'],
         ],
 
         'completa' => [
@@ -132,7 +142,11 @@ return [
             'precio' => 49,
             'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
-            // Las caras: aquí es donde el crédito del plan empieza a importar.
+            // Lo que separa este nivel del anterior es `ai_chat`: que la IA
+            // además CONVERSE —los chats libres y las opciones de menú que
+            // contesta con la documentación de la empresa—. Resolver sustituye
+            // una consulta; conversar sustituye a una persona, y eso es lo que
+            // vale los treinta dólares de diferencia.
             'flujos' => ['ai_menus', 'ai_chat'],
         ],
 

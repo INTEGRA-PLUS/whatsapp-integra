@@ -292,9 +292,13 @@ class PlanesTest extends TestCase
         $this->assertTrue($plan->permiteExtension('conversation_summary'));
         $this->assertTrue($plan->permiteAjuste('sentiment_traffic_light', 'usar_ia'));
 
-        // Pero los flujos caros son del complemento Completa.
+        // Y desde el 18-sep-2026 también la que resuelve contra el ERP: sin
+        // ella, Esencial eran dos funciones que ve el equipo del cliente y
+        // ninguna que vea su cliente.
+        $this->assertTrue($plan->permiteFlujoIa('ai_menus'));
+
+        // Conversar sigue siendo del Completa, que es lo que separa los niveles.
         $this->assertFalse($plan->permiteFlujoIa('ai_chat'));
-        $this->assertFalse($plan->permiteFlujoIa('ai_menus'));
     }
 
     public function test_instalar_fuera_de_plan_responde_402(): void

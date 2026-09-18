@@ -742,9 +742,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                                     <span className="text-sm font-semibold text-foreground">{c.nombre}</span>
                                                     {c.slug !== 'ninguno' && (
                                                         <span className="text-xs text-muted-foreground">
-                                                            {c.contesta
-                                                                ? 'contesta a tus clientes'
-                                                                : 'te ayuda a atenderlos'}
+                                                            {c.que_hace}
                                                         </span>
                                                     )}
                                                 </span>

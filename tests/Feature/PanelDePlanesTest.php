@@ -160,12 +160,16 @@ class PanelDePlanesTest extends TestCase
             $this->assertSame(config("planes.ia.{$slug}.precio"), $complemento['precio']);
         }
 
-        // Y qué trae cada uno, que es lo que se explica delante del cliente.
-        // «Contesta» separa los dos niveles de pago y sale de tener flujos o no
-        // tenerlos, no de un texto escrito aparte: una función que cambie de
-        // nivel arrastra la frase consigo.
-        $this->assertFalse($complementos['esencial']['contesta'], 'La IA Esencial no habla con el cliente.');
-        $this->assertTrue($complementos['completa']['contesta'], 'La IA Completa sí contesta.');
+        // Y qué trae cada uno, que es lo que se explica delante del cliente. La
+        // frase sale de los flujos y no de un texto escrito aparte: una función
+        // que cambie de nivel se la arrastra consigo.
+        //
+        // Son tres estados y no dos desde que `ai_menus` está en Esencial:
+        // «tiene flujos» ya no significa «habla con el cliente», y resolver una
+        // consulta no es lo mismo que conversar.
+        $this->assertSame('les resuelve contra tu ERP', $complementos['esencial']['que_hace']);
+        $this->assertSame('conversa con tus clientes', $complementos['completa']['que_hace']);
+        $this->assertSame('te ayuda a atenderlos', $complementos['ninguno']['que_hace']);
         $this->assertNotEmpty($complementos['esencial']['extensiones'], 'La Esencial no dice qué trae.');
         $this->assertNotEmpty($complementos['completa']['flujos'], 'La Completa no dice qué añade.');
         $this->assertSame(1, $complementos['esencial']['empresas']);

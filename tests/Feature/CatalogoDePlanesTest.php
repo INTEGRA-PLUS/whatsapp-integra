@@ -129,14 +129,16 @@ class CatalogoDePlanesTest extends TestCase
     }
 
     /**
-     * Y IA Esencial no lo dice, porque no lo enciende.
+     * IA Esencial resuelve contra el ERP, pero NO promete conversar.
      *
      * Es la mitad que importa: prometer en el de 19 lo que sólo abre el de 49
-     * es una devolución.
+     * es una devolución. Y la frontera entre los dos niveles es exactamente
+     * ésa —resolver una consulta no es conversar— así que se comprueba por las
+     * palabras que ve el cliente y no por el nombre del candado.
      *
      * @test
      */
-    public function la_ia_esencial_no_promete_los_flujos(): void
+    public function la_ia_esencial_resuelve_pero_no_conversa(): void
     {
         $company = $this->empresa(['plan' => 'pro']);
 
@@ -144,9 +146,33 @@ class CatalogoDePlanesTest extends TestCase
             ->get('/planes')
             ->assertInertia(function ($page) {
                 $esencial = collect($page->toArray()['props']['ia'])->firstWhere('slug', 'esencial');
+                $frases = collect($esencial['flujos'])->implode(' | ');
 
-                $this->assertSame([], $esencial['flujos']);
+                $this->assertStringContainsString('ERP', $frases);
+                $this->assertStringNotContainsString('responde los chats', $frases);
+                $this->assertStringNotContainsString('documentación', $frases);
             });
+    }
+
+    /**
+     * Y el candado de conversar sigue siendo sólo del de 49.
+     *
+     * `permiteFlujoIa('ai_chat')` es lo que abre la IA de los chats y la opción
+     * de menú con IA. Que la frase no salga en Esencial no basta: lo que hay que
+     * proteger es que el plan tampoco lo encienda.
+     *
+     * @test
+     */
+    public function el_candado_de_conversar_sigue_siendo_del_de_49(): void
+    {
+        $esencial = \App\Support\PlanDeLaEmpresa::de($this->empresa(['plan' => 'pro', 'ia' => 'esencial']));
+        $completa = \App\Support\PlanDeLaEmpresa::de($this->empresa(['plan' => 'pro', 'ia' => 'completa']));
+
+        $this->assertTrue($esencial->permiteFlujoIa('ai_menus'), 'Esencial resuelve contra el ERP.');
+        $this->assertFalse($esencial->permiteFlujoIa('ai_chat'), 'Pero no conversa.');
+
+        $this->assertTrue($completa->permiteFlujoIa('ai_menus'));
+        $this->assertTrue($completa->permiteFlujoIa('ai_chat'));
     }
 
     private function empresa(array $extra = []): Company
