@@ -181,6 +181,7 @@ export const TEMPLATE_VARS = [
     { token: '{name}', is: 'El nombre que el cliente puso en su perfil de WhatsApp' },
     { token: '{phone}', is: 'Su número de teléfono' },
     { token: '{wa_id}', is: 'Su identificador de WhatsApp, con indicativo' },
+    { token: '{empresa}', is: 'El nombre de tu empresa, tal como está en tu cuenta' },
 ];
 
 /**

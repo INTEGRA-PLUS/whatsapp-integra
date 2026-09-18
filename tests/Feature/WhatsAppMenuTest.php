@@ -1102,4 +1102,47 @@ class WhatsAppMenuTest extends TestCase
 
         $this->assertStringNotContainsString('para volver a las opciones', collect($this->textsSent())->last());
     }
+
+    /**
+     * `{empresa}` se reemplaza por el nombre de la empresa.
+     *
+     * Sale del menú y no de la conversación: el menú ya sabe de qué empresa es,
+     * así que no hace falta saltar instancia → empresa en cada texto. Y así los
+     * textos siguen siendo suyos si la empresa se renombra.
+     *
+     * @test
+     */
+    public function la_variable_de_empresa_se_reemplaza(): void
+    {
+        $instance = $this->metaInstance();
+        WhatsAppMenu::where('company_id', $instance->company_id)->delete();
+
+        $menu = $this->menu($instance, ['Horarios'], [
+            'match_types' => ['welcome'],
+            'body_text' => '¡Hola {name}! Soy el asistente de {empresa}.',
+        ]);
+
+        $this->postSignedWebhook($this->inbound($instance, 'Hola', 'wamid.A'))->assertOk();
+
+        $enviado = collect($this->interactiveSent())->last();
+
+        $this->assertStringContainsString('Cmnet', $enviado, 'El nombre de la empresa entra en el texto.');
+        $this->assertStringNotContainsString('{empresa}', $enviado, 'Y no queda la variable a la vista.');
+    }
+
+    /** Lo que se mandó a Meta como cuerpo de un menú interactivo. */
+    private function interactiveSent(): array
+    {
+        $sent = [];
+
+        foreach (Http::recorded() as [$request]) {
+            $body = $request->data();
+
+            if (($body['type'] ?? null) === 'interactive') {
+                $sent[] = $body['interactive']['body']['text'] ?? '';
+            }
+        }
+
+        return $sent;
+    }
 }

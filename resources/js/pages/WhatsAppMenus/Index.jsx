@@ -56,13 +56,26 @@ const RADICADO_PRIORITIES = [
 ];
 
 
-/** Valores de ejemplo para la vista previa: el menú se escribe con variables. */
+/** El nombre de la empresa, que ya viaja en los props compartidos de Inertia. */
+function useEmpresa() {
+    return usePage().props.auth?.user?.company_name ?? '';
+}
+
+/**
+ * Valores de ejemplo para la vista previa: el menú se escribe con variables.
+ *
+ * Los del cliente son inventados —no hay un cliente delante mientras se
+ * escribe— pero el de la empresa es **el de verdad**: es el único que el admin
+ * puede comprobar de un vistazo, y verlo mal en la vista previa es la forma más
+ * rápida de descubrir que su cuenta está a nombre de otra cosa.
+ */
 const SAMPLE = { name: 'Katherine', phone: '3007852081', wa_id: '573007852081' };
 
-const fillVars = text => (text ?? '')
+const fillVars = (text, empresa = '') => (text ?? '')
     .split('{name}').join(SAMPLE.name)
     .split('{phone}').join(SAMPLE.phone)
-    .split('{wa_id}').join(SAMPLE.wa_id);
+    .split('{wa_id}').join(SAMPLE.wa_id)
+    .split('{empresa}').join(empresa || 'tu empresa');
 
 /** Mismo recorte que hace el backend antes de mandar el menú a Meta. */
 /**
@@ -1050,7 +1063,7 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
                         />
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                        Puedes usar {'{name}'}, {'{phone}'} y {'{wa_id}'}. {form.body_text.length}/{limits.max_body}
+                        Puedes usar {'{name}'}, {'{phone}'}, {'{wa_id}'} y {'{empresa}'}. {form.body_text.length}/{limits.max_body}
                     </p>
                     {errors?.body_text && <p className="text-xs text-destructive">{errors.body_text}</p>}
                 </div>
@@ -1540,24 +1553,25 @@ function OptionExplainer({ option, actionMeta, submenuChoices = [] }) {
         : null;
 
     const written = (option.reply_text ?? '').trim();
+    const empresa = useEmpresa();
 
     // El mensaje que verá el cliente: el del admin cuando lo escribe él, y si no
     // el que arma el sistema.
     let bubble = null;
 
     if (type === 'reply_text' || type === 'reply_image') {
-        bubble = written !== '' ? fillVars(written) : null;
+        bubble = written !== '' ? fillVars(written, empresa) : null;
     } else if (type === 'handoff') {
-        bubble = written !== '' ? fillVars(written) : null;
+        bubble = written !== '' ? fillVars(written, empresa) : null;
     } else if (type === 'estado_servicio') {
         bubble = SEGMENT_SAMPLES[option.config?.segmento || 'resumen'] ?? null;
     } else {
         bubble = ACTION_SAMPLES[type] ?? null;
         // Las acciones de Integra admiten un texto extra al final.
-        if (bubble && written !== '') bubble += '\n\n' + fillVars(written);
+        if (bubble && written !== '') bubble += '\n\n' + fillVars(written, empresa);
     }
 
-    const does = describeOption(option, actionMeta, target);
+    const does = describeOption(option, actionMeta, target, empresa);
     const warns = does.startsWith('⚠️');
 
     return (
@@ -1813,8 +1827,12 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
 
     // Lo que va mal en esta opción, con las mismas palabras que la revisión de
     // arriba: si el aviso te trajo hasta aquí, tienes que reconocerlo.
-    const problem = describeOption(option, actionMeta,
-        submenuChoices.find(m => String(m.id) === String(option.target_menu_id)));
+    const problem = describeOption(
+        option,
+        actionMeta,
+        submenuChoices.find(m => String(m.id) === String(option.target_menu_id)),
+        useEmpresa()
+    );
     const broken = problem.startsWith('⚠️');
 
     // Cuando se entra desde un aviso, el formulario baja hasta la opción y la
@@ -2491,9 +2509,10 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
     const isList = all.length > limits.max_buttons;
     const rows = all.filter(o => (o.title ?? '').trim() !== '');
 
-    const header = fillVars(form.header_text).trim();
-    const body = fillVars(form.body_text).trim();
-    const footer = fillVars(form.footer_text).trim();
+    const empresa = useEmpresa();
+    const header = fillVars(form.header_text, empresa).trim();
+    const body = fillVars(form.body_text, empresa).trim();
+    const footer = fillVars(form.footer_text, empresa).trim();
 
     return (
         <div className="lg:sticky lg:top-4 space-y-2">
@@ -2591,14 +2610,14 @@ function MenuPreview({ form, limits, actionMeta = {}, menus = [] }) {
 }
 
 /** Qué le pasa al cliente al tocar esta opción, en una frase. */
-function describeOption(option, actionMeta, target) {
+function describeOption(option, actionMeta, target, empresa = '') {
     const label = actionMeta[option.action_type]?.label ?? option.action_type;
     const text = (option.reply_text ?? '').trim();
 
     switch (option.action_type) {
         case 'reply_text':
             return text !== ''
-                ? 'Recibe este mensaje: «' + cut(fillVars(text), 120) + '»'
+                ? 'Recibe este mensaje: «' + cut(fillVars(text, empresa), 120) + '»'
                 : '⚠️ Responde con un mensaje, pero está vacío: no recibiría nada.';
         case 'reply_image':
             return option.config?.image_url

@@ -262,6 +262,15 @@ class WhatsAppMenu extends Model
             '{name}' => $conversation->name ?? '',
             '{phone}' => $conversation->phone_number ?? '',
             '{wa_id}' => $conversation->wa_id ?? '',
+            // El nombre sale del menú y no de la conversación: el menú ya sabe
+            // de qué empresa es, y así no hace falta saltar instancia → empresa
+            // en cada texto que se manda.
+            //
+            // Sirve para escribir los textos una vez y que sigan siendo suyos
+            // si la empresa se renombra — y para las plantillas que sembramos,
+            // que hasta ahora decían «tu asistente virtual» sin poder nombrar
+            // a nadie.
+            '{empresa}' => $this->company?->name ?? '',
         ]);
     }
 }
