@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Contact;
 use App\Models\User;
+use App\Support\Suscripcion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -210,5 +211,84 @@ class MiPlanTest extends TestCase
                 $this->assertTrue($firma['instalada']);
                 $this->assertTrue($firma['encendida']);
             });
+    }
+
+    /**
+     * El cliente de Integra ve desde y hasta cuándo lo tiene cubierto.
+     *
+     * Esa fecha sólo vivía en el panel maestro: el único que sabía cuándo
+     * vencía la suscripción de un cliente éramos nosotros. Y va con el **desde**
+     * porque una fecha suelta no se puede cotejar con ninguna factura, que es
+     * justo lo que el cliente hace con este dato.
+     *
+     * @test
+     */
+    public function el_cliente_de_integra_ve_el_periodo_que_tiene_cubierto(): void
+    {
+        $company = $this->empresa(['plan' => 'pro', 'viene_de_integra' => true]);
+        $cobro = Suscripcion::emitir($company);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page
+                ->where('periodo.desde', $cobro->periodo_desde->toDateString())
+                ->where('periodo.hasta', $cobro->periodo_hasta->toDateString())
+                ->where('periodo.cubierto_por_integra', true)
+                ->where('periodo.vigente', true)
+                // Nace saldado: no hay nada que pagar y no debe salir el aviso.
+                ->where('por_pagar', null)
+            );
+    }
+
+    /**
+     * Y el que no es de Integra ve además lo que tiene por pagar.
+     *
+     * Se puede estar cubierto hasta el 15 y tener ya emitido el siguiente: son
+     * dos cosas a la vez y por eso viajan en dos props.
+     *
+     * @test
+     */
+    public function el_cliente_directo_ve_su_cobro_pendiente(): void
+    {
+        $company = $this->empresa(['plan' => 'pro', 'cobro' => 'mensual']);
+        $cobro = Suscripcion::emitir($company);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page
+                ->where('por_pagar.desde', $cobro->periodo_desde->toDateString())
+                ->where('por_pagar.hasta', $cobro->periodo_hasta->toDateString())
+                ->where('por_pagar.importe_usd', (int) $cobro->importe_usd)
+            );
+    }
+
+    /**
+     * Sin nada emitido no se pinta un hueco.
+     *
+     * Es el estado de toda la base hasta la primera emisión. Un «sin periodo»
+     * en pantalla alarma sin informar.
+     *
+     * @test
+     */
+    public function sin_cobros_no_se_inventa_un_periodo(): void
+    {
+        $company = $this->empresa(['plan' => 'pro']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page->where('periodo', null)->where('por_pagar', null));
+    }
+
+    /** Y el periodo de otra empresa no se cuela en esta pantalla. */
+    public function test_no_ve_el_periodo_de_otra_empresa(): void
+    {
+        $otra = $this->empresa(['plan' => 'pro', 'cobro' => 'mensual']);
+        Suscripcion::emitir($otra);
+
+        $company = $this->empresa(['plan' => 'pro']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page->where('periodo', null)->where('por_pagar', null));
     }
 }

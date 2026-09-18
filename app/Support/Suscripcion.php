@@ -125,6 +125,18 @@ class Suscripcion
      * retroactivo por los días que estuvo vencido es una discusión que no
      * compensa.
      *
+     * ## Y el cliente de Integra acaba el día 15
+     *
+     * Porque su CRM lo paga su ERP, y el ERP le factura el 15. Si el periodo del
+     * CRM acabara el 17 —que es lo que salía de contar un mes desde el día en que
+     * se emitió el primero— el cliente tendría dos fechas de corte para el mismo
+     * servicio y ninguna de las dos explicaría a la otra.
+     *
+     * Se alinea al 15 **más cercano** al final natural, no al siguiente: así el
+     * primer periodo se estira o se encoge como mucho quince días y a partir de
+     * ahí todos van del 16 al 15, que es un mes exacto. Irse siempre al 15
+     * siguiente regalaría hasta un mes entero de complemento de IA al alinear.
+     *
      * @return array{0: Carbon, 1: Carbon}
      */
     public static function proximoPeriodo(Company $company): array
@@ -135,6 +147,38 @@ class Suscripcion
             ? $company->suscripcion_hasta->copy()->addDay()
             : now()->startOfDay();
 
-        return [$desde, $desde->copy()->addMonths($meses)->subDay()];
+        $hasta = $desde->copy()->addMonths($meses)->subDay();
+
+        if (PlanDeLaEmpresa::de($company)->incluidoEnIntegra()) {
+            $hasta = self::alDiaDeCorte($hasta, $desde);
+        }
+
+        return [$desde, $hasta];
+    }
+
+    /**
+     * El día de corte más cercano al final natural del periodo.
+     *
+     * Nunca devuelve una fecha que deje el periodo vacío: si el corte cercano
+     * cae en el arranque o antes, se va al siguiente. Pasa con los periodos que
+     * empiezan justo en el día de corte.
+     */
+    private static function alDiaDeCorte(Carbon $fin, Carbon $desde): Carbon
+    {
+        $dia = (int) config('planes.dia_de_corte_integra', 15);
+
+        $antes = $fin->copy()->day($dia);
+
+        if ($antes->greaterThan($fin)) {
+            $antes = $antes->subMonthNoOverflow()->day($dia);
+        }
+
+        $despues = $antes->copy()->addMonthNoOverflow()->day($dia);
+
+        // En valor absoluto: `diffInDays` viene con signo, y sin el `abs` el
+        // corte anterior siempre perdía la comparación contra el posterior.
+        $elegido = abs($antes->diffInDays($fin)) <= abs($despues->diffInDays($fin)) ? $antes : $despues;
+
+        return $elegido->lessThanOrEqualTo($desde) ? $despues : $elegido;
     }
 }

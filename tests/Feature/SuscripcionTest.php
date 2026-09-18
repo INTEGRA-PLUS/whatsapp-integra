@@ -357,4 +357,88 @@ class SuscripcionTest extends TestCase
             'active' => true,
         ], $extra));
     }
+
+    /**
+     * Al cliente de Integra el periodo le acaba el día 15.
+     *
+     * Su CRM lo paga su ERP, y el ERP le factura el 15. Si aquí acabara el 17
+     * —un mes contado desde el día en que se emitió el primero— tendría dos
+     * fechas de corte del mismo servicio y ninguna explicaría a la otra.
+     *
+     * @test
+     */
+    public function el_cliente_de_integra_corta_el_dia_15(): void
+    {
+        $this->travelTo('2026-09-18');
+
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertSame('2026-10-15', $cobro->periodo_hasta->toDateString());
+    }
+
+    /**
+     * Y a partir de ahí va del 16 al 15, mes exacto.
+     *
+     * El primer periodo se encoge o se estira para alinearse —al corte más
+     * cercano, nunca más de quince días— y los siguientes ya caen solos.
+     *
+     * @test
+     */
+    public function despues_de_alinearse_va_del_16_al_15(): void
+    {
+        $this->travelTo('2026-09-18');
+
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+
+        Suscripcion::emitir($company);
+        $segundo = Suscripcion::emitir($company->refresh());
+
+        $this->assertSame('2026-10-16', $segundo->periodo_desde->toDateString());
+        $this->assertSame('2026-11-15', $segundo->periodo_hasta->toDateString());
+    }
+
+    /**
+     * Alinearse nunca puede dejar un periodo vacío.
+     *
+     * Pasa con el que arranca justo en el día de corte: el 15 «más cercano» al
+     * final natural cae antes del principio, y sin la guarda el cobro cubriría
+     * días negativos.
+     *
+     * @test
+     */
+    public function alinearse_no_deja_un_periodo_al_reves(): void
+    {
+        $this->travelTo('2026-09-15');
+
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertTrue(
+            $cobro->periodo_hasta->greaterThan($cobro->periodo_desde),
+            'El periodo tiene que acabar después de empezar.'
+        );
+        $this->assertSame('2026-10-15', $cobro->periodo_hasta->toDateString());
+    }
+
+    /**
+     * Al cliente directo no se le mueve la fecha.
+     *
+     * La suya arranca cuando paga, y empujarla al 15 sería regalarle o quitarle
+     * días que sí se le facturan.
+     *
+     * @test
+     */
+    public function al_cliente_directo_no_se_le_toca_la_fecha(): void
+    {
+        $this->travelTo('2026-09-18');
+
+        $company = $this->empresa(['plan' => 'pro', 'ia' => 'ninguno', 'cobro' => 'mensual']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertSame('2026-10-17', $cobro->periodo_hasta->toDateString());
+    }
 }

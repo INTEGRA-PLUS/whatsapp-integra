@@ -4,7 +4,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
     Check, Lock, Sparkles, Users, Gift, ArrowRight, MessageSquare, Phone,
-    TrendingUp, ShieldCheck,
+    TrendingUp, ShieldCheck, CalendarDays, AlertCircle,
 } from 'lucide-react';
 import { iconFor } from '@/pages/Extensions/icons';
 
@@ -28,7 +28,7 @@ import { iconFor } from '@/pages/Extensions/icons';
  * antes vivía al final de la lista de extensiones y quien ya las tenía todas
  * —justo el cliente que puede crecer— no veía ninguna forma de pedir nada.
  */
-export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [] }) {
+export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [], periodo = null, por_pagar = null }) {
     const incluidas = extensiones.filter(e => e.en_plan);
     const bloqueadas = extensiones.filter(e => !e.en_plan);
     const sugerido = planes.find(p => p.es_el_sugerido);
@@ -96,6 +96,8 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             )}
                         </div>
                     </div>
+
+                    <Cobertura plan={plan} periodo={periodo} porPagar={por_pagar} />
 
                     {/* Los tres medidores. Antes eran dos cifras sueltas sin
                         barra: «2.800 de 3.000» obliga a dividir de cabeza para
@@ -319,6 +321,81 @@ function listar(cosas = []) {
     if (cosas.length <= 1) return cosas[0] ?? '';
 
     return `${cosas.slice(0, -1).join(', ')} y ${cosas[cosas.length - 1]}`;
+}
+
+/** «15 de octubre de 2026». Al mediodía, para que la zona horaria no reste un día. */
+function fecha(iso) {
+    if (!iso) return '';
+
+    return new Date(`${iso}T12:00`).toLocaleDateString('es-CO', {
+        day: 'numeric', month: 'long', year: 'numeric',
+    });
+}
+
+/**
+ * Hasta cuándo lo tiene cubierto.
+ *
+ * Con el **desde** y no sólo el hasta: una fecha suelta no se puede cotejar con
+ * ninguna factura, y es justo lo que el cliente hace con este dato.
+ *
+ * Al de Integra se le dice por qué no paga aquí. Es la duda que llega por
+ * WhatsApp —«¿esto me lo están cobrando aparte?»— y contestarla en la pantalla
+ * ahorra la conversación entera.
+ *
+ * Si todavía no hay periodo emitido cae a `suscripcion_hasta`, y si tampoco la
+ * hay no se pinta nada: un hueco que dice «sin periodo» alarma sin informar.
+ */
+function Cobertura({ plan, periodo, porPagar }) {
+    const integra = periodo ? periodo.cubierto_por_integra : plan.incluido_en_integra;
+    const hasta = periodo?.hasta ?? plan.suscripcion_hasta;
+
+    if (!hasta && !porPagar) return null;
+
+    const vencido = periodo ? !periodo.vigente : plan.suscripcion_vigente === false;
+    const dias = periodo?.dias ?? plan.dias_para_renovar;
+
+    return (
+        <div className="border-b px-6 py-4">
+            <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+                <CalendarDays className={clsx('mt-0.5 size-4 shrink-0', vencido ? 'text-destructive' : 'text-muted-foreground')} />
+
+                <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                        {integra ? 'Tu paquete de Integra cubre este servicio' : 'Tu plan está activo'}
+                    </p>
+
+                    {hasta && (
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                            {periodo?.desde
+                                ? <>Del <strong className="font-medium text-foreground">{fecha(periodo.desde)}</strong> al <strong className="font-medium text-foreground">{fecha(hasta)}</strong></>
+                                : <>Hasta el <strong className="font-medium text-foreground">{fecha(hasta)}</strong></>}
+                            {typeof dias === 'number' && (
+                                vencido
+                                    ? <span className="text-destructive"> · venció hace {Math.abs(dias)} {Math.abs(dias) === 1 ? 'día' : 'días'}</span>
+                                    : <span> · quedan {dias} {dias === 1 ? 'día' : 'días'}</span>
+                            )}
+                        </p>
+                    )}
+
+                    {integra && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            No se te factura aparte: va dentro de lo que ya pagas por Integra.
+                        </p>
+                    )}
+
+                    {porPagar && (
+                        <p className="mt-2 flex items-start gap-1.5 text-xs text-warning">
+                            <AlertCircle className="mt-px size-3.5 shrink-0" />
+                            <span>
+                                Tienes un cobro emitido y pendiente de pago por el periodo
+                                {' '}del {fecha(porPagar.desde)} al {fecha(porPagar.hasta)}.
+                            </span>
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function Insignia({ icono: Icono, tono, children }) {

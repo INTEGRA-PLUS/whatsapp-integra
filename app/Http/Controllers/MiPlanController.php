@@ -6,6 +6,7 @@ use App\Extensions\Extension;
 use App\Extensions\ExtensionRegistry;
 use App\Models\Company;
 use App\Models\CompanyExtension;
+use App\Models\SuscripcionCobro;
 use App\Support\ContadorDeIa;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
@@ -36,6 +37,18 @@ use Inertia\Inertia;
  * Tampoco sale el **coste** de la IA que consume. Es nuestro margen, no su
  * asunto, y enseñárselo invita a una conversación que no lleva a ningún sitio.
  * Lo que ve es cuánto le queda de lo suyo.
+ *
+ * ## Hasta cuándo lo tiene cubierto, sí sale
+ *
+ * Aunque no salga el precio. Son dos cosas distintas: cuánto cuesta es una
+ * negociación, y hasta cuándo está cubierto es un hecho que el cliente necesita
+ * saber sin tener que escribirle a nadie. Hasta ahora esa fecha sólo existía en
+ * el panel maestro, así que el único que sabía cuándo vencía la suscripción de
+ * un cliente éramos nosotros.
+ *
+ * Se lee del cobro, no de `suscripcion_hasta`: la fecha suelta dice cuándo
+ * acaba pero no desde cuándo, y «cubierto hasta el 15» sin el desde no se puede
+ * cotejar con ninguna factura.
  */
 class MiPlanController extends Controller
 {
@@ -76,6 +89,10 @@ class MiPlanController extends Controller
 
         return Inertia::render('MiPlan/Index', [
             'plan' => $plan->resumen(),
+
+            // Desde y hasta cuándo está cubierto, y qué le queda por pagar.
+            'periodo' => $this->periodoCubierto($company),
+            'por_pagar' => $this->porPagar($company),
 
             // Lo que tiene por el simple hecho de ser cliente. Va primero en la
             // pantalla: sin esto, el plan Esencial se leía como «una función»
@@ -130,6 +147,72 @@ class MiPlanController extends Controller
                 ])
                 ->values(),
         ]);
+    }
+
+    /**
+     * El periodo que tiene cubierto ahora mismo.
+     *
+     * Vale igual el pagado que el cubierto por Integra: los dos significan que
+     * el servicio está prestado y al cliente le da igual por qué puerta se pagó.
+     * Lo que cambia es cómo se le cuenta, y eso lo decide la pantalla.
+     *
+     * `null` mientras no se le haya emitido nada — que es el caso de todos hasta
+     * la primera emisión. Enseñar un hueco vacío con «sin periodo» alarmaría sin
+     * decir nada: la fila aparece cuando existe.
+     *
+     * @return array{desde: string, hasta: string, cubierto_por_integra: bool, vigente: bool, dias: int}|null
+     */
+    private function periodoCubierto(Company $company): ?array
+    {
+        $cobro = SuscripcionCobro::where('company_id', $company->id)
+            ->whereIn('estado', [SuscripcionCobro::PAGADO, SuscripcionCobro::CUBIERTO])
+            ->orderByDesc('periodo_hasta')
+            ->first();
+
+        if (! $cobro || ! $cobro->periodo_desde || ! $cobro->periodo_hasta) {
+            return null;
+        }
+
+        $fin = $cobro->periodo_hasta->endOfDay();
+
+        return [
+            'desde' => $cobro->periodo_desde->toDateString(),
+            'hasta' => $cobro->periodo_hasta->toDateString(),
+            'cubierto_por_integra' => $cobro->estaCubierto(),
+            'vigente' => $fin->isFuture(),
+            // Negativo si ya venció: la pantalla dice «hace X días» con el
+            // mismo número, sin necesitar otro campo.
+            'dias' => (int) now()->startOfDay()->diffInDays($fin, false),
+        ];
+    }
+
+    /**
+     * El cobro emitido y sin pagar, si lo hay.
+     *
+     * Sale aparte del periodo cubierto porque son dos cosas a la vez: se puede
+     * estar cubierto hasta el 15 y tener ya emitido el siguiente. Y al cliente
+     * de Integra no le sale nunca —lo suyo nace saldado— que es justo la
+     * diferencia que la pantalla tiene que dejar clara.
+     *
+     * @return array{desde: string, hasta: string, importe_usd: int}|null
+     */
+    private function porPagar(Company $company): ?array
+    {
+        $cobro = SuscripcionCobro::where('company_id', $company->id)
+            ->where('estado', SuscripcionCobro::PENDIENTE)
+            ->where('importe_usd', '>', 0)
+            ->orderByDesc('periodo_hasta')
+            ->first();
+
+        if (! $cobro || ! $cobro->periodo_desde || ! $cobro->periodo_hasta) {
+            return null;
+        }
+
+        return [
+            'desde' => $cobro->periodo_desde->toDateString(),
+            'hasta' => $cobro->periodo_hasta->toDateString(),
+            'importe_usd' => (int) $cobro->importe_usd,
+        ];
     }
 
     /**

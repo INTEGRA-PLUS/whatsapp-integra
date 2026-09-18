@@ -211,6 +211,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | El día de corte del cliente de Integra
+    |--------------------------------------------------------------------------
+    |
+    | Al cliente que viene de Integra el CRM se lo cobra su ERP, y el ERP le
+    | factura el 15. Su periodo aquí acaba el mismo día para que no tenga dos
+    | fechas de corte del mismo servicio: del 16 al 15, mes a mes.
+    |
+    | Al cliente directo no se le toca la fecha: la suya arranca cuando paga, y
+    | moverla sería regalarle o quitarle días que sí se le facturan.
+    |
+    */
+
+    'dia_de_corte_integra' => 15,
+
+    /*
+    |--------------------------------------------------------------------------
     | Tasa de cambio para facturar
     |--------------------------------------------------------------------------
     |
