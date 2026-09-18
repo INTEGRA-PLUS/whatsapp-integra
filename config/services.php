@@ -148,6 +148,38 @@ return [
         // deja vacía el envío sigue saliendo sin cabecera, para no tumbar a
         // quien todavía tenga el flujo sin autenticar.
         'api_key' => env('AI_MENUS_API_KEY'),
+
+        /*
+         * Dónde vive el modelo, **para el flujo de n8n**.
+         *
+         * 18-sep-2026. El flujo lo exige —su nodo de validación empieza con
+         * `if (!String(ollama.base_url ?? '').trim()) problemas.push('falta
+         * ollama.base_url')`— y nosotros no lo mandábamos. Nunca. Así que la IA
+         * de menús de TODAS las empresas contestaba «no me hago cargo» y el
+         * mensaje caía al chat IA, que conversa pero no ejecuta nada.
+         *
+         * Se ve en el log como
+         * `ℹ️ La IA no se hizo cargo del mensaje {"motivo":["falta ollama.base_url"]}`
+         * y el efecto para el cliente era una promesa vacía: la IA de chats le
+         * decía «tu reporte ya fue escalado al equipo técnico» y no había
+         * radicado en ninguna parte, porque quien sabe radicar es la otra.
+         *
+         * La credencial no viaja: vive en n8n. Aquí sólo va la dirección, y el
+         * resto son los tres números con los que el flujo llama al modelo.
+         */
+        'ollama' => [
+            'base_url' => env('AI_MENUS_OLLAMA_URL', 'https://ollama.com'),
+            // Cuánto mantiene el modelo cargado entre llamadas. Con el modelo
+            // en la nube da igual; con uno local, volver a cargarlo en cada
+            // mensaje son segundos por mensaje.
+            'keep_alive' => env('AI_MENUS_OLLAMA_KEEP_ALIVE', '10m'),
+            // La ventana de contexto. Sube con el historial que se le manda.
+            'num_ctx' => (int) env('AI_MENUS_OLLAMA_NUM_CTX', 8192),
+            // En milisegundos, que es como lo lee el flujo. Por debajo del
+            // `timeout` de aquí abajo: n8n tiene que rendirse antes que
+            // nosotros, o cortamos una respuesta que venía en camino.
+            'timeout_ms' => (int) env('AI_MENUS_OLLAMA_TIMEOUT_MS', 90000),
+        ],
         // Margen sobre el timeout que la empresa le da a Ollama: si n8n espera
         // 120 s por el modelo, cortar a los 30 s aquí tiraría respuestas buenas.
         //

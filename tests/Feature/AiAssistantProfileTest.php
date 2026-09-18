@@ -274,6 +274,44 @@ class AiAssistantProfileTest extends TestCase
         });
     }
 
+    /**
+     * El flujo de menús recibe DÓNDE está el modelo.
+     *
+     * Sin esto no funcionó nunca, en ninguna empresa. Su nodo de validación
+     * empieza con `if (!String(ollama.base_url ?? '').trim()) problemas.push(
+     * 'falta ollama.base_url')`, así que devolvía «no me hago cargo» a todo y
+     * el mensaje caía al chat IA — que conversa, pero no radica ni cobra.
+     *
+     * El efecto para el cliente era una promesa vacía: «tu reporte ya fue
+     * escalado al equipo técnico» sin radicado en ninguna parte, porque quien
+     * sabe radicar es la otra IA (18-sep-2026, Megastore).
+     *
+     * @test
+     */
+    public function el_flujo_de_menus_recibe_donde_esta_el_modelo(): void
+    {
+        config([
+            'services.ai_menus.webhook_url' => 'https://n8n.example.test/webhook/whatsapp-menu-ia',
+            'services.ai_menus.ollama.base_url' => 'https://ollama.test',
+        ]);
+        CompanyIntegration::where('company_id', $this->company->id)
+            ->where('key', CompanyIntegration::KEY_AI_MENUS)
+            ->update(['enabled' => true]);
+
+        Http::fake(['n8n.example.test/*' => Http::response(['handled' => true, 'text' => 'Listo'])]);
+
+        app(WhatsAppAiClient::class)->ask($this->instance, $this->conversation, 'no me sirve el internet');
+
+        Http::assertSent(function ($request) {
+            $ollama = $request->data()['ollama'] ?? [];
+
+            return ($ollama['base_url'] ?? null) === 'https://ollama.test'
+                // Los tres de ajuste van con él: el flujo los lee para llamar
+                // al modelo, y sin ellos usa los suyos sin avisar.
+                && isset($ollama['keep_alive'], $ollama['num_ctx'], $ollama['timeout_ms']);
+        });
+    }
+
     // ------------------------------------------------------------------
     // El panel
     // ------------------------------------------------------------------

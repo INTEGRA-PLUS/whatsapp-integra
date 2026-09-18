@@ -310,6 +310,12 @@ class WhatsAppAiClient
             // lo siguen diciendo los permisos de arriba; esto sólo le dice al
             // prompt que puede confirmar lo que una herramienta le devuelva.
             'asistente' => AiAssistantProfile::payload($instance->company_id, true),
+            // Dónde vive el modelo. El flujo lo EXIGE —sin esto responde
+            // «falta ollama.base_url» y no se hace cargo de nada— y no se
+            // mandaba, así que la IA de menús no funcionó nunca en ninguna
+            // empresa: cada mensaje caía al chat IA, que conversa pero no
+            // ejecuta. De ahí las promesas vacías de «ya escalé tu reporte».
+            'ollama' => config('services.ai_menus.ollama'),
             // El flujo consulta Integra por su cuenta con estas credenciales.
             // Si la empresa no lo tiene conectado se manda vacío y el flujo
             // deriva a un asesor, que es lo mismo que hace el menú.

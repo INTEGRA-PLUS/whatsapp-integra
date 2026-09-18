@@ -349,7 +349,25 @@ class AiMenusIntegrationTest extends TestCase
     // Lo que se le manda al flujo
     // ------------------------------------------------------------------
 
-    public function test_el_payload_lleva_el_contexto_pero_ningun_ajuste_tecnico(): void
+    /**
+     * Qué lleva el payload, y por qué el bloque `ollama` SÍ va.
+     *
+     * Aquí ponía lo contrario —«el modelo y el servidor de Ollama son de la
+     * plataforma y viven en el flujo: mandarlos desde aquí sería mantener los
+     * mismos valores en dos sitios»— y esa creencia dejó la IA de menús muerta
+     * en todas las empresas sin que nadie se enterara.
+     *
+     * No viven en el flujo: el flujo **construye la URL con lo que le mandamos**
+     * (`{{ $json.ollama.base_url }}/api/chat`, en los nodos «Ollama ·
+     * Planificador» y «Ollama · Redactor») y su nodo de guardas rechaza el
+     * mensaje entero si no llega. Comprobado leyendo el flujo el 18-sep-2026,
+     * después de que un cliente de Megastore recibiera «tu reporte ya fue
+     * escalado al equipo técnico» sin que existiera ningún radicado.
+     *
+     * Lo que sigue sin ir es el NOMBRE del modelo: para eso el flujo tiene su
+     * propio `ia.modelo || 'llama3.1:8b'`.
+     */
+    public function test_el_payload_lleva_el_contexto_y_donde_vive_el_modelo(): void
     {
         Http::fake(['n8n.example.test/*' => Http::response(['handled' => false])]);
         $this->turnAiOn();
@@ -360,10 +378,12 @@ class AiMenusIntegrationTest extends TestCase
             $b = $request->data();
 
             return $b['ia']['habilitada'] === true
-                // El modelo y el servidor de Ollama son de la plataforma y viven
-                // en el flujo: mandarlos desde aquí sería mantener los mismos
-                // valores en dos sitios. Los permisos NO, esos son de la empresa.
-                && ! array_key_exists('ollama', $b)
+                // Dónde vive el modelo SÍ va: el flujo arma la URL con esto y
+                // sin ello devuelve «falta ollama.base_url» a todo.
+                && filled($b['ollama']['base_url'] ?? null)
+                // El nombre del modelo NO: para eso el flujo tiene su propio
+                // valor por defecto, y mantener el mismo nombre en dos sitios
+                // es cómo acaban diciendo cosas distintas.
                 && ! array_key_exists('modelo', $b['ia'])
                 && $b['mensaje'] === 'cuanto debo'
                 && $b['conversacion']['id'] === $this->conversation->id
