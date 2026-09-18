@@ -305,6 +305,36 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Qué enciende cada flujo de IA, dicho para el cliente
+    |--------------------------------------------------------------------------
+    |
+    | `ai_chat` y `ai_menus` son los nombres de los candados; al cliente no le
+    | dicen nada. Y un candado puede encender **varias cosas**: `ai_chat` es a la
+    | vez «la IA responde los chats» y «una opción del menú la contesta la IA»,
+    | que es lo que de verdad se vende y no aparecía en ninguna parte.
+    |
+    | Va aquí y no en los controladores porque lo pintan dos pantallas —«Mi
+    | plan» y «Planes»— y tenerlo escrito dos veces es tenerlo desactualizado en
+    | una de ellas.
+    |
+    | Lo que se promete no puede pasarse de lo que abre el candado: la lista se
+    | deriva de los flujos del complemento, así que una frase de más aquí es una
+    | promesa que el plan no cumple.
+    |
+    */
+
+    'flujos' => [
+        'ai_chat' => [
+            'La IA responde los chats',
+            'Opciones del menú que contesta la IA con tu documentación',
+        ],
+        'ai_menus' => [
+            'La IA consulta tu ERP y resuelve: factura, estado de cuenta, radicados',
+        ],
+    ],
+
     'cobros' => ['integra', 'cortesia', 'prueba', 'activo', 'suspendido'],
 
 ];

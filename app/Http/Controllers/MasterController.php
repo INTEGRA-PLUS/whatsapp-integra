@@ -23,17 +23,6 @@ use Spatie\Permission\Models\Role;
 
 class MasterController extends Controller
 {
-    /**
-     * Los flujos de IA, dichos como se venden.
-     *
-     * En la configuración son `ai_chat` y `ai_menus` porque así se llaman los
-     * candados; en una pantalla de precios eso no significa nada.
-     */
-    private const NOMBRE_DE_FLUJO = [
-        'ai_chat' => 'Responde los chats por escrito',
-        'ai_menus' => 'Resuelve contra el ERP: factura, pago, falla',
-    ];
-
     public function index(Request $request)
     {
         $this->authorizeMaster();
@@ -384,8 +373,11 @@ class MasterController extends Controller
                             ->map(fn (string $ext) => app(ExtensionRegistry::class)->find($ext)?->name())
                             ->filter()
                             ->values(),
+                        // Del mismo sitio que las pantallas del cliente: era
+                        // la tercera copia de la misma lista, y tres copias son
+                        // dos sitios donde queda vieja.
                         'flujos' => collect($nivel['flujos'] ?? [])
-                            ->map(fn (string $f) => self::NOMBRE_DE_FLUJO[$f] ?? $f)
+                            ->flatMap(fn (string $f) => (array) config("planes.flujos.{$f}", [$f]))
                             ->values(),
 
                         // La diferencia en una palabra, y sale de los datos y no

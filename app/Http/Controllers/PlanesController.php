@@ -44,12 +44,6 @@ use Inertia\Inertia;
  */
 class PlanesController extends Controller
 {
-    /** Los flujos de IA, dichos como los entiende el cliente. */
-    private const NOMBRE_DE_FLUJO = [
-        'ai_chat' => 'La IA responde los chats',
-        'ai_menus' => 'La IA resuelve contra tu ERP',
-    ];
-
     public function __construct(private ExtensionRegistry $registry) {}
 
     public function index(Request $request)
@@ -92,8 +86,11 @@ class PlanesController extends Controller
                     'extensiones' => collect($p['extensiones'] ?? [])
                         ->map(fn (string $s) => $this->registry->find($s)?->name())
                         ->filter()->values(),
+                    // Un candado puede encender varias cosas: `ai_chat` es
+                    // a la vez la IA de los chats y la opción de menú que
+                    // contesta con tu documentación.
                     'flujos' => collect($p['flujos'] ?? [])
-                        ->map(fn (string $f) => self::NOMBRE_DE_FLUJO[$f] ?? $f)
+                        ->flatMap(fn (string $f) => (array) config("planes.flujos.{$f}", [$f]))
                         ->values(),
                 ])
                 ->values(),

@@ -100,6 +100,55 @@ class CatalogoDePlanesTest extends TestCase
             ->assertSessionHasErrors('crm');
     }
 
+    /**
+     * IA Completa dice que el menú lo puede contestar la IA.
+     *
+     * Es lo que se vende y no salía en ninguna parte: la tarjeta decía «la IA
+     * responde los chats» y «resuelve contra tu ERP», y quien leía eso no sabía
+     * que una opción de su menú la puede contestar la IA con su documentación.
+     *
+     * La lista se deriva de los flujos del complemento, así que no puede
+     * prometer nada que el plan no encienda.
+     *
+     * @test
+     */
+    public function la_ia_completa_dice_que_el_menu_lo_contesta_la_ia(): void
+    {
+        $company = $this->empresa(['plan' => 'pro']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/planes')
+            ->assertInertia(function ($page) {
+                $completa = collect($page->toArray()['props']['ia'])->firstWhere('slug', 'completa');
+                $frases = collect($completa['flujos'])->implode(' | ');
+
+                $this->assertStringContainsString('menú', $frases);
+                $this->assertStringContainsString('documentación', $frases);
+                $this->assertStringContainsString('ERP', $frases);
+            });
+    }
+
+    /**
+     * Y IA Esencial no lo dice, porque no lo enciende.
+     *
+     * Es la mitad que importa: prometer en el de 19 lo que sólo abre el de 49
+     * es una devolución.
+     *
+     * @test
+     */
+    public function la_ia_esencial_no_promete_los_flujos(): void
+    {
+        $company = $this->empresa(['plan' => 'pro']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/planes')
+            ->assertInertia(function ($page) {
+                $esencial = collect($page->toArray()['props']['ia'])->firstWhere('slug', 'esencial');
+
+                $this->assertSame([], $esencial['flujos']);
+            });
+    }
+
     private function empresa(array $extra = []): Company
     {
         return Company::create(array_merge([
