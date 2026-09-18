@@ -13,6 +13,9 @@ use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use App\Support\AiAssistantProfile;
+use App\Support\AiDecision;
+use App\Support\MenuActionResult;
+use App\Support\PideUnAsesor;
 use App\Support\Documentos\DocumentoDelCliente;
 use App\Support\Documentos\ImagenDelCliente;
 use Illuminate\Support\Facades\Log;
@@ -354,6 +357,40 @@ class WhatsAppMenuService
 
         if ($text === '' && ! $conDocumento && ! $conImagen) {
             return false;
+        }
+
+        // Pedir una persona no pasa por el modelo.
+        //
+        // El prompt se lo pide —y llega, se comprobó en la ejecución de n8n—
+        // pero el modelo no lo obedece: contesta «procederé a comunicarlo con un
+        // asesor» y no marca nada. Dos veces seguidas con el cliente escribiendo
+        // «comunícame con un asesor» (17-sep-2026).
+        //
+        // Es la petición que menos puede fallar de todo el chat: es lo que
+        // alguien escribe justo cuando el bot ya le falló. Así que se reconoce
+        // aquí y se deriva sin preguntarle a nadie — instantáneo, además, en vez
+        // de esperar doce segundos a un modelo para que diga que sí y no lo haga.
+        if (PideUnAsesor::loPide($text)) {
+            Log::channel('whatsapp')->info('🙋 El cliente pide un asesor: se deriva sin pasar por la IA', [
+                'conversation_id' => $conversation->id,
+                'texto' => mb_substr($text, 0, 80),
+            ]);
+
+            ProcessWhatsAppMenu::dispatch(
+                $instance->id,
+                $conversation->id,
+                null,
+                null,
+                $wamid,
+                null,
+                new AiDecision(
+                    MenuActionResult::escalate(''),
+                    'El cliente pidió hablar con una persona: «'.mb_substr($text, 0, 120).'»',
+                    ['flujo' => 'peticion_de_asesor'],
+                )
+            );
+
+            return true;
         }
 
         // Con un archivo o una foto delante va el chat IA y no la de menús:

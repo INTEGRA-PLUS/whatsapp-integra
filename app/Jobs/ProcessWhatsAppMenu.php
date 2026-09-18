@@ -301,7 +301,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
             //
             // El valor por defecto sigue siendo el menos cargado: quien no
             // haya tocado nada no nota ningún cambio.
-            $this->claimAgent(
+            $agente = $this->claimAgent(
                 $instance,
                 $conversation,
                 $option,
@@ -312,6 +312,8 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 $handoffNote ?: 'El bot no pudo resolver la solicitud del cliente y derivó el chat',
                 $assignment
             );
+
+            $this->avisarDelTraspaso($instance, $conversation, $meta, $agente);
         }
     }
 
@@ -620,6 +622,8 @@ class ProcessWhatsAppMenu implements ShouldQueue
             $assignment
         );
 
+        $this->avisarDelTraspaso($instance, $conversation, $meta, $agent);
+
         $text = $option->menu?->render($option->reply_text, $conversation) ?? (string) $option->reply_text;
 
         if (trim($text) !== '') {
@@ -895,6 +899,37 @@ class ProcessWhatsAppMenu implements ShouldQueue
         }
 
         return $texto."\n\n_Escribe *".$palabra."* para volver a las opciones._";
+    }
+
+    /**
+     * Le dice al cliente con quién queda.
+     *
+     * «En un momento un asesor se comunicará contigo» es una promesa sin dueño:
+     * el cliente no sabe si pasó algo o si el bot le dio largas otra vez. Con el
+     * nombre delante, el traspaso se ve — y quien lo recibe ya tiene a quién
+     * escribirle si tarda.
+     *
+     * **Sólo cuando hay nombre.** Si el chat se quedó en la bandeja general no
+     * hay a quién nombrar, y decir «te transferí» sin transferir a nadie es
+     * exactamente la mentira que esto viene a quitar.
+     */
+    private function avisarDelTraspaso(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        MetaWhatsAppService $meta,
+        ?User $agente
+    ): void {
+        if (! $agente) {
+            return;
+        }
+
+        $this->deliverText(
+            $instance,
+            $conversation,
+            $meta,
+            '✅ Conversación transferida a nuestro asesor '.$agente->name.'.',
+            ['traspaso' => 'aviso', 'assigned_to' => $agente->id]
+        );
     }
 
     private function deliverText(
