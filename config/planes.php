@@ -143,9 +143,15 @@ return [
     | Las extensiones que van con el CRM
     |--------------------------------------------------------------------------
     |
-    | Las tres que no llaman a ningún modelo. Van en los tres planes de CRM: se
+    | Las que no llaman a ningún modelo. Van en los tres planes de CRM: se
     | venden en paquete, nunca sueltas —un precio por extensión multiplica las
     | combinaciones que hay que cobrar, explicar y sostener—.
+    |
+    | **El cierre automático entra aquí** (17-sep-2026). No llama a ningún
+    | modelo: reconoce la despedida con reglas y el resto son dos relojes. Y lo
+    | que arregla es del núcleo, no de la IA —una bandeja donde «9 abiertas»
+    | significa nueve abiertas—, así que además del reparto por carga se
+    | beneficia cualquier empresa, tenga complemento o no.
     |
     | **El semáforo NO está aquí, y es una decisión comercial, no técnica.**
     | Técnicamente podría: su primera capa es un diccionario en PHP y colorea
@@ -174,6 +180,7 @@ return [
         'agent_signature',
         'follow_up',
         'keyword_routing',
+        'cierre_automatico',
     ],
 
     'nucleo' => [
