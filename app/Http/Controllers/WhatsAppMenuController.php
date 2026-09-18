@@ -441,6 +441,7 @@ class WhatsAppMenuController extends Controller
 
         $menu = WhatsAppMenu::where('id', $id)
             ->where('company_id', $user->company_id)
+            ->with('options')
             ->firstOrFail();
 
         // Borrar un submenú deja a las opciones que apuntaban a él sin destino
@@ -451,11 +452,50 @@ class WhatsAppMenuController extends Controller
             ->with('menu:id,name')
             ->get();
 
+        // Si el que se va es el que saluda, el saludo tiene que ir a alguna
+        // parte. Sin esto, borrar la puerta de entrada dejaba a la empresa
+        // **sin ningún menú de bienvenida** y sin decírselo: el cliente escribe
+        // «hola» y no recibe nada, y la pantalla tampoco vuelve a ofrecer
+        // armarla porque ya no hay a quién abrirle.
+        //
+        // Lo hereda el menú al que este abría, que es de donde vino: deshacer la
+        // puerta devuelve las cosas como estaban.
+        $heredero = null;
+
+        if (in_array('welcome', (array) $menu->match_types, true)) {
+            $heredero = $menu->options
+                ->filter(fn (WhatsAppMenuOption $o) => $o->action_type === 'submenu' && $o->target_menu_id)
+                ->map(fn (WhatsAppMenuOption $o) => WhatsAppMenu::where('company_id', $user->company_id)
+                    ->where('id', $o->target_menu_id)
+                    ->where('is_root', true)
+                    ->first())
+                ->filter()
+                ->first();
+        }
+
         $menu->delete();
+
+        if ($heredero) {
+            $heredero->update([
+                'match_types' => array_values(array_unique(
+                    array_merge((array) $heredero->match_types, ['welcome'])
+                )),
+            ]);
+
+            Log::channel('whatsapp')->info('👋 La bienvenida vuelve al menú que abría el borrado', [
+                'company_id' => $user->company_id,
+                'menu_id' => $heredero->id,
+                'nombre' => $heredero->name,
+            ]);
+        }
 
         $warning = $referencedBy->isNotEmpty()
             ? ' Revisa: ' . $referencedBy->pluck('menu.name')->unique()->implode(', ')
                 . ' tenía(n) opciones que llevaban a este menú y quedaron sin destino.'
+            : '';
+
+        $warning .= $heredero
+            ? ' «' . $heredero->name . '» vuelve a ser el que saluda.'
             : '';
 
         return redirect()->route('whatsapp-menus.index')

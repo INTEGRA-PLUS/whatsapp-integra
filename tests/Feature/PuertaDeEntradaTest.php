@@ -120,6 +120,44 @@ class PuertaDeEntradaTest extends TestCase
         $this->assertNull(PuertaDeEntrada::armar($company), 'Y armarla otra vez no crea una segunda.');
     }
 
+    /**
+     * Borrar la puerta devuelve el saludo al menú que abría.
+     *
+     * Sin esto, deshacerla dejaba a la empresa **sin ningún menú de bienvenida**
+     * y sin decírselo: el cliente escribe «hola» y no recibe nada, y la pantalla
+     * tampoco vuelve a ofrecer armarla porque ya no hay a quién abrirle.
+     *
+     * @test
+     */
+    public function borrar_la_puerta_devuelve_el_saludo(): void
+    {
+        $company = $this->empresa();
+        $antiguo = $this->menuQueSaluda($company);
+        $this->encenderIa($company);
+
+        $user = User::create([
+            'company_id' => $company->id, 'name' => 'Admin',
+            'email' => 'admin-puerta@x.test', 'password' => 'secret', 'active' => true,
+        ]);
+
+        $puerta = PuertaDeEntrada::armar($company);
+
+        $this->assertNotContains('welcome', (array) $antiguo->refresh()->match_types);
+
+        $this->actingAs($user)
+            ->delete(route('whatsapp-menus.destroy', $puerta->id))
+            ->assertRedirect();
+
+        $this->assertContains(
+            'welcome',
+            (array) $antiguo->refresh()->match_types,
+            'El saludo vuelve a quien lo tenía: deshacer la puerta deja las cosas como estaban.'
+        );
+
+        // Y se puede volver a ofrecer, que es la otra mitad del problema.
+        $this->assertTrue(PuertaDeEntrada::seLePuedeOfrecer($company->refresh()));
+    }
+
     /** El botón exige el permiso de menús, como todo lo que toca menús. */
     public function test_hace_falta_el_permiso(): void
     {

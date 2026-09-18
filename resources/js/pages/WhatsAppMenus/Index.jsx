@@ -165,6 +165,9 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     // Cuando se entra desde un aviso de la revisión, la opción que hay que
     // corregir: el formulario baja hasta ella y la resalta.
     const [focusOption, setFocusOption] = useState(null);
+    // El menú que se va a borrar, mientras se confirma.
+    const [borrando, setBorrando] = useState(null);
+    const [borrandoAhora, setBorrandoAhora] = useState(false);
 
     // Y al abrir el formulario se vuelve a preguntar, porque el otro camino
     // para encender la IA está en OTRA pantalla: quien la enciende en «IA que
@@ -223,9 +226,21 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         });
     }
 
+    // El `confirm()` del navegador enseñaba «wpp.integracolombia.online dice»
+    // con dos botones del sistema, y en mitad de un panel cuidado se lee como
+    // un error de la página. Además no cabe explicar qué se pierde de verdad,
+    // que es lo único que hace decidible un borrado.
     function handleDelete(menu) {
-        if (!confirm(`¿Eliminar el menú "${menu.name}"?`)) return;
-        router.delete(route('whatsapp-menus.destroy', menu.id));
+        setBorrando(menu);
+    }
+
+    function confirmarBorrado() {
+        if (! borrando) return;
+
+        setBorrandoAhora(true);
+        router.delete(route('whatsapp-menus.destroy', borrando.id), {
+            onFinish: () => { setBorrandoAhora(false); setBorrando(null); },
+        });
     }
 
     function openEdit(menu, focusOptionId = null) {
@@ -434,6 +449,50 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                 </Modal>
             )}
 
+            {borrando && (
+                <Modal
+                    title="¿Eliminar este menú?"
+                    description={borrando.name}
+                    onClose={() => setBorrando(null)}
+                >
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                            Se borra el menú y sus {(borrando.options ?? []).length} opciones. No se puede deshacer.
+                        </p>
+
+                        {quienLoAbre(borrando, menus).length > 0 && (
+                            <p className="flex items-start gap-2 rounded-lg bg-warning/15 px-3 py-2 text-[11px] text-warning">
+                                <AlertTriangle className="size-3.5 mt-0.5 shrink-0" />
+                                <span>
+                                    {quienLoAbre(borrando, menus).join(', ')} {quienLoAbre(borrando, menus).length === 1 ? 'tiene' : 'tienen'}{' '}
+                                    opciones que llevan aquí, y se quedarán sin destino.
+                                </span>
+                            </p>
+                        )}
+
+                        {(borrando.match_types ?? []).includes('welcome') && (
+                            <p className="flex items-start gap-2 rounded-lg bg-info/10 px-3 py-2 text-[11px] text-info">
+                                <MessageSquare className="size-3.5 mt-0.5 shrink-0" />
+                                <span>
+                                    Es el que saluda. Si abría otro menú, el saludo vuelve a ése; si no, tus
+                                    clientes dejarán de recibir nada al escribir por primera vez.
+                                </span>
+                            </p>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 border-t pt-4">
+                            <Button variant="ghost" onClick={() => setBorrando(null)} disabled={borrandoAhora}>
+                                Cancelar
+                            </Button>
+                            <Button variant="destructive" onClick={confirmarBorrado} disabled={borrandoAhora} className="gap-2">
+                                {borrandoAhora ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                                Eliminar
+                            </Button>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
             {editing && (
                 <Modal wide title="Editar menú" description={`Modificar: ${editing.name}`} onClose={() => setEditing(null)}>
                     <MenuForm
@@ -468,20 +527,42 @@ function hijosDe(menu, menus) {
  * no se llega.
  */
 function agruparEnArbol(menus) {
-    return menus
-        .filter(m => m.is_root)
+    // Un menú raíz al que además llega una opción de otro —lo que hace la
+    // puerta de entrada con el menú de siempre— salía DOS veces: colgando de su
+    // padre y otra vez arriba del todo, con el mismo nombre. Aparece donde
+    // cuelga, y nada más.
+    //
+    // La salvaguarda del `size` es por si dos menús se abren el uno al otro:
+    // sin ella, un circuito dejaría la lista vacía y parecería que se borraron.
+    const anidados = alcanzables(menus);
+    const raices = menus.filter(m => m.is_root && !anidados.has(String(m.id)));
+
+    return (raices.length ? raices : menus.filter(m => m.is_root))
         .map(raiz => ({ raiz, hijos: hijosDe(raiz, menus) }));
 }
 
-/** Submenús a los que no lleva ninguna opción: nadie puede llegar a ellos. */
-function huerfanos(menus) {
-    const alcanzables = new Set(
+/** Qué menús tienen una opción que lleva a éste. Para poder decirlo al borrar. */
+function quienLoAbre(menu, menus) {
+    return menus
+        .filter(m => String(m.id) !== String(menu.id)
+            && (m.options ?? []).some(o => String(o.target_menu_id) === String(menu.id)))
+        .map(m => `«${m.name}»`);
+}
+
+/** Los menús a los que lleva alguna opción de otro menú. */
+function alcanzables(menus) {
+    return new Set(
         menus.flatMap(m => (m.options ?? [])
             .filter(o => o.action_type === 'submenu' && o.target_menu_id)
             .map(o => String(o.target_menu_id)))
     );
+}
 
-    return menus.filter(m => !m.is_root && !alcanzables.has(String(m.id)));
+/** Submenús a los que no lleva ninguna opción: nadie puede llegar a ellos. */
+function huerfanos(menus) {
+    const puedenLlegar = alcanzables(menus);
+
+    return menus.filter(m => !m.is_root && !puedenLlegar.has(String(m.id)));
 }
 
 /**
@@ -763,7 +844,12 @@ function MenuForm({ form, setForm, instances, agents, menus, limits, errors, act
 
     // Un menú no puede llevar a sí mismo, y ofrecer los menús raíz como destino
     // sólo invita a que el cliente entre en un circuito del que no sabe salir.
-    const submenuChoices = menus.filter(m => m.id !== editingId && !m.is_root);
+    // Los menús raíz SÍ se ofrecen como destino. Antes se excluían «para que el
+    // cliente no entre en un circuito del que no sabe salir», y el resultado
+    // fue el contrario: la revisión pedía «añade una opción Volver apuntando al
+    // menú principal» y el desplegable no dejaba elegirlo. Volver al inicio es
+    // justo lo que cierra el circuito, no lo que lo abre.
+    const submenuChoices = menus.filter(m => String(m.id) !== String(editingId));
 
     return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
@@ -1926,12 +2012,16 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
             {option.action_type === 'submenu' && (
                 <>
                     <Select value={option.target_menu_id} onChange={v => onChange({ target_menu_id: v })} className="h-8 text-xs">
-                        <option value="">Elige el submenú…</option>
-                        {submenuChoices.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        <option value="">Elige el menú que se abre…</option>
+                        {submenuChoices.map(m => (
+                            <option key={m.id} value={m.id}>
+                                {m.name}{m.is_root ? ' — menú de inicio' : ''}
+                            </option>
+                        ))}
                     </Select>
                     {submenuChoices.length === 0 && (
                         <p className="text-[11px] text-muted-foreground">
-                            Aún no hay submenús. Crea primero un menú marcado como "Es un submenú".
+                            Aún no hay otro menú al que abrir. Crea uno primero.
                         </p>
                     )}
                 </>
