@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use App\Support\QuienAtiende;
 
 class MacroController extends Controller
 {
@@ -149,6 +150,11 @@ class MacroController extends Controller
             'sent_by' => $user->id,
             'sent_at' => now(),
         ]);
+
+        // La macro la dispara una persona y el mensaje sale con su nombre, así
+        // que vale lo mismo que escribirlo a mano: quien contesta se queda con
+        // el chat.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
 
         $conversation->update([
             'last_message' => $action['message'],

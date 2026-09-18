@@ -21,6 +21,7 @@ use App\Services\MetaWhatsAppService;
 use App\Services\TemplateParameterGuard;
 use App\Services\WebhookDispatcher;
 use App\Support\ConversationNotice;
+use App\Support\QuienAtiende;
 use App\Support\Realtime;
 use App\Support\UsaIntegra;
 use App\Support\Sentimiento\Lectura;
@@ -762,6 +763,11 @@ class ChatController extends Controller
             'template_id' => $request->template_id,
         ]);
 
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
+
         $conversation->update([
             'last_message' => $preview,
             'last_message_at' => now(),
@@ -1184,6 +1190,11 @@ class ChatController extends Controller
             'sent_at' => now(),
         ]);
 
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
+
         $conversation->update([
             'last_message' => $request->message,
             'last_message_at' => now(),
@@ -1259,6 +1270,11 @@ class ChatController extends Controller
             'sent_by' => $user->id,
             'sent_at' => now(),
         ]);
+
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
 
         $conversation->update([
             'last_message' => $request->caption ?? 'Imagen',
@@ -1352,6 +1368,11 @@ class ChatController extends Controller
             'sent_at' => now(),
         ]);
 
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
+
         $conversation->update([
             'last_message' => '📄 '.$filename,
             'last_message_at' => now(),
@@ -1406,6 +1427,11 @@ class ChatController extends Controller
             'sent_by' => $user->id,
             'sent_at' => now(),
         ]);
+
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($conversation, $user);
 
         $conversation->update([
             'last_message' => 'Audio',
@@ -2340,6 +2366,11 @@ class ChatController extends Controller
             'sent_at' => now(),
             'metadata' => $metadata,
         ]);
+
+        // Quien contesta se queda con el chat. Antes había que pulsar
+        // «Atenderla yo» ANTES de escribir, y nadie se acuerda de eso:
+        // la conversación seguía «sin asignar» con un asesor dentro.
+        QuienAtiende::seQuedaConElChat($target, $user);
 
         $target->update([
             'last_message' => $message->content ?: '['.$message->type.']',
