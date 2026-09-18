@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\User;
 use App\Models\CompanyIntegration;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
@@ -388,6 +389,86 @@ class MenuReviewTest extends TestCase
         $this->assertNull(
             collect($issues)->first(fn ($i) => str_contains($i['says'], 'no se puede volver'))
         );
+    }
+
+    /**
+     * El botón del aviso añade la vuelta de verdad.
+     *
+     * Decía qué opción crear y dejaba crearla a mano, que es media ayuda: quien
+     * lee «añádele una opción Volver con la acción Abrir otro menú apuntando al
+     * menú principal» ya sabía que faltaba — lo que no quería era escribirla.
+     *
+     * @test
+     */
+    public function el_boton_anade_la_vuelta_y_el_aviso_desaparece(): void
+    {
+        $company = $this->bareCompany();
+
+        $submenu = WhatsAppMenu::create([
+            'company_id' => $company->id, 'name' => 'Crédito',
+            'body_text' => '¿Qué necesitas?', 'is_root' => false,
+            'match_types' => [], 'active' => true,
+        ]);
+        $submenu->options()->create([
+            'position' => 0, 'title' => 'Cuota del mes',
+            'action_type' => 'reply_text', 'reply_text' => 'Tu cuota es…',
+        ]);
+
+        $raiz = $this->menuWith($company, [['title' => 'Crédito', 'action_type' => 'submenu']]);
+        $raiz->options->first()->update(['target_menu_id' => $submenu->id]);
+
+        $user = User::create([
+            'company_id' => $company->id, 'name' => 'Admin',
+            'email' => 'admin-vuelta@x.test', 'password' => 'secret', 'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('whatsapp-menus.anadir-la-vuelta', $submenu->id))
+            ->assertRedirect();
+
+        $vuelta = $submenu->refresh()->load('options')->options->last();
+
+        $this->assertSame('submenu', $vuelta->action_type);
+        $this->assertSame($raiz->id, (int) $vuelta->target_menu_id, 'Vuelve al menú que lo abre.');
+        $this->assertLessThanOrEqual(
+            WhatsAppMenu::MAX_BUTTON_TITLE,
+            mb_strlen(preg_replace('/\X(?<=\p{Extended_Pictographic})/u', 'x', $vuelta->title)),
+            'El título cabe también como botón: un menú cambia de formato al añadir opciones.'
+        );
+
+        // Y el aviso ya no tiene razón de ser.
+        $issues = MenuReview::build(
+            WhatsAppMenu::where('company_id', $company->id)->with('options')->get(),
+            $this->capabilities()
+        );
+
+        $this->assertNull(
+            collect($issues)->first(fn ($i) => str_contains($i['says'], 'no se puede volver'))
+        );
+    }
+
+    /** Sin nadie que lo abra no hay a dónde volver, y se dice en vez de inventarlo. */
+    public function test_un_submenu_huerfano_no_puede_volver_a_ninguna_parte(): void
+    {
+        $company = $this->bareCompany();
+
+        $suelto = WhatsAppMenu::create([
+            'company_id' => $company->id, 'name' => 'Suelto',
+            'body_text' => 'Hola', 'is_root' => false,
+            'match_types' => [], 'active' => true,
+        ]);
+
+        $user = User::create([
+            'company_id' => $company->id, 'name' => 'Admin',
+            'email' => 'admin-huerfano@x.test', 'password' => 'secret', 'active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('whatsapp-menus.anadir-la-vuelta', $suelto->id))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertCount(0, $suelto->refresh()->options);
     }
 
     private function menuWith(Company $company, array $options): WhatsAppMenu

@@ -450,6 +450,8 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:whatsapp_menus.update')->name('plantilla-isp');
         Route::post('/puerta-de-entrada', [WhatsAppMenuController::class, 'armarPuertaDeEntrada'])
             ->middleware('permission:whatsapp_menus.update')->name('puerta-de-entrada');
+        Route::post('/{id}/volver', [WhatsAppMenuController::class, 'anadirLaVuelta'])
+            ->middleware('permission:whatsapp_menus.update')->name('anadir-la-vuelta');
         // El interruptor de la IA de los menús.
         Route::post('/ai', [WhatsAppMenuController::class, 'toggleAi'])
             ->middleware('permission:whatsapp_menus.update')->name('ai');

@@ -299,6 +299,63 @@ class WhatsAppMenuController extends Controller
         );
     }
 
+    /**
+     * POST /whatsapp-menus/{menu}/volver
+     *
+     * Le añade a un submenú la opción que lleva de vuelta.
+     *
+     * El aviso de la revisión decía qué opción crear y dejaba crearla a mano,
+     * que es media ayuda: quien lee «añádele una opción Volver con la acción
+     * Abrir otro menú apuntando al menú principal» ya sabía que faltaba — lo que
+     * no quería era escribirla.
+     */
+    public function anadirLaVuelta(Request $request, $id)
+    {
+        $user = $request->user();
+
+        $menu = WhatsAppMenu::where('id', $id)
+            ->where('company_id', $user->company_id)
+            ->with('options')
+            ->firstOrFail();
+
+        // A dónde se vuelve: al menú que lo abre. Es de donde vino el cliente, y
+        // es la única respuesta que no hay que adivinar. Si lo abren varios, al
+        // primero: cualquiera de ellos es mejor que quedarse encerrado.
+        $padre = WhatsAppMenu::where('company_id', $user->company_id)
+            ->whereHas('options', fn ($q) => $q->where('target_menu_id', $menu->id))
+            ->orderByDesc('is_root')
+            ->first();
+
+        if (! $padre) {
+            return back()->with('error', 'A este submenú no llega ninguna opción, así que no hay a dónde volver.');
+        }
+
+        if ($menu->options->count() >= WhatsAppMenu::MAX_ROWS) {
+            return back()->with('error', 'Este menú ya tiene el máximo de '.WhatsAppMenu::MAX_ROWS.' opciones. Quita una para poder añadir la vuelta.');
+        }
+
+        $menu->options()->create([
+            // Cabe como fila (24) y como botón (20): un menú puede cambiar de
+            // formato al añadir o quitar opciones, y un título recortado a
+            // «Volver al men» se lee como un error.
+            'title' => '⬅️ Volver al menú',
+            'position' => (int) $menu->options->max('position') + 1,
+            'action_type' => 'submenu',
+            'target_menu_id' => $padre->id,
+        ]);
+
+        Log::channel('whatsapp')->info('↩️ Vuelta añadida a un submenú', [
+            'company_id' => $user->company_id,
+            'menu_id' => $menu->id,
+            'vuelve_a' => $padre->id,
+        ]);
+
+        return back()->with(
+            'success',
+            '«'.$menu->name.'» ya tiene salida: la última opción lleva de vuelta a «'.$padre->name.'». Puedes renombrarla al editarlo.'
+        );
+    }
+
     public function aplicarPlantillaIsp(Request $request)
     {
         $company = Company::findOrFail($request->user()->company_id);

@@ -2256,6 +2256,27 @@ function OptionRow({ index, option, focused = false, isList, limits, agents, sub
  * Integraciones" y dejaba al admin buscando la pantalla a mano. Un diagnóstico
  * que no lleva a donde se arregla no es mejor que no diagnosticar.
  */
+/** Añade la opción de volver y recarga la revisión, sin salir del aviso. */
+function BotonDeLaVuelta({ menuId, label }) {
+    const [enviando, setEnviando] = useState(false);
+
+    function anadir() {
+        setEnviando(true);
+        router.post(route('whatsapp-menus.anadir-la-vuelta', menuId), {}, {
+            preserveScroll: true,
+            onFinish: () => setEnviando(false),
+        });
+    }
+
+    return (
+        <button type="button" onClick={anadir} disabled={enviando}
+            className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-foreground hover:bg-accent disabled:opacity-60">
+            {enviando ? <Loader2 className="size-3 animate-spin" /> : <CornerDownRight className="size-3" />}
+            {label}
+        </button>
+    );
+}
+
 function IssueAction({ action, menuId, optionId, onEditMenu, onConnect }) {
     if (!action) return null;
 
@@ -2274,6 +2295,12 @@ function IssueAction({ action, menuId, optionId, onEditMenu, onConnect }) {
                 </a>
             </div>
         );
+    }
+
+    // Lo AÑADE, no abre el formulario: quien lee «añádele una opción Volver»
+    // ya sabía que faltaba — lo que no quería era escribirla.
+    if (action.kind === 'add_back' && menuId) {
+        return <BotonDeLaVuelta menuId={menuId} label={action.label} />;
     }
 
     if (action.kind === 'menu' && menuId) {

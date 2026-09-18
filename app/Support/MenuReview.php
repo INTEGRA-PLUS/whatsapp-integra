@@ -113,7 +113,11 @@ class MenuReview
                     'menu' => $menu->name,
                     'option_id' => null,
                     'option' => null,
-                    'action' => ['kind' => 'menu', 'label' => 'Añadir la vuelta'],
+                    // `add_back` y no `menu`: el botón lo AÑADE, no abre el
+                    // formulario para que lo escriba quien ya sabe que falta.
+                    // Decirle a alguien qué opción crear y dejarle crearla a
+                    // mano es media ayuda.
+                    'action' => ['kind' => 'add_back', 'label' => 'Añadir la vuelta'],
                 ];
             }
 
@@ -274,7 +278,7 @@ class MenuReview
         return [
             'level' => self::WARNING,
             'says' => 'De este submenú no se puede volver: el cliente que entra no tiene cómo salir.',
-            'fix' => 'Añádele una última opción «Volver» con la acción «Abrir otro menú» apuntando al menú principal. También vale una que pase a un asesor.',
+            'fix' => 'Con el botón se le añade una última opción «Volver al menú» que lo lleva de vuelta. También vale una que pase a un asesor, si prefieres ponerla tú.',
         ];
     }
 
