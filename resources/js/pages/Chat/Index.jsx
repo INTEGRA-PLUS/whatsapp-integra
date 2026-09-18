@@ -501,6 +501,30 @@ const LazyDropdown = memo(function LazyDropdown({ renderTrigger, contentClassNam
 });
 
 // ─── Borde de "esperando respuesta" ─────────────────────────────────────────
+/**
+ * Quién está atendiendo el chat, para la insignia de la lista.
+ *
+ * Los dos bots se distinguen a propósito y no se juntan en un «BOT»: no hacen
+ * lo mismo ni fallan igual. Si la IA contesta algo raro se revisa su
+ * documentación; si lo raro lo dijo el menú, se edita una opción. Saber cuál
+ * fue es la mitad del trabajo.
+ *
+ * `persona` no aparece aquí: para ese caso ya está la insignia con el nombre
+ * del asesor, que dice más.
+ */
+const QUIEN_ATIENDE = {
+    ia: {
+        label: 'IA',
+        title: 'La está atendiendo la IA',
+        clase: 'bg-violet-500/15 text-violet-600 dark:text-violet-300 border-violet-500/20',
+    },
+    menu: {
+        label: 'Menú',
+        title: 'La está atendiendo tu menú de opciones',
+        clase: 'bg-sky-500/15 text-sky-600 dark:text-sky-300 border-sky-500/20',
+    },
+};
+
 // Un chat abierto cuyo último mensaje es del cliente (`awaiting_reply`, lo marca
 // el backend) va cambiando de color según cuánto lleve esperando. El umbral base
 // lo fija la empresa en la extensión "Seguimiento de conversaciones sin
@@ -753,6 +777,25 @@ const ConversationItem = memo(({
                         )}>
                             {contactFullName(conv.contact) || conv.name || conv.phone_number}
                         </p>
+                        {/* Quién viene atendiendo. «¿Esto lo lleva la IA o mi
+                            menú?» no tenía respuesta en ninguna pantalla: había
+                            que abrir el chat y mirar burbuja por burbuja.
+
+                            Sólo se pinta cuando contesta un bot: con un asesor
+                            asignado ya está la insignia de su nombre justo al
+                            lado, y dos etiquetas seguidas dicen lo mismo dos
+                            veces en una fila que ya va justa de ancho. */}
+                        {!conv.assigned_agent && QUIEN_ATIENDE[conv.atendido_por] && (
+                            <span
+                                title={QUIEN_ATIENDE[conv.atendido_por].title}
+                                className={clsx(
+                                    'shrink-0 inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[7px] font-black uppercase leading-none tracking-tighter border',
+                                    QUIEN_ATIENDE[conv.atendido_por].clase
+                                )}
+                            >
+                                {QUIEN_ATIENDE[conv.atendido_por].label}
+                            </span>
+                        )}
                         {conv.assigned_agent && (
                             <span 
                                 title={`Asignado a ${conv.assigned_agent.name}`}

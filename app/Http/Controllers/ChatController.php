@@ -338,8 +338,41 @@ class ChatController extends Controller
                 ->get(['conversation_id', 'direction', 'status'])
                 ->keyBy('conversation_id');
 
-            $carga['data'] = collect($carga['data'])->map(function ($fila) use ($ultimoMensaje) {
+            // Quién viene atendiendo: el último SALIENTE, que es el que lo
+            // dice. El de arriba no sirve —suele ser del cliente, y entonces no
+            // atribuye a nadie— y hace falta otra consulta, pero una por página
+            // y no una por fila.
+            $ultimoSaliente = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
+                ->where('direction', 'outbound')
+                ->whereIn('id', function ($sub) use ($idsPagina) {
+                    $sub->selectRaw('max(id)')
+                        ->from('whatsapp_messages')
+                        ->where('direction', 'outbound')
+                        ->whereIn('conversation_id', $idsPagina)
+                        ->groupBy('conversation_id');
+                })
+                ->get(['conversation_id', 'metadata'])
+                ->keyBy('conversation_id');
+
+            $carga['data'] = collect($carga['data'])->map(function ($fila) use ($ultimoMensaje, $ultimoSaliente) {
                 $ultimo = $ultimoMensaje[$fila['id']] ?? null;
+
+                // «¿Esto lo está atendiendo la IA o mi menú?» no tenía respuesta
+                // en ninguna pantalla: había que abrir el chat y mirar burbuja
+                // por burbuja. Se responde con lo que ya se guarda en cada
+                // mensaje que envía el bot.
+                //
+                // La persona manda: con el chat asignado, el bot se calla, así
+                // que quien atiende es ella por mucho que la última burbuja la
+                // escribiera la IA.
+                $meta = (array) ($ultimoSaliente[$fila['id']]->metadata ?? []);
+
+                $fila['atendido_por'] = match (true) {
+                    ! empty($fila['assigned_to']) => 'persona',
+                    ! empty($meta['ia']) => 'ia',
+                    ! empty($meta['menu_id']) => 'menu',
+                    default => null,
+                };
 
                 // Ojo con los dos `status` de esta línea: el de `$fila` es el de
                 // la conversación (abierta o cerrada) y el de `$ultimo`, el del
