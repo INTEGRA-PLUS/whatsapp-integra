@@ -89,8 +89,131 @@ class TasaDelDolarTest extends TestCase
         $this->assertSame(0, \App\Models\SuscripcionCobro::count(), 'Ni un recibo con la tasa mal.');
     }
 
+    /**
+     * La propuesta cubre el techo de la ventana, no el promedio.
+     *
+     * Quedarse en el promedio es cobrar de menos la mitad de los días. Y 3.213,97
+     * no es una tasa: se redondea a 50 hacia arriba porque un precio se dice en
+     * la mesa.
+     *
+     * @test
+     */
+    public function propone_una_tasa_que_cubre_el_techo_y_esta_redondeada(): void
+    {
+        $this->trmHaSido([
+            $this->haceDias(0) => 3151.73,
+            $this->haceDias(3) => 3109.30,
+            $this->haceDias(17) => 3213.97,
+            $this->haceDias(27) => 3048.12,
+        ]);
+
+        $s = TasaDelDolar::sugerencia(30);
+
+        $this->assertSame(3250, $s['tasa']);
+        $this->assertEqualsWithDelta(3213.97, $s['techo'], 0.01);
+        $this->assertLessThan(TasaDelDolar::DESVIACION_MAXIMA, abs($s['desviacion']));
+    }
+
+    /**
+     * Y nunca propone un número que mañana haría saltar su propio freno.
+     *
+     * Si el peso se apreció fuerte, el techo del mes pasado está muy por encima
+     * de hoy: copiarlo dejaría la facturación bloqueada al día siguiente de
+     * cambiarla. Se baja hasta la mitad del margen del vigilante.
+     *
+     * @test
+     */
+    public function no_propone_una_tasa_que_bloquearia_la_facturacion_manana(): void
+    {
+        $this->trmHaSido([
+            $this->haceDias(0) => 3000.00,
+            $this->haceDias(24) => 3800.00,
+        ]);
+
+        $s = TasaDelDolar::sugerencia(30);
+
+        $this->assertSame(3100, $s['tasa'], 'El techo era 3.800: hay que bajarlo al margen del vigilante.');
+        $this->assertLessThanOrEqual(TasaDelDolar::DESVIACION_MAXIMA / 2, $s['desviacion']);
+    }
+
+    /** Desde cuándo habría aguantado: la prueba de que no sirve sólo para hoy. */
+    public function test_dice_desde_cuando_esa_tasa_habria_aguantado(): void
+    {
+        $this->trmHaSido([
+            $this->haceDias(0) => 3151.73,
+            $this->haceDias(8) => 3100.00,
+            $this->haceDias(17) => 3213.97,
+            // Aquí el dólar estaba un 20% más arriba: el freno habría saltado.
+            $this->haceDias(29) => 3900.00,
+        ]);
+
+        $this->assertSame($this->haceDias(17), TasaDelDolar::aguantariaDesde(3250));
+    }
+
+    /** La serie respeta los anuncios tal cual: el viernes cubre el fin de semana. */
+    public function test_la_serie_conserva_el_rango_de_vigencia(): void
+    {
+        $this->trmHaSido(
+            [$this->haceDias(6) => 3072.27],
+            [$this->haceDias(6) => $this->haceDias(4)],
+        );
+
+        $serie = TasaDelDolar::serie(30);
+
+        $this->assertSame($this->haceDias(6), $serie[0]['fecha']);
+        $this->assertSame($this->haceDias(4), $serie[0]['hasta']);
+    }
+
+    /** Y el comando deja la línea lista para pegar, sin tener que calcular nada. */
+    public function test_el_comando_dice_que_poner_en_el_env(): void
+    {
+        config(['planes.tasa_cop' => 4000]);
+        $this->trmHaSido([
+            $this->haceDias(0) => 3151.73,
+            $this->haceDias(17) => 3213.97,
+        ]);
+
+        $this->artisan('tasas:vigilar --serie')
+            ->expectsOutputToContain('PLANES_TASA_COP=3250')
+            ->assertFailed();
+    }
+
+    private function haceDias(int $dias): string
+    {
+        return now()->subDays($dias)->toDateString();
+    }
+
     private function trmEs(float $valor): void
     {
         Http::fake(['datos.gov.co/*' => Http::response([['valor' => (string) $valor]], 200)]);
+    }
+
+    /**
+     * Un histórico falso, `fecha => valor`. La primera es la de hoy.
+     *
+     * El mismo endpoint sirve el día suelto y la serie; se distinguen por el
+     * `$where`, que es lo único que cambia entre las dos llamadas.
+     *
+     * @param  array<string, float>  $valores
+     * @param  array<string, string>  $hasta
+     */
+    private function trmHaSido(array $valores, array $hasta = []): void
+    {
+        $filas = [];
+
+        foreach ($valores as $fecha => $valor) {
+            $filas[] = [
+                'valor' => (string) $valor,
+                'unidad' => 'COP',
+                'vigenciadesde' => $fecha.'T00:00:00.000',
+                'vigenciahasta' => ($hasta[$fecha] ?? $fecha).'T00:00:00.000',
+            ];
+        }
+
+        Http::fake(function ($request) use ($filas) {
+            $esLaSerie = str_contains(urldecode($request->url()), 'vigenciadesde >=');
+
+            return Http::response($esLaSerie ? $filas : [$filas[0]], 200);
+        });
     }
 }

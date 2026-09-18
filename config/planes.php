@@ -227,6 +227,19 @@ return [
     | Al cambiarla, los cobros ya emitidos no se mueven: el importe se guarda en
     | la fila, no se recalcula.
     |
+    | **Qué número poner, y cuándo.** No se mira el dólar en Google: se ejecuta
+    |
+    |     php artisan tasas:vigilar --serie
+    |
+    | que enseña el histórico de la TRM oficial día a día y propone una tasa —el
+    | techo de las últimas semanas, redondeado a 50 arriba— con la línea lista
+    | para pegar aquí. Se elige el techo y no el promedio porque quedarse en el
+    | promedio es cobrar de menos la mitad de los días.
+    |
+    | Ese mismo comando corre solo cada mañana a las 7:05 y, si la tasa se separó
+    | más de un 8% de la TRM, `suscripciones:emitir` se para antes de crear nada.
+    | Así que revisar esto es cosa de cuando el comando avisa, no de cada semana.
+    |
     */
 
     'tasa_cop' => (int) env('PLANES_TASA_COP', 4000),
