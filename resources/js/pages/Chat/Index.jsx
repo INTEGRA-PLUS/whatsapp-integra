@@ -501,6 +501,9 @@ const LazyDropdown = memo(function LazyDropdown({ renderTrigger, contentClassNam
 });
 
 // ─── Borde de "esperando respuesta" ─────────────────────────────────────────
+/** Dónde se recuerda la última línea elegida en este navegador. */
+const RECUERDO_DE_LA_LINEA = 'chat:instancia';
+
 /**
  * Quién está atendiendo el chat, para la insignia de la lista.
  *
@@ -3231,12 +3234,31 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         if (atBottomRef.current) scrollToBottom();
     }, [messages, scrollToBottom]);
 
+    // Con qué línea se abre el chat.
+    //
+    // Antes era siempre `instances[0]`, y en cuanto una empresa conectó
+    // Instagram la recarga devolvía a todo el mundo a la línea equivocada: el
+    // agente que lleva WhatsApp tenía que volver a elegirla cada vez.
+    //
+    // Se recuerda la última elegida, y sólo si sigue existiendo —una línea se
+    // desconecta o se borra, y arrancar en una que ya no está dejaría la lista
+    // vacía sin explicación—. Va en el navegador y no en el usuario porque es
+    // de este puesto: el mismo agente puede llevar una línea en el escritorio y
+    // otra en el portátil.
     useEffect(() => {
-        if (instances.length > 0 && !selectedInstanceId) {
-            const first = instances[0];
-            setSelectedInstanceId(String(first.id));
-        }
+        if (instances.length === 0 || selectedInstanceId) return;
+
+        const recordada = window.localStorage.getItem(RECUERDO_DE_LA_LINEA);
+        const sigueAhi = instances.some(i => String(i.id) === recordada);
+
+        setSelectedInstanceId(String(sigueAhi ? recordada : instances[0].id));
     }, [instances, selectedInstanceId]);
+
+    useEffect(() => {
+        if (selectedInstanceId) {
+            window.localStorage.setItem(RECUERDO_DE_LA_LINEA, String(selectedInstanceId));
+        }
+    }, [selectedInstanceId]);
 
     // ── Search Debounce ───────────────────────────────────────────────────
     useEffect(() => {
