@@ -1703,32 +1703,69 @@ function PuertaDeEntrada({ abre }) {
     }
 
     return (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-dashed p-4">
-            <div className="flex items-start gap-3 min-w-0">
-                <div className="size-10 shrink-0 rounded-xl bg-muted flex items-center justify-center">
-                    <Sparkles className="size-5 text-muted-foreground" />
+        <div className="rounded-xl border border-dashed p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex items-start gap-3 min-w-0">
+                    <div className="size-10 shrink-0 rounded-xl bg-muted flex items-center justify-center">
+                        <Sparkles className="size-5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">
+                            ¿Que el cliente elija entre tu menú y preguntarte?
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-3xl">
+                            Al escribir recibirá dos botones: <strong className="text-foreground">Ver las opciones</strong>,
+                            que abre {abre ? <>«{abre}»</> : 'tu menú'} tal como está hoy, y{' '}
+                            <strong className="text-foreground">Preguntar algo</strong>, que lo atiende la IA con tu
+                            documentación.
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-1.5 max-w-3xl">
+                            {abre ? <>«{abre}»</> : 'Tu menú'} no se toca: conserva sus opciones y sus palabras clave, y
+                            sólo deja de ser quien saluda. Para deshacerlo, borra el menú «Puerta de entrada».
+                        </p>
+                    </div>
                 </div>
-                <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">
-                        ¿Que el cliente elija entre tu menú y preguntarte?
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-3xl">
-                        Al escribir recibirá dos botones: <strong className="text-foreground">Ver las opciones</strong>,
-                        que abre {abre ? <>«{abre}»</> : 'tu menú'} tal como está hoy, y{' '}
-                        <strong className="text-foreground">Preguntar algo</strong>, que lo atiende la IA con tu
-                        documentación.
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-1.5 max-w-3xl">
-                        {abre ? <>«{abre}»</> : 'Tu menú'} no se toca: conserva sus opciones y sus palabras clave, y
-                        sólo deja de ser quien saluda. Para deshacerlo, borra el menú «Puerta de entrada».
-                    </p>
-                </div>
+
+                <Button onClick={armar} disabled={enviando} className="gap-2 shrink-0">
+                    {enviando ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                    Dejar que el cliente elija
+                </Button>
             </div>
 
-            <Button variant="outline" onClick={armar} disabled={enviando} className="gap-2 shrink-0">
-                {enviando ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                Armarla
-            </Button>
+            {/* Un ejemplo de lo que le va a llegar al cliente, no una
+                descripción de ello. Es un botón que reordena el menú con el que
+                la empresa atiende: leer tres líneas y confiar es mucho pedir
+                cuando enseñarlo cuesta una burbuja. */}
+            <div className="mt-4 border-t pt-4">
+                <p className="text-[11px] font-medium text-muted-foreground">Así lo verá tu cliente</p>
+
+                <div className="mt-2 max-w-xs overflow-hidden rounded-2xl border-4 border-border bg-[#ECE5DD] dark:bg-muted">
+                    <div className="space-y-1.5 p-2.5">
+                        <div className="ml-auto max-w-[70%] rounded-lg rounded-tr-sm bg-[#DCF8C6] px-2.5 py-1.5 text-[11px] text-neutral-800 shadow-sm">
+                            Hola
+                        </div>
+
+                        <div className="max-w-[88%] rounded-lg rounded-tl-sm bg-white px-2.5 py-2 shadow-sm dark:bg-card">
+                            <p className="whitespace-pre-wrap text-[11px] leading-snug text-foreground dark:text-muted-foreground">
+                                {'¡Hola Katherine! 👋\n¿Cómo prefieres que te ayude hoy?'}
+                            </p>
+                            <p className="mt-1 text-[10px] text-muted-foreground">Elige una opción 👇</p>
+                            <p className="mt-0.5 text-right text-[9px] text-muted-foreground">9:41</p>
+                        </div>
+
+                        <div className="max-w-[88%] rounded-lg bg-white py-1.5 text-center text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-card">
+                            📋 Ver las opciones
+                        </div>
+                        <div className="max-w-[88%] rounded-lg bg-white py-1.5 text-center text-[11px] font-medium text-[#00A5F4] shadow-sm dark:bg-card">
+                            💬 Preguntar algo
+                        </div>
+                    </div>
+                </div>
+
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                    Los textos son los que se crean; después puedes editarlos como cualquier otro menú.
+                </p>
+            </div>
         </div>
     );
 }
