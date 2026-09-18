@@ -6,6 +6,8 @@ use App\Models\Company;
 use App\Models\SuscripcionCobro;
 use App\Services\OnePayClient;
 use App\Support\PlanDeLaEmpresa;
+use App\Support\TasaDelDolar;
+use Illuminate\Support\Facades\Log;
 use App\Support\Suscripcion;
 use Illuminate\Console\Command;
 
@@ -41,13 +43,34 @@ class EmitirSuscripciones extends Command
     protected $signature = 'suscripciones:emitir
         {--dry : Enseña lo que emitiría y no crea nada}
         {--dias=7 : Cuántos días antes del vencimiento se emite}
-        {--company= : Sólo esta empresa (id)}';
+        {--company= : Sólo esta empresa (id)}
+        {--forzar-tasa : Emite aunque la tasa se haya separado de la TRM}';
 
     protected $description = 'Emite los cobros pendientes de las suscripciones que vencen pronto';
 
     public function handle(): int
     {
         $dias = (int) $this->option('dias');
+
+        // La tasa vieja no se descubre revisando: se descubre cuando el cliente
+        // reclama que le cobraron de más. El 18-sep-2026 estaba en 4.000 con el
+        // dólar a 3.151: un 27% de más sobre cuarenta y dos recibos.
+        //
+        // Se para ANTES de emitir nada, no a mitad: cuarenta recibos mal son
+        // cuarenta conversaciones incómodas y una nota de crédito por cada uno.
+        if (! $this->option('dry') && ! $this->option('forzar-tasa') && TasaDelDolar::estaDesviada()) {
+            $this->error('Facturación detenida: la tasa se separó de la TRM oficial.');
+            $this->line('  '.TasaDelDolar::comoSeLee());
+            $this->line('  Ajusta <fg=yellow>PLANES_TASA_COP</> o repite con <fg=yellow>--forzar-tasa</> si es a propósito.');
+
+            Log::channel('whatsapp')->warning('💱 Emisión de suscripciones detenida por la tasa', [
+                'facturada' => TasaDelDolar::facturada(),
+                'oficial' => TasaDelDolar::oficial(),
+                'desviacion_pct' => TasaDelDolar::desviacion(),
+            ]);
+
+            return self::FAILURE;
+        }
 
         $empresas = Company::query()
             ->where('interna', false)

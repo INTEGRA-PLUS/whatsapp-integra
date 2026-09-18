@@ -59,6 +59,15 @@ Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapp
  * ya hay un pendiente sin pagar: el día que se pagaran los dos, la suscripción
  * se alargaría el doble.
  */
+/*
+ * Diez minutos antes de facturar: ¿sigue valiendo la tasa con la que cobramos?
+ *
+ * No la cambia —eso cambia el precio de todos los clientes a la vez y no lo
+ * decide un cron— pero deja el aviso escrito ANTES de que salgan las facturas
+ * del día. Y si se separó demasiado, `suscripciones:emitir` se para solo.
+ */
+Schedule::command('tasas:vigilar')->dailyAt('07:05')->withoutOverlapping();
+
 Schedule::command('suscripciones:emitir')->dailyAt('07:15')->withoutOverlapping();
 
 // Las extensiones que corren solas (hoy, el seguimiento de conversaciones sin
