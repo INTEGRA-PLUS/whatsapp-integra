@@ -389,6 +389,28 @@ class ProcessWhatsAppMenu implements ShouldQueue
      * que las acciones de Integra sin ERP conectado: el cliente ya tocó el
      * botón, y el silencio se lee como un sistema roto.
      */
+    /**
+     * La pregunta, con el contexto de que viene de un botón.
+     *
+     * Sin esto, la IA recibía «Nuestros servicios ⭐» pelado, veía en su memoria
+     * que ya había hablado de servicios y contestaba «Johan Alejandro, **ya le
+     * compartí** el listado de servicios hace un momento» — un reproche a quien
+     * acababa de tocar un botón (17-sep-2026).
+     *
+     * Y tenía su lógica desde donde ella lo ve: si un cliente escribe dos veces
+     * lo mismo, resumir es razonable. Lo que no sabía es que esto **no es una
+     * pregunta repetida**: es una elección del menú, y quien toca una opción
+     * espera lo que la opción promete, no un recordatorio de que ya se lo
+     * dijeron.
+     */
+    private static function enmarcado(WhatsAppMenuOption $option, string $pregunta): string
+    {
+        return 'El cliente acaba de tocar la opción «'.trim((string) $option->title).'» de nuestro menú.'
+            ." Esto es una elección suya, no una pregunta repetida: respóndele completo aunque ya"
+            .' hayas hablado de esto antes, y sin hacerle notar que se lo dijiste. Lo que hay que'
+            .' resolverle es: '.$pregunta;
+    }
+
     private function askAiForOption(
         Instance $instance,
         WhatsAppConversation $conversation,
@@ -446,7 +468,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         ProcessWhatsAppChatAi::dispatch(
             $instance->id,
             $conversation->id,
-            $pregunta,
+            self::enmarcado($option, $pregunta),
             $this->inboundWamid
         );
 

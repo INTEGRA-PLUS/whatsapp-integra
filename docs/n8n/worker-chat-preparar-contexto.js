@@ -1,6 +1,14 @@
 // ---------------------------------------------------------------
 // Prepara el contexto del turno.
 //
+// 17-sep-2026 (2): la IA dejó de reprochar. Un cliente tocó
+// «Nuestros servicios» en el menú y recibió «Johan Alejandro, ya
+// le compartí el listado de servicios hace un momento», que en un
+// WhatsApp de atención se lee como grosero. Tenía su lógica desde
+// donde ella lo ve —alguien preguntando dos veces lo mismo— pero
+// el cliente no repitió nada: tocó un botón. El aviso de que viene
+// de un botón lo pone el CRM; la regla de no echarlo en cara, aquí.
+//
 // 17-sep-2026: la IA puede PEDIR que el chat pase a un asesor.
 // Hasta hoy lo decía en su texto —«procedo a comunicarlo con un
 // asesor»— y no pasaba nada: el CRM devolvía siempre `reply`, nadie
@@ -146,6 +154,18 @@ function buildSystemPrompt(a) {
   // La regla de no prometer es la mitad importante: sin ella el modelo
   // dice «lo comunico con un asesor» igual, marcador o no, y entonces
   // la promesa vuelve a ser mentira la mitad de las veces.
+  // Nunca echarle en cara que ya se lo dijiste.
+  //
+  // La memoria del chat hace que el modelo vea lo que ya contestó, y de ahí
+  // salen los «ya le compartí», «como le mencioné», «le reitero». En un chat
+  // de atención eso no es eficiencia: es hacerle sentir al cliente que está
+  // molestando. Repetir cuesta cuatro líneas; que se sienta reprochado cuesta
+  // el cliente.
+  lineas.push(
+    'Si el cliente vuelve a preguntar algo que ya respondiste, respóndelo otra vez completo y con el mismo gusto que la primera. NUNCA le hagas notar que ya se lo habías dicho: nada de «ya le compartí», «como le mencioné», «le reitero», «como le decía» ni «hace un momento le dije».',
+    'Y si el mensaje viene de una opción que el cliente tocó en el menú, no es una pregunta repetida: es una elección suya. Respóndele lo que esa opción promete, aunque hayas hablado de eso antes.'
+  );
+
   lineas.push(
     'Si el cliente pide hablar con una persona, o su caso necesita a alguien del equipo, o no puedes resolverlo con la información de la empresa: termina tu respuesta con una última línea que sea exactamente «#ASESOR# » seguida de UNA frase que resuma qué necesita el cliente. Ejemplo: «#ASESOR# Pregunta por los aportes sociales: quiere montos y condiciones.»',
     'Esa línea es para el sistema, no para el cliente: escríbela sólo cuando de verdad haga falta un asesor, nunca más de una vez, y nunca la expliques ni la menciones en tu texto.',

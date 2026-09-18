@@ -650,11 +650,14 @@ class WhatsAppMenuTest extends TestCase
         // Sin pregunta escrita se usa el título: «Horarios de atención» YA es la
         // pregunta, y obligar a escribirla dos veces sólo consigue que las dos
         // se desincronicen.
-        Queue::assertPushed(
-            ProcessWhatsAppChatAi::class,
-            fn (ProcessWhatsAppChatAi $job) => $job->message === 'Horarios de atención'
-                && $job->wamid !== ''
-        );
+        //
+        // Y viaja enmarcada: la IA tiene que saber que esto es un botón y no
+        // una pregunta repetida, o contesta «ya le compartí eso hace un rato».
+        Queue::assertPushed(ProcessWhatsAppChatAi::class, function (ProcessWhatsAppChatAi $job) {
+            return str_contains($job->message, 'Horarios de atención')
+                && str_contains($job->message, 'no una pregunta repetida')
+                && $job->wamid !== '';
+        });
     }
 
     /** Y si escribes qué debe resolver, manda eso y no el título. */
@@ -675,7 +678,10 @@ class WhatsAppMenuTest extends TestCase
 
         Queue::assertPushed(
             ProcessWhatsAppChatAi::class,
-            fn (ProcessWhatsAppChatAi $job) => $job->message === 'Explícale los requisitos para retirarse de la cooperativa.'
+            fn (ProcessWhatsAppChatAi $job) => str_contains(
+                $job->message,
+                'Explícale los requisitos para retirarse de la cooperativa.'
+            )
         );
     }
 
