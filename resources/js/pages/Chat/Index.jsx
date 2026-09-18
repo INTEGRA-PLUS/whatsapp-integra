@@ -97,6 +97,7 @@ import {
     Wand2,
     Download,
     Eye,
+    UserCheck,
     EyeOff,
     PanelLeftClose,
     PanelLeftOpen,
@@ -5039,29 +5040,51 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                     acababan por encima de los botones de la
                                                     derecha —el nombre del cliente desaparecía y
                                                     "Vincular" se leía como "cular"—. */}
-                                                <div className="flex items-center gap-2.5 mt-0.5 min-w-0 overflow-hidden">
+                                                {/* Envuelve en vez de estrujar. Antes era una sola
+                                                    línea con todo `min-w-0`: cuando la cabecera se
+                                                    quedaba sin sitio —basta con las siete acciones
+                                                    de la derecha— los chips se encogían hasta «Jh…»
+                                                    y «D», que no son información, son un acertijo.
+                                                    Ahora cada uno tiene un ancho mínimo legible y,
+                                                    si no cabe, baja a la segunda línea entero. La
+                                                    cabecera crece catorce píxeles; un nombre a
+                                                    medias no se entiende a ningún ancho. */}
+                                                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-0.5 min-w-0 overflow-hidden">
                                                     <span className="text-[11px] text-muted-foreground leading-tight shrink-0">{contactIdentity(selectedConversation)}</span>
                                                     {selectedConversation.contact ? (
-                                                        <button
-                                                            onClick={() => setShowLinkContact(true)}
-                                                            title="Contacto vinculado — clic para cambiar"
-                                                            className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-0 max-w-[150px]"
-                                                        >
-                                                            <Contact className="size-3 shrink-0" /> <span className="truncate">{contactFullName(selectedConversation.contact)}</span>
-                                                        </button>
+                                                        <TooltipAccion texto={`Vinculado al contacto ${contactFullName(selectedConversation.contact)} · clic para cambiarlo`}>
+                                                            <button
+                                                                onClick={() => setShowLinkContact(true)}
+                                                                className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline min-w-[6rem] max-w-[180px]"
+                                                            >
+                                                                <Contact className="size-3 shrink-0" /> <span className="truncate">{contactFullName(selectedConversation.contact)}</span>
+                                                            </button>
+                                                        </TooltipAccion>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => setShowLinkContact(true)}
-                                                            title="Vincular este número a un contacto"
-                                                            className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-foreground dark:hover:text-accent-foreground transition-colors shrink-0"
-                                                        >
-                                                            <UserPlus className="size-3" /> Vincular
-                                                        </button>
+                                                        <TooltipAccion texto="Vincular este número a un contacto de tu agenda">
+                                                            <button
+                                                                onClick={() => setShowLinkContact(true)}
+                                                                className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 hover:text-accent-foreground dark:hover:text-accent-foreground transition-colors shrink-0"
+                                                            >
+                                                                <UserPlus className="size-3" /> Vincular
+                                                            </button>
+                                                        </TooltipAccion>
                                                     )}
+                                                    {/* Quién atiende. Antes era un punto de color y el
+                                                        nombre, los dos capaces de encogerse hasta la
+                                                        nada: en un chat con muchas acciones arriba se
+                                                        quedaba en «Jh…», que no dice ni quién es ni
+                                                        qué significa. Ahora la palabra «Atiende» va
+                                                        delante —el punto no explicaba nada— y el chip
+                                                        no baja de un ancho legible: o se lee, o
+                                                        desaparece y queda el icono con su tooltip. */}
                                                     {selectedConversation.assigned_agent && (
-                                                        <span title={`Asignado a ${selectedConversation.assigned_agent.name}`} className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground min-w-0 max-w-[130px]">
-                                                            <span className="size-1.5 rounded-full bg-primary shrink-0" /> <span className="truncate font-medium">{selectedConversation.assigned_agent.name}</span>
-                                                        </span>
+                                                        <TooltipAccion texto={`Atiende ${selectedConversation.assigned_agent.name} · está asignado a este chat`}>
+                                                            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-accent-foreground min-w-[6.5rem] max-w-[180px] cursor-default">
+                                                                <UserCheck className="size-3 shrink-0" />
+                                                                <span className="truncate"><span className="text-muted-foreground">Atiende</span> <span className="font-medium">{selectedConversation.assigned_agent.name}</span></span>
+                                                            </span>
+                                                        </TooltipAccion>
                                                     )}
 
                                                     {/* Quién más está en este chat ahora mismo. Escribir
@@ -5081,15 +5104,20 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                             </span>
                                                         </span>
                                                     ) : viewers.length > 0 && (
-                                                        <span
-                                                            title={`${viewers.map(v => v.name).join(', ')} ${viewers.length === 1 ? 'tiene' : 'tienen'} este chat abierto`}
-                                                            className="inline-flex items-center gap-1 text-[11px] text-warning min-w-0 max-w-[170px]"
-                                                        >
-                                                            <Eye className="size-3 shrink-0" />
-                                                            <span className="truncate">
-                                                                {viewers.length === 1 ? viewers[0].name : `${viewers.length} agentes viendo`}
+                                                        /* Un ojo y un nombre recortado a «D» no son un
+                                                           aviso: son un jeroglífico. El verbo va
+                                                           delante y el chip tiene ancho mínimo, para
+                                                           que no se lea media letra. */
+                                                        <TooltipAccion texto={`${viewers.map(v => v.name).join(', ')} ${viewers.length === 1 ? 'tiene' : 'tienen'} este chat abierto ahora mismo`}>
+                                                            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-warning min-w-[7rem] max-w-[200px] cursor-default">
+                                                                <Eye className="size-3 shrink-0" />
+                                                                <span className="truncate">
+                                                                    {viewers.length === 1
+                                                                        ? <><span className="font-medium">{viewers[0].name}</span> lo está viendo</>
+                                                                        : `${viewers.length} agentes lo están viendo`}
+                                                                </span>
                                                             </span>
-                                                        </span>
+                                                        </TooltipAccion>
                                                     )}
                                                 </div>
                                             </div>
