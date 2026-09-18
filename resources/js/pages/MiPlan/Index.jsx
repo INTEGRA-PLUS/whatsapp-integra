@@ -4,7 +4,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
     Check, Lock, Sparkles, Users, Gift, ArrowRight, MessageSquare, Phone,
-    TrendingUp, ShieldCheck, CalendarDays, AlertCircle,
+    TrendingUp, ShieldCheck, CalendarDays, AlertCircle, Receipt,
 } from 'lucide-react';
 import { iconFor } from '@/pages/Extensions/icons';
 
@@ -28,7 +28,7 @@ import { iconFor } from '@/pages/Extensions/icons';
  * antes vivía al final de la lista de extensiones y quien ya las tenía todas
  * —justo el cliente que puede crecer— no veía ninguna forma de pedir nada.
  */
-export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [], periodo = null, por_pagar = null }) {
+export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [], periodo = null, por_pagar = null, recibos = [] }) {
     const incluidas = extensiones.filter(e => e.en_plan);
     const bloqueadas = extensiones.filter(e => !e.en_plan);
     const sugerido = planes.find(p => p.es_el_sugerido);
@@ -145,6 +145,8 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                         </div>
                     )}
                 </div>
+
+                <Facturacion recibos={recibos} />
 
                 {/* ── La invitación, sacada de sus propios números ──────────── */}
                 {plan.se_paso_del_tramo ? (
@@ -324,11 +326,32 @@ function listar(cosas = []) {
 }
 
 /** «15 de octubre de 2026». Al mediodía, para que la zona horaria no reste un día. */
-function fecha(iso) {
+function fecha(iso, conAno = true) {
     if (!iso) return '';
 
     return new Date(`${iso}T12:00`).toLocaleDateString('es-CO', {
-        day: 'numeric', month: 'long', year: 'numeric',
+        day: 'numeric', month: 'long', ...(conAno ? { year: 'numeric' } : {}),
+    });
+}
+
+/**
+ * «del 15 de septiembre al 15 de octubre de 2026».
+ *
+ * El año sólo en el segundo cuando los dos caen en el mismo: repetirlo alarga la
+ * frase sin decir nada, y es la línea que el cliente coteja con su factura.
+ */
+function rango(desde, hasta) {
+    const mismoAno = desde?.slice(0, 4) === hasta?.slice(0, 4);
+
+    return [fecha(desde, !mismoAno), fecha(hasta)];
+}
+
+/** «15 sep 2026», para la tabla, donde la frase larga no cabe. */
+function fechaCorta(iso) {
+    if (!iso) return '';
+
+    return new Date(`${iso}T12:00`).toLocaleDateString('es-CO', {
+        day: '2-digit', month: 'short', year: 'numeric',
     });
 }
 
@@ -367,7 +390,7 @@ function Cobertura({ plan, periodo, porPagar }) {
                     {hasta && (
                         <p className="mt-0.5 text-sm text-muted-foreground">
                             {periodo?.desde
-                                ? <>Del <strong className="font-medium text-foreground">{fecha(periodo.desde)}</strong> al <strong className="font-medium text-foreground">{fecha(hasta)}</strong></>
+                                ? <>Del <strong className="font-medium text-foreground">{rango(periodo.desde, hasta)[0]}</strong> al <strong className="font-medium text-foreground">{rango(periodo.desde, hasta)[1]}</strong></>
                                 : <>Hasta el <strong className="font-medium text-foreground">{fecha(hasta)}</strong></>}
                             {typeof dias === 'number' && (
                                 vencido
@@ -388,13 +411,104 @@ function Cobertura({ plan, periodo, porPagar }) {
                             <AlertCircle className="mt-px size-3.5 shrink-0" />
                             <span>
                                 Tienes un cobro emitido y pendiente de pago por el periodo
-                                {' '}del {fecha(porPagar.desde)} al {fecha(porPagar.hasta)}.
+                                {' '}del {rango(porPagar.desde, porPagar.hasta)[0]} al {rango(porPagar.desde, porPagar.hasta)[1]}.
                             </span>
                         </p>
                     )}
                 </div>
             </div>
         </div>
+    );
+}
+
+/**
+ * Lo que se le ha facturado, mes a mes.
+ *
+ * Antes no existía en ninguna parte del lado del cliente: la lista vivía sólo en
+ * el panel maestro, así que para saber si su mes estaba cubierto tenía que
+ * escribirnos.
+ *
+ * Aquí sí sale el importe, y no contradice que la pantalla no enseñe precios: un
+ * precio de catálogo es una negociación abierta; un recibo es lo que ya se le
+ * cobró, y esconderlo sólo consigue que lo pida por WhatsApp.
+ *
+ * Al cliente de Integra le sale «Incluido» en vez de un cero. Un cero sin
+ * explicación se lee como un error de facturación.
+ */
+function Facturacion({ recibos = [] }) {
+    if (recibos.length === 0) return null;
+
+    return (
+        <div className="overflow-hidden rounded-xl border bg-card">
+            <div className="flex items-center gap-2.5 border-b px-6 py-4">
+                <Receipt className="size-4 text-muted-foreground" />
+                <div>
+                    <h2 className="text-sm font-semibold text-foreground">Tu facturación</h2>
+                    <p className="text-xs text-muted-foreground">Los periodos que se te han emitido, del más reciente al más antiguo.</p>
+                </div>
+            </div>
+
+            {/* En su propio contenedor con scroll: en un móvil la tabla no cabe
+                y sin esto se lleva la página entera de lado. */}
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[34rem] text-sm">
+                    <thead>
+                        <tr className="border-b text-left text-xs font-medium text-muted-foreground">
+                            <th className="px-6 py-2.5 font-medium">Periodo</th>
+                            <th className="px-6 py-2.5 font-medium">Concepto</th>
+                            <th className="px-6 py-2.5 text-right font-medium">Importe</th>
+                            <th className="px-6 py-2.5 font-medium">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {recibos.map(r => (
+                            <tr key={r.id} className="border-b last:border-0">
+                                <td className="whitespace-nowrap px-6 py-3 tabular-nums text-foreground">
+                                    {fechaCorta(r.desde)} — {fechaCorta(r.hasta)}
+                                </td>
+                                <td className="px-6 py-3 text-muted-foreground">{r.concepto}</td>
+                                <td className="whitespace-nowrap px-6 py-3 text-right tabular-nums font-medium text-foreground">
+                                    {r.estado === 'cubierto' ? <span className="font-normal text-muted-foreground">Incluido</span> : `$${r.importe_usd}`}
+                                </td>
+                                <td className="whitespace-nowrap px-6 py-3">
+                                    <EstadoDelRecibo recibo={r} />
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
+function EstadoDelRecibo({ recibo }) {
+    const { estado, pagado_at } = recibo;
+
+    if (estado === 'cubierto') {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs text-success">
+                <ShieldCheck className="size-3.5" /> Cubierto por tu Integra
+            </span>
+        );
+    }
+
+    if (estado === 'pagado') {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs text-success">
+                <Check className="size-3.5" /> Pagado{pagado_at ? ` el ${fechaCorta(pagado_at)}` : ''}
+            </span>
+        );
+    }
+
+    if (estado === 'anulado') {
+        return <span className="text-xs text-muted-foreground line-through">Anulado</span>;
+    }
+
+    return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-warning">
+            <AlertCircle className="size-3.5" /> Pendiente de pago
+        </span>
     );
 }
 

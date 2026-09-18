@@ -93,6 +93,7 @@ class MiPlanController extends Controller
             // Desde y hasta cuándo está cubierto, y qué le queda por pagar.
             'periodo' => $this->periodoCubierto($company),
             'por_pagar' => $this->porPagar($company),
+            'recibos' => $this->recibos($company),
 
             // Lo que tiene por el simple hecho de ser cliente. Va primero en la
             // pantalla: sin esto, el plan Esencial se leía como «una función»
@@ -213,6 +214,42 @@ class MiPlanController extends Controller
             'hasta' => $cobro->periodo_hasta->toDateString(),
             'importe_usd' => (int) $cobro->importe_usd,
         ];
+    }
+
+    /**
+     * Los recibos de los últimos periodos.
+     *
+     * Hasta ahora el cliente no tenía **ningún** sitio donde ver lo que se le ha
+     * facturado: la lista existía sólo en el panel maestro, así que para saber
+     * si su mes estaba cubierto tenía que escribirnos.
+     *
+     * Aquí sí sale el importe, y no contradice la regla de que en esta pantalla
+     * no hay precios: un precio de catálogo es una negociación abierta y por eso
+     * no se enseña; un recibo es lo que ya se le cobró, y ocultárselo sólo
+     * consigue que lo pida por WhatsApp.
+     *
+     * Doce, que es un año de recibos mensuales. Más que eso es un histórico, y
+     * un histórico se pide.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function recibos(Company $company): array
+    {
+        return SuscripcionCobro::where('company_id', $company->id)
+            ->orderByDesc('periodo_hasta')
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get()
+            ->map(fn (SuscripcionCobro $c) => [
+                'id' => $c->id,
+                'desde' => optional($c->periodo_desde)->toDateString(),
+                'hasta' => optional($c->periodo_hasta)->toDateString(),
+                'concepto' => $c->concepto(),
+                'importe_usd' => (int) $c->importe_usd,
+                'estado' => $c->estado,
+                'pagado_at' => optional($c->pagado_at)->toDateString(),
+            ])
+            ->all();
     }
 
     /**

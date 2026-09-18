@@ -359,15 +359,19 @@ class SuscripcionTest extends TestCase
     }
 
     /**
-     * Al cliente de Integra el periodo le acaba el día 15.
+     * El periodo del cliente de Integra va del 15 al 15: un mes completo.
      *
-     * Su CRM lo paga su ERP, y el ERP le factura el 15. Si aquí acabara el 17
-     * —un mes contado desde el día en que se emitió el primero— tendría dos
-     * fechas de corte del mismo servicio y ninguna explicaría a la otra.
+     * Su CRM lo paga su ERP, y el ERP le factura el 15. «Del 15 de septiembre al
+     * 15 de octubre» es una frase que puede cotejar con esa factura; «del 18 de
+     * septiembre al 15 de octubre» no cuadra con nada y encima parece un mes
+     * recortado.
+     *
+     * Para el primero se va al 15 anterior aunque quede unos días atrás:
+     * arrancarlo hoy dejaría un periodo corto y una frase rara para siempre.
      *
      * @test
      */
-    public function el_cliente_de_integra_corta_el_dia_15(): void
+    public function el_cliente_de_integra_va_del_15_al_15(): void
     {
         $this->travelTo('2026-09-18');
 
@@ -375,18 +379,20 @@ class SuscripcionTest extends TestCase
 
         $cobro = Suscripcion::emitir($company);
 
+        $this->assertSame('2026-09-15', $cobro->periodo_desde->toDateString());
         $this->assertSame('2026-10-15', $cobro->periodo_hasta->toDateString());
     }
 
     /**
-     * Y a partir de ahí va del 16 al 15, mes exacto.
+     * Y el siguiente empieza el mismo 15 en que acabó el anterior.
      *
-     * El primer periodo se encoge o se estira para alinearse —al corte más
-     * cercano, nunca más de quince días— y los siguientes ya caen solos.
+     * El solape de un día es deliberado: así se lee en una factura. Quien
+     * necesite saber qué periodo cubre un día concreto se queda con el más
+     * nuevo.
      *
      * @test
      */
-    public function despues_de_alinearse_va_del_16_al_15(): void
+    public function el_periodo_siguiente_arranca_en_el_mismo_corte(): void
     {
         $this->travelTo('2026-09-18');
 
@@ -395,20 +401,19 @@ class SuscripcionTest extends TestCase
         Suscripcion::emitir($company);
         $segundo = Suscripcion::emitir($company->refresh());
 
-        $this->assertSame('2026-10-16', $segundo->periodo_desde->toDateString());
+        $this->assertSame('2026-10-15', $segundo->periodo_desde->toDateString());
         $this->assertSame('2026-11-15', $segundo->periodo_hasta->toDateString());
     }
 
     /**
-     * Alinearse nunca puede dejar un periodo vacío.
+     * Emitir el mismo día del corte no deja un periodo de un día.
      *
-     * Pasa con el que arranca justo en el día de corte: el 15 «más cercano» al
-     * final natural cae antes del principio, y sin la guarda el cobro cubriría
-     * días negativos.
+     * El 15 «anterior» es hoy mismo, así que el periodo tiene que ser el mes
+     * entero que empieza hoy, no uno que acabe esta tarde.
      *
      * @test
      */
-    public function alinearse_no_deja_un_periodo_al_reves(): void
+    public function emitir_el_dia_del_corte_da_un_mes_entero(): void
     {
         $this->travelTo('2026-09-15');
 
@@ -416,10 +421,7 @@ class SuscripcionTest extends TestCase
 
         $cobro = Suscripcion::emitir($company);
 
-        $this->assertTrue(
-            $cobro->periodo_hasta->greaterThan($cobro->periodo_desde),
-            'El periodo tiene que acabar después de empezar.'
-        );
+        $this->assertSame('2026-09-15', $cobro->periodo_desde->toDateString());
         $this->assertSame('2026-10-15', $cobro->periodo_hasta->toDateString());
     }
 

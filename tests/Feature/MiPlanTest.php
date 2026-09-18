@@ -291,4 +291,41 @@ class MiPlanTest extends TestCase
             ->get('/mi-plan')
             ->assertInertia(fn ($page) => $page->where('periodo', null)->where('por_pagar', null));
     }
+
+    /**
+     * Y ve la lista de lo que se le ha facturado.
+     *
+     * No existía en ninguna parte del lado del cliente: para saber si su mes
+     * estaba cubierto tenía que escribirnos.
+     *
+     * @test
+     */
+    public function el_cliente_ve_sus_recibos(): void
+    {
+        $company = $this->empresa(['plan' => 'pro', 'viene_de_integra' => true]);
+        $cobro = Suscripcion::emitir($company);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page
+                ->has('recibos', 1)
+                ->where('recibos.0.estado', 'cubierto')
+                ->where('recibos.0.importe_usd', 0)
+                ->where('recibos.0.desde', $cobro->periodo_desde->toDateString())
+                ->where('recibos.0.hasta', $cobro->periodo_hasta->toDateString())
+            );
+    }
+
+    /** Y los recibos de otra empresa no se le cuelan en la lista. */
+    public function test_no_ve_los_recibos_de_otra_empresa(): void
+    {
+        $otra = $this->empresa(['plan' => 'pro', 'cobro' => 'activo']);
+        Suscripcion::emitir($otra);
+
+        $company = $this->empresa(['plan' => 'pro']);
+
+        $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertInertia(fn ($page) => $page->has('recibos', 0));
+    }
 }
