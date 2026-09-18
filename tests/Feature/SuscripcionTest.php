@@ -435,7 +435,7 @@ class SuscripcionTest extends TestCase
     {
         $this->travelTo('2026-09-18');
 
-        $company = $this->empresa(['plan' => 'pro', 'ia' => 'ninguno', 'cobro' => 'mensual']);
+        $company = $this->empresa(['plan' => 'pro', 'ia' => 'ninguno', 'cobro' => 'activo']);
 
         $cobro = Suscripcion::emitir($company);
 

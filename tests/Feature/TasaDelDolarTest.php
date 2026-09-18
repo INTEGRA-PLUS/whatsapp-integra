@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Company;
+use App\Models\SuscripcionCobro;
 use App\Support\TasaDelDolar;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -215,5 +217,38 @@ class TasaDelDolarTest extends TestCase
 
             return Http::response($esLaSerie ? $filas : [$filas[0]], 200);
         });
+    }
+
+    /**
+     * Pero `--sin-onepay` no lo frena: el freno guarda la pasarela.
+     *
+     * Lo que se convierte a pesos es la factura de OnePay; la fila sólo guarda
+     * dólares. Sin envío no hay nada que la tasa pueda estropear, y bloquear ahí
+     * dejaría sin emitir unos recibos que no cobran nada.
+     *
+     * @test
+     */
+    public function sin_enviar_a_la_pasarela_la_tasa_no_frena_nada(): void
+    {
+        $this->trmEs(3151.73);
+        config(['planes.tasa_cop' => 4000]);
+
+        $company = Company::create([
+            'name' => 'Fibra del Sur',
+            'slug' => 'fibra-del-sur',
+            'active' => true,
+            'plan' => 'pro',
+            'cobro' => 'activo',
+        ]);
+
+        $this->artisan('suscripciones:emitir --sin-onepay')
+            ->expectsOutputToContain('No se envió nada a OnePay')
+            ->assertSuccessful();
+
+        $cobro = SuscripcionCobro::where('company_id', $company->id)->first();
+
+        $this->assertNotNull($cobro, 'El recibo se emite igual.');
+        $this->assertSame(SuscripcionCobro::PENDIENTE, $cobro->estado);
+        $this->assertNull($cobro->referencia_onepay, 'Y no pasó por la pasarela.');
     }
 }

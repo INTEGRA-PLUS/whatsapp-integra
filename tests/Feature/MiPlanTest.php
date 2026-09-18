@@ -250,7 +250,7 @@ class MiPlanTest extends TestCase
      */
     public function el_cliente_directo_ve_su_cobro_pendiente(): void
     {
-        $company = $this->empresa(['plan' => 'pro', 'cobro' => 'mensual']);
+        $company = $this->empresa(['plan' => 'pro', 'cobro' => 'activo']);
         $cobro = Suscripcion::emitir($company);
 
         $this->actingAs($this->admin($company))
@@ -282,7 +282,7 @@ class MiPlanTest extends TestCase
     /** Y el periodo de otra empresa no se cuela en esta pantalla. */
     public function test_no_ve_el_periodo_de_otra_empresa(): void
     {
-        $otra = $this->empresa(['plan' => 'pro', 'cobro' => 'mensual']);
+        $otra = $this->empresa(['plan' => 'pro', 'cobro' => 'activo']);
         Suscripcion::emitir($otra);
 
         $company = $this->empresa(['plan' => 'pro']);

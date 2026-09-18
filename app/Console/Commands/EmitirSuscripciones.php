@@ -37,6 +37,13 @@ use Illuminate\Console\Command;
  *   para que se vea a quién se le podría vender el complemento de IA.
  *
  * Lo que no entra en ninguna de las dos: interna, cortesía, prueba y mes gratis.
+ *
+ * ## `--sin-onepay`
+ *
+ * Emite todo y no manda nada a la pasarela. Es para la primera emisión de una
+ * base que nunca ha tenido cobros: deja los recibos creados y las fechas de
+ * corte puestas sin que a nadie le llegue una solicitud de pago por sorpresa.
+ * Los cobrables quedan `pendiente` y se envían después uno a uno desde la ficha.
  */
 class EmitirSuscripciones extends Command
 {
@@ -44,6 +51,7 @@ class EmitirSuscripciones extends Command
         {--dry : Enseña lo que emitiría y no crea nada}
         {--dias=7 : Cuántos días antes del vencimiento se emite}
         {--company= : Sólo esta empresa (id)}
+        {--sin-onepay : Emite los recibos y no manda nada a la pasarela}
         {--forzar-tasa : Emite aunque la tasa se haya separado de la TRM}';
 
     protected $description = 'Emite los cobros pendientes de las suscripciones que vencen pronto';
@@ -58,7 +66,13 @@ class EmitirSuscripciones extends Command
         //
         // Se para ANTES de emitir nada, no a mitad: cuarenta recibos mal son
         // cuarenta conversaciones incómodas y una nota de crédito por cada uno.
-        if (! $this->option('dry') && ! $this->option('forzar-tasa') && TasaDelDolar::estaDesviada()) {
+        $aLaPasarela = ! $this->option('dry') && ! $this->option('sin-onepay');
+
+        // El freno de la tasa guarda **la pasarela**, no la emisión: lo que se
+        // convierte a pesos es la factura de OnePay, y la fila sólo guarda
+        // dólares. Sin envío no hay nada que pueda salir mal por la tasa, así
+        // que `--sin-onepay` pasa de largo.
+        if ($aLaPasarela && ! $this->option('forzar-tasa') && TasaDelDolar::estaDesviada()) {
             $this->error('Facturación detenida: la tasa se separó de la TRM oficial.');
             $this->line('  '.TasaDelDolar::comoSeLee());
             $this->line('  Ajusta <fg=yellow>PLANES_TASA_COP</> o repite con <fg=yellow>--forzar-tasa</> si es a propósito.');
@@ -125,7 +139,7 @@ class EmitirSuscripciones extends Command
                 // en cero reventaría el mínimo de OnePay (5.000 pesos) y, sobre
                 // todo, le pondría al cliente delante una factura de un dinero
                 // que no debe.
-                if ($cobro->hayQueCobrarlo()) {
+                if ($cobro->hayQueCobrarlo() && $aLaPasarela) {
                     $enviado = OnePayClient::crearFactura($cobro);
                 }
             }
@@ -139,6 +153,10 @@ class EmitirSuscripciones extends Command
                     $cubierto => 'cubierto por Integra',
                     $enviado === true => 'en OnePay',
                     $enviado === false => '⚠️ no entró en OnePay',
+                    // Emitido de verdad, pero el cliente no lo ha visto: no hay
+                    // solicitud de pago en ninguna parte. Decirlo aquí evita
+                    // dar por avisado a quien no lo está.
+                    ! $this->option('dry') && ! $aLaPasarela => 'pendiente · sin enviar',
                     default => 'pendiente',
                 },
             ];
@@ -158,6 +176,12 @@ class EmitirSuscripciones extends Command
             : "Emitidos {$emitidos} cobros, en estado pendiente.");
 
         $this->line('<fg=gray>Emitir no cobra: lo que alarga la suscripción es que OnePay confirme. Los cubiertos por Integra ya nacen saldados.</>');
+
+        if (! $this->option('dry') && ! $aLaPasarela) {
+            $this->newLine();
+            $this->warn('No se envió nada a OnePay: los cobrables quedan emitidos y nadie los ha visto.');
+            $this->line('  Se mandan uno a uno desde la ficha de la empresa, cuando toque.');
+        }
 
         return self::SUCCESS;
     }
