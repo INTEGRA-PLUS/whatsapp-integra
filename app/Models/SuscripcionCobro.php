@@ -53,9 +53,35 @@ class SuscripcionCobro extends Model
         return $this->belongsTo(User::class, 'creado_por');
     }
 
+    /**
+     * Los tres estados de un cobro.
+     *
+     * `cubierto` no es un pagado con otro nombre: nadie transfirió nada y no
+     * hay referencia que buscar. Es «este mes se prestó el servicio y ya estaba
+     * pagado por otra vía». Distinguirlos es lo que evita que un recibo en cero
+     * acabe contando como ingreso en el panel.
+     */
+    public const PENDIENTE = 'pendiente';
+
+    public const PAGADO = 'pagado';
+
+    public const CUBIERTO = 'cubierto';
+
     public function estaPagado(): bool
     {
-        return $this->estado === 'pagado';
+        return $this->estado === self::PAGADO;
+    }
+
+    /** Va incluido en el paquete de Integra: ni se cobra ni se manda a la pasarela. */
+    public function estaCubierto(): bool
+    {
+        return $this->estado === self::CUBIERTO;
+    }
+
+    /** ¿Queda algo por cobrar aquí? Lo que decide si se manda a OnePay. */
+    public function hayQueCobrarlo(): bool
+    {
+        return $this->estado === self::PENDIENTE && $this->importe_usd > 0;
     }
 
     /**
@@ -70,6 +96,11 @@ class SuscripcionCobro extends Model
         $ia = $this->ia === 'ninguno' ? null : config("planes.ia.{$this->ia}.nombre", $this->ia);
         $ciclo = config("planes.ciclos.{$this->ciclo}.nombre", $this->ciclo);
 
-        return trim($plan.($ia ? ' + '.$ia : '')).' · '.mb_strtolower($ciclo);
+        $texto = trim($plan.($ia ? ' + '.$ia : '')).' · '.mb_strtolower($ciclo);
+
+        // Un recibo en cero sin explicación se lee como un error de facturación.
+        return $this->estaCubierto()
+            ? $texto.' · incluido en tu paquete Integra'
+            : $texto;
     }
 }

@@ -270,6 +270,85 @@ class SuscripcionTest extends TestCase
         return $user->fresh();
     }
 
+    // ------------------------------------------------------------------
+    // El cliente que llega con el paquete de Integra
+    // ------------------------------------------------------------------
+
+    /**
+     * Se le emite su recibo, en cero y marcado como cubierto.
+     *
+     * No es lo mismo que «no se le cobra». Es un cliente que paga, sólo que por
+     * la otra puerta: el CRM va dentro de su ERP. Sin este recibo no tiene
+     * constancia del servicio, y nosotros no vemos a quién podríamos venderle
+     * el complemento de IA.
+     *
+     * @test
+     */
+    public function al_cliente_de_integra_se_le_emite_en_cero_y_cubierto(): void
+    {
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertSame(SuscripcionCobro::CUBIERTO, $cobro->estado);
+        $this->assertSame(0, (int) $cobro->importe_usd);
+        $this->assertFalse($cobro->hayQueCobrarlo(), 'Y por tanto no va a ninguna pasarela.');
+        $this->assertStringContainsString('incluido en tu paquete Integra', $cobro->concepto());
+    }
+
+    /**
+     * Y su periodo avanza en el acto.
+     *
+     * No hay pago que esperar. Sin esto, todo cliente de Integra aparecería
+     * vencido mes tras mes mientras paga religiosamente por su ERP.
+     *
+     * @test
+     */
+    public function el_cubierto_avanza_el_periodo_al_emitirse(): void
+    {
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertNotNull($company->refresh()->suscripcion_hasta);
+        $this->assertTrue($company->suscripcion_hasta->isSameDay($cobro->periodo_hasta));
+    }
+
+    /** Pagarlo otra vez no alarga nada: ya nació saldado. */
+    public function test_un_cubierto_no_se_puede_pagar_dos_veces(): void
+    {
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $cobro = Suscripcion::emitir($company);
+        $hasta = $company->refresh()->suscripcion_hasta;
+
+        $this->assertFalse(Suscripcion::pagar($cobro, 'REF-QUE-NO-TOCA'));
+        $this->assertTrue($company->refresh()->suscripcion_hasta->isSameDay($hasta));
+    }
+
+    /**
+     * En cuanto compra la IA, sí hay algo que cobrar — y sólo la IA.
+     *
+     * Es el único camino por el que un cliente de Integra empieza a aparecer en
+     * la facturación, y es justo la venta que se busca.
+     *
+     * @test
+     */
+    public function cuando_compra_ia_se_le_cobra_solo_la_ia(): void
+    {
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'completa']);
+
+        $cobro = Suscripcion::emitir($company);
+
+        $this->assertSame(SuscripcionCobro::PENDIENTE, $cobro->estado);
+        $this->assertTrue($cobro->hayQueCobrarlo(), 'Y este sí va a OnePay.');
+
+        $plan = PlanDeLaEmpresa::de($company);
+
+        $this->assertSame($plan->precioIa(), (int) $cobro->importe_usd,
+            'Sólo el complemento: el CRM ya se lo cobró el ERP.');
+        $this->assertGreaterThan(0, (int) $cobro->importe_usd);
+    }
+
     private function empresa(array $extra = []): Company
     {
         return Company::create(array_merge([

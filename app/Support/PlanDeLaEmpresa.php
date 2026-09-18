@@ -465,6 +465,24 @@ class PlanDeLaEmpresa
      * único camino por el que un cliente de Integra empieza a aparecer en la
      * lista de cobro, y es la venta que se busca.
      */
+    /**
+     * ¿El CRM se lo cubre su paquete de Integra?
+     *
+     * No es lo mismo que «no se le cobra». Es un cliente que **paga**, sólo que
+     * por la otra puerta, y la diferencia importa: a éste se le emite igual su
+     * recibo mensual —en cero, diciendo que va incluido— y a uno de cortesía no.
+     * Sin ese recibo, el cliente de Integra no tiene constancia de que se le
+     * está prestando el servicio, y nosotros no tenemos dónde ver a quién
+     * podríamos venderle la IA.
+     *
+     * El día que compra el complemento deja de estar cubierto: ahí sí hay un
+     * importe, y ése sí va a la pasarela.
+     */
+    public function cubiertoPorIntegra(): bool
+    {
+        return $this->incluidoEnIntegra() && ! $this->tieneIa();
+    }
+
     public function seFactura(): bool
     {
         if ($this->incluidoEnIntegra()) {

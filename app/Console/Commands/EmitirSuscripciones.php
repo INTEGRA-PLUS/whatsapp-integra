@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Company;
 use App\Models\SuscripcionCobro;
+use App\Services\OnePayClient;
 use App\Support\PlanDeLaEmpresa;
 use App\Support\Suscripcion;
 use Illuminate\Console\Command;
@@ -16,12 +17,24 @@ use Illuminate\Console\Command;
  * pasarela, este comando seguirá sirviendo: lo que cambiará es que alguien
  * llamará a `Suscripcion::pagar()` desde un webhook en vez de a mano.
  *
- * **No cobra nada ni contacta con nadie.** Deja el cobro pendiente y se aparta.
+ * **Sí manda a OnePay** desde el 18-sep-2026. Antes no: emitir dejaba la fila
+ * pendiente y alguien la enviaba a mano desde el panel. Con la pasarela en
+ * producción, separarlos sólo conseguía que el cobro existiera sin que el
+ * cliente lo viera.
  *
- * No se programa a propósito. Emitir un cobro es un acto comercial —lleva
- * importe y periodo— y encadenarlo a un cron antes de que haya con qué cobrarlo
- * llenaría la tabla de pendientes que nadie va a pagar. Cuando esté la pasarela
- * se decide si se automatiza.
+ * Y sí se programa, desde la misma fecha y por el mismo motivo: el comentario
+ * que había aquí decía «no se programa a propósito… cuando esté la pasarela se
+ * decide si se automatiza». Ya está.
+ *
+ * ## Dos clases de emisión
+ *
+ * - **Cobrable** — hay un importe. Queda `pendiente` y se manda a OnePay.
+ * - **Cubierto por Integra** — el CRM va dentro de su ERP. Se emite igual, en
+ *   cero y en estado `cubierto`, y **no se manda a ninguna pasarela**: no hay
+ *   nada que cobrar. Existe para que el cliente tenga constancia del servicio y
+ *   para que se vea a quién se le podría vender el complemento de IA.
+ *
+ * Lo que no entra en ninguna de las dos: interna, cortesía, prueba y mes gratis.
  */
 class EmitirSuscripciones extends Command
 {
@@ -48,7 +61,10 @@ class EmitirSuscripciones extends Command
         foreach ($empresas as $company) {
             $plan = PlanDeLaEmpresa::de($company);
 
-            if (! $plan->seFactura()) {
+            // Cortesía, prueba y mes gratis se quedan fuera de las dos clases:
+            // no se les cobra Y no se les debe nada por otra vía, así que un
+            // recibo suyo no diría nada cierto.
+            if (! $plan->seFactura() && ! $plan->cubiertoPorIntegra()) {
                 continue;
             }
 
@@ -68,23 +84,40 @@ class EmitirSuscripciones extends Command
                 ->exists();
 
             if ($pendiente) {
-                $filas[] = [$company->name, '—', '—', 'ya tiene uno pendiente'];
+                $filas[] = [$company->name, '—', '—', '—', 'ya tiene uno pendiente'];
 
                 continue;
             }
 
             [$desde, $hasta] = Suscripcion::proximoPeriodo($company);
 
+            $cubierto = $plan->cubiertoPorIntegra();
+            $enviado = null;
+
             if (! $this->option('dry')) {
-                Suscripcion::emitir($company);
+                $cobro = Suscripcion::emitir($company);
                 $emitidos++;
+
+                // A la pasarela sólo lo que tiene algo que cobrar. Un cubierto
+                // en cero reventaría el mínimo de OnePay (5.000 pesos) y, sobre
+                // todo, le pondría al cliente delante una factura de un dinero
+                // que no debe.
+                if ($cobro->hayQueCobrarlo()) {
+                    $enviado = OnePayClient::crearFactura($cobro);
+                }
             }
 
             $filas[] = [
                 $company->name,
-                '$'.$plan->precioDelCiclo(),
+                $cubierto ? 'incluido' : '$'.$plan->precioDelCiclo(),
                 mb_strtolower($plan->nombreCiclo()),
                 $desde->format('d-M').' a '.$hasta->format('d-M'),
+                match (true) {
+                    $cubierto => 'cubierto por Integra',
+                    $enviado === true => 'en OnePay',
+                    $enviado === false => '⚠️ no entró en OnePay',
+                    default => 'pendiente',
+                },
             ];
         }
 
@@ -94,14 +127,14 @@ class EmitirSuscripciones extends Command
             return self::SUCCESS;
         }
 
-        $this->table(['Empresa', 'Importe', 'Ciclo', 'Periodo'], $filas);
+        $this->table(['Empresa', 'Importe', 'Ciclo', 'Periodo', 'Estado'], $filas);
 
         $this->newLine();
         $this->line($this->option('dry')
             ? 'Con --dry no se ha creado nada.'
             : "Emitidos {$emitidos} cobros, en estado pendiente.");
 
-        $this->line('<fg=gray>Emitir no cobra. Marcar como pagado es lo que alarga la suscripción.</>');
+        $this->line('<fg=gray>Emitir no cobra: lo que alarga la suscripción es que OnePay confirme. Los cubiertos por Integra ya nacen saldados.</>');
 
         return self::SUCCESS;
     }

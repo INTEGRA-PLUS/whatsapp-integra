@@ -65,6 +65,20 @@ class OnePayClient
      */
     public static function crearFactura(SuscripcionCobro $cobro): ?string
     {
+        // Un cubierto por el paquete de Integra no va a ninguna pasarela: no
+        // hay nada que cobrar, y ponerle delante una factura de un dinero que
+        // no debe es peor que no mandarle nada. Se comprueba aquí y no sólo en
+        // quien llama porque este método lo invocan tres sitios distintos.
+        if (! $cobro->hayQueCobrarlo()) {
+            Log::info('ℹ️ Cobro no enviado a OnePay: no hay nada que cobrar', [
+                'cobro' => $cobro->id,
+                'estado' => $cobro->estado,
+                'importe_usd' => $cobro->importe_usd,
+            ]);
+
+            return null;
+        }
+
         if (! self::configurado()) {
             Log::warning('⚠️ OnePay sin token de verdad: el cobro queda sólo en el CRM', [
                 'cobro' => $cobro->id,

@@ -33,20 +33,41 @@ class Suscripcion
         $plan = PlanDeLaEmpresa::de($company);
         [$desde, $hasta] = self::proximoPeriodo($company);
 
-        return SuscripcionCobro::create([
+        // Al cliente de Integra sin complemento se le emite igual su recibo, en
+        // cero y marcado como cubierto: paga el CRM dentro de su ERP, así que
+        // hay servicio prestado y tiene que quedar constancia. Lo que no hay es
+        // nada que cobrar, y por eso no es un «pendiente» — un pendiente en cero
+        // se quedaría ahí para siempre esperando un pago que nadie va a hacer.
+        $cubierto = $plan->cubiertoPorIntegra();
+
+        $cobro = SuscripcionCobro::create([
             'company_id' => $company->id,
             // Copia, no referencia: los precios cambian y el recibo tiene que
             // decir lo que se cobró.
             'plan' => $plan->slug(),
             'ia' => $plan->slugIa(),
             'ciclo' => $plan->ciclo(),
-            'importe_usd' => $plan->precioDelCiclo(),
+            'importe_usd' => $cubierto ? 0 : $plan->precioDelCiclo(),
             'periodo_desde' => $desde,
             'periodo_hasta' => $hasta,
-            'estado' => 'pendiente',
+            'estado' => $cubierto ? SuscripcionCobro::CUBIERTO : SuscripcionCobro::PENDIENTE,
+            // Un cubierto nace con su periodo ya cerrado: no hay pago que
+            // esperar, así que la fecha es la de emisión y no la de un cobro
+            // que nunca va a llegar.
+            'pagado_at' => $cubierto ? now() : null,
             'nota' => $nota,
             'creado_por' => $creadoPor,
         ]);
+
+        // El cubierto avanza el periodo en el acto. No hay pago que esperar, y
+        // dejarlo sin avanzar dejaría a todo cliente de Integra apareciendo como
+        // vencido mes tras mes mientras paga religiosamente por su ERP.
+        if ($cobro->estaCubierto()
+            && (! $company->suscripcion_hasta || $hasta->greaterThan($company->suscripcion_hasta))) {
+            $company->update(['suscripcion_hasta' => $hasta]);
+        }
+
+        return $cobro;
     }
 
     /**
@@ -61,7 +82,11 @@ class Suscripcion
      */
     public static function pagar(SuscripcionCobro $cobro, ?string $referencia = null, ?Carbon $cuando = null): bool
     {
-        if ($cobro->estaPagado()) {
+        // Un cubierto ya nació saldado por el paquete de Integra. Pagarlo
+        // otra vez alargaría el periodo por segunda vez, que es el error que
+        // este método lleva evitando desde el primer día con las referencias
+        // repetidas de la pasarela.
+        if ($cobro->estaPagado() || $cobro->estaCubierto()) {
             return false;
         }
 

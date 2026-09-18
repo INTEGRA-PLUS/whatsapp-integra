@@ -44,6 +44,23 @@ Schedule::command('coexistencia:vigilar')->hourly()->withoutOverlapping();
 // rehacer el inicio de sesión con el cliente delante.
 Schedule::command('instagram:renovar-tokens')->dailyAt('07:10')->withoutOverlapping();
 
+/*
+ * Los cobros de las suscripciones que vencen en la semana.
+ *
+ * A las 7:15 y no de madrugada: si algo falla, el aviso de OnePay le llega al
+ * cliente en horario y hay alguien despierto para mirarlo.
+ *
+ * Diario y no mensual a propósito. Cada empresa vence en su propia fecha —la de
+ * su último pago—, así que un cron mensual dejaría fuera a media base o cobraría
+ * a destiempo. Pasa todos los días y emite sólo lo que entra en los siete
+ * siguientes.
+ *
+ * Emitir dos veces lo mismo es el riesgo real, y por eso el comando no emite si
+ * ya hay un pendiente sin pagar: el día que se pagaran los dos, la suscripción
+ * se alargaría el doble.
+ */
+Schedule::command('suscripciones:emitir')->dailyAt('07:15')->withoutOverlapping();
+
 // Las extensiones que corren solas (hoy, el seguimiento de conversaciones sin
 // respuesta). Un solo comando para todas: cada extensión nueva cambiaría este
 // archivo compartido, y el módulo existe precisamente para que añadir una no
