@@ -187,7 +187,7 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
     // responde» y vuelve a una pestaña ya cargada no dispara ningún reload, y
     // se encontraba la ficha bloqueada igual.
     function refrescarLaIa() {
-        router.reload({ only: ['orden', 'iaDisponible'] });
+        router.reload({ only: ['orden', 'iaDisponible', 'iaEstado', 'puerta'] });
     }
 
     /** El menú que hoy saluda en esa instancia, si lo hay y no es éste. */
@@ -315,13 +315,17 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
                     escribe. Todo lo demás de esta pantalla son detalles de esa
                     decisión, y leerlos antes obliga a deducir qué habría que
                     cambiar. */}
-                {/* `iaDisponible` TIENE que ir en esta lista. Elegir «Con IA»
-                    enciende la IA en el servidor, pero un reload parcial sólo
-                    trae los props que se le nombran: sin él la ficha «Que
-                    responda la IA» seguía bloqueada, diciendo que encendieras
-                    algo que acababas de encender. Un `only` es una lista que se
-                    queda corta cada vez que aparece un prop nuevo. */}
-                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'integra', 'iaDisponible'] })} />
+                {/* Un `only` es una lista que se queda corta cada vez que
+                    aparece un prop nuevo, y ya ha pasado dos veces: primero con
+                    `iaDisponible` —la ficha «Que responda la IA» seguía
+                    bloqueada pidiendo encender lo que acababas de encender— y
+                    luego con `puerta`, que no aparecía hasta recargar entera la
+                    página.
+                    
+                    Los dos dependen de lo mismo que cambia aquí: si la IA está
+                    encendida y quién saluda. Si añades un prop que dependa de
+                    eso, nómbralo aquí también. */}
+                <ModoDeAtencion alCambiar={() => router.reload({ only: ['menus', 'orden', 'integra', 'iaDisponible', 'iaEstado', 'puerta'] })} />
 
                 {/* Y debajo, el paso a paso de esa decisión. */}
                 <OrdenDeLaConversacion {...ordenProps} abiertoPorDefecto={menus.length === 0} />
@@ -1671,7 +1675,7 @@ function EncenderLaIa({ estado = {}, className = '' }) {
         setEnviando(true); setError('');
 
         axios.put('/api/settings/ai-flow', { chat_enabled: true })
-            .then(() => router.reload({ only: ['orden', 'iaDisponible', 'iaEstado'] }))
+            .then(() => router.reload({ only: ['orden', 'iaDisponible', 'iaEstado', 'puerta'] }))
             .catch(err => setError(err.response?.data?.message ?? 'No se pudo encender la IA.'))
             .finally(() => setEnviando(false));
     }
