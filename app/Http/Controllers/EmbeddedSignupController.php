@@ -94,12 +94,25 @@ class EmbeddedSignupController extends Controller
     {
         $data = $request->validate([
             'code'    => 'required|string',
-            'waba_id' => 'required|string|max:64',
+            // Opcional desde el 19-sep-2026. Meta lo manda por un canal
+            // distinto del código —un `postMessage` del iframe— y ese canal
+            // falla solo: el navegador lo bloquea, o llega después de que el
+            // callback ya terminó. El cliente veía entonces «Meta autorizó la
+            // conexión pero no devolvió la cuenta» habiéndolo hecho todo bien,
+            // y el código —de un solo uso— se tiraba a la basura.
+            //
+            // Se resuelve abajo con el propio token, que sabe para qué cuenta
+            // se emitió.
+            'waba_id' => 'nullable|string|max:64',
             // Opcional a propósito: el evento que cierra la coexistencia
             // (FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING) trae SÓLO el waba_id,
             // porque el número ya existía. Se resuelve más abajo preguntándole
             // a Meta por los números de ese WABA.
             'phone_number_id' => 'nullable|string|max:64',
+            // Qué vio el navegador. No se usa para decidir nada: se escribe en
+            // el log para que el próximo fallo se pueda diagnosticar en vez de
+            // adivinarlo. Hasta ahora esto moría en el navegador del cliente.
+            'diagnostico' => 'nullable|array',
         ]);
 
         $user = auth()->user();
@@ -123,6 +136,34 @@ class EmbeddedSignupController extends Controller
         }
 
         $token = $exchange['token'];
+
+        // El WABA que el navegador no consiguió. Se pregunta con el token, que
+        // es quien de verdad lo sabe: el `postMessage` de Meta es una
+        // comodidad, no la fuente.
+        $wabaId = $data['waba_id'] ?? null;
+
+        if (! $wabaId) {
+            $wabaId = $this->meta->wabaDelToken($token);
+
+            Log::info('Embedded Signup: el navegador no trajo el WABA', [
+                'company_id' => $user->company_id,
+                'recuperado' => $wabaId,
+                'diagnostico' => $data['diagnostico'] ?? null,
+            ]);
+        }
+
+        if (! $wabaId) {
+            // Aquí sí se acabó: hay token pero no da acceso a ninguna cuenta de
+            // WhatsApp, que es lo que pasa cuando la ventana se cerró antes del
+            // último paso. El código ya está gastado, así que hay que repetirlo
+            // entero — y el mensaje tiene que decir eso y no «error de Meta».
+            return response()->json([
+                'message' => 'La autorización no llegó a incluir ninguna cuenta de WhatsApp. '
+                    .'Suele pasar cuando la ventana de Meta se cierra antes del último paso: vuelve a abrirla y termina hasta el final.',
+            ], 422);
+        }
+
+        $data['waba_id'] = $wabaId;
 
         // Sin esto la cuenta queda vinculada pero muda: los mensajes que le
         // escriban al cliente no llegarían nunca a nuestro callback.

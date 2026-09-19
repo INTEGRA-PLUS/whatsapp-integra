@@ -300,6 +300,93 @@ class EmbeddedSignupTest extends TestCase
 
     /* ───────────────────────────── helpers ───────────────────────────── */
 
+    /**
+     * Si el navegador no trajo el WABA, se saca del token.
+     *
+     * Meta lo manda por un canal distinto del código —un `postMessage` del
+     * iframe— y ese canal falla solo: el navegador lo bloquea, o llega después
+     * de que el callback ya terminó. Antes eso abortaba el registro y tiraba el
+     * código, que es de un solo uso: el cliente había hecho todo bien y tenía
+     * que repetir la ventana entera.
+     *
+     * El token sabe para qué cuenta se emitió, y lo dice en `granular_scopes`.
+     *
+     * @test
+     */
+    public function sin_waba_lo_recupera_del_token(): void
+    {
+        config([
+            'services.meta.app_id' => '865904982715022',
+            'services.meta.app_secret' => 'secreto',
+            'services.meta.embedded_signup_config_id' => '1739855773915048',
+        ]);
+
+        Http::fake([
+            '*/oauth/access_token*' => Http::response(['access_token' => 'EAA-token'], 200),
+            '*/debug_token*' => Http::response(['data' => [
+                'app_id' => '865904982715022',
+                'granular_scopes' => [
+                    ['scope' => 'whatsapp_business_messaging', 'target_ids' => ['102290129340398']],
+                    ['scope' => 'whatsapp_business_management', 'target_ids' => ['102290129340398']],
+                ],
+            ]], 200),
+            '*/subscribed_apps' => Http::response(['success' => true], 200),
+            '*/phone_numbers*' => Http::response(['data' => [[
+                'id' => '106540352242922',
+                'display_phone_number' => '+57 318 1454747',
+                'verified_name' => 'Mi Negocio',
+            ]]], 200),
+        ]);
+
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->postJson('/api/embedded-signup', [
+                'code' => 'AQB-codigo',
+                'diagnostico' => ['eventos' => []],
+            ])
+            ->assertOk();
+
+        $instance = Instance::where('company_id', $admin->company_id)->first();
+
+        $this->assertSame('102290129340398', $instance->waba_id, 'El WABA sale del token.');
+        $this->assertSame('106540352242922', $instance->phone_number_id);
+    }
+
+    /**
+     * Y si el token tampoco da acceso a ninguna cuenta, se dice qué pasó.
+     *
+     * Es lo que queda cuando la ventana se cerró antes del último paso: hay
+     * autorización pero no hay cuenta. El mensaje tiene que hablar de eso y no
+     * de un error de Meta, porque lo que toca hacer es distinto —repetir la
+     * ventana y terminarla— y el código ya está gastado.
+     *
+     * @test
+     */
+    public function un_token_sin_cuenta_lo_explica(): void
+    {
+        config([
+            'services.meta.app_id' => '865904982715022',
+            'services.meta.app_secret' => 'secreto',
+            'services.meta.embedded_signup_config_id' => '1739855773915048',
+        ]);
+
+        Http::fake([
+            '*/oauth/access_token*' => Http::response(['access_token' => 'EAA-token'], 200),
+            '*/debug_token*' => Http::response(['data' => ['app_id' => '865904982715022', 'granular_scopes' => []]], 200),
+        ]);
+
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->postJson('/api/embedded-signup', ['code' => 'AQB-codigo'])
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'La autorización no llegó a incluir ninguna cuenta de WhatsApp. '
+                .'Suele pasar cuando la ventana de Meta se cierra antes del último paso: vuelve a abrirla y termina hasta el final.']);
+
+        $this->assertSame(0, Instance::where('company_id', $admin->company_id)->count());
+    }
+
     private function fakeMeta(bool $subscribeOk = true): void
     {
         config([

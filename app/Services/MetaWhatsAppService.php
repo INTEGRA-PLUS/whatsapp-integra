@@ -982,6 +982,46 @@ class MetaWhatsAppService
         }
     }
 
+    /**
+     * A qué WABA le dio acceso este token.
+     *
+     * Existe porque el registro insertado devuelve el WABA por un canal
+     * distinto del código —un `postMessage` del iframe de Meta— y ese canal
+     * falla solo: el navegador lo bloquea, o llega después de que el callback
+     * ya se rindió. Cuando pasa, el cliente ve «Meta autorizó la conexión pero
+     * no devolvió la cuenta» después de haber hecho todo bien.
+     *
+     * Y no hacía falta perderlo: el token que se acaba de canjear **sabe** para
+     * qué cuenta se emitió. Meta lo dice en `granular_scopes`, que es la lista
+     * de a qué objetos alcanza cada permiso; el de
+     * `whatsapp_business_management` son los WABA.
+     *
+     * Devuelve el primero. Un token del registro insertado sale de elegir UNA
+     * cuenta en la ventana, así que en la práctica sólo hay uno; si algún día
+     * llegaran dos, quedarse con el primero es lo mismo que hace el payload de
+     * Meta cuando sí lo manda.
+     */
+    public function wabaDelToken(string $accessToken): ?string
+    {
+        $debug = $this->debugToken($accessToken);
+
+        if (! ($debug['success'] ?? false)) {
+            return null;
+        }
+
+        foreach ((array) data_get($debug, 'data.granular_scopes', []) as $scope) {
+            if (($scope['scope'] ?? null) === 'whatsapp_business_management') {
+                $id = data_get($scope, 'target_ids.0');
+
+                if ($id) {
+                    return (string) $id;
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function listWabaPhoneNumbers(string $wabaId, string $accessToken)
     {
         return $this->graphGet("/{$wabaId}/phone_numbers", $accessToken, [

@@ -35,6 +35,11 @@ export default function EmbeddedSignupButton({ onConnected }) {
     // nuevo no le cambia nada al celular de nadie.
     const [mostrarAviso, setMostrarAviso] = useState(false);
     const sessionInfo = useRef(null);
+    // Qué eventos mandó Meta de verdad. Sin esto, cuando el registro fallaba no
+    // quedaba nada en ninguna parte: el fallo moría en el navegador del cliente
+    // y había que adivinarlo.
+    const rastro = useRef([]);
+    const cancelado = useRef(false);
 
     useEffect(() => {
         let vivo = true;
@@ -81,6 +86,8 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 const data = JSON.parse(event.data);
                 if (data.type !== 'WA_EMBEDDED_SIGNUP') return;
 
+                rastro.current.push(data.event ?? '(sin evento)');
+
                 // La coexistencia termina con su propio evento, y su payload
                 // trae SÓLO el waba_id: el número ya existe, así que Meta no
                 // lo devuelve. Exigir aquí el phone_number_id haría fallar el
@@ -93,6 +100,7 @@ export default function EmbeddedSignupButton({ onConnected }) {
                     };
                 } else if (data.event === 'CANCEL') {
                     sessionInfo.current = null;
+                    cancelado.current = true;
                 }
             } catch {
                 // Meta manda por este canal mensajes que no son JSON; se ignoran.
@@ -104,6 +112,28 @@ export default function EmbeddedSignupButton({ onConnected }) {
         return () => window.removeEventListener('message', onMessage);
     }, []);
 
+    /**
+     * Espera a que llegue el `postMessage` con la cuenta.
+     *
+     * El callback de `FB.login` y el mensaje de Meta son dos canales
+     * independientes y no hay orden garantizado: si el callback gana la carrera
+     * —pasa— el ref todavía está vacío, y antes eso bastaba para abortar un
+     * registro que había ido bien.
+     *
+     * Cuatro segundos: lo que tarda en llegar cuando llega, con margen. Si se
+     * agotan no se aborta nada — el servidor sabe sacar el WABA del token.
+     */
+    const esperarLaCuenta = useCallback(async (ms = 4000) => {
+        const hasta = Date.now() + ms;
+
+        while (Date.now() < hasta) {
+            if (sessionInfo.current?.waba_id) return sessionInfo.current;
+            await new Promise(r => setTimeout(r, 150));
+        }
+
+        return sessionInfo.current;
+    }, []);
+
     const launch = useCallback((coexistencia = false) => {
         setError(null);
 
@@ -113,24 +143,36 @@ export default function EmbeddedSignupButton({ onConnected }) {
         }
 
         sessionInfo.current = null;
+        rastro.current = [];
+        cancelado.current = false;
 
-        window.FB.login((response) => {
+        window.FB.login(async (response) => {
             const code = response?.authResponse?.code;
 
             // Sin código el cliente cerró la ventana o no autorizó. No es un
             // fallo que haya que explicar: simplemente no pasó nada.
             if (!code) return;
 
-            const info = sessionInfo.current;
+            const info = await esperarLaCuenta();
 
-            if (!info?.waba_id) {
-                setError('Meta autorizó la conexión pero no devolvió la cuenta. Vuelve a intentarlo, y si se repite conéctalo a mano.');
+            if (cancelado.current) {
+                setError('Cerraste la ventana de Meta antes de terminar. Vuelve a abrirla y llega hasta el último paso.');
                 return;
             }
 
             setLoading(true);
 
-            axios.post('/api/embedded-signup', { code, ...info })
+            // Se manda aunque falte la cuenta. El `postMessage` de Meta es una
+            // comodidad, no la fuente: el token que el servidor canjea con este
+            // código sabe a qué WABA pertenece. Antes se abortaba aquí y el
+            // código —de un solo uso— se tiraba, así que el cliente tenía que
+            // repetir la ventana entera por un mensaje que no llegó a tiempo.
+            axios.post('/api/embedded-signup', {
+                code,
+                waba_id: info?.waba_id ?? null,
+                phone_number_id: info?.phone_number_id ?? null,
+                diagnostico: { eventos: rastro.current, coexistencia },
+            })
                 .then(({ data }) => onConnected?.(data))
                 .catch(err => setError(err?.response?.data?.message ?? 'No se pudo completar la conexión.'))
                 .finally(() => setLoading(false));
@@ -151,7 +193,7 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
                 : { setup: {} },
         });
-    }, [config, onConnected]);
+    }, [config, onConnected, esperarLaCuenta]);
 
     if (!config) return null;
 
