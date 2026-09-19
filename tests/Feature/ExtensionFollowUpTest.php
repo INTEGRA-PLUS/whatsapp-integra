@@ -280,4 +280,144 @@ class ExtensionFollowUpTest extends TestCase
 
         Notification::assertSentTo($this->admin, ExtensionAlertNotification::class);
     }
+
+    /**
+     * Varios chats esperando son UN aviso, no uno por chat.
+     *
+     * Mandar uno por conversación parecía lo más informativo y era lo
+     * contrario: el 23-sep-2026, en producción, las tres empresas que usan esto
+     * tenían el 100 % de sus avisos de seguimiento sin leer —17 de 17 en una,
+     * 27 de 30 en otra—, porque la campana llegaba llena de líneas idénticas.
+     */
+    public function test_varios_chats_esperando_son_un_solo_aviso(): void
+    {
+        $this->instalar();
+
+        $this->conversacion('inbound', 45, ['wa_id' => '573001', 'phone_number' => '573001']);
+        $this->conversacion('inbound', 90, ['wa_id' => '573002', 'phone_number' => '573002']);
+        $this->conversacion('inbound', 200, ['wa_id' => '573003', 'phone_number' => '573003', 'name' => 'Camilo']);
+
+        $this->correr();
+
+        Notification::assertSentToTimes($this->admin, ExtensionAlertNotification::class, 1);
+
+        Notification::assertSentTo($this->admin, ExtensionAlertNotification::class, function ($aviso) {
+            // Encabezado por el que más lleva esperando, que es el dato que
+            // distingue un día malo de uno normal. La cantidad sola, no.
+            return $aviso->title === '3 conversaciones sin respuesta'
+                && str_contains($aviso->body, 'Camilo')
+                && str_contains($aviso->body, '3 h 20 min');
+        });
+    }
+
+    /** El enlace de la campana lleva al que más lleva esperando, no a uno cualquiera. */
+    public function test_el_aviso_lleva_al_chat_que_mas_espera(): void
+    {
+        $this->instalar();
+
+        $this->conversacion('inbound', 45, ['wa_id' => '573001', 'phone_number' => '573001']);
+        $viejo = $this->conversacion('inbound', 300, ['wa_id' => '573002', 'phone_number' => '573002']);
+
+        $this->correr();
+
+        Notification::assertSentTo($this->admin, ExtensionAlertNotification::class,
+            fn ($aviso) => $aviso->conversation?->id === $viejo->id);
+    }
+
+    /** Con uno solo, el aviso de siempre: nombre y tiempo, sin contarlo. */
+    public function test_con_un_solo_chat_el_aviso_no_cambia(): void
+    {
+        $this->instalar();
+        $this->conversacion('inbound', 45, ['name' => 'Ruth']);
+
+        $this->correr();
+
+        Notification::assertSentTo($this->admin, ExtensionAlertNotification::class,
+            fn ($aviso) => $aviso->title === 'Conversación sin respuesta'
+                && str_contains($aviso->body, '«Ruth» lleva 45 min'));
+    }
+
+    /**
+     * Las que ya se cayeron del radar: más de 24 h sin respuesta.
+     *
+     * El aviso de arriba no las mira a propósito, y por eso no las miraba
+     * nadie: el 23-sep-2026 una sola empresa tenía 93 clientes que escribieron
+     * y nunca recibieron contestación, el más antiguo de hacía 51 días.
+     */
+    public function test_resume_las_que_se_quedaron_atras(): void
+    {
+        $this->instalar(['abandonadas_minimo' => 10]);
+
+        for ($i = 0; $i < 11; $i++) {
+            $this->conversacion('inbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        $this->conversacion('inbound', 60 * 24 * 40, ['wa_id' => '573099', 'phone_number' => '573099', 'name' => 'Jhoana']);
+
+        $this->correr();
+
+        Notification::assertSentTo($this->admin, ExtensionAlertNotification::class, function ($aviso) {
+            return $aviso->title === 'Conversaciones que se quedaron atrás'
+                && str_contains($aviso->body, '12 clientes')
+                && str_contains($aviso->body, 'Jhoana')
+                && str_contains($aviso->body, '40 días');
+        });
+    }
+
+    /** Y se resume una vez al día, no cada cinco minutos. */
+    public function test_el_resumen_no_se_repite_en_el_dia(): void
+    {
+        $this->instalar(['abandonadas_minimo' => 10]);
+
+        for ($i = 0; $i < 12; $i++) {
+            $this->conversacion('inbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        $this->correr();
+        $this->correr();
+
+        Notification::assertSentToTimes($this->admin, ExtensionAlertNotification::class, 1);
+    }
+
+    /** Un resumen de «3 conversaciones atrasadas» es ruido: hay un mínimo. */
+    public function test_no_resume_si_son_menos_del_minimo(): void
+    {
+        $this->instalar(['abandonadas_minimo' => 10]);
+
+        for ($i = 0; $i < 4; $i++) {
+            $this->conversacion('inbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        $this->correr();
+
+        Notification::assertNothingSent();
+    }
+
+    /** Las atrasadas que sí se contestaron no cuentan: nadie espera en ellas. */
+    public function test_el_resumen_no_cuenta_las_ya_contestadas(): void
+    {
+        $this->instalar(['abandonadas_minimo' => 10]);
+
+        for ($i = 0; $i < 11; $i++) {
+            $this->conversacion('outbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        $this->correr();
+
+        Notification::assertNothingSent();
+    }
+
+    /** Y se puede apagar, para quien no quiera el repaso diario. */
+    public function test_el_resumen_se_puede_apagar(): void
+    {
+        $this->instalar(['abandonadas' => false, 'abandonadas_minimo' => 10]);
+
+        for ($i = 0; $i < 12; $i++) {
+            $this->conversacion('inbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        $this->correr();
+
+        Notification::assertNothingSent();
+    }
 }
