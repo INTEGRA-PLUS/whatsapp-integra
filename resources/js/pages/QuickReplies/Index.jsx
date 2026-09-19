@@ -3,11 +3,11 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Zap, Search, MessageSquareText, Info } from 'lucide-react';
+import { Plus, Pencil, Trash2, Zap, Search, MessageSquareText, Info, FileText, MessageSquare } from 'lucide-react';
 
 const SHORTCUT_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-export default function QuickRepliesIndex({ replies: initialReplies }) {
+export default function QuickRepliesIndex({ replies: initialReplies, con_integra = false }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
@@ -21,7 +21,7 @@ export default function QuickRepliesIndex({ replies: initialReplies }) {
         if (!q) return replies;
         return replies.filter(r =>
             r.shortcut.toLowerCase().includes(q) ||
-            r.message.toLowerCase().includes(q)
+            (r.message ?? '').toLowerCase().includes(q)
         );
     }, [replies, search]);
 
@@ -121,7 +121,12 @@ export default function QuickRepliesIndex({ replies: initialReplies }) {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 align-top text-foreground whitespace-pre-wrap break-words max-w-xl">
-                                            {reply.message}
+                                            {reply.tipo === 'factura' ? (
+                                                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                                                    <FileText className="size-4 shrink-0 text-success" />
+                                                    Envía la factura del cliente. Al usarla se elige cuál, con la última propuesta.
+                                                </span>
+                                            ) : reply.message}
                                         </td>
                                         <td className="px-4 py-3 align-top">
                                             <div className="flex justify-end gap-1">
@@ -158,6 +163,7 @@ export default function QuickRepliesIndex({ replies: initialReplies }) {
                     title="Nueva Respuesta Rápida"
                     description="Define un atajo y el mensaje que se enviará."
                     submitLabel="Crear Respuesta"
+                    conIntegra={con_integra}
                     onClose={() => setShowCreate(false)}
                     onSaved={(reply) => { upsertLocal(reply); setShowCreate(false); }}
                 />
@@ -167,6 +173,7 @@ export default function QuickRepliesIndex({ replies: initialReplies }) {
                 <ReplyFormModal
                     title="Editar Respuesta Rápida"
                     description={`Modificar atajo /${editing.shortcut}`}
+                    conIntegra={con_integra}
                     submitLabel="Guardar Cambios"
                     initial={editing}
                     onClose={() => setEditing(null)}
@@ -177,8 +184,27 @@ export default function QuickRepliesIndex({ replies: initialReplies }) {
     );
 }
 
-function ReplyFormModal({ title, description, submitLabel, initial, onClose, onSaved }) {
+/** Una de las dos cosas que puede hacer un atajo. */
+function OpcionDeTipo({ activo, onClick, icono: Icono, titulo, detalle }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`rounded-lg border p-3 text-left transition ${
+                activo ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-input hover:bg-muted/40'
+            }`}
+        >
+            <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <Icono className="size-4 shrink-0" /> {titulo}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">{detalle}</span>
+        </button>
+    );
+}
+
+function ReplyFormModal({ title, description, submitLabel, initial, conIntegra, onClose, onSaved }) {
     const [shortcut, setShortcut] = useState(initial?.shortcut ?? '');
+    const [tipo, setTipo] = useState(initial?.tipo ?? 'texto');
     const [message, setMessage] = useState(initial?.message ?? '');
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
@@ -188,8 +214,11 @@ function ReplyFormModal({ title, description, submitLabel, initial, onClose, onS
         if (!shortcut.trim()) next.shortcut = 'El atajo es obligatorio.';
         else if (!SHORTCUT_PATTERN.test(shortcut)) next.shortcut = 'Sólo letras, números, guiones y guiones bajos.';
         else if (shortcut.length > 50) next.shortcut = 'Máximo 50 caracteres.';
-        if (!message.trim()) next.message = 'El mensaje es obligatorio.';
-        else if (message.length > 4000) next.message = 'Máximo 4000 caracteres.';
+        // La de factura no lleva texto: lo que manda es la plantilla con el PDF.
+        if (tipo !== 'factura') {
+            if (!message.trim()) next.message = 'El mensaje es obligatorio.';
+            else if (message.length > 4000) next.message = 'Máximo 4000 caracteres.';
+        }
         return next;
     }
 
@@ -203,7 +232,7 @@ function ReplyFormModal({ title, description, submitLabel, initial, onClose, onS
         setErrors({});
         setSubmitting(true);
         try {
-            const payload = { shortcut: shortcut.trim(), message };
+            const payload = { shortcut: shortcut.trim(), tipo, message: tipo === 'factura' ? null : message };
             const res = initial
                 ? await axios.put(`/api/quick-replies/${initial.id}`, payload)
                 : await axios.post('/api/quick-replies', payload);
@@ -247,6 +276,47 @@ function ReplyFormModal({ title, description, submitLabel, initial, onClose, onS
                         {errors.shortcut && <p className="text-xs text-destructive font-medium">{errors.shortcut}</p>}
                     </div>
 
+                    {/* Qué hace este atajo. Sólo se ofrece la factura a quien
+                        tiene Integra: el PDF y el importe salen del ERP, y sin
+                        él sería un atajo que, el día que alguien lo pulse
+                        delante de un cliente, no hace nada. */}
+                    {(conIntegra || tipo === 'factura') && (
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium text-foreground">Qué envía</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <OpcionDeTipo
+                                    activo={tipo !== 'factura'}
+                                    onClick={() => setTipo('texto')}
+                                    icono={MessageSquare}
+                                    titulo="Un texto"
+                                    detalle="El mensaje que escribas abajo."
+                                />
+                                <OpcionDeTipo
+                                    activo={tipo === 'factura'}
+                                    onClick={() => setTipo('factura')}
+                                    icono={FileText}
+                                    titulo="La factura"
+                                    detalle="Pregunta cuál y propone la última."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {tipo === 'factura' ? (
+                        <div className="rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-muted-foreground">
+                            <p className="flex items-center gap-1.5 font-medium text-success">
+                                <FileText className="size-4" /> Envía la factura del cliente
+                            </p>
+                            <p className="mt-1.5">
+                                Al usar el atajo en un chat, el sistema muestra las facturas de ese cliente
+                                —la última arriba y ya elegida— y la manda con la plantilla de Integra,
+                                con el PDF adjunto y el importe que deba hoy.
+                            </p>
+                            <p className="mt-1.5 text-xs">
+                                No lleva texto: el mensaje lo pone la plantilla <span className="font-mono">facturacion</span>.
+                            </p>
+                        </div>
+                    ) : (
                     <div className="space-y-1.5">
                         <label className="text-sm font-medium text-foreground">Mensaje</label>
                         <textarea
@@ -263,6 +333,7 @@ function ReplyFormModal({ title, description, submitLabel, initial, onClose, onS
                             <span>{message.length}/4000</span>
                         </div>
                     </div>
+                    )}
 
                     <div className="flex gap-2 pt-2">
                         <Button type="submit" className="flex-1" disabled={submitting}>{submitLabel}</Button>

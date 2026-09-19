@@ -33,7 +33,7 @@ class PlantillasDeIntegraTest extends TestCase
             ->getJson('/api/templates/defaults')
             ->assertOk()
             ->assertJsonMissingPath('data.facturacion')
-            ->assertJsonMissingPath('data.tirillas')
+            ->assertJsonMissingPath('data.tirilla')
             // Las que no dependen del ERP siguen estando para todos.
             ->assertJsonPath('data.reanudar_conversacion_cliente.category', 'UTILITY');
     }
@@ -47,7 +47,7 @@ class PlantillasDeIntegraTest extends TestCase
         $respuesta = $this->actingAs($user)->getJson('/api/templates/defaults')->assertOk();
 
         $respuesta->assertJsonPath('data.facturacion.origen', 'Integra');
-        $respuesta->assertJsonPath('data.tirillas.origen', 'Integra');
+        $respuesta->assertJsonPath('data.tirilla.origen', 'Integra');
         $respuesta->assertJsonPath('data.facturacion.language', 'es_CO');
     }
 
@@ -66,7 +66,7 @@ class PlantillasDeIntegraTest extends TestCase
 
         $data = $this->actingAs($user)->getJson('/api/templates/defaults')->json('data');
 
-        foreach (['facturacion', 'tirillas'] as $clave) {
+        foreach (['facturacion', 'tirilla'] as $clave) {
             $header = collect($data[$clave]['components'])->firstWhere('type', 'HEADER');
 
             $this->assertSame('DOCUMENT', $header['format'], "La plantilla {$clave} tiene que adjuntar el documento.");

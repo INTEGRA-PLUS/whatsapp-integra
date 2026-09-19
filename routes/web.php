@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\FacturaRapidaController;
 use App\Http\Controllers\MiPlanController;
 use App\Http\Controllers\PlanesController;
 use App\Http\Controllers\ResumenController;
@@ -746,6 +747,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/updates', [ChatController::class, 'updates']);
         Route::post('/conversations/{conversationId}/send', [ChatController::class, 'sendMessage']);
         Route::post('/conversations/{conversationId}/send-template', [ChatController::class, 'sendTemplate']);
+
+        // Mandarle al cliente su factura desde el chat. Preparan el envío; quien
+        // manda sigue siendo `send-template`, que es donde está el guardarraíl
+        // de parámetros de Meta y la cola de entrega.
+        Route::get('/conversations/{conversation}/facturas', [FacturaRapidaController::class, 'index'])
+            ->whereNumber('conversation');
+        Route::post('/conversations/{conversation}/facturas/{facturaId}/preparar', [FacturaRapidaController::class, 'preparar'])
+            ->whereNumber('conversation')->whereNumber('facturaId');
         Route::post('/conversations/{conversationId}/template-media', [ChatController::class, 'uploadTemplateMedia']);
         Route::post('/conversations/{conversationId}/note', [ChatController::class, 'storeNote']);
         Route::post('/conversations/{conversationId}/send-image', [ChatController::class, 'sendImage']);

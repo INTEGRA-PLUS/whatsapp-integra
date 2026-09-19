@@ -125,7 +125,7 @@ return [
         ],
     ],
 
-    'tirillas' => [
+    'tirilla' => [
         'label' => 'Pago recibido (tirilla)',
         'description' => 'Confirma al cliente que su pago quedó registrado, con el comprobante adjunto. La envía Integra al procesar el pago.',
         'category' => 'UTILITY',

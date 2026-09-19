@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } fro
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import SelectorDeFacturas from '@/components/SelectorDeFacturas';
 import SelectorInstancia from '@/components/selector-instancia';
 import { ResumenDialog } from '@/pages/Chat/ResumenDialog';
 import FichaIntegra from '@/components/FichaIntegra';
@@ -1766,6 +1767,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
     const [quickReplies, setQuickReplies] = useState([]);
     const [qrOpen, setQrOpen] = useState(false);
+    // El selector de facturas que abre una respuesta rápida de tipo factura.
+    const [facturasAbierto, setFacturasAbierto] = useState(false);
     const [qrQuery, setQrQuery] = useState('');
     const [qrTokenStart, setQrTokenStart] = useState(0);
     const [qrIndex, setQrIndex] = useState(0);
@@ -2054,6 +2057,18 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     }, [qrOpen, closeQuickReplies]);
 
     const applyQuickReply = useCallback((reply) => {
+        // La de factura no pega texto: abre el selector de facturas del cliente
+        // y lo que se manda al final es la plantilla de Integra con el PDF.
+        if (reply.tipo === 'factura') {
+            closeQuickReplies();
+            // Se limpia el «/atajo» a medio escribir: el atajo era el disparador,
+            // no parte del mensaje, y dejarlo ahí manda basura si luego escribe.
+            setNewMessage(prev => prev.slice(0, qrTokenStart));
+            setFacturasAbierto(true);
+
+            return;
+        }
+
         const input = messageInputRef.current;
         const cursor = input ? input.selectionStart ?? newMessage.length : newMessage.length;
         const before = newMessage.slice(0, qrTokenStart);
@@ -6424,6 +6439,37 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 )}
                                                 {/* Área de texto a todo el ancho */}
                                                 <div className="relative">
+                                                    {/* El selector que abre una respuesta rápida de
+                                                        factura. Lo que envía no es un documento suelto:
+                                                        es la plantilla de Integra, por la misma ruta que
+                                                        cualquier otra plantilla del chat —ahí están el
+                                                        guardarraíl de parámetros de Meta, la burbuja y la
+                                                        cola de entrega—. */}
+                                                    {facturasAbierto && selectedConversation && (
+                                                        <SelectorDeFacturas
+                                                            conversationId={selectedConversation.id}
+                                                            onCerrar={() => setFacturasAbierto(false)}
+                                                            onEnviar={async (plantilla) => {
+                                                                const res = await axios.post(
+                                                                    `/api/chat/conversations/${selectedConversation.id}/send-template`,
+                                                                    plantilla
+                                                                );
+
+                                                                if (!res.data?.success) {
+                                                                    throw new Error(res.data?.error ?? 'No se pudo enviar la factura.');
+                                                                }
+
+                                                                // La misma costura que usa el selector de
+                                                                // plantillas: la burbuja entra ya y la lista
+                                                                // de chats refleja el último mensaje.
+                                                                if (res.data.data) setMessages(prev => [...prev, res.data.data]);
+                                                                setConversations(prev => prev.map(c => c.id === selectedConversation.id
+                                                                    ? { ...c, last_message: plantilla.preview, last_message_at: new Date().toISOString() }
+                                                                    : c));
+                                                            }}
+                                                        />
+                                                    )}
+
                                                     {composerMode === 'reply' && qrOpen && (
                                                         <QuickReplyPicker
                                                             matches={qrMatches}
