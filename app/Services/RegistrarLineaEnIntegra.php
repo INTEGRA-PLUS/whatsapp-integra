@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Log;
 class RegistrarLineaEnIntegra
 {
     /**
-     * @return array{empujada: bool, motivo?: string, aviso?: string}
+     * @return array{empujada: bool, creada?: bool, motivo?: string, aviso?: string}
      */
     public function __invoke(Instance $instance): array
     {
@@ -58,7 +58,10 @@ class RegistrarLineaEnIntegra
                 'ya_estaba' => ! $resultado['creada'],
             ]);
 
-            return ['empujada' => true];
+            // `creada` se devuelve para poder distinguir «se dio de alta» de
+            // «ya estaba»: al reparar una línea vieja a mano, ésa es toda la
+            // respuesta que se busca.
+            return ['empujada' => true, 'creada' => (bool) ($resultado['creada'] ?? false)];
         }
 
         // Un fallo aquí no puede tumbar el alta de la línea en el CRM: la línea
