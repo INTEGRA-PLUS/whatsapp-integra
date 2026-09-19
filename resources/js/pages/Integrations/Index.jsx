@@ -838,8 +838,17 @@ function ProviderSection({ can, onBack }) {
  * empezó todo este trabajo.
  */
 function AjustesDeEnvio({ showToast, canManage }) {
+    const { lineasDelErp = [] } = usePage().props;
+    // Por qué línea envía Integra ahora mismo. Estas plantillas se eligen en
+    // Integra, pero quien las tiene aprobadas es el número de Meta y los
+    // catálogos son por número: al cambiar de línea hay que volver a mirar si
+    // lo elegido sigue existiendo al otro lado.
+    const lineaDelErp = lineasDelErp.find(l => l.es_la_del_erp)?.id ?? null;
+
     const [estado, setEstado] = useState({ cargando: true });
     const [guardando, setGuardando] = useState(null);
+    // Recargando por un cambio de línea, con lo anterior todavía en pantalla.
+    const [revalidando, setRevalidando] = useState(false);
     // Qué plantilla se está parametrizando, si alguna.
     const [parametrizando, setParametrizando] = useState(null);
 
@@ -852,7 +861,13 @@ function AjustesDeEnvio({ showToast, canManage }) {
         }
     };
 
-    useEffect(() => { cargar(); }, []);
+    // Se recarga al cambiar de línea, no sólo al entrar. `LineasDelErp` refresca
+    // `lineasDelErp` al terminar el cambio, así que aquí llega el id nuevo y
+    // estas plantillas se vuelven a contrastar contra el catálogo de esa línea.
+    useEffect(() => {
+        setRevalidando(true);
+        cargar().finally(() => setRevalidando(false));
+    }, [lineaDelErp]);
 
     const guardar = async (cambios, etiqueta) => {
         setGuardando(etiqueta);
@@ -914,7 +929,16 @@ function AjustesDeEnvio({ showToast, canManage }) {
                 />
 
                 <div className="space-y-3 border-t border-border pt-4">
-                    <p className="text-xs font-semibold text-foreground">Plantilla que se usa en cada caso</p>
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                        <p className="text-xs font-semibold text-foreground">Plantilla que se usa en cada caso</p>
+                        {estado.linea && (
+                            <span className="text-[11px] text-muted-foreground">
+                                {revalidando
+                                    ? <span className="flex items-center gap-1.5"><Loader2 className="size-3 animate-spin" /> Comprobándolas en la línea nueva…</span>
+                                    : <>Comprobadas en {estado.linea.numero || estado.linea.nombre}</>}
+                            </span>
+                        )}
+                    </div>
 
                     {/* Sólo las que llevan encabezado de documento pueden
                         adjuntar la factura o la tirilla: ofrecer las demás es
@@ -943,8 +967,15 @@ function AjustesDeEnvio({ showToast, canManage }) {
                             );
                         }
 
+                        // La elegida, tal y como la ve la línea de hoy. `en_la_linea`
+                        // sólo viene cuando se pudo leer el catálogo de Meta: si
+                        // falta, no se marca nada.
+                        const elegida = (estado.disponibles ?? []).find(p => p.id === actual?.id);
+                        const fueraDeLaLinea = elegida?.en_la_linea === false;
+
                         return (
-                            <div key={clave} className="flex flex-wrap items-center justify-between gap-2">
+                            <div key={clave} className="space-y-1.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-xs text-foreground">{etiqueta}</span>
 
                                 <div className="flex items-center gap-1.5">
@@ -957,7 +988,9 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                         <option value="">Sin elegir</option>
                                         {(estado.disponibles ?? []).map(p => (
                                             <option key={p.id} value={p.id}>
-                                                {p.title} ({p.language}){p.con_documento ? '' : ' · sin adjunto'}
+                                                {p.title} ({p.language})
+                                                {p.con_documento ? '' : ' · sin adjunto'}
+                                                {p.en_la_linea === false ? ' · no está en esta línea' : ''}
                                             </option>
                                         ))}
                                     </select>
@@ -981,6 +1014,32 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                         <Pencil className="size-3" /> Variables
                                     </button>
                                 </div>
+                              </div>
+
+                              {/* Lo elegido existe en Integra pero no en el
+                                  número por el que se envía. Meta lo rechaza
+                                  envío a envío y el ERP no se entera: es
+                                  exactamente lo que dejó a Transinternet una
+                                  noche sin facturar (10-sep-2026). */}
+                              {fueraDeLaLinea && (
+                                  <div className="rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                                      <p className="flex items-start gap-1.5">
+                                          <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                          <span>
+                                              <span className="font-mono">{elegida.title} ({elegida.language})</span> no está
+                                              aprobada en {estado.linea?.numero || estado.linea?.nombre || 'la línea por la que envía Integra'}.
+                                              Los catálogos de Meta son por número y no se heredan: mientras siga así, estos
+                                              envíos se caen uno a uno.
+                                          </span>
+                                      </p>
+                                      <a
+                                          href="/templates"
+                                          className="mt-1.5 ml-5 inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-2 py-1 font-medium hover:bg-destructive/10"
+                                      >
+                                          <Copy className="size-3" /> Copiarla a esta línea
+                                      </a>
+                                  </div>
+                              )}
                             </div>
                         );
                     })}

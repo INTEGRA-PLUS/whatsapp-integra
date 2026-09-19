@@ -54,9 +54,11 @@ class WebhookEndpointController extends Controller
 
         $res = $cliente->ajustesDeEnvio();
 
-        return response()->json($res['ok']
-            ? ['conectado' => true] + $res['datos']
-            : ['conectado' => true, 'error' => $this->avisoDeAjustes($res)]);
+        if (! $res['ok']) {
+            return response()->json(['conectado' => true, 'error' => $this->avisoDeAjustes($res)]);
+        }
+
+        return response()->json(['conectado' => true] + $this->contrastadoConLaLinea($res['datos']));
     }
 
     public function guardarAjustesDeEnvio(Request $request)
@@ -81,7 +83,7 @@ class WebhookEndpointController extends Controller
             return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
         }
 
-        return response()->json(['ok' => true] + $res['datos']);
+        return response()->json(['ok' => true] + $this->contrastadoConLaLinea($res['datos']));
     }
 
     /**
@@ -240,35 +242,100 @@ class WebhookEndpointController extends Controller
             return [];
         }
 
-        $meta = app(\App\Services\MetaWhatsAppService::class);
-
-        $aprobadasDe = function (Instance $linea) use ($meta): ?array {
-            if (empty($linea->waba_id) || empty($linea->access_token)) {
-                return null;
-            }
-
-            $res = $meta->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
-
-            if (! ($res['success'] ?? false)) {
-                return null;
-            }
-
-            return collect($res['data']['data'] ?? [])
-                ->where('status', 'APPROVED')
-                ->reject(fn ($p) => in_array($p['name'] ?? '', self::PLANTILLAS_DE_MUESTRA, true))
-                ->map(fn ($p) => ($p['name'] ?? '').' ('.($p['language'] ?? '').')')
-                ->values()
-                ->all();
-        };
-
-        $enActual = $aprobadasDe($actual);
-        $enNueva = $aprobadasDe($nueva);
+        $enActual = $this->aprobadasDe($actual);
+        $enNueva = $this->aprobadasDe($nueva);
 
         if ($enActual === null || $enNueva === null) {
             return [];
         }
 
-        return array_values(array_diff($enActual, $enNueva));
+        $comoTexto = fn (array $lista) => array_map(fn ($p) => $p['nombre'].' ('.$p['idioma'].')', $lista);
+
+        return array_values(array_diff($comoTexto($enActual), $comoTexto($enNueva)));
+    }
+
+    /**
+     * Las plantillas que Meta tiene aprobadas en una línea.
+     *
+     * Devuelve `null` —y no una lista vacía— cuando no se pudo leer el
+     * catálogo: quien llama tiene que poder distinguir «esta línea no tiene
+     * ninguna» de «no sé qué tiene», porque de lo segundo no se deduce nada.
+     *
+     * @return list<array{nombre: string, idioma: string}>|null
+     */
+    private function aprobadasDe(Instance $linea): ?array
+    {
+        if (empty($linea->waba_id) || empty($linea->access_token)) {
+            return null;
+        }
+
+        $res = app(\App\Services\MetaWhatsAppService::class)
+            ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
+
+        if (! ($res['success'] ?? false)) {
+            return null;
+        }
+
+        return collect($res['data']['data'] ?? [])
+            ->where('status', 'APPROVED')
+            ->reject(fn ($p) => in_array($p['name'] ?? '', self::PLANTILLAS_DE_MUESTRA, true))
+            ->map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Los ajustes del ERP, diciendo además cuáles de esas plantillas existen
+     * de verdad en la línea por la que se envía.
+     *
+     * Las plantillas de los envíos automáticos se eligen en Integra, pero quien
+     * las tiene aprobadas es el número de Meta, y **los catálogos son por
+     * WABA**: la misma lista de Integra vale en una línea y no vale en la de al
+     * lado. Al cambiar de línea la lista no cambia —sigue siendo la de
+     * Integra—, lo que cambia es si lo elegido sigue existiendo, y eso no se
+     * veía en ninguna parte: se descubría cuando la factura no salía.
+     *
+     * Si el catálogo no se puede leer no se marca nada. No saber no es saber
+     * que falta, y pintar de rojo una plantilla que sí está sería peor que no
+     * decir nada.
+     *
+     * @param  array<string, mixed>  $datos
+     * @return array<string, mixed>
+     */
+    private function contrastadoConLaLinea(array $datos): array
+    {
+        $linea = auth()->user()->company->instanciaDelErp();
+
+        if (! $linea) {
+            return $datos;
+        }
+
+        $datos['linea'] = [
+            'id' => $linea->id,
+            'nombre' => $linea->meta['verified_name'] ?? $linea->name,
+            'numero' => $linea->display_phone_number,
+        ];
+
+        $aprobadas = $this->aprobadasDe($linea);
+
+        if ($aprobadas === null || ! isset($datos['disponibles'])) {
+            return $datos;
+        }
+
+        $datos['disponibles'] = array_map(function ($plantilla) use ($aprobadas) {
+            $nombre = $plantilla['title'] ?? '';
+            $idioma = $plantilla['language'] ?? '';
+
+            // Sin idioma en Integra se compara sólo por nombre: es como lo
+            // resuelve `plantillaEnMeta()` y como lo acaba mandando el cron.
+            $plantilla['en_la_linea'] = collect($aprobadas)->contains(
+                fn ($a) => $a['nombre'] === $nombre && ($a['idioma'] === $idioma || $idioma === '')
+            );
+
+            return $plantilla;
+        }, $datos['disponibles']);
+
+        return $datos;
     }
 
     /**
