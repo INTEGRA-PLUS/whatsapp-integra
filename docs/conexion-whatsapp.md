@@ -385,9 +385,13 @@ Cubierto por `tests/Feature/CoexistenceProgressTest.php`.
 
 - **El aviso previo dejó de ser un `<details>`.** El contenido ya existía
   colapsado debajo del botón, que es como no tenerlo. Ahora es un modal que hay
-  que atravesar, con tres casillas que confirman los requisitos —app Business,
-  más de una semana de uso, celular a la mano— y el botón deshabilitado hasta
-  marcarlas. Ahí se caían casi todos los intentos.
+  que atravesar, con cuatro casillas que confirman los requisitos —app Business,
+  más de una semana de uso, cuenta de Facebook, celular a la mano— y el botón
+  deshabilitado hasta marcarlas. Ahí se caían casi todos los intentos.
+- **La cuenta de Facebook se pide en el paso 2 y no en el 3.** El paso del
+  portafolio decía «se crea con tu cuenta de Facebook de siempre», dando por
+  supuesto lo único que no se puede improvisar a mitad del proceso: quien no la
+  tenía se enteraba con el portafolio ya empezado (19-sep-2026).
 - **El paso previo en Meta Business Suite sale en ámbar dentro del modal.** Es
   el que más se salta y el que provoca el `#2494064`, que parece un problema del
   número del cliente y no lo es.

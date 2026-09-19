@@ -18,7 +18,10 @@ import {
  *
  *   1. Qué le va a cambiar en el celular. La pantalla de consentimiento de Meta
  *      NO lo cuenta, y descubrirlo después es lo que genera la queja.
- *   2. Los tres requisitos, con casillas: sin marcarlas no se avanza.
+ *   2. Los cuatro requisitos, con casillas: sin marcarlas no se avanza. Uno de
+ *      ellos es tener cuenta de Facebook, que parece obvio y no lo es: el paso
+ *      3 la da por supuesta —"se crea con tu cuenta de Facebook de siempre"— y
+ *      quien no la tiene se entera con el portafolio ya a medias.
  *   3. El portafolio comercial. Un ISP pequeño con una cuenta de Facebook
  *      normal no tiene ninguno, y toda la documentación —la nuestra incluida—
  *      daba por hecho que sí.
@@ -30,7 +33,7 @@ import {
  */
 export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     const [paso, setPaso] = useState(1);
-    const [confirmado, setConfirmado] = useState({ appBusiness: false, antiguedad: false, celular: false });
+    const [confirmado, setConfirmado] = useState({ appBusiness: false, antiguedad: false, facebook: false, celular: false });
     const [portafolio, setPortafolio] = useState(false);
     const [vinculada, setVinculada] = useState(false);
 
@@ -41,7 +44,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     useEffect(() => {
         if (!open) return;
         setPaso(1);
-        setConfirmado({ appBusiness: false, antiguedad: false, celular: false });
+        setConfirmado({ appBusiness: false, antiguedad: false, facebook: false, celular: false });
         setPortafolio(false);
         setVinculada(false);
     }, [open]);
@@ -67,6 +70,12 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
             id: 'antiguedad',
             titulo: 'Lleva más de una semana en uso',
             detalle: 'Meta pide al menos 7 días de actividad real antes de aceptar una cuenta.',
+        },
+        {
+            id: 'facebook',
+            titulo: 'Tengo una cuenta de Facebook',
+            detalle: 'Es con la que se entra a Meta y se crea el portafolio del paso 3. Si no tienes, '
+                + 'se crea gratis en facebook.com: no hace falta página ni publicar nada.',
         },
         {
             id: 'celular',

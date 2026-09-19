@@ -242,9 +242,11 @@ export default function GuiaCoexistencia() {
                     </div>
                 </div>
 
-                <Aviso tono="info" titulo="Antes de empezar, comprueba tres cosas">
+                <Aviso tono="info" titulo="Antes de empezar, comprueba cuatro cosas">
                     <p>El número usa la app de <strong>WhatsApp Business</strong>, no la de WhatsApp normal.</p>
                     <p>Lleva <strong>más de una semana</strong> en uso: Meta pide actividad real antes de aceptarlo.</p>
+                    <p>Tienes una <strong>cuenta de Facebook</strong>: es con la que se entra a Meta y se crea
+                    el portafolio. No hace falta página ni publicar nada.</p>
                     <p>Tienes el <strong>celular a la mano</strong>, con cámara y batería.</p>
                 </Aviso>
 
