@@ -84,9 +84,14 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
+                            {/* «Incluido con tu Integra», a secas y al lado de
+                                «IA Completa», se leía como que la IA viene
+                                incluida. No: Integra cubre el CRM, y la IA es
+                                justo lo único que sí se le factura a un cliente
+                                de Integra. Se dice qué cubre, no que cubre. */}
                             {plan.incluido_en_integra && (
                                 <Insignia icono={ShieldCheck} tono="success">
-                                    Incluido con tu Integra
+                                    {plan.tiene_ia ? 'CRM incluido con tu Integra' : 'Incluido con tu Integra'}
                                 </Insignia>
                             )}
                             {plan.en_mes_gratis && (
@@ -384,7 +389,11 @@ function Cobertura({ plan, periodo, porPagar }) {
 
                 <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground">
-                        {integra ? 'Tu paquete de Integra cubre este servicio' : 'Tu plan está activo'}
+                        {integra
+                            ? (plan.tiene_ia
+                                ? 'Tu paquete de Integra cubre el CRM'
+                                : 'Tu paquete de Integra cubre este servicio')
+                            : 'Tu plan está activo'}
                     </p>
 
                     {hasta && (
@@ -400,9 +409,15 @@ function Cobertura({ plan, periodo, porPagar }) {
                         </p>
                     )}
 
+                    {/* Con complemento de IA, decir «no se te factura aparte»
+                        es falso: el CRM va dentro de Integra, pero la IA se
+                        cobra. Y lo contradecía la propia pantalla, que debajo
+                        enseñaba un cobro emitido y pendiente. */}
                     {integra && (
                         <p className="mt-1 text-xs text-muted-foreground">
-                            No se te factura aparte: va dentro de lo que ya pagas por Integra.
+                            {plan.tiene_ia
+                                ? <>El CRM va dentro de lo que ya pagas por Integra. <span className="text-foreground">{plan.ia_nombre} se factura aparte</span>, y es lo que se cobra en este periodo.</>
+                                : 'No se te factura aparte: va dentro de lo que ya pagas por Integra.'}
                         </p>
                     )}
 

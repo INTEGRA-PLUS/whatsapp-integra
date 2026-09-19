@@ -328,4 +328,36 @@ class MiPlanTest extends TestCase
             ->get('/mi-plan')
             ->assertInertia(fn ($page) => $page->has('recibos', 0));
     }
+
+    /**
+     * Un cliente de Integra con complemento de IA llega marcado como que SÍ se
+     * le factura.
+     *
+     * La pantalla enseñaba «Incluido con tu Integra» pegado a «IA Completa» y,
+     * debajo, «no se te factura aparte» — mientras mostraba un cobro emitido y
+     * pendiente en la misma tarjeta. Integra cubre el CRM; la IA es justo lo
+     * único que sí se le cobra a este cliente, y es la venta que se busca.
+     *
+     * El texto se arregló en la vista; esto ata la vista al dato, que es lo que
+     * permite distinguir los dos casos sin volver a suponerlo.
+     */
+    public function test_el_de_integra_con_ia_sabe_que_se_le_factura(): void
+    {
+        $company = $this->empresa([
+            'plan' => 'pro',
+            'ia' => 'completa',
+            'viene_de_integra' => true,
+            'cobro' => 'integra',
+        ]);
+
+        $plan = $this->actingAs($this->admin($company))
+            ->get('/mi-plan')
+            ->assertOk()
+            ->viewData('page')['props']['plan'];
+
+        $this->assertTrue($plan['incluido_en_integra'], 'El CRM lo cubre Integra.');
+        $this->assertTrue($plan['tiene_ia'], 'Y tiene complemento de IA.');
+        $this->assertTrue($plan['se_factura'], 'Que es lo que sí se le cobra.');
+        $this->assertSame(config('planes.ia.completa.precio'), $plan['precio_usd']);
+    }
 }
