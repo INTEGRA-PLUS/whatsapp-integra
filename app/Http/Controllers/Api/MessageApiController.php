@@ -40,6 +40,53 @@ class MessageApiController extends Controller
      * aviso de CBA. Una credencial ambigua no autentica: se rechaza y se avisa
      * para que un administrador desduplique.
      */
+    /**
+     * Por qué línea sale este envío.
+     *
+     * El token dice **qué empresa** llama; la línea de salida la decide la
+     * empresa en «Por dónde envía Integra». Hasta el 19-sep-2026 mandaba el
+     * token y punto, así que esa pantalla no servía de nada: Transinternet
+     * llevaba nueve días con Transintermet elegida y 552 facturas saliendo por
+     * la Principal, porque el ERP llama con la credencial de siempre.
+     *
+     * Le respondemos cuál usar en `GET /api/v1/config` y el ERP la consulta
+     * —299 veces en un día— pero no cambia su credencial al enviar. Esperar a
+     * que lo haga es dejar la pantalla mintiendo mientras tanto: dice «no hay
+     * que tocar nada del otro lado» y había que tocarlo.
+     *
+     * Sólo redirige dentro de la MISMA empresa y sólo si alguien eligió la
+     * línea a mano: la de por defecto —la primera por id— no mueve nada, para
+     * no cambiarle el número a quien nunca pidió cambiarlo.
+     */
+    private function lineaDeSalida(Instance $instance): Instance
+    {
+        $company = $instance->company;
+
+        if (! $company || ! $company->tieneLineaDelErpElegida()) {
+            return $instance;
+        }
+
+        $elegida = $company->instanciaDelErp();
+
+        if (! $elegida || $elegida->id === $instance->id) {
+            return $instance;
+        }
+
+        // La marca de uso va también a la que envía de verdad. `validateInstance()`
+        // sólo marca la del token —que es quien se autenticó— y sin esto la
+        // pantalla de integraciones seguiría diciendo que la línea elegida lleva
+        // días sin usarse justo mientras sale todo por ella.
+        Instance::whereKey($elegida->id)->update(['api_last_seen_at' => now()]);
+
+        Log::channel('whatsapp')->info('🔀 El envío del API sale por la línea elegida', [
+            'company_id' => $company->id,
+            'token_de' => $instance->id,
+            'sale_por' => $elegida->id,
+        ]);
+
+        return $elegida;
+    }
+
     private function validateInstance(Request $request)
     {
         $token = $request->header('X-Instance-Token');
@@ -128,6 +175,8 @@ class MessageApiController extends Controller
         if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
+
+        $instance = $this->lineaDeSalida($instance);
 
         $validator = Validator::make($request->all(), [
             'to' => 'required|string',
@@ -332,6 +381,8 @@ class MessageApiController extends Controller
         if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
+
+        $instance = $this->lineaDeSalida($instance);
 
         // En multipart no existen los arrays anidados, así que los componentes
         // de la plantilla llegan como texto JSON. Sin esto la validación los
@@ -593,6 +644,8 @@ class MessageApiController extends Controller
         if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
+
+        $instance = $this->lineaDeSalida($instance);
 
         $validator = Validator::make($request->all(), [
             'to' => 'required|string',

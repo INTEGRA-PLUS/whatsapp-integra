@@ -1671,6 +1671,22 @@ function LineasDelErp({ showToast, canManage }) {
                             </div>
                         </div>
 
+                        {/* Elegida y muda. Es el síntoma de que el software
+                            administrativo sigue enviando por otra: la elección
+                            se guardó aquí y allí no cambió nada. Pasó con
+                            Transinternet —nueve días y 552 facturas por la línea
+                            que no era— y no había forma de verlo salvo mirando
+                            la fecha de al lado y comparándola a ojo. */}
+                        {linea.elegida_sin_usar && (
+                            <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
+                                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                                <span>
+                                    Elegiste esta línea pero lleva días sin enviar nada. Si tus facturas siguen
+                                    saliendo por otro número, avísanos: lo revisamos.
+                                </span>
+                            </p>
+                        )}
+
                         {/* Qué va a pasar, antes de que pase. Integra pregunta
                             la línea antes de cada tanda, así que el cambio se
                             nota en la siguiente factura de toda la empresa. */}
@@ -1724,9 +1740,14 @@ function LineasDelErp({ showToast, canManage }) {
                 ))}
             </ul>
 
+            {/* Antes decía «Integra pregunta cuál usar antes de cada tanda». Lo
+                pregunta, sí, pero enviaba con su credencial de siempre y salía
+                por la línea de siempre: la frase prometía algo que no pasaba. Lo
+                que lo cumple ahora es que el cambio se aplica de este lado. */}
             <p className="mt-3 text-[11px] text-muted-foreground">
-                Integra pregunta cuál usar antes de cada tanda de envíos, así que el cambio vale
-                desde la siguiente factura. No hay que tocar nada del otro lado.
+                El cambio vale desde el siguiente envío y se aplica aquí, así que no hay que tocar
+                nada del otro lado aunque tu software administrativo siga entrando con la
+                credencial de siempre.
             </p>
 
             {/* Con qué credencial entra dice si ese cliente ya se puede migrar

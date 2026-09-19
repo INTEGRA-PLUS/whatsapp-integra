@@ -352,6 +352,15 @@ class WebhookEndpointController extends Controller
      *
      * @return list<array<string, mixed>>
      */
+    /**
+     * Cuántos días de silencio hacen sospechar de la línea elegida.
+     *
+     * Dos y no uno: hay empresas que facturan por ciclos y pasan un día entero
+     * sin enviar nada. Avisar el primer día sería un aviso que se aprende a
+     * ignorar.
+     */
+    private const DIAS_PARA_SOSPECHAR = 2;
+
     private function lineasDelErp(): array
     {
         $company = auth()->user()->company;
@@ -369,6 +378,16 @@ class WebhookEndpointController extends Controller
                 'ultima_vez' => $instancia->api_last_seen_at?->toIso8601String(),
                 'credencial' => $instancia->api_last_seen_via,
                 'es_la_del_erp' => $elegida !== null && $instancia->id === $elegida->id,
+                // Elegida pero muda. Es el síntoma de que el ERP sigue enviando
+                // por otra: la elección se guardó aquí y allí no cambió nada.
+                // Pasó con Transinternet —nueve días y 552 facturas por la línea
+                // que no era— y no había forma de verlo si no se miraba la fecha
+                // de al lado y se comparaba a ojo.
+                'elegida_sin_usar' => $company->tieneLineaDelErpElegida()
+                    && $elegida !== null
+                    && $instancia->id === $elegida->id
+                    && ($instancia->api_last_seen_at === null
+                        || $instancia->api_last_seen_at->lt(now()->subDays(self::DIAS_PARA_SOSPECHAR))),
             ])
             ->values()
             ->all();
