@@ -156,6 +156,29 @@ class LineaDeSalidaDelErpTest extends TestCase
         );
     }
 
+    /**
+     * Y se puede saber que el ERP envió por su cuenta y por la que no era.
+     *
+     * Era el fallo invisible: el ERP manda a Meta por su cuenta, lo registra, el
+     * mensaje aparece en el chat con normalidad bajo la línea que no tocaba, y
+     * nadie se entera. El único rastro era la fecha de último uso de una línea,
+     * y había que mirarla y compararla a ojo.
+     *
+     * @test
+     */
+    public function se_sabe_cuando_el_erp_envio_por_otra_linea(): void
+    {
+        // Sin elección no hay nada que contradecir: avisar aquí sería ruido
+        // para las empresas que nunca eligieron nada.
+        $this->assertTrue($this->company->enviaPorLaLineaElegida($this->principal));
+
+        $this->company->elegirInstanciaDelErp($this->elegida->id);
+        $this->company->refresh();
+
+        $this->assertFalse($this->company->enviaPorLaLineaElegida($this->principal));
+        $this->assertTrue($this->company->enviaPorLaLineaElegida($this->elegida));
+    }
+
     private function linea(string $nombre, string $phoneNumberId): Instance
     {
         return Instance::create([

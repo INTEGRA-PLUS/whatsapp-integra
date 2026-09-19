@@ -140,6 +140,24 @@ class Company extends Model
         return ! empty($this->settings['erp_instance_id']);
     }
 
+    /**
+     * ¿Este envío salió por la línea que la empresa eligió?
+     *
+     * `true` también cuando no hay elección a mano: sin elección no hay nada que
+     * contradecir, y avisar de que la línea por defecto «no es la elegida» sería
+     * ruido para las cincuenta y cinco empresas que nunca eligieron nada.
+     */
+    public function enviaPorLaLineaElegida(Instance $usada): bool
+    {
+        if (! $this->tieneLineaDelErpElegida()) {
+            return true;
+        }
+
+        $elegida = $this->instanciaDelErp();
+
+        return $elegida === null || $elegida->id === $usada->id;
+    }
+
     public function elegirInstanciaDelErp(?int $instanceId): void
     {
         $this->settings = array_merge($this->settings ?? [], ['erp_instance_id' => $instanceId]);

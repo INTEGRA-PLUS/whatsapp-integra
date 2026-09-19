@@ -87,6 +87,33 @@ class MessageApiController extends Controller
         return $elegida;
     }
 
+    /**
+     * Avisa cuando el ERP registra un envío hecho por una línea que no es la
+     * elegida.
+     *
+     * No corrige nada —el mensaje ya salió— pero deja el rastro que faltaba.
+     * Redirigir aquí sería escribir una historia falsa: diría que salió por una
+     * línea por la que no salió.
+     */
+    private function avisarSiRegistraPorOtraLinea(Instance $instance): void
+    {
+        $company = $instance->company;
+
+        if (! $company || $company->enviaPorLaLineaElegida($instance)) {
+            return;
+        }
+
+        $elegida = $company->instanciaDelErp();
+
+        Log::channel('whatsapp')->warning('📵 El ERP envió por su cuenta y por la línea que no era', [
+            'company_id' => $company->id,
+            'elegida' => $elegida?->id,
+            'uso' => $instance->id,
+            'que_hacer' => 'El ERP manda directo a Meta y sólo registra. '
+                .'Tiene que enviar por /api/v1/messages/document o /template para que valga la línea elegida.',
+        ]);
+    }
+
     private function validateInstance(Request $request)
     {
         $token = $request->header('X-Instance-Token');
@@ -889,6 +916,17 @@ class MessageApiController extends Controller
         if (! $instance) {
             return response()->json(['error' => 'Instancia no válida o token ausente'], 401);
         }
+
+        // `register` cuenta lo que YA salió: el ERP lo mandó a Meta por su
+        // cuenta y sólo nos avisa. Si además lo mandó por una línea distinta de
+        // la elegida, la elección no sirve de nada y nadie se entera: el mensaje
+        // aparece en el chat con normalidad, bajo la línea que no era.
+        //
+        // Es lo que le pasó a Transinternet: desde el 10-sep-2026 dejó de usar
+        // `/messages/document` y volvió a enviar directo a Meta, así que 552
+        // facturas salieron por la Principal con Transintermet elegida. El único
+        // rastro era la fecha de último uso de una línea, y había que mirarla.
+        $this->avisarSiRegistraPorOtraLinea($instance);
 
         $validator = Validator::make($request->all(), [
             'to' => 'required|string',
