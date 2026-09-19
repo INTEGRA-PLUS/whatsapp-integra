@@ -1642,7 +1642,6 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     // Presencia del chat abierto: otros agentes que lo tienen delante ahora
     // mismo, y cuáles de ellos están escribiendo. Ambos llegan por el canal de
     // presencia de la conversación, no por la base de datos.
-    const [viewers, setViewers] = useState([]);
     const [typingUsers, setTypingUsers] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -2889,36 +2888,35 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         };
     }, [selectedInstanceId, loadFolderCounts]);
 
-    // Presencia por conversación: quién más tiene este chat abierto y quién está
-    // escribiendo. Evita el clásico "dos agentes contestando lo mismo".
+    // Quién está escribiendo en este chat. Evita el clásico "dos agentes
+    // contestando lo mismo".
     //
-    // El "escribiendo" viaja como whisper (cliente a cliente): no toca PHP ni la
-    // base de datos, así que puede ir a la velocidad de las teclas sin coste.
+    // Viaja como whisper (cliente a cliente): no toca PHP ni la base de datos,
+    // así que puede ir a la velocidad de las teclas sin coste.
+    //
+    // El canal sigue siendo de presencia porque los whispers lo necesitan, pero
+    // ya no se lleva la cuenta de quién mira: el aviso de «Nelly lo está
+    // viendo» se quitó —saber quién tiene el chat abierto no cambia lo que hace
+    // el agente, y ocupaba la línea donde va a quién atiende—. Lo que sí
+    // importa, que alguien esté escribiendo ahora mismo, se queda.
     useEffect(() => {
         const conversationId = selectedConversation?.id;
 
-        setViewers([]);
         setTypingUsers([]);
 
         if (!conversationId || !window.Echo) return;
 
         const channelName = `conversation.${conversationId}`;
         const me = Number(auth.user.id);
-        const withoutMe = (users) => users.filter(u => Number(u.id) !== me);
 
         const channel = window.Echo.join(channelName)
-            .here(users => setViewers(withoutMe(users)))
-            .joining(user => setViewers(prev => (
-                Number(user.id) === me || prev.some(u => u.id === user.id) ? prev : [...prev, user]
-            )))
             .leaving(user => {
-                setViewers(prev => prev.filter(u => u.id !== user.id));
                 setTypingUsers(prev => prev.filter(u => u.id !== user.id));
             })
             .error(() => {
                 // Sin autorización o con Reverb caído el chat funciona igual,
-                // solo que sin presencia.
-                setViewers([]);
+                // sólo que sin el aviso de "está escribiendo".
+                setTypingUsers([]);
             });
 
         channel.listenForWhisper('typing', (e) => {
@@ -3840,6 +3838,100 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         if (m.type === 'system') return 'ℹ️ ' + (m.content || 'Aviso del sistema');
         return m.content || '';
     }
+
+    /**
+     * Buscar dentro de esta conversación.
+     *
+     * La lupa de la cabecera era un botón sin `onClick`. Y buscar sólo en lo que
+     * el navegador tiene cargado no habría servido: el chat trae los últimos cien
+     * mensajes y lo que se busca suele estar más atrás, que es justo por lo que
+     * se busca. La consulta va al servidor, que mira el historial entero.
+     */
+    const [buscadorAbierto, setBuscadorAbierto] = useState(false);
+    const [consulta, setConsulta] = useState('');
+    const [resultados, setResultados] = useState([]);
+    const [buscandoEnChat, setBuscandoEnChat] = useState(false);
+    const [resultadoActivo, setResultadoActivo] = useState(null);
+    const buscadorInputRef = useRef(null);
+
+    // Al cambiar de chat, el buscador se cierra: los resultados eran de otra
+    // conversación y dejarlos puestos es enseñar mensajes de otro cliente.
+    useEffect(() => {
+        setBuscadorAbierto(false);
+        setConsulta('');
+        setResultados([]);
+        setResultadoActivo(null);
+    }, [selectedConversation?.id]);
+
+    useEffect(() => {
+        const texto = consulta.trim();
+
+        if (!buscadorAbierto || texto.length < 2) {
+            setResultados([]);
+            return;
+        }
+
+        const conv = selectedConversationRef.current;
+        if (!conv) return;
+
+        // Con debounce: sin él, escribir «factura» son siete consultas y la
+        // última en contestar no tiene por qué ser la de la última letra.
+        setBuscandoEnChat(true);
+        const control = new AbortController();
+        const t = setTimeout(async () => {
+            try {
+                const res = await axios.get(
+                    `/api/chat/conversations/${conv.id}/messages/search`,
+                    { params: { q: texto }, signal: control.signal },
+                );
+                setResultados(res.data.results ?? []);
+            } catch (err) {
+                if (!axios.isCancel(err)) setResultados([]);
+            } finally {
+                setBuscandoEnChat(false);
+            }
+        }, 300);
+
+        return () => { clearTimeout(t); control.abort(); };
+    }, [consulta, buscadorAbierto, selectedConversation?.id]);
+
+    /**
+     * Ir a un resultado.
+     *
+     * Si el mensaje ya está en pantalla se salta y punto. Si no —lo normal
+     * cuando se busca algo viejo— se pide al servidor la ventana centrada en él,
+     * para llegar con el contexto de los dos lados y no con el mensaje pegado a
+     * un borde.
+     */
+    const irAlResultado = useCallback(async (mensajeId) => {
+        setResultadoActivo(mensajeId);
+
+        if (document.getElementById(`msg-${mensajeId}`)) {
+            scrollToMessage(mensajeId);
+            return;
+        }
+
+        const conv = selectedConversationRef.current;
+        if (!conv) return;
+
+        try {
+            const res = await axios.get(`/api/chat/conversations/${conv.id}/messages`, {
+                params: { around_id: mensajeId },
+            });
+
+            if (res.data.not_found) return;
+
+            forceScrollRef.current = false;
+            setMessages(res.data.messages ?? []);
+            setHayMasAntiguos(!!res.data.has_more);
+
+            // Tras repintar: el nodo no existe hasta que React ha montado la
+            // ventana nueva.
+            requestAnimationFrame(() => scrollToMessage(mensajeId));
+        } catch (err) {
+            console.error('No se pudo saltar al mensaje:', err);
+        }
+    }, []);
 
     // Desplaza y resalta brevemente el mensaje original al tocar la cita.
     function scrollToMessage(id) {
@@ -5226,22 +5318,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                     : `${typingUsers.length} agentes están escribiendo…`}
                                                             </span>
                                                         </span>
-                                                    ) : viewers.length > 0 && (
-                                                        /* Un ojo y un nombre recortado a «D» no son un
-                                                           aviso: son un jeroglífico. El verbo va
-                                                           delante y el chip tiene ancho mínimo, para
-                                                           que no se lea media letra. */
-                                                        <TooltipAccion texto={`${viewers.map(v => v.name).join(', ')} ${viewers.length === 1 ? 'tiene' : 'tienen'} este chat abierto ahora mismo`}>
-                                                            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-warning min-w-[7rem] max-w-[200px] cursor-default">
-                                                                <Eye className="size-3 shrink-0" />
-                                                                <span className="truncate">
-                                                                    {viewers.length === 1
-                                                                        ? <><span className="font-medium">{viewers[0].name}</span> lo está viendo</>
-                                                                        : `${viewers.length} agentes lo están viendo`}
-                                                                </span>
-                                                            </span>
-                                                        </TooltipAccion>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             </div>
                                         </div>
@@ -5384,7 +5461,30 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 <button onClick={() => setShowCallHistory(true)} aria-label="Historial de llamadas" className="size-9 hidden sm:flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><PhoneCall className="size-[18px]" /></button>
                                             </TooltipAccion>
                                             <TooltipAccion texto="Buscar en esta conversación">
-                                                <button aria-label="Buscar en conversación" className="size-9 hidden sm:flex items-center justify-center text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><Search className="size-[18px]" /></button>
+                                                <button
+                                                    type="button"
+                                                    aria-label="Buscar en la conversación"
+                                                    aria-pressed={buscadorAbierto}
+                                                    onClick={() => {
+                                                        setBuscadorAbierto(abierto => {
+                                                            if (abierto) {
+                                                                setConsulta('');
+                                                                setResultados([]);
+                                                            } else {
+                                                                setTimeout(() => buscadorInputRef.current?.focus(), 0);
+                                                            }
+
+                                                            return ! abierto;
+                                                        });
+                                                    }}
+                                                    className={`size-9 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${
+                                                        buscadorAbierto
+                                                            ? 'bg-primary/15 text-primary'
+                                                            : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                                                    }`}
+                                                >
+                                                    <Search className="size-[18px]" />
+                                                </button>
                                             </TooltipAccion>
                                             <DropdownMenu>
                                                 <TooltipAccion texto="Más opciones">
@@ -5526,6 +5626,99 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             >
                                                 Atenderla yo
                                             </button>
+                                        </div>
+                                    )}
+
+                                    {/* Buscar dentro de la conversación.
+                                        Va entre la cabecera y el hilo, y no
+                                        flotando encima: así empuja los mensajes
+                                        en vez de taparlos, y en el móvil —donde
+                                        un panel flotante ocuparía media
+                                        pantalla— se comporta igual que en el
+                                        escritorio. */}
+                                    {buscadorAbierto && (
+                                        <div className="shrink-0 border-b border-border/10 bg-card">
+                                            <div className="flex items-center gap-2 px-3 py-2.5">
+                                                <div className="relative flex-1">
+                                                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                                                    <input
+                                                        ref={buscadorInputRef}
+                                                        type="text"
+                                                        value={consulta}
+                                                        onChange={e => setConsulta(e.target.value)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Escape') {
+                                                                setBuscadorAbierto(false);
+                                                                setConsulta('');
+                                                                setResultados([]);
+                                                            }
+                                                            // Enter va al primero: buscar y tener que
+                                                            // bajar la mano al ratón para abrir el
+                                                            // único resultado es media función.
+                                                            if (e.key === 'Enter' && resultados.length > 0) {
+                                                                irAlResultado(resultados[0].id);
+                                                            }
+                                                        }}
+                                                        placeholder="Buscar en esta conversación…"
+                                                        className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-ring focus:ring-2 focus:ring-ring/20"
+                                                    />
+                                                </div>
+
+                                                <span className="hidden text-xs tabular-nums text-muted-foreground sm:inline">
+                                                    {buscandoEnChat
+                                                        ? 'Buscando…'
+                                                        : consulta.trim().length < 2
+                                                            ? ''
+                                                            : `${resultados.length} ${resultados.length === 1 ? 'resultado' : 'resultados'}`}
+                                                </span>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setBuscadorAbierto(false); setConsulta(''); setResultados([]); }}
+                                                    aria-label="Cerrar la búsqueda"
+                                                    className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                                                >
+                                                    <X className="size-4" />
+                                                </button>
+                                            </div>
+
+                                            {consulta.trim().length >= 2 && (
+                                                <div className="max-h-[45vh] overflow-y-auto border-t border-border/10">
+                                                    {resultados.length === 0 && ! buscandoEnChat ? (
+                                                        <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+                                                            Nada con «{consulta.trim()}» en esta conversación.
+                                                        </p>
+                                                    ) : (
+                                                        resultados.map(r => (
+                                                            <button
+                                                                key={r.id}
+                                                                type="button"
+                                                                onClick={() => irAlResultado(r.id)}
+                                                                className={`flex w-full flex-col gap-0.5 border-b border-border/5 px-4 py-2.5 text-left transition-colors last:border-0 hover:bg-muted/40 ${
+                                                                    resultadoActivo === r.id ? 'bg-primary/[0.07]' : ''
+                                                                }`}
+                                                            >
+                                                                <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                                                    <span className="font-medium text-foreground">
+                                                                        {r.direction === 'inbound'
+                                                                            ? (selectedConversation?.name || 'Cliente')
+                                                                            : (r.sender || 'Tu equipo')}
+                                                                    </span>
+                                                                    {r.created_at && new Date(r.created_at).toLocaleString('es-CO', {
+                                                                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                                                    })}
+                                                                    {r.is_internal && <span className="text-warning">nota interna</span>}
+                                                                </span>
+                                                                {/* Dos líneas: un mensaje largo en la
+                                                                    lista tapa los demás resultados. */}
+                                                                <span className="line-clamp-2 text-xs text-foreground/80">
+                                                                    {r.content}
+                                                                </span>
+                                                            </button>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

@@ -929,6 +929,16 @@ class ChatController extends Controller
         $ventana = max(20, (int) config('whatsapp.chat.message_window', 100));
         $anteriorA = $request->integer('before_id') ?: null;
 
+        // Saltar a un mensaje concreto, que es lo que necesita el buscador de la
+        // conversación: un resultado de hace ocho meses no está en la ventana
+        // cargada, y sin esto el chat sólo sabría llegar hasta él pidiendo
+        // tramos hacia atrás de cien en cien.
+        if ($alrededorDe = $request->integer('around_id') ?: null) {
+            return response()->json($this->sanitizeUtf8(
+                $this->ventanaAlrededor($conversation, $alrededorDe, $ventana)
+            ));
+        }
+
         $query = $conversation->messages()->with('sender:id,name');
 
         if ($anteriorA) {
@@ -990,6 +1000,131 @@ class ChatController extends Controller
             'oldest_id' => optional($messages->first())->id,
             'timestamp' => now()->toIso8601String(),
         ]));
+    }
+
+    /**
+     * La ventana de mensajes centrada en uno concreto.
+     *
+     * Mitad antes y mitad después, para que el mensaje al que se salta no quede
+     * pegado a un borde sin contexto. Si el mensaje está cerca del final, lo que
+     * sobra por detrás se recupera por delante: una ventana de cincuenta
+     * mensajes tiene que traer cincuenta, no veinticinco.
+     *
+     * @return array<string, mixed>
+     */
+    private function ventanaAlrededor(WhatsAppConversation $conversation, int $mensajeId, int $ventana): array
+    {
+        $centro = $conversation->messages()->whereKey($mensajeId)->first(['id', 'created_at']);
+
+        if (! $centro) {
+            return ['messages' => [], 'has_more' => false, 'oldest_id' => null, 'not_found' => true];
+        }
+
+        $mitad = (int) floor($ventana / 2);
+
+        $posteriores = $conversation->messages()
+            ->with('sender:id,name')
+            ->where(fn ($q) => $q->where('created_at', '>', $centro->created_at)
+                ->orWhere(fn ($mismo) => $mismo->where('created_at', $centro->created_at)->where('id', '>=', $centro->id)))
+            ->orderBy('created_at')->orderBy('id')
+            ->limit($mitad + 1)
+            ->get();
+
+        // Lo que no se gastó hacia adelante se gasta hacia atrás.
+        $haciaAtras = $ventana - $posteriores->count();
+
+        $anteriores = $conversation->messages()
+            ->with('sender:id,name')
+            ->where(fn ($q) => $q->where('created_at', '<', $centro->created_at)
+                ->orWhere(fn ($mismo) => $mismo->where('created_at', $centro->created_at)->where('id', '<', $centro->id)))
+            ->orderByDesc('created_at')->orderByDesc('id')
+            ->limit($haciaAtras + 1)
+            ->get();
+
+        $hayMas = $anteriores->count() > $haciaAtras;
+
+        $messages = $anteriores->take($haciaAtras)->reverse()->concat($posteriores)->values();
+
+        return [
+            'conversation' => $conversation,
+            'messages' => $messages,
+            'has_more' => $hayMas,
+            'oldest_id' => optional($messages->first())->id,
+            'around_id' => $centro->id,
+            'timestamp' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Buscar dentro de una conversación.
+     *
+     * La lupa de la cabecera era un botón sin `onClick`: decorativo. Y buscar
+     * sólo en lo que el navegador tiene cargado no sirve para nada — el chat
+     * trae los cien últimos mensajes y lo que se busca suele estar más atrás,
+     * que es justo por lo que se busca.
+     *
+     * Devuelve los mensajes que coinciden, del más reciente al más antiguo, con
+     * un tope: quien tiene doscientas coincidencias no las va a repasar, afina
+     * la búsqueda.
+     */
+    public function searchMessages(Request $request, $conversationId)
+    {
+        $user = auth()->user();
+
+        $conversation = WhatsAppConversation::with('instance')->findOrFail($conversationId);
+
+        // El preámbulo de siempre: `whatsapp_conversations` no tiene company_id.
+        if ($conversation->instance->company_id !== $user->company_id) {
+            abort(403, 'No autorizado');
+        }
+
+        $texto = trim((string) $request->query('q', ''));
+
+        // Con una letra, media conversación coincide y la lista no dice nada.
+        if (mb_strlen($texto) < 2) {
+            return response()->json(['results' => [], 'total' => 0, 'query' => $texto]);
+        }
+
+        $tope = 50;
+
+        $encontrados = $conversation->messages()
+            ->with('sender:id,name')
+            ->whereNotNull('content')
+            // `ESCAPE` explícito: en MySQL la barra invertida escapa por
+            // defecto, pero en SQLite —donde corren los tests— no escapa nada,
+            // así que sin esto el escape del `%` se buscaría literalmente y la
+            // prueba pasaría en un motor y no en el otro.
+            ->whereRaw("content LIKE ? ESCAPE '\\'", ['%'.$this->escaparLike($texto).'%'])
+            ->orderByDesc('created_at')->orderByDesc('id')
+            ->limit($tope + 1)
+            ->get();
+
+        $hayMas = $encontrados->count() > $tope;
+
+        return response()->json($this->sanitizeUtf8([
+            'query' => $texto,
+            'total' => $encontrados->count(),
+            'has_more' => $hayMas,
+            'results' => $encontrados->take($tope)->map(fn (WhatsAppMessage $m) => [
+                'id' => $m->id,
+                'content' => $m->content,
+                'direction' => $m->direction,
+                'type' => $m->type,
+                'is_internal' => (bool) $m->is_internal,
+                'sender' => $m->sender?->name,
+                'created_at' => optional($m->sent_at ?: $m->created_at)->toIso8601String(),
+            ])->values(),
+        ]));
+    }
+
+    /**
+     * Un `%` o un `_` escritos por el agente son literales, no comodines.
+     *
+     * Sin esto, buscar «100%» devuelve toda la conversación.
+     */
+    private function escaparLike(string $texto): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $texto);
     }
 
     /**

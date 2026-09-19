@@ -725,6 +725,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/templates', [ChatController::class, 'templates']);
         Route::post('/templates/ensure-resume', [ChatController::class, 'ensureResumeTemplate']);
         Route::get('/conversations/{conversationId}/messages', [ChatController::class, 'messages']);
+        // Buscar dentro de la conversación. Va aparte de `messages` porque no
+        // es una ventana del hilo: no marca leído, no mueve el cursor y puede
+        // traer resultados de hace meses.
+        Route::get('/conversations/{conversationId}/messages/search', [ChatController::class, 'searchMessages']);
         Route::post('/conversations/{conversationId}/resumen', [ResumenController::class, 'resumir'])
             ->middleware('permission:chat.view');
         Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
