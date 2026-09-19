@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Instance;
+use App\Services\Integra;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -112,11 +113,33 @@ class TemplateController extends Controller
 
         $entry = $catalog[$key];
 
+        $componentes = $entry['components'];
+
+        // Un encabezado multimedia no se aprueba sin un ejemplo, y el handle que
+        // Meta devuelve está atado al WABA que subió el archivo: no se puede
+        // guardar uno en la configuración y repartirlo. Se sube el PDF de
+        // muestra contra la cuenta de esta empresa, aquí y ahora.
+        if (! empty($entry['sample_file'])) {
+            $handle = $this->subirMuestra(base_path($entry['sample_file']), $instance);
+
+            if ($handle === null) {
+                return response()->json([
+                    'message' => 'No se pudo subir a Meta el archivo de muestra del encabezado. Vuelve a intentarlo.',
+                ], 502);
+            }
+
+            foreach ($componentes as $i => $componente) {
+                if (($componente['type'] ?? '') === 'HEADER' && ! empty($componente['format']) && $componente['format'] !== 'TEXT') {
+                    $componentes[$i]['example'] = ['header_handle' => [$handle]];
+                }
+            }
+        }
+
         $payload = [
             'name' => $key,
             'language' => $entry['language'],
             'category' => $entry['category'],
-            'components' => $entry['components'],
+            'components' => $componentes,
         ];
         if (!empty($entry['parameter_format'])) {
             $payload['parameter_format'] = $entry['parameter_format'];
@@ -152,9 +175,22 @@ class TemplateController extends Controller
         ], 201);
     }
 
+    /**
+     * El catálogo, ya filtrado para esta empresa.
+     *
+     * Las que llevan `requiere_integra` sólo salen si el ERP está conectado: son
+     * plantillas que dispara el propio Integra con el PDF adjunto, así que sin
+     * conexión no hay quien las envíe ni documento que mandar. Enseñárselas a
+     * quien no puede usarlas es darle trabajo —aprobarlas en Meta tarda días— a
+     * cambio de nada.
+     */
     protected function defaultTemplatesCatalog(): array
     {
-        return config('whatsapp_default_templates', []);
+        $conIntegra = Integra::connected((int) auth()->user()->company_id);
+
+        return collect(config('whatsapp_default_templates', []))
+            ->reject(fn (array $entrada) => ($entrada['requiere_integra'] ?? false) && ! $conIntegra)
+            ->all();
     }
 
     public function analytics(Request $request)
@@ -1162,6 +1198,41 @@ class TemplateController extends Controller
      * permite duplicar una plantilla con la factura adjunta, que son justo las
      * que importan.
      */
+    /**
+     * Sube un archivo del repositorio como muestra del encabezado.
+     *
+     * Es el mismo rodeo que `rehacerMuestraDelEncabezado()`, pero partiendo de
+     * un archivo nuestro en vez de uno que había que descargar de Meta.
+     */
+    private function subirMuestra(string $ruta, Instance $instance): ?string
+    {
+        if (! is_file($ruta)) {
+            Log::warning('Falta el archivo de muestra de una plantilla por defecto', ['ruta' => $ruta]);
+
+            return null;
+        }
+
+        // El `app_id` no se puede dar por sabido: aquí hay dos apps de Meta
+        // entregando al mismo callback, y la muestra tiene que subirse contra
+        // la que emitió el token de ESTA instancia.
+        $debug = $this->meta->debugToken($instance->access_token);
+        $appId = $debug['data']['app_id'] ?? null;
+
+        if (! $appId) {
+            Log::warning('No se pudo identificar la app de Meta para subir la muestra', [
+                'instance_id' => $instance->id,
+            ]);
+
+            return null;
+        }
+
+        $subida = $this->meta->uploadResumable($appId, $instance->access_token, $ruta, 'application/pdf');
+
+        return ($subida['success'] ?? false)
+            ? ($subida['handle'] ?? $subida['data']['h'] ?? null)
+            : null;
+    }
+
     private function rehacerMuestraDelEncabezado(string $url, Instance $destino): ?string
     {
         $temporal = null;

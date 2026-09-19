@@ -14,6 +14,7 @@ import {
     Wrench,
     Megaphone,
     KeyRound,
+    Plug,
 } from 'lucide-react';
 
 const CATEGORY_STYLES = {
@@ -136,9 +137,26 @@ export default function TemplatesDefaults({ instances = [], catalog = {} }) {
                                         <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70 bg-muted/60 rounded px-1.5 py-0.5">
                                             {entry.language}
                                         </span>
+                                        {/* De dónde viene. La plantilla es suya y
+                                            vive en su cuenta de Meta, pero el texto
+                                            y el envío los pone Integra: sin decirlo,
+                                            aparecen dos plantillas nuevas en su
+                                            catálogo sin que nadie sepa quién las
+                                            puso ni quién las dispara. */}
+                                        {entry.origen && (
+                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 bg-success/15 text-success ring-1 ring-inset ring-success/30">
+                                                <Plug className="size-3" /> De {entry.origen}
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-xs text-muted-foreground mt-1 font-mono">{key}</p>
                                     <p className="text-sm text-muted-foreground mt-1.5 max-w-xl">{entry.description}</p>
+                                    {entry.origen && (
+                                        <p className="text-xs text-muted-foreground/80 mt-1 max-w-xl">
+                                            La plantilla queda en tu cuenta de Meta y es tuya. El texto lo pone {entry.origen},
+                                            y es {entry.origen} quien la envía con el documento adjunto.
+                                        </p>
+                                    )}
                                 </div>
                                 <Button onClick={() => sync(key)} disabled={!instanceId || syncing === key} className="gap-2 shrink-0">
                                     {syncing === key ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
