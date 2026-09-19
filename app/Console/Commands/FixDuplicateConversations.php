@@ -18,6 +18,14 @@ use Illuminate\Support\Facades\DB;
  * webhook —que recibe el número limpio— abrió un segundo hilo. El agente seguía
  * mirando el primero y no veía nunca la respuesta.
  *
+ * **No toca los BSUID.** Desde que Meta permite ocultar el número, un cliente
+ * puede identificarse con "CO.1402615141764490", y ese identificador no es un
+ * teléfono mal escrito: quitarle el prefijo lo convierte en un número que no
+ * existe y deja al cliente inalcanzable. Este comando nació antes que los
+ * BSUID y los trataba como formato sucio: el 19-sep-2026 una simulación en
+ * producción proponía "normalizar" 618 conversaciones, y las 618 eran BSUID
+ * —ni una sola era un número con espacios—. Con `--apply` habría roto las 618.
+ *
  * Solo simula, salvo que se pase --apply.
  */
 class FixDuplicateConversations extends Command
@@ -27,6 +35,13 @@ class FixDuplicateConversations extends Command
         {--instance= : Limita la revisión a una instancia}';
 
     protected $description = 'Une hilos duplicados del mismo cliente y normaliza los números guardados';
+
+    /**
+     * Un teléfono no lleva letras y un BSUID siempre las lleva: el prefijo de
+     * país va delante del punto ("CO.", "US.ENT."). Es la frontera entre lo que
+     * este comando puede reescribir y lo que no debe tocar jamás.
+     */
+    private const SOLO_TELEFONOS = "wa_id NOT REGEXP '[A-Za-z]'";
 
     public function handle(): int
     {
@@ -64,6 +79,10 @@ class FixDuplicateConversations extends Command
     {
         $groups = DB::table('whatsapp_conversations')
             ->selectRaw("instance_id, REGEXP_REPLACE(wa_id, '[^0-9]', '') as digits, COUNT(*) as total")
+            // Agrupar por dígitos junta cosas que no son la misma: "CO.573001"
+            // y el teléfono "573001" dan el mismo grupo, y fusionarlos mezcla
+            // dos clientes distintos en un hilo. Los BSUID quedan fuera.
+            ->whereRaw(self::SOLO_TELEFONOS)
             ->when($this->option('instance'), fn ($q, $id) => $q->where('instance_id', $id))
             ->groupBy('instance_id', 'digits')
             ->havingRaw('COUNT(*) > 1')
@@ -80,6 +99,7 @@ class FixDuplicateConversations extends Command
         foreach ($groups as $group) {
             $conversations = WhatsAppConversation::where('instance_id', $group->instance_id)
                 ->whereRaw("REGEXP_REPLACE(wa_id, '[^0-9]', '') = ?", [$group->digits])
+                ->whereRaw(self::SOLO_TELEFONOS)
                 ->withCount('messages')
                 ->get();
 
@@ -242,8 +262,15 @@ class FixDuplicateConversations extends Command
     private function normalizeRemaining(bool $apply): int
     {
         $pending = WhatsAppConversation::whereRaw("wa_id REGEXP '[^0-9]' OR phone_number REGEXP '[^0-9]'")
+            ->whereRaw(self::SOLO_TELEFONOS)
             ->when($this->option('instance'), fn ($q, $id) => $q->where('instance_id', $id))
-            ->get(['id', 'instance_id', 'wa_id', 'phone_number']);
+            ->get(['id', 'instance_id', 'wa_id', 'phone_number'])
+            // Y una segunda vuelta con el criterio del modelo, que es el que
+            // manda: la condición SQL es un atajo para no traerse miles de
+            // filas, no la definición de lo que es un BSUID.
+            ->reject(fn ($c) => WhatsAppConversation::isBsuid($c->wa_id)
+                || WhatsAppConversation::isBsuid($c->phone_number))
+            ->values();
 
         if ($pending->isEmpty()) {
             $this->line('Todos los números guardados ya están en forma canónica.');
