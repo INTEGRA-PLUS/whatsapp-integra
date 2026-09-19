@@ -454,6 +454,14 @@ class FollowUpExtension extends Extension implements RunsOnSchedule
                 $sub->selectRaw('max(id)')
                     ->from('whatsapp_messages')
                     ->where('is_internal', false)
+                    // Los avisos del sistema entran con `direction = inbound`
+                    // —hay 2.859 así—, y sin excluirlos el «mensaje que
+                    // WhatsApp no entrega» de un chat atendido lo contaba como
+                    // un cliente esperando respuesta. Es el mismo filtro que
+                    // usa `esperaRespuesta()` para las de hoy: los dos caminos
+                    // tienen que contar lo mismo o el resumen diario y la
+                    // campana se contradicen.
+                    ->where('type', '!=', 'system')
                     ->whereIn('direction', ['inbound', 'outbound'])
                     ->whereIn('conversation_id', $ids)
                     ->groupBy('conversation_id');

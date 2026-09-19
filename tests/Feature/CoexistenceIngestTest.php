@@ -434,4 +434,109 @@ class CoexistenceIngestTest extends TestCase
             'history_context' => ['status' => 'READ'],
         ];
     }
+
+    /**
+     * Responder desde el celular apaga el globo de «sin leer».
+     *
+     * No lo apagaba, y en los números en coexistencia —donde casi nadie
+     * contesta desde el CRM— el contador sólo subía. El 19-sep-2026 un chat de
+     * Transinternet enseñaba 11 sin leer mientras el asesor llevaba hora y
+     * media respondiendo desde el móvil: desde la bandeja parecía un cliente
+     * abandonado, y al abrirlo estaba atendido.
+     */
+    public function test_el_eco_del_celular_apaga_el_contador_de_sin_leer(): void
+    {
+        $instancia = $this->instancia();
+
+        $conversacion = WhatsAppConversation::resolveFor($instancia->id, self::CLIENTE, [
+            'phone_number' => self::CLIENTE,
+            'name' => self::CLIENTE,
+            'status' => 'open',
+        ]);
+
+        $this->entranteDelCliente($conversacion, 'Buenos días', now()->subMinutes(20));
+        $this->entranteDelCliente($conversacion, '¿Me activaron?', now()->subMinutes(15));
+        $conversacion->update(['unread_count' => 2]);
+
+        $this->eco($instancia, 'wamid.eco-leido', 'Sí señor, ya quedó', now()->subMinutes(10));
+
+        $this->assertSame(0, $conversacion->fresh()->unread_count);
+    }
+
+    /** Pero lo que el cliente escribió DESPUÉS del eco sigue contando. */
+    public function test_lo_que_llego_despues_del_eco_sigue_sin_leer(): void
+    {
+        $instancia = $this->instancia();
+
+        $conversacion = WhatsAppConversation::resolveFor($instancia->id, self::CLIENTE, [
+            'phone_number' => self::CLIENTE,
+            'name' => self::CLIENTE,
+            'status' => 'open',
+        ]);
+
+        $this->entranteDelCliente($conversacion, 'Buenos días', now()->subMinutes(20));
+        // Estos dos son posteriores al eco: nadie los ha atendido todavía.
+        $this->entranteDelCliente($conversacion, 'Gracias', now()->subMinutes(5));
+        $this->entranteDelCliente($conversacion, 'Una cosa más', now()->subMinutes(2));
+
+        $this->eco($instancia, 'wamid.eco-parcial', 'Ya quedó', now()->subMinutes(10));
+
+        $this->assertSame(2, $conversacion->fresh()->unread_count);
+    }
+
+    /**
+     * Un aviso del sistema no es el cliente pidiendo nada.
+     *
+     * Entran con `direction = inbound` (hay 2.859 así en producción), y sin
+     * excluirlos el «mensaje que WhatsApp no entrega» de un chat ya contestado
+     * dejaba el globo encendido para siempre.
+     */
+    public function test_un_aviso_del_sistema_no_cuenta_como_sin_leer(): void
+    {
+        $instancia = $this->instancia();
+
+        $conversacion = WhatsAppConversation::resolveFor($instancia->id, self::CLIENTE, [
+            'phone_number' => self::CLIENTE,
+            'name' => self::CLIENTE,
+            'status' => 'open',
+        ]);
+
+        $this->entranteDelCliente($conversacion, 'El cliente envió un mensaje (revoke).', now()->subMinutes(2), 'system');
+
+        $this->eco($instancia, 'wamid.eco-sistema', 'Vale si sr', now()->subMinutes(5));
+
+        $this->assertSame(0, $conversacion->fresh()->unread_count);
+    }
+
+    private function entranteDelCliente(
+        WhatsAppConversation $conversacion,
+        string $texto,
+        $cuando,
+        string $tipo = 'text'
+    ): WhatsAppMessage {
+        return WhatsAppMessage::create([
+            'conversation_id' => $conversacion->id,
+            'wamid' => 'wamid.'.\Illuminate\Support\Str::random(12),
+            'type' => $tipo,
+            'content' => $texto,
+            'direction' => 'inbound',
+            'status' => 'delivered',
+            'sent_at' => $cuando,
+        ]);
+    }
+
+    private function eco($instancia, string $wamid, string $texto, $cuando): void
+    {
+        $this->ingesta()->reflejarEco($instancia, [
+            'metadata' => ['display_phone_number' => self::NEGOCIO, 'phone_number_id' => '1247515825107349'],
+            'message_echoes' => [[
+                'from' => self::NEGOCIO,
+                'to' => self::CLIENTE,
+                'id' => $wamid,
+                'timestamp' => (string) $cuando->timestamp,
+                'type' => 'text',
+                'text' => ['body' => $texto],
+            ]],
+        ]);
+    }
 }

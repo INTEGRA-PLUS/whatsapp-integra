@@ -335,11 +335,17 @@ class ChatController extends Controller
             // con que alguien reabra un hilo a mano para que empiece.
             $ultimoMensaje = WhatsAppMessage::whereIn('conversation_id', $idsPagina)
                 ->where('is_internal', false)
+                ->where('type', '!=', 'system')
                 ->whereIn('direction', ['inbound', 'outbound'])
                 ->whereIn('id', function ($sub) use ($idsPagina) {
                     $sub->selectRaw('max(id)')
                         ->from('whatsapp_messages')
                         ->where('is_internal', false)
+                        // Y tampoco los de sistema, que entran como `inbound`:
+                        // el aviso «el cliente envió un mensaje (revoke)»
+                        // dejaba el chat marcado como esperando respuesta
+                        // aunque el asesor acabara de contestar (19-sep-2026).
+                        ->where('type', '!=', 'system')
                         ->whereIn('direction', ['inbound', 'outbound'])
                         ->whereIn('conversation_id', $idsPagina)
                         ->groupBy('conversation_id');

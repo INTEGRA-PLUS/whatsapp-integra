@@ -181,6 +181,34 @@ class ChatAwaitingReplyTest extends TestCase
         $this->assertSame('read', $this->campoDe($this->pedirLista(), $conv->id, 'last_message_status'));
     }
 
+    /**
+     * El otro aviso de sistema, el que entra como `inbound`.
+     *
+     * Los de `ConversationNotice` se graban con `direction = 'internal'` y los
+     * caza el filtro de arriba. Pero «el cliente envió un mensaje (revoke),
+     * WhatsApp no lo entrega a la API» se guarda con `direction = 'inbound'`
+     * —2.859 en producción—, así que colaba: un chat que el asesor acababa de
+     * contestar se quedaba marcado como esperando respuesta porque el último
+     * apunte era ese aviso. Visto el 19-sep-2026 en Transinternet.
+     */
+    public function test_un_aviso_de_no_entregado_no_deja_el_chat_esperando(): void
+    {
+        $conv = $this->conversacion();
+        $this->mensaje($conv, 'inbound', ['sent_at' => now()->subMinutes(50)]);
+        $this->mensaje($conv, 'outbound', ['sent_at' => now()->subMinutes(45)]);
+        $this->mensaje($conv, 'inbound', [
+            'type' => 'system',
+            'content' => 'El cliente envió un mensaje (revoke). WhatsApp no entrega ese tipo de mensaje a la API.',
+            'is_internal' => false,
+            'sent_at' => now()->subMinutes(40),
+        ]);
+
+        $this->assertFalse(
+            $this->awaitingDe($this->pedirLista(), $conv->id),
+            'El asesor ya contestó: un aviso del sistema no vuelve a dejar el chat esperando.'
+        );
+    }
+
     /** Un chat cerrado no espera respuesta aunque el último mensaje sea del cliente. */
     public function test_un_chat_cerrado_no_espera(): void
     {

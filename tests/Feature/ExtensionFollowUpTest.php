@@ -407,6 +407,41 @@ class ExtensionFollowUpTest extends TestCase
         Notification::assertNothingSent();
     }
 
+    /**
+     * Un aviso del sistema no convierte un chat atendido en uno abandonado.
+     *
+     * «El cliente envió un mensaje (revoke)» se guarda con `direction =
+     * inbound` —2.859 así en producción—, y sin excluirlo el resumen contaba
+     * como esperando respuesta un hilo que el asesor acababa de contestar.
+     */
+    public function test_el_resumen_no_cuenta_los_avisos_del_sistema(): void
+    {
+        $this->instalar(['abandonadas_minimo' => 10]);
+
+        // Diez de verdad, para llegar al mínimo.
+        for ($i = 0; $i < 10; $i++) {
+            $this->conversacion('inbound', 60 * 24 * 3, ['wa_id' => '5730'.$i, 'phone_number' => '5730'.$i]);
+        }
+
+        // Y una contestada que termina en un aviso del sistema: no cuenta.
+        $atendida = $this->conversacion('outbound', 60 * 24 * 3, ['wa_id' => '573099', 'phone_number' => '573099']);
+        WhatsAppMessage::create([
+            'conversation_id' => $atendida->id,
+            'wamid' => 'wamid.'.Str::random(10),
+            'type' => 'system',
+            'content' => 'El cliente envió un mensaje (revoke).',
+            'direction' => 'inbound',
+            'status' => 'delivered',
+            'is_internal' => false,
+            'sent_at' => now()->subDays(2),
+        ]);
+
+        $this->correr();
+
+        Notification::assertSentTo($this->admin, ExtensionAlertNotification::class,
+            fn ($aviso) => str_contains($aviso->body, '10 clientes'));
+    }
+
     /** Y se puede apagar, para quien no quiera el repaso diario. */
     public function test_el_resumen_se_puede_apagar(): void
     {

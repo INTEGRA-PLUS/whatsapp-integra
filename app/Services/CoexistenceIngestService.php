@@ -284,10 +284,38 @@ class CoexistenceIngestService
             $conversacion->update([
                 'last_message' => $guardado->metadata['resumen'] ?? $guardado->content ?: 'Archivo adjunto',
                 'last_message_at' => $guardado->sent_at ?? now(),
+                'unread_count' => $this->sinLeerTrasElEco($conversacion, $guardado),
             ]);
 
             $this->registrarContacto($instance, $conversacion, $waId);
         }
+    }
+
+    /**
+     * Cuántos mensajes del cliente siguen sin atender después de este eco.
+     *
+     * Responder desde el celular no marcaba nada como leído, así que el globo
+     * verde de la bandeja crecía sin parar en los números en coexistencia
+     * —donde precisamente casi nadie contesta desde el CRM—. El 19-sep-2026 un
+     * chat de Transinternet enseñaba 11 sin leer mientras el asesor llevaba
+     * hora y media respondiendo desde el móvil: quien miraba la lista veía un
+     * cliente abandonado que en realidad estaba atendido.
+     *
+     * Si el negocio contestó, lo anterior lo leyó: por eso no se resta uno, se
+     * cuenta lo que quedó **por detrás** del eco. Y se cuenta por fecha y no
+     * por id porque los ecos llegan tarde y desordenados: uno de hace una hora
+     * puede guardarse después del mensaje que el cliente acaba de escribir, y
+     * por id borraría un aviso legítimo.
+     */
+    private function sinLeerTrasElEco(WhatsAppConversation $conversacion, WhatsAppMessage $eco): int
+    {
+        return WhatsAppMessage::where('conversation_id', $conversacion->id)
+            ->where('direction', 'inbound')
+            ->where('is_internal', false)
+            // Un aviso del sistema no es el cliente pidiendo nada.
+            ->where('type', '!=', 'system')
+            ->whereRaw('COALESCE(sent_at, created_at) > ?', [$eco->sent_at ?? $eco->created_at])
+            ->count();
     }
 
     // --------------------------------------------------------------- comunes
