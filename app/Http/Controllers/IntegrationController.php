@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SyncContactsFromIntegra;
+use App\Models\CompanyExtension;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
@@ -12,6 +13,7 @@ use App\Services\IntegraClient;
 use App\Support\IntegrationProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class IntegrationController extends Controller
@@ -522,20 +524,17 @@ class IntegrationController extends Controller
 
         $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
 
-        $conversation = WhatsAppConversation::with('contact:id,identificacion,external_id')
-            ->whereIn('instance_id', $instanceIds)
-            ->find($data['conversation_id']);
+        $conversation = $this->conversacionDeLaEmpresa($data['conversation_id'], $instanceIds);
 
         if (! $conversation) {
             return response()->json(['message' => 'Conversación no encontrada.'], 404);
         }
 
+        [$identificacion, $telefono, $llave] = $this->criterioDeFicha($conversation, $companyId);
+
         // El cliente que oculta su número tras un nombre de usuario no se puede
         // cruzar con el ERP: no hay por dónde buscarlo. Se dice, en vez de
         // devolver una ficha vacía que parece un fallo de conexión.
-        $identificacion = $conversation->contact?->identificacion;
-        $telefono = $conversation->hasPhone() ? $conversation->phone_number : null;
-
         if (! $identificacion && ! $telefono) {
             return response()->json([
                 'buscable' => false,
@@ -543,8 +542,6 @@ class IntegrationController extends Controller
                 'message' => 'Este chat no tiene número ni identificación con la que buscar en Integra.',
             ]);
         }
-
-        $llave = 'integra:ficha:'.$companyId.':'.($identificacion ?: $telefono);
 
         if ($request->boolean('refrescar')) {
             Cache::forget($llave);
@@ -554,17 +551,149 @@ class IntegrationController extends Controller
             return response()->json($cacheada);
         }
 
-        return Integra::respond($companyId, function (IntegraClient $client) use ($identificacion, $telefono, $llave) {
-            $ficha = FichaDeClienteIntegra::armar($client, $identificacion, $telefono);
+        return Integra::respond($companyId, fn (IntegraClient $client) => $this->fichaCacheada(
+            $client, $llave, $identificacion, $telefono
+        ));
+    }
 
-            // Un minuto: lo justo para que abrir y cerrar el panel —o pasar por
-            // los tres chats del mismo cliente— no dispare siete peticiones al
-            // ERP, y lo bastante poco para que un pago que se acaba de registrar
-            // se vea al volver. El botón de refrescar no espera ni eso.
-            Cache::put($llave, $ficha, now()->addMinute());
+    /**
+     * GET /api/integrations/integra/diagnostico — qué le pasa al internet de
+     * este cliente, ahora mismo.
+     *
+     * Lo pinta la extensión «Diagnóstico de internet» dentro del contrato, en
+     * el panel del chat. Tres puertas antes de llegar a Integra, y las tres
+     * hacen falta:
+     *
+     *  1. **La extensión encendida.** Si no, el endpoint no existe para esa
+     *     empresa: apagarla tiene que apagarla de verdad, no sólo esconder el
+     *     botón.
+     *  2. **El contrato es del cliente de esta conversación.** Los números de
+     *     contrato son secuenciales, así que un endpoint que acepte cualquiera
+     *     es un endpoint para pasearse por la base del ERP escribiendo números.
+     *     Se coteja contra la ficha, que el panel acaba de cargar y está en
+     *     caché.
+     *  3. **El ritmo.** Integra admite 20 diagnósticos por minuto y el cupo es
+     *     de la empresa entera: sin freno propio, un asesor impaciente dejaría
+     *     sin consultas a sus compañeros. 12 por minuto deja margen para el
+     *     resto de la API.
+     *
+     * Tarda entre 2 y 6 segundos, hasta unos 20 en el peor caso, porque Integra
+     * se conecta al router en el momento. No se cachea: un diagnóstico de hace
+     * un minuto ya no dice nada de «no me sirve el internet».
+     */
+    public function diagnosticoDeRed(Request $request)
+    {
+        $data = $request->validate([
+            'conversation_id' => 'required|integer',
+            'contrato' => 'required|string|max:40',
+        ]);
 
-            return $ficha;
+        $companyId = $this->companyId();
+
+        if (! $this->extensionEncendida($companyId, 'internet_diagnostic')) {
+            return response()->json([
+                'message' => 'La extensión «Diagnóstico de internet» no está encendida.',
+            ], 403);
+        }
+
+        $instanceIds = Instance::where('company_id', $companyId)->pluck('id');
+        $conversation = $this->conversacionDeLaEmpresa($data['conversation_id'], $instanceIds);
+
+        if (! $conversation) {
+            return response()->json(['message' => 'Conversación no encontrada.'], 404);
+        }
+
+        if (! RateLimiter::attempt('integra:diagnostico:'.$companyId, 12, fn () => true)) {
+            return response()->json([
+                'message' => 'Se han pedido muchos diagnósticos en el último minuto. Espera un poco: '
+                    .'Integra limita esta consulta y el cupo es de toda la empresa.',
+            ], 429);
+        }
+
+        [$identificacion, $telefono, $llave] = $this->criterioDeFicha($conversation, $companyId);
+
+        if (! $identificacion && ! $telefono) {
+            return response()->json([
+                'message' => 'Este chat no tiene número ni identificación con la que buscar en Integra.',
+            ], 422);
+        }
+
+        return Integra::respond($companyId, function (IntegraClient $client) use ($data, $llave, $identificacion, $telefono) {
+            $ficha = $this->fichaCacheada($client, $llave, $identificacion, $telefono);
+
+            $suyos = collect($ficha['contratos'] ?? [])
+                ->pluck('nro')
+                ->map(fn ($nro) => (string) $nro);
+
+            if (! $suyos->contains((string) $data['contrato'])) {
+                return response()->json([
+                    'message' => 'Ese contrato no es del cliente de esta conversación.',
+                ], 403);
+            }
+
+            $diagnostico = $client->contractDiagnostic((string) $data['contrato']);
+
+            // null es el 404 de Integra: el contrato no existe para el ERP. No
+            // es lo mismo que un router que no contesta —eso vuelve con 200 y
+            // su veredicto— y por eso se dice distinto.
+            if ($diagnostico === null) {
+                return response()->json([
+                    'message' => 'Integra no reconoce el contrato #'.$data['contrato'].'.',
+                ], 404);
+            }
+
+            return [
+                'diagnostico' => $diagnostico,
+                'consultado_at' => now()->toIso8601String(),
+            ];
         });
+    }
+
+    /** La conversación, sólo si es de una línea de esta empresa. */
+    private function conversacionDeLaEmpresa(int $id, $instanceIds): ?WhatsAppConversation
+    {
+        return WhatsAppConversation::with('contact:id,identificacion,external_id')
+            ->whereIn('instance_id', $instanceIds)
+            ->find($id);
+    }
+
+    /**
+     * Con qué se busca a este cliente en Integra, y bajo qué llave se guarda.
+     *
+     * @return array{0: ?string, 1: ?string, 2: string}
+     */
+    private function criterioDeFicha(WhatsAppConversation $conversation, int $companyId): array
+    {
+        $identificacion = $conversation->contact?->identificacion;
+        $telefono = $conversation->hasPhone() ? $conversation->phone_number : null;
+
+        return [$identificacion, $telefono, 'integra:ficha:'.$companyId.':'.($identificacion ?: $telefono)];
+    }
+
+    /**
+     * La ficha, de la caché o del ERP.
+     *
+     * Un minuto: lo justo para que abrir y cerrar el panel —o pasar por los
+     * tres chats del mismo cliente— no dispare siete peticiones al ERP, y lo
+     * bastante poco para que un pago que se acaba de registrar se vea al
+     * volver. El botón de refrescar no espera ni eso.
+     */
+    private function fichaCacheada(IntegraClient $client, string $llave, ?string $identificacion, ?string $telefono): array
+    {
+        return Cache::remember(
+            $llave,
+            now()->addMinute(),
+            fn () => FichaDeClienteIntegra::armar($client, $identificacion, $telefono)
+        );
+    }
+
+    /** Si una extensión está instalada Y encendida para esta empresa. */
+    private function extensionEncendida(int $companyId, string $slug): bool
+    {
+        return CompanyExtension::where('company_id', $companyId)
+            ->where('slug', $slug)
+            ->where('enabled', true)
+            ->exists();
     }
 
     /**

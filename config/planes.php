@@ -195,6 +195,12 @@ return [
         'follow_up',
         'keyword_routing',
         'cierre_automatico',
+        // El diagnóstico de red entra aquí por la misma regla que el resto: no
+        // llama a ningún modelo, así que no tiene coste por uso que justifique
+        // meterlo en el complemento. Lo que sí necesita es Integra conectado
+        // —la consulta la hace el ERP contra el router del cliente—, y eso lo
+        // comprueba la propia extensión al instalarse, no el plan.
+        'internet_diagnostic',
     ],
 
     'nucleo' => [

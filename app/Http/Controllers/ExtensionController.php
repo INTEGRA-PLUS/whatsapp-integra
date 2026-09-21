@@ -8,6 +8,9 @@ use App\Models\Company;
 use App\Models\CompanyExtension;
 use App\Models\Tag;
 use App\Models\User;
+use App\Services\Integra;
+use App\Services\IntegraCapabilities;
+use App\Support\IntegrationProvider;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -21,6 +24,14 @@ use Inertia\Inertia;
  */
 class ExtensionController extends Controller
 {
+    /**
+     * Qué capacidad del token de Integra necesita cada extensión, cuando
+     * necesita una concreta. La clave es la de `IntegraCapabilities`.
+     */
+    private const SCOPES_POR_EXTENSION = [
+        'internet_diagnostic' => 'diagnostico',
+    ];
+
     public function __construct(private ExtensionRegistry $registry) {}
 
     private function companyId(): int
@@ -62,7 +73,7 @@ class ExtensionController extends Controller
 
         return Inertia::render('Extensions/Show', [
             'extension' => array_merge(
-                $this->present($extension, $instalada),
+                $this->present($extension, $instalada, conScope: true),
                 ['schema' => $this->schemaFor($extension)]
             ),
         ]);
@@ -80,6 +91,20 @@ class ExtensionController extends Controller
         // vez de «no tienes acceso».
         if (! $this->plan()->permiteExtension($slug)) {
             abort(402, 'Esta extensión no está incluida en tu plan.');
+        }
+
+        // Y la dependencia dura, si la tiene. 409 y no 402 ni 403: no es el
+        // plan ni son los permisos, es que falta conectar algo — y se arregla
+        // en otra pantalla, así que el mensaje tiene que decir cuál. Instalarla
+        // sin la conexión dejaría una extensión encendida que no puede hacer
+        // nada y que parece rota.
+        if ($proveedor = $extension->requiresIntegration()) {
+            if (! $this->integracionConectada($proveedor)) {
+                $nombre = IntegrationProvider::find($proveedor)['name'] ?? $proveedor;
+
+                abort(409, 'Esta extensión funciona contra tu cuenta de '.$nombre
+                    .', y todavía no está conectada. Conéctala en Integraciones y vuelve aquí.');
+            }
         }
 
         // firstOrCreate y no create: un doble clic en "Instalar" chocaría contra
@@ -159,6 +184,60 @@ class ExtensionController extends Controller
         return response()->json($this->present($extension, $instalada->fresh()));
     }
 
+    /** Si el proveedor del que depende una extensión está conectado hoy. */
+    private function integracionConectada(string $proveedor): bool
+    {
+        return match ($proveedor) {
+            IntegrationProvider::INTEGRA => Integra::connected($this->companyId()),
+            default => false,
+        };
+    }
+
+    /**
+     * La dependencia de la extensión, resuelta para la pantalla.
+     *
+     * Incluye si el token puede además lo que la extensión necesita. Son dos
+     * fallos distintos y el usuario tiene que poder distinguirlos: «no has
+     * conectado Integra» se arregla conectando, y «tu token no tiene
+     * contratos.diagnostico» se arregla pidiéndole ese scope a quien administra
+     * el ERP. Con un solo aviso genérico, el segundo caso manda a reconectar
+     * una y otra vez una integración que ya está bien.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function dependencia(Extension $extension, bool $conScope = false): ?array
+    {
+        $proveedor = $extension->requiresIntegration();
+
+        if (! $proveedor) {
+            return null;
+        }
+
+        $conectada = $this->integracionConectada($proveedor);
+        $scope = self::SCOPES_POR_EXTENSION[$extension->slug()] ?? null;
+        $puede = null;
+
+        // El sondeo de scopes sólo en la ficha, nunca en el catálogo: son
+        // cinco llamadas a Integra la primera vez, y el catálogo es la
+        // pantalla que se abre para mirar, no para decidir.
+        if ($conScope && $conectada && $scope) {
+            $capacidades = IntegraCapabilities::for($this->companyId());
+            $puede = ($capacidades['checked'] ?? false)
+                ? (bool) ($capacidades['can'][$scope] ?? false)
+                : null;
+        }
+
+        return [
+            'id' => $proveedor,
+            'nombre' => IntegrationProvider::find($proveedor)['name'] ?? $proveedor,
+            'conectada' => $conectada,
+            // null = no se pudo comprobar; no se pinta nada antes que mentir.
+            'puede' => $puede,
+            'scope' => $scope ? (IntegraCapabilities::SCOPES[$scope] ?? $scope) : null,
+            'etiqueta' => $scope ? (IntegraCapabilities::LABELS_EXTRA[$scope] ?? $scope) : null,
+        ];
+    }
+
     private function requireExtension(string $slug): Extension
     {
         $extension = $this->registry->find($slug);
@@ -184,7 +263,7 @@ class ExtensionController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function present(Extension $extension, ?CompanyExtension $instalada): array
+    private function present(Extension $extension, ?CompanyExtension $instalada, bool $conScope = false): array
     {
         $plan = $this->plan();
 
@@ -195,6 +274,10 @@ class ExtensionController extends Controller
             // existe.
             'en_plan' => $plan->permiteExtension($extension->slug()),
             'ajustes_bloqueados' => $plan->ajustesDeIaBloqueados($extension->slug()),
+
+            // Lo que le falta a esta empresa para poder usarla, si es que le
+            // falta algo. null en casi todas.
+            'dependencia' => $this->dependencia($extension, $conScope),
 
             'installed' => $instalada !== null,
             'enabled' => (bool) ($instalada?->enabled ?? false),

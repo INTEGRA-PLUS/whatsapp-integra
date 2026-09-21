@@ -921,5 +921,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/integra/ficha', [IntegrationController::class, 'ficha']);
         Route::get('/integra/factura/{factura}', [IntegrationController::class, 'factura'])
             ->whereNumber('factura');
+
+        // El diagnóstico de red del contrato (extensión «Diagnóstico de
+        // internet»). Sin middleware de permisos, como el resto de acciones
+        // del chat: lo usa el asesor que está atendiendo. Quién puede y qué
+        // contrato puede lo decide el propio controlador —extensión encendida,
+        // contrato del cliente de esa conversación y tope de ritmo—.
+        Route::get('/integra/diagnostico', [IntegrationController::class, 'diagnosticoDeRed']);
     });
 });

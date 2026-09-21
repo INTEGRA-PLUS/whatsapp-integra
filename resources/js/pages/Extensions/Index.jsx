@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Blocks, Search, Download, Power, Settings2, Loader2, Info, Lock ,
-    Sparkles,
+    Sparkles, Plug,
 } from 'lucide-react';
 import { iconFor, CATEGORIES, categoryLabel } from './icons';
 import { MaquetaMini } from './maquetas';
@@ -183,9 +183,29 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                             </span>
                         )}
                     </div>
-                    <span className="mt-1 inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {categoryLabel(extension.category)}
-                    </span>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                            {categoryLabel(extension.category)}
+                        </span>
+
+                        {/* Que necesita otra cuenta se dice en la tarjeta y no
+                            sólo en la ficha: es lo que decide si esta extensión
+                            va contigo, y enterarse al pulsar «Instalar» —con un
+                            409 del servidor— es enterarse tarde. */}
+                        {extension.dependencia && (
+                            <span className={clsx(
+                                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                                extension.dependencia.conectada
+                                    ? 'border-success/30 bg-success/10 text-success'
+                                    : 'border-warning/40 bg-warning/10 text-warning'
+                            )}>
+                                <Plug className="size-3" />
+                                {extension.dependencia.conectada
+                                    ? `${extension.dependencia.nombre} conectado`
+                                    : `Necesita ${extension.dependencia.nombre}`}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -212,6 +232,13 @@ function ExtensionCard({ extension, busy, canInstall, canUpdate, onInstall, onTo
                         className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                     >
                         <Lock className="size-3.5" /> No incluido — ver mi plan
+                    </Link>
+                ) : extension.dependencia && !extension.dependencia.conectada ? (
+                    <Link
+                        href={route('integrations.index')}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-accent-foreground"
+                    >
+                        <Plug className="size-3.5" /> Conectar {extension.dependencia.nombre}
                     </Link>
                 ) : !extension.installed ? (
                     <Button size="sm" className="gap-2" disabled={busy || !canInstall} onClick={onInstall}>

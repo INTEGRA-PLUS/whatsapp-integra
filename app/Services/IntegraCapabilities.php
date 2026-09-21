@@ -48,6 +48,18 @@ class IntegraCapabilities
     ];
 
     /**
+     * Las que no pide ningún menú.
+     *
+     * Van aparte de LABELS a propósito: la pantalla de Menús pinta un ✓/✕ por
+     * cada etiqueta de LABELS, y un «Diagnosticar la red» en rojo ahí dentro
+     * sería una alarma sobre algo que ningún menú usa. Éstas las pinta quien
+     * las necesita —la ficha de la extensión de diagnóstico—.
+     */
+    public const LABELS_EXTRA = [
+        'diagnostico' => 'Diagnosticar la red',
+    ];
+
+    /**
      * El scope de Integra que hay que pedir para cada uno, tal cual se escribe
      * en `php artisan api:token`. Va en la interfaz porque es lo que el admin
      * tiene que reenviarle a quien administra su Integra.
@@ -57,6 +69,7 @@ class IntegraCapabilities
         'facturas' => 'facturas.leer',
         'contratos' => 'contratos.leer',
         'radicados' => 'radicados.leer + radicados.crear',
+        'diagnostico' => 'contratos.diagnostico',
     ];
 
     /**
@@ -93,6 +106,12 @@ class IntegraCapabilities
             'facturas' => fn () => $client->pendingInvoices(['nit' => '0']),
             'radicados' => fn () => $client->radicadoCatalogs(),
             'contratos' => fn () => $client->contractSummary('0', '0'),
+            // Con seis segundos y no con los treinta y cinco de verdad: el
+            // contrato «0» no existe, así que Integra contesta 404 sin tocar
+            // ningún router. Si aun así tardara, el timeout cae en la regla
+            // general de abajo —sólo 401 y 403 significan «no puedes»— y se da
+            // por bueno, que es la respuesta prudente para un sondeo.
+            'diagnostico' => fn () => $client->contractDiagnostic('0', 6),
         ];
 
         $can = [];

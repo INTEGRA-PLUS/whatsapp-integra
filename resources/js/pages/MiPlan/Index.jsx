@@ -4,9 +4,10 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
     Check, Lock, Sparkles, Users, Gift, ArrowRight, MessageSquare, Phone,
-    TrendingUp, ShieldCheck, CalendarDays, AlertCircle, Receipt,
+    TrendingUp, ShieldCheck, CalendarDays, AlertCircle, BadgeCheck,
 } from 'lucide-react';
 import { iconFor } from '@/pages/Extensions/icons';
+import { ListaConChecks, Pastilla, Titulo } from '@/components/seccion';
 
 /**
  * «Mi plan», tal y como lo ve el cliente.
@@ -27,25 +28,49 @@ import { iconFor } from '@/pages/Extensions/icons';
  * Por eso el botón de hablar está siempre, y no sólo cuando hay algo bloqueado:
  * antes vivía al final de la lista de extensiones y quien ya las tenía todas
  * —justo el cliente que puede crecer— no veía ninguna forma de pedir nada.
+ *
+ * ## Cómo está compuesta (21-sep-2026)
+ *
+ * Era una columna de ocho cajas idénticas: mismo borde, mismo blanco, títulos
+ * todos en `text-sm`. Con todo al mismo peso, la pantalla no decía por dónde
+ * empezar y lo primero —cuál es tu plan— pesaba lo mismo que la última fila de
+ * la tabla de recibos.
+ *
+ * Ahora la página **baja de temperatura**: el carné en navy arriba (el único
+ * bloque con fondo de marca, para que el plan contratado sea lo que se ve al
+ * entrar), después las tarjetas de uso, y de ahí para abajo contenido sobre el
+ * fondo claro. Una sola superficie oscura por pantalla; dos compiten.
+ *
+ * Reglas de color que se siguen aquí y conviene no «arreglar»:
+ *  - El verde de marca **no vale como texto** sobre claro (2.05:1). Para tinta
+ *    verde va `text-accent-foreground`, que es el mismo tono bajado hasta 4.52:1.
+ *    `bg-primary` sí, pero con `text-primary-foreground` (navy) encima.
+ *  - El navy del carné es `bg-sidebar`, el mismo token que la barra lateral, que
+ *    ya es navy en los dos temas. Así el bloque no necesita un color escrito a
+ *    mano ni un caso especial para el tema oscuro.
  */
 export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos = [], nucleo = [], periodo = null, por_pagar = null, recibos = [] }) {
     const incluidas = extensiones.filter(e => e.en_plan);
     const bloqueadas = extensiones.filter(e => !e.en_plan);
     const sugerido = planes.find(p => p.es_el_sugerido);
-    const elSuyo = planes.find(p => p.es_el_suyo);
 
     return (
         <>
             <Head title="Mi plan" />
 
-            <div className="flex flex-col gap-7 p-6 lg:p-8 max-w-5xl">
+            <div className="mx-auto flex max-w-6xl flex-col gap-9 p-6 lg:p-8">
 
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Mi plan</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Lo que tienes contratado, cuánto llevas usado y qué puedes activar.
-                        </p>
+                <header className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-accent-foreground">
+                            <BadgeCheck className="size-6" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Mi plan</h1>
+                            <p className="mt-0.5 text-sm text-muted-foreground">
+                                Lo que tienes contratado, cuánto llevas usado y qué puedes activar.
+                            </p>
+                        </div>
                     </div>
 
                     {/* Siempre visible. El cliente que más puede crecer es el que
@@ -56,58 +81,21 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             Hablar con nosotros <ArrowRight className="size-4" />
                         </a>
                     </Button>
-                </div>
+                </header>
 
-                {/* ── La cabecera: qué tienes contratado ───────────────────── */}
-                <div className="overflow-hidden rounded-xl border bg-card">
-                    <div className="flex flex-wrap items-center justify-between gap-4 border-b bg-primary/[0.07] px-6 py-5">
-                        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-                            <div>
-                                <p className="text-xs font-medium text-muted-foreground">Tu plan</p>
-                                <p className="mt-0.5 text-2xl font-semibold tracking-tight text-foreground">
-                                    {plan.plan_nombre}
-                                </p>
-                            </div>
+                <Carne plan={plan} periodo={periodo} porPagar={por_pagar} />
 
-                            <div className="h-10 w-px bg-border" />
+                {/* ── Cuánto llevas de lo tuyo ─────────────────────────────── */}
+                <section className="space-y-4">
+                    <Titulo eyebrow="Tu consumo">
+                        Cuánto llevas usado
+                    </Titulo>
 
-                            <div>
-                                <p className="text-xs font-medium text-muted-foreground">Inteligencia artificial</p>
-                                <p className={clsx(
-                                    'mt-0.5 flex items-center gap-1.5 text-2xl font-semibold tracking-tight',
-                                    plan.tiene_ia ? 'text-foreground' : 'text-muted-foreground'
-                                )}>
-                                    {plan.tiene_ia && <Sparkles className="size-5 text-accent-foreground" />}
-                                    {plan.ia_nombre}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                            {/* «Incluido con tu Integra», a secas y al lado de
-                                «IA Completa», se leía como que la IA viene
-                                incluida. No: Integra cubre el CRM, y la IA es
-                                justo lo único que sí se le factura a un cliente
-                                de Integra. Se dice qué cubre, no que cubre. */}
-                            {plan.incluido_en_integra && (
-                                <Insignia icono={ShieldCheck} tono="success">
-                                    {plan.tiene_ia ? 'CRM incluido con tu Integra' : 'Incluido con tu Integra'}
-                                </Insignia>
-                            )}
-                            {plan.en_mes_gratis && (
-                                <Insignia icono={Gift} tono="success">
-                                    Cortesía hasta el {new Date(plan.gratis_hasta).toLocaleDateString('es-CO')}
-                                </Insignia>
-                            )}
-                        </div>
-                    </div>
-
-                    <Cobertura plan={plan} periodo={periodo} porPagar={por_pagar} />
-
-                    {/* Los tres medidores. Antes eran dos cifras sueltas sin
-                        barra: «2.800 de 3.000» obliga a dividir de cabeza para
-                        saber si vas justo, y nadie divide. */}
-                    <div className="grid gap-px bg-border sm:grid-cols-3">
+                    {/* Tarjetas sueltas y no una rejilla con filetes: los tres
+                        medidores miden cosas distintas y se leen de uno en uno.
+                        Pegados con `gap-px` parecían columnas de una hoja de
+                        cálculo, que es justo lo que no son. */}
+                    <div className="grid gap-4 sm:grid-cols-3">
                         <Medidor
                             icono={Users}
                             titulo="Contactos"
@@ -129,13 +117,12 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             incluido={plan.lineas_incluidas}
                             pasado={plan.se_paso_de?.includes('líneas')}
                         />
-                    </div>
 
-                    {/* El crédito de IA, cuando lo hay. Va en su propia fila
-                        porque no se mide en lo mismo que lo de arriba: aquello
-                        es tamaño contratado, esto se gasta y se repone cada mes. */}
-                    {plan.tiene_ia && (
-                        <div className="border-t px-6 py-5">
+                        {/* El crédito de IA, cuando lo hay. Ocupa la fila entera
+                            porque no se mide en lo mismo que lo de arriba:
+                            aquello es tamaño contratado, esto se gasta y se
+                            repone cada mes. */}
+                        {plan.tiene_ia && (
                             <Medidor
                                 icono={Sparkles}
                                 titulo="Conversaciones con IA este mes"
@@ -147,11 +134,9 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                                     ? `Llevas ${uso_ia.exceso.toLocaleString('es-CO')} por encima. No se corta nada: se factura el exceso.`
                                     : 'Se repone el día 1 de cada mes.'}
                             />
-                        </div>
-                    )}
-                </div>
-
-                <Facturacion recibos={recibos} />
+                        )}
+                    </div>
+                </section>
 
                 {/* ── La invitación, sacada de sus propios números ──────────── */}
                 {plan.se_paso_del_tramo ? (
@@ -188,124 +173,62 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                 ) : null}
 
                 {/* ── El CRM, antes que las extensiones ────────────────────── */}
-                <section>
-                    <h2 className="text-sm font-semibold text-foreground">
+                <section className="space-y-4">
+                    <Titulo eyebrow="Incluido siempre" nota="Va en los tres planes, con o sin complemento de IA.">
                         Tu CRM
-                        <span className="ml-2 font-normal text-muted-foreground">en todos los planes</span>
-                    </h2>
-                    <div className="mt-3 rounded-xl border bg-card p-5">
-                        <ul className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2">
-                            {nucleo.map(linea => (
-                                <li key={linea} className="flex items-start gap-2 text-sm text-foreground">
-                                    <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                                    {linea}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
+                    </Titulo>
+
+                    <ListaConChecks items={nucleo} />
                 </section>
 
                 {/* ── Lo que añade su plan ─────────────────────────────────── */}
-                <section>
-                    <h2 className="text-sm font-semibold text-foreground">
-                        Extensiones de tu plan
-                        <span className="ml-2 font-normal text-muted-foreground">{incluidas.length}</span>
-                    </h2>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <section className="space-y-4">
+                    <Titulo eyebrow="Extensiones" contador={incluidas.length}>
+                        Las que tienes incluidas
+                    </Titulo>
+                    <div className="grid gap-4 sm:grid-cols-2">
                         {incluidas.map(e => <Tarjeta key={e.slug} extension={e} />)}
                     </div>
                 </section>
 
                 {/* ── Y lo que no ──────────────────────────────────────────── */}
                 {bloqueadas.length > 0 && (
-                    <section>
-                        <h2 className="text-sm font-semibold text-foreground">
-                            Disponible con el complemento de IA
-                            <span className="ml-2 font-normal text-muted-foreground">{bloqueadas.length}</span>
-                        </h2>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <section className="space-y-4">
+                        <Titulo
+                            eyebrow="Extensiones"
+                            contador={bloqueadas.length}
+                            nota="Se encienden con el complemento de IA, sin tocar tu plan."
+                        >
+                            Lo que todavía no tienes
+                        </Titulo>
+                        <div className="grid gap-4 sm:grid-cols-2">
                             {bloqueadas.map(e => <Tarjeta key={e.slug} extension={e} bloqueada />)}
                         </div>
                     </section>
                 )}
 
                 {/* ── Dónde estás y qué hay por encima ─────────────────────── */}
-                <section>
-                    <h2 className="text-sm font-semibold text-foreground">
+                <section className="space-y-4">
+                    <Titulo eyebrow="Comparativa" nota="Agentes, contactos y líneas de cada plan.">
                         Los planes
-                        <span className="ml-2 font-normal text-muted-foreground">
-                            agentes, contactos y líneas
-                        </span>
-                    </h2>
+                    </Titulo>
 
-                    {/* Una tabla y no tres pastillas con el tamaño escondido en
-                        un `title`: lo que decide si te cambias es la diferencia
-                        entre columnas, y para verla hay que poder compararlas. */}
-                    <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                        {planes.map(p => (
-                            <div
-                                key={p.slug}
-                                className={clsx(
-                                    'rounded-xl border p-4',
-                                    p.es_el_suyo && 'border-primary bg-primary/[0.07]',
-                                    p.es_el_sugerido && 'border-warning bg-warning/[0.06]',
-                                    !p.es_el_suyo && !p.es_el_sugerido && 'bg-card'
-                                )}
-                            >
-                                <div className="flex items-center justify-between gap-2">
-                                    <p className="text-sm font-semibold text-foreground">{p.nombre}</p>
-                                    {p.es_el_suyo && (
-                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                                            <Check className="size-3.5" /> El tuyo
-                                        </span>
-                                    )}
-                                    {p.es_el_sugerido && (
-                                        <span className="text-[11px] font-semibold text-warning">
-                                            El que te toca
-                                        </span>
-                                    )}
-                                </div>
-                                <dl className="mt-3 space-y-1.5 text-xs">
-                                    <Renglon termino="Agentes" valor={p.agentes} />
-                                    <Renglon termino="Contactos" valor={p.contactos.toLocaleString('es-CO')} />
-                                    <Renglon termino="Líneas" valor={p.lineas} />
-                                </dl>
-
-                                {/* El crédito de IA, separado del resto de la
-                                    tarjeta a propósito: no es tamaño contratado
-                                    como lo de arriba, es lo que se gasta cada
-                                    mes, y sólo corre si además hay complemento.
-                                    Sin esta línea la comparativa no explicaba en
-                                    qué se nota subir de plan a quien lo que
-                                    quiere es la IA — que es todo el que mira
-                                    esta pantalla dos veces. */}
-                                <div className="mt-3 border-t pt-3">
-                                    <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                                        <Sparkles className={clsx(
-                                            'size-3',
-                                            plan.tiene_ia ? 'text-accent-foreground' : 'text-muted-foreground/60'
-                                        )} />
-                                        Con complemento de IA
-                                    </p>
-                                    <p className="mt-1 text-xs">
-                                        <span className="font-semibold tabular-nums text-foreground">
-                                            {p.credito_ia.toLocaleString('es-CO')}
-                                        </span>
-                                        <span className="text-muted-foreground"> conversaciones al mes</span>
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
+                    {/* Tres tarjetas comparables y no tres pastillas con el
+                        tamaño escondido en un `title`: lo que decide si te
+                        cambias es la diferencia entre columnas, y para verla
+                        hay que poder compararlas. */}
+                    <div className="grid gap-4 pt-1.5 sm:grid-cols-3">
+                        {planes.map(p => <TarjetaDePlan key={p.slug} p={p} tieneIa={plan.tiene_ia} />)}
                     </div>
 
                     {/* Las dos mitades de la decisión, dichas juntas porque por
                         separado ninguna se entiende: el complemento decide QUÉ
                         se enciende y el plan, CUÁNTO cabe. */}
-                    <p className="mt-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+                    <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
                         La inteligencia artificial se añade aparte, sobre cualquiera de los tres:{' '}
                         {complementos.filter(c => c.slug !== 'ninguno').map(c => c.nombre).join(' o ')}.
-                        El complemento decide <span className="font-medium text-foreground">qué funciones</span>{' '}
-                        se encienden; el plan, <span className="font-medium text-foreground">cuántas
+                        El complemento decide <span className="font-semibold text-foreground">qué funciones</span>{' '}
+                        se encienden; el plan, <span className="font-semibold text-foreground">cuántas
                         conversaciones</span> con IA te caben al mes —por eso el crédito sube con el
                         tamaño y no con el complemento.
                         {plan.tiene_ia
@@ -313,6 +236,11 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             : ' Sin complemento contratado ese crédito no corre: no se gasta nada.'}
                     </p>
                 </section>
+
+                {/* Los recibos van al final: son el archivo de la pantalla, no
+                    su titular. Arriba, entre el plan y lo que puede activar, una
+                    tabla de doce filas cortaba la página en dos. */}
+                <Facturacion recibos={recibos} />
             </div>
         </>
     );
@@ -361,7 +289,115 @@ function fechaCorta(iso) {
 }
 
 /**
- * Hasta cuándo lo tiene cubierto.
+ * El carné: qué tienes contratado y hasta cuándo.
+ *
+ * Es el único bloque con fondo de marca de la pantalla, y lo es a propósito: lo
+ * primero que se ve al entrar tiene que ser el plan, no el encabezado. Antes
+ * esto era una franja `bg-primary/[0.07]` —un verde tan lavado que en una
+ * pantalla mal calibrada no se distinguía del blanco— con el nombre del plan en
+ * el mismo cuerpo que cualquier otro dato.
+ *
+ * Va en `bg-sidebar` porque ese token ya es el navy de la marca en los dos
+ * temas: escribir el color a mano obligaría a un caso especial para el oscuro, y
+ * sobre él el verde `sidebar-accent-foreground` está medido a 8.8:1.
+ */
+function Carne({ plan, periodo, porPagar }) {
+    const cobertura = datosCobertura(plan, periodo, porPagar);
+
+    return (
+        <section className="relative overflow-hidden rounded-3xl border border-sidebar-border/70 bg-sidebar text-sidebar-foreground shadow-lg">
+            {/* Dos halos verdes desenfocados. Es lo único decorativo de la
+                pantalla: sin ellos el navy es un rectángulo plano, y con más de
+                dos empieza a parecer una plantilla comprada. */}
+            <div aria-hidden className="pointer-events-none absolute -right-24 -top-32 size-80 rounded-full bg-sidebar-primary/20 blur-3xl" />
+            <div aria-hidden className="pointer-events-none absolute -bottom-40 left-1/4 size-80 rounded-full bg-sidebar-primary/10 blur-3xl" />
+
+            <div className={clsx('relative', cobertura && 'md:grid md:grid-cols-[1.15fr_1fr]')}>
+                <div className={clsx(
+                    'p-7 lg:p-8',
+                    // Con cobertura al lado, la columna del plan es la corta de
+                    // las dos: centrada se lee como una pareja, y arriba del
+                    // todo deja un escalón de aire debajo del nombre.
+                    cobertura && 'flex flex-col justify-center',
+                    // Sin periodo emitido —el caso de todos hasta la primera
+                    // emisión— no hay media columna que llenar, así que el carné
+                    // se vuelve una banda: el plan a la izquierda y los
+                    // distintivos a la derecha. En dos columnas, la mitad
+                    // derecha se quedaba en un hueco navy vacío.
+                    !cobertura && 'flex flex-wrap items-center justify-between gap-x-10 gap-y-5'
+                )}>
+                    <div>
+                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sidebar-foreground/50">
+                            Tu plan
+                        </p>
+                        <h2 className="mt-2 text-4xl font-black tracking-tight text-sidebar-foreground">
+                            {plan.plan_nombre}
+                        </h2>
+                    </div>
+
+                    <div className={clsx('flex flex-wrap items-center gap-2', cobertura && 'mt-4')}>
+                        <span className={clsx(
+                            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold',
+                            plan.tiene_ia
+                                ? 'border-sidebar-primary/40 bg-sidebar-primary/15 text-sidebar-accent-foreground'
+                                : 'border-sidebar-border bg-sidebar-accent/25 text-sidebar-foreground/70'
+                        )}>
+                            <Sparkles className="size-3.5" />
+                            {plan.ia_nombre}
+                        </span>
+
+                        {/* «Incluido con tu Integra», a secas y al lado de «IA
+                            Completa», se leía como que la IA viene incluida. No:
+                            Integra cubre el CRM, y la IA es justo lo único que sí
+                            se le factura a un cliente de Integra. Se dice qué
+                            cubre, no que cubre. */}
+                        {plan.incluido_en_integra && (
+                            <Insignia icono={ShieldCheck}>
+                                {plan.tiene_ia ? 'CRM incluido con tu Integra' : 'Incluido con tu Integra'}
+                            </Insignia>
+                        )}
+                        {plan.en_mes_gratis && (
+                            <Insignia icono={Gift}>
+                                Cortesía hasta el {new Date(plan.gratis_hasta).toLocaleDateString('es-CO')}
+                            </Insignia>
+                        )}
+                    </div>
+                </div>
+
+                {cobertura && <Cobertura {...cobertura} />}
+            </div>
+        </section>
+    );
+}
+
+/**
+ * Hasta cuándo lo tiene cubierto, resuelto antes de pintar.
+ *
+ * Se saca aparte para que el carné sepa si tiene media columna que llenar: sin
+ * periodo emitido —el caso de todos hasta la primera emisión— el bloque se
+ * queda a una sola columna en vez de dejar un hueco navy vacío.
+ *
+ * Si no hay periodo cae a `suscripcion_hasta`, y si tampoco la hay devuelve
+ * null: un recuadro que dice «sin periodo» alarma sin informar.
+ */
+function datosCobertura(plan, periodo, porPagar) {
+    const hasta = periodo?.hasta ?? plan.suscripcion_hasta;
+
+    if (!hasta && !porPagar) return null;
+
+    return {
+        plan,
+        porPagar,
+        hasta,
+        desde: periodo?.desde ?? null,
+        integra: periodo ? periodo.cubierto_por_integra : plan.incluido_en_integra,
+        vencido: periodo ? !periodo.vigente : plan.suscripcion_vigente === false,
+        dias: periodo?.dias ?? plan.dias_para_renovar,
+    };
+}
+
+/**
+ * La mitad derecha del carné.
  *
  * Con el **desde** y no sólo el hasta: una fecha suelta no se puede cotejar con
  * ninguna factura, y es justo lo que el cliente hace con este dato.
@@ -369,68 +405,334 @@ function fechaCorta(iso) {
  * Al de Integra se le dice por qué no paga aquí. Es la duda que llega por
  * WhatsApp —«¿esto me lo están cobrando aparte?»— y contestarla en la pantalla
  * ahorra la conversación entera.
- *
- * Si todavía no hay periodo emitido cae a `suscripcion_hasta`, y si tampoco la
- * hay no se pinta nada: un hueco que dice «sin periodo» alarma sin informar.
  */
-function Cobertura({ plan, periodo, porPagar }) {
-    const integra = periodo ? periodo.cubierto_por_integra : plan.incluido_en_integra;
-    const hasta = periodo?.hasta ?? plan.suscripcion_hasta;
-
-    if (!hasta && !porPagar) return null;
-
-    const vencido = periodo ? !periodo.vigente : plan.suscripcion_vigente === false;
-    const dias = periodo?.dias ?? plan.dias_para_renovar;
-
+function Cobertura({ plan, porPagar, hasta, desde, integra, vencido, dias }) {
     return (
-        <div className="border-b px-6 py-4">
-            <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-                <CalendarDays className={clsx('mt-0.5 size-4 shrink-0', vencido ? 'text-destructive' : 'text-muted-foreground')} />
+        <div className="border-t border-sidebar-border/60 p-7 md:border-l md:border-t-0 lg:p-8">
+            <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-sidebar-foreground/50">
+                <CalendarDays className="size-3.5" /> Cobertura
+            </p>
 
-                <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                        {integra
-                            ? (plan.tiene_ia
-                                ? 'Tu paquete de Integra cubre el CRM'
-                                : 'Tu paquete de Integra cubre este servicio')
-                            : 'Tu plan está activo'}
+            <p className="mt-2 text-sm font-semibold text-sidebar-foreground">
+                {integra
+                    ? (plan.tiene_ia
+                        ? 'Tu paquete de Integra cubre el CRM'
+                        : 'Tu paquete de Integra cubre este servicio')
+                    : 'Tu plan está activo'}
+            </p>
+
+            {hasta && (
+                <>
+                    <p className="mt-1.5 text-sm leading-relaxed text-sidebar-foreground/70">
+                        {desde
+                            ? <>Del <strong className="font-semibold text-sidebar-foreground">{rango(desde, hasta)[0]}</strong> al <strong className="font-semibold text-sidebar-foreground">{rango(desde, hasta)[1]}</strong></>
+                            : <>Hasta el <strong className="font-semibold text-sidebar-foreground">{fecha(hasta)}</strong></>}
                     </p>
 
-                    {hasta && (
-                        <p className="mt-0.5 text-sm text-muted-foreground">
-                            {periodo?.desde
-                                ? <>Del <strong className="font-medium text-foreground">{rango(periodo.desde, hasta)[0]}</strong> al <strong className="font-medium text-foreground">{rango(periodo.desde, hasta)[1]}</strong></>
-                                : <>Hasta el <strong className="font-medium text-foreground">{fecha(hasta)}</strong></>}
-                            {typeof dias === 'number' && (
-                                vencido
-                                    ? <span className="text-destructive"> · venció hace {Math.abs(dias)} {Math.abs(dias) === 1 ? 'día' : 'días'}</span>
-                                    : <span> · quedan {dias} {dias === 1 ? 'día' : 'días'}</span>
-                            )}
-                        </p>
+                    {/* Los días, en pastilla sólida y no en texto de color: sobre
+                        el navy, el rojo y el ámbar de los tokens se quedan por
+                        debajo de contraste como tinta, y con fondo propio pasan
+                        de sobra. */}
+                    {typeof dias === 'number' && (
+                        <span className={clsx(
+                            'mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold',
+                            vencido
+                                ? 'bg-destructive text-destructive-foreground'
+                                : 'bg-sidebar-primary/15 text-sidebar-accent-foreground'
+                        )}>
+                            {vencido
+                                ? `Venció hace ${Math.abs(dias)} ${Math.abs(dias) === 1 ? 'día' : 'días'}`
+                                : `Quedan ${dias} ${dias === 1 ? 'día' : 'días'}`}
+                        </span>
                     )}
+                </>
+            )}
 
-                    {/* Con complemento de IA, decir «no se te factura aparte»
-                        es falso: el CRM va dentro de Integra, pero la IA se
-                        cobra. Y lo contradecía la propia pantalla, que debajo
-                        enseñaba un cobro emitido y pendiente. */}
-                    {integra && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            {plan.tiene_ia
-                                ? <>El CRM va dentro de lo que ya pagas por Integra. <span className="text-foreground">{plan.ia_nombre} se factura aparte</span>, y es lo que se cobra en este periodo.</>
-                                : 'No se te factura aparte: va dentro de lo que ya pagas por Integra.'}
-                        </p>
+            {/* Con complemento de IA, decir «no se te factura aparte» es falso:
+                el CRM va dentro de Integra, pero la IA se cobra. Y lo contradecía
+                la propia pantalla, que debajo enseñaba un cobro emitido y
+                pendiente. */}
+            {integra && (
+                <p className="mt-3 text-xs leading-relaxed text-sidebar-foreground/60">
+                    {plan.tiene_ia
+                        ? <>El CRM va dentro de lo que ya pagas por Integra. <span className="text-sidebar-foreground/90">{plan.ia_nombre} se factura aparte</span>, y es lo que se cobra en este periodo.</>
+                        : 'No se te factura aparte: va dentro de lo que ya pagas por Integra.'}
+                </p>
+            )}
+
+            {porPagar && (
+                <p className="mt-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/15 px-3 py-2.5 text-xs leading-relaxed text-sidebar-foreground">
+                    <AlertCircle className="mt-px size-3.5 shrink-0 text-warning" />
+                    <span>
+                        Tienes un cobro emitido y pendiente de pago por el periodo
+                        {' '}del {rango(porPagar.desde, porPagar.hasta)[0]} al {rango(porPagar.desde, porPagar.hasta)[1]}.
+                    </span>
+                </p>
+            )}
+        </div>
+    );
+}
+
+/** Insignia del carné: sobre navy, así que sus colores son los de la barra. */
+function Insignia({ icono: Icono, children }) {
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-sidebar-border bg-sidebar-accent/25 px-3 py-1.5 text-xs font-medium text-sidebar-foreground/80">
+            <Icono className="size-3.5 shrink-0 text-sidebar-accent-foreground" />
+            {children}
+        </span>
+    );
+}
+
+/**
+ * Cuánto llevas de lo tuyo.
+ *
+ * La barra se pinta aunque te hayas pasado —tope al 100%— porque lo que
+ * comunica ahí es «lleno», y el número de al lado dice cuánto te pasaste. Una
+ * barra que se sale de su caja no dice ninguna de las dos cosas.
+ */
+function Medidor({ icono: Icono, titulo, usado, incluido, pasado, nota, ancho }) {
+    const usados = Number(usado ?? 0);
+    const tope = Number(incluido ?? 0);
+    const porcentaje = tope > 0 ? Math.min(100, Math.round((usados / tope) * 100)) : 0;
+
+    // El ámbar entra antes de agotarse: avisar cuando ya no queda nada es
+    // avisar tarde, y el que decide con tiempo no se queda sin margen.
+    const tono = pasado ? 'destructive' : porcentaje >= 80 ? 'warning' : 'primary';
+
+    return (
+        <div className={clsx(
+            'rounded-2xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md',
+            ancho && 'sm:col-span-3'
+        )}>
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                    <span className={clsx(
+                        'flex size-9 shrink-0 items-center justify-center rounded-xl',
+                        tono === 'destructive' ? 'bg-destructive/15 text-destructive'
+                            : tono === 'warning' ? 'bg-warning/20 text-warning'
+                            : 'bg-primary/20 text-accent-foreground'
+                    )}>
+                        <Icono className="size-4" />
+                    </span>
+                    <p className="truncate text-sm font-semibold text-foreground">{titulo}</p>
+                </div>
+
+                <span className={clsx(
+                    'shrink-0 text-xs font-black tabular-nums',
+                    tono === 'destructive' ? 'text-destructive'
+                        : tono === 'warning' ? 'text-warning'
+                        : 'text-muted-foreground'
+                )}>
+                    {porcentaje} %
+                </span>
+            </div>
+
+            <div className="mt-4 flex items-baseline gap-1.5">
+                <span className="text-3xl font-black tabular-nums tracking-tight text-foreground">
+                    {usados.toLocaleString('es-CO')}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                    de {tope.toLocaleString('es-CO')}
+                </span>
+            </div>
+
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                    className={clsx(
+                        'h-full rounded-full transition-[width] duration-500',
+                        tono === 'destructive' ? 'bg-destructive' : tono === 'warning' ? 'bg-warning' : 'bg-primary'
                     )}
+                    style={{ width: `${Math.max(porcentaje, 2)}%` }}
+                />
+            </div>
 
-                    {porPagar && (
-                        <p className="mt-2 flex items-start gap-1.5 text-xs text-warning">
-                            <AlertCircle className="mt-px size-3.5 shrink-0" />
-                            <span>
-                                Tienes un cobro emitido y pendiente de pago por el periodo
-                                {' '}del {rango(porPagar.desde, porPagar.hasta)[0]} al {rango(porPagar.desde, porPagar.hasta)[1]}.
-                            </span>
-                        </p>
+            <p className={clsx(
+                'mt-2.5 text-xs leading-relaxed',
+                tono === 'destructive' ? 'text-destructive' : 'text-muted-foreground'
+            )}>
+                {nota ?? (pasado
+                    ? `${(usados - tope).toLocaleString('es-CO')} por encima de tu plan`
+                    : `Te queda un ${100 - porcentaje} %`)}
+            </p>
+        </div>
+    );
+}
+
+/**
+ * La invitación a subir. Una sola, y la que toque.
+ *
+ * Tres avisos compitiendo —«te quedaste corto», «te falta IA», «te faltan
+ * extensiones»— se leen como un anuncio y se saltan enteros. Se elige el que
+ * corresponde a lo que de verdad le pasa a esta empresa, por orden de urgencia:
+ * primero lo que ya se le quedó pequeño, luego lo que no tiene.
+ */
+function Invitacion({ tono, icono: Icono = TrendingUp, titulo, texto, boton, mensaje, detalle = [] }) {
+    const warning = tono === 'warning';
+
+    return (
+        <div className={clsx(
+            'rounded-2xl border p-6 shadow-sm',
+            warning
+                ? 'border-warning/40 bg-gradient-to-br from-warning/[0.14] via-warning/[0.05] to-transparent'
+                : 'border-primary/40 bg-gradient-to-br from-primary/[0.16] via-primary/[0.05] to-transparent'
+        )}>
+            <div className="flex flex-wrap items-start justify-between gap-5">
+                <div className="flex min-w-0 flex-1 items-start gap-4">
+                    <div className={clsx(
+                        'flex size-11 shrink-0 items-center justify-center rounded-2xl',
+                        warning ? 'bg-warning/25 text-warning' : 'bg-primary/25 text-accent-foreground'
+                    )}>
+                        <Icono className="size-5" />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-base font-black tracking-tight text-foreground">{titulo}</p>
+                        <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">{texto}</p>
+
+                        {detalle.length > 0 && (
+                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                {detalle.map(nivel => (
+                                    <div key={nivel.slug} className="rounded-xl border bg-card p-4 shadow-sm">
+                                        <p className="flex items-center gap-1.5 text-sm font-bold text-foreground">
+                                            <Sparkles className="size-3.5 text-accent-foreground" />
+                                            {nivel.nombre}
+                                        </p>
+                                        <ul className="mt-2 space-y-1.5">
+                                            {[...(nivel.extensiones ?? []), ...(nivel.flujos ?? [])].map(linea => (
+                                                <li key={linea} className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                                                    <Check className="mt-0.5 size-3 shrink-0 text-accent-foreground" strokeWidth={3} />
+                                                    {linea}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <Button asChild className="shrink-0 gap-2">
+                    <a href={contactoCon(mensaje)}>
+                        {boton} <ArrowRight className="size-4" />
+                    </a>
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Un plan del catálogo.
+ *
+ * El suyo y el que le tocaría se marcan con anillo y cinta, no sólo con un
+ * fondo tintado: en la pantalla de un portátil con poco brillo, un
+ * `bg-primary/[0.07]` y un blanco son el mismo color.
+ */
+function TarjetaDePlan({ p, tieneIa }) {
+    return (
+        <div className={clsx(
+            'relative flex flex-col rounded-2xl border bg-card p-5 shadow-sm transition-shadow hover:shadow-md',
+            p.es_el_suyo && 'border-primary/50 ring-2 ring-primary/30',
+            p.es_el_sugerido && 'border-warning/50 ring-2 ring-warning/30'
+        )}>
+            {(p.es_el_suyo || p.es_el_sugerido) && (
+                <span className={clsx(
+                    'absolute -top-2.5 left-5 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider',
+                    p.es_el_suyo ? 'bg-primary text-primary-foreground' : 'bg-warning text-warning-foreground'
+                )}>
+                    {p.es_el_suyo ? <><Check className="size-3" strokeWidth={3.5} /> El tuyo</> : 'El que te toca'}
+                </span>
+            )}
+
+            <p className="text-base font-black tracking-tight text-foreground">{p.nombre}</p>
+
+            <dl className="mt-4 space-y-2">
+                <Renglon termino="Agentes" valor={p.agentes} />
+                <Renglon termino="Contactos" valor={p.contactos.toLocaleString('es-CO')} />
+                <Renglon termino="Líneas" valor={p.lineas} />
+            </dl>
+
+            {/* El crédito de IA, en su propio recuadro a propósito: no es tamaño
+                contratado como lo de arriba, es lo que se gasta cada mes, y sólo
+                corre si además hay complemento. Sin esta línea la comparativa no
+                explicaba en qué se nota subir de plan a quien lo que quiere es la
+                IA — que es todo el que mira esta pantalla dos veces. */}
+            <div className="mt-4 rounded-xl bg-muted/60 px-3.5 py-3">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                    <Sparkles className={clsx('size-3', tieneIa ? 'text-accent-foreground' : 'text-muted-foreground/60')} />
+                    Con complemento de IA
+                </p>
+                <p className="mt-1 flex items-baseline gap-1.5">
+                    <span className="text-lg font-black tabular-nums tracking-tight text-foreground">
+                        {p.credito_ia.toLocaleString('es-CO')}
+                    </span>
+                    <span className="text-xs text-muted-foreground">conversaciones / mes</span>
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function Renglon({ termino, valor }) {
+    return (
+        <div className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-2 last:border-0 last:pb-0">
+            <dt className="text-xs text-muted-foreground">{termino}</dt>
+            <dd className="text-sm font-bold tabular-nums text-foreground">{valor}</dd>
+        </div>
+    );
+}
+
+function Tarjeta({ extension, bloqueada }) {
+    const Icono = iconFor(extension.icono);
+
+    return (
+        <div className={clsx(
+            'flex items-start gap-3.5 rounded-2xl border p-4 transition-all',
+            bloqueada
+                ? 'border-dashed bg-muted/30'
+                : 'bg-card shadow-sm hover:-translate-y-0.5 hover:shadow-md'
+        )}>
+            <div className={clsx(
+                'flex size-10 shrink-0 items-center justify-center rounded-xl',
+                bloqueada
+                    ? 'bg-muted text-muted-foreground'
+                    : extension.encendida ? 'bg-primary/20 text-accent-foreground' : 'bg-muted text-muted-foreground'
+            )}>
+                <Icono className="size-[18px]" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                    <p className={clsx(
+                        'text-sm font-bold',
+                        bloqueada ? 'text-muted-foreground' : 'text-foreground'
+                    )}>
+                        {extension.nombre}
+                    </p>
+
+                    {bloqueada ? (
+                        <Pastilla tono="muted" icono={Lock}>{extension.plan_minimo}</Pastilla>
+                    ) : extension.encendida ? (
+                        <Pastilla tono="success" punto>Activa</Pastilla>
+                    ) : (
+                        <Pastilla tono="muted">{extension.instalada ? 'Apagada' : 'Sin instalar'}</Pastilla>
                     )}
                 </div>
+
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {extension.descripcion}
+                </p>
+
+                {/* El enlace sólo si puede hacer algo con él: mandar a alguien a
+                    una pantalla donde el botón está bloqueado es un callejón. */}
+                {!bloqueada && !extension.encendida && (
+                    <Link
+                        href={route('extensions.show', extension.slug)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-accent-foreground hover:underline"
+                    >
+                        {extension.instalada ? 'Encender' : 'Activar'} <ArrowRight className="size-3" />
+                    </Link>
+                )}
             </div>
         </div>
     );
@@ -454,60 +756,63 @@ function Facturacion({ recibos = [] }) {
     if (recibos.length === 0) return null;
 
     return (
-        <div className="overflow-hidden rounded-xl border bg-card">
-            <div className="flex items-center gap-2.5 border-b px-6 py-4">
-                <Receipt className="size-4 text-muted-foreground" />
-                <div>
-                    <h2 className="text-sm font-semibold text-foreground">Tu facturación</h2>
-                    <p className="text-xs text-muted-foreground">Los periodos que se te han emitido, del más reciente al más antiguo.</p>
+        <section className="space-y-4">
+            <Titulo eyebrow="Historial" nota="Los periodos que se te han emitido, del más reciente al más antiguo.">
+                Tu facturación
+            </Titulo>
+
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+                {/* En su propio contenedor con scroll: en un móvil la tabla no
+                    cabe y sin esto se lleva la página entera de lado. */}
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[36rem] text-sm">
+                        <thead>
+                            <tr className="border-b bg-muted/50 text-left text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                                <th className="px-5 py-3 font-black">Periodo</th>
+                                <th className="px-5 py-3 font-black">Concepto</th>
+                                <th className="px-5 py-3 text-right font-black">Importe</th>
+                                <th className="px-5 py-3 font-black">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {recibos.map(r => (
+                                <tr key={r.id} className="border-b transition-colors last:border-0 hover:bg-muted/30">
+                                    <td className="whitespace-nowrap px-5 py-3.5 font-medium tabular-nums text-foreground">
+                                        {fechaCorta(r.desde)} — {fechaCorta(r.hasta)}
+                                    </td>
+                                    <td className="px-5 py-3.5">
+                                        <span className="text-muted-foreground">{r.concepto}</span>
+                                        {/* De dónde sale el importe. Sin esto, «$49»
+                                            junto a un nombre de plan no se puede
+                                            explicar sin preguntarlo. */}
+                                        {r.desglose?.length > 1 && (
+                                            <span className="mt-1.5 flex flex-wrap gap-1.5">
+                                                {r.desglose.map(l => (
+                                                    <span
+                                                        key={l.concepto}
+                                                        className="whitespace-nowrap rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                                                    >
+                                                        {l.concepto}: {l.importe === null ? l.nota : `$${l.importe}`}
+                                                    </span>
+                                                ))}
+                                            </span>
+                                        )}
+                                    </td>
+                                    <td className="whitespace-nowrap px-5 py-3.5 text-right">
+                                        {r.estado === 'cubierto'
+                                            ? <span className="text-sm text-muted-foreground">Incluido</span>
+                                            : <span className="text-base font-black tabular-nums tracking-tight text-foreground">${r.importe_usd}</span>}
+                                    </td>
+                                    <td className="whitespace-nowrap px-5 py-3.5">
+                                        <EstadoDelRecibo recibo={r} />
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
-            {/* En su propio contenedor con scroll: en un móvil la tabla no cabe
-                y sin esto se lleva la página entera de lado. */}
-            <div className="overflow-x-auto">
-                <table className="w-full min-w-[34rem] text-sm">
-                    <thead>
-                        <tr className="border-b text-left text-xs font-medium text-muted-foreground">
-                            <th className="px-6 py-2.5 font-medium">Periodo</th>
-                            <th className="px-6 py-2.5 font-medium">Concepto</th>
-                            <th className="px-6 py-2.5 text-right font-medium">Importe</th>
-                            <th className="px-6 py-2.5 font-medium">Estado</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {recibos.map(r => (
-                            <tr key={r.id} className="border-b last:border-0">
-                                <td className="whitespace-nowrap px-6 py-3 tabular-nums text-foreground">
-                                    {fechaCorta(r.desde)} — {fechaCorta(r.hasta)}
-                                </td>
-                                <td className="px-6 py-3">
-                                    <span className="text-muted-foreground">{r.concepto}</span>
-                                    {/* De dónde sale el importe. Sin esto, «$49»
-                                        junto a un nombre de plan no se puede
-                                        explicar sin preguntarlo. */}
-                                    {r.desglose?.length > 1 && (
-                                        <span className="mt-1 block text-xs text-muted-foreground/75">
-                                            {r.desglose.map(l => (
-                                                <span key={l.concepto} className="mr-3 inline-block whitespace-nowrap">
-                                                    {l.concepto}: {l.importe === null ? l.nota : `$${l.importe}`}
-                                                </span>
-                                            ))}
-                                        </span>
-                                    )}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-3 text-right tabular-nums font-medium text-foreground">
-                                    {r.estado === 'cubierto' ? <span className="font-normal text-muted-foreground">Incluido</span> : `$${r.importe_usd}`}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-3">
-                                    <EstadoDelRecibo recibo={r} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        </section>
     );
 }
 
@@ -515,224 +820,22 @@ function EstadoDelRecibo({ recibo }) {
     const { estado, pagado_at } = recibo;
 
     if (estado === 'cubierto') {
-        return (
-            <span className="inline-flex items-center gap-1.5 text-xs text-success">
-                <ShieldCheck className="size-3.5" /> Cubierto por tu Integra
-            </span>
-        );
+        return <Pastilla tono="success" icono={ShieldCheck}>Cubierto por tu Integra</Pastilla>;
     }
 
     if (estado === 'pagado') {
         return (
-            <span className="inline-flex items-center gap-1.5 text-xs text-success">
-                <Check className="size-3.5" /> Pagado{pagado_at ? ` el ${fechaCorta(pagado_at)}` : ''}
-            </span>
+            <Pastilla tono="success" icono={Check}>
+                Pagado{pagado_at ? ` el ${fechaCorta(pagado_at)}` : ''}
+            </Pastilla>
         );
     }
 
     if (estado === 'anulado') {
-        return <span className="text-xs text-muted-foreground line-through">Anulado</span>;
+        return <Pastilla tono="muted">Anulado</Pastilla>;
     }
 
-    return (
-        <span className="inline-flex items-center gap-1.5 text-xs text-warning">
-            <AlertCircle className="size-3.5" /> Pendiente de pago
-        </span>
-    );
-}
-
-function Insignia({ icono: Icono, tono, children }) {
-    return (
-        <span className={clsx(
-            'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
-            tono === 'success' ? 'border-success/30 bg-success/10 text-success' : 'border-border text-muted-foreground'
-        )}>
-            <Icono className="size-3.5 shrink-0" />
-            {children}
-        </span>
-    );
-}
-
-/**
- * Cuánto llevas de lo tuyo.
- *
- * La barra se pinta aunque te hayas pasado —tope al 100%— porque lo que
- * comunica ahí es «lleno», y el número de al lado dice cuánto te pasaste. Una
- * barra que se sale de su caja no dice ninguna de las dos cosas.
- */
-function Medidor({ icono: Icono, titulo, usado, incluido, pasado, nota, ancho }) {
-    const usados = Number(usado ?? 0);
-    const tope = Number(incluido ?? 0);
-    const porcentaje = tope > 0 ? Math.min(100, Math.round((usados / tope) * 100)) : 0;
-
-    // El ámbar entra antes de agotarse: avisar cuando ya no queda nada es
-    // avisar tarde, y el que decide con tiempo no se queda sin margen.
-    const tono = pasado ? 'destructive' : porcentaje >= 80 ? 'warning' : 'primary';
-
-    return (
-        <div className={clsx('bg-card px-6 py-5', ancho && 'px-0 py-0')}>
-            <div className="flex items-center gap-1.5">
-                <Icono className={clsx(
-                    'size-3.5',
-                    tono === 'destructive' ? 'text-destructive' : tono === 'warning' ? 'text-warning' : 'text-primary'
-                )} />
-                <p className="text-xs font-medium text-muted-foreground">{titulo}</p>
-            </div>
-
-            <div className="mt-1.5 flex items-baseline gap-1.5">
-                <span className="text-2xl font-semibold tabular-nums text-foreground">
-                    {usados.toLocaleString('es-CO')}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                    de {tope.toLocaleString('es-CO')}
-                </span>
-            </div>
-
-            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-border">
-                <div
-                    className={clsx(
-                        'h-full rounded-full transition-all',
-                        tono === 'destructive' ? 'bg-destructive' : tono === 'warning' ? 'bg-warning' : 'bg-primary'
-                    )}
-                    style={{ width: `${Math.max(porcentaje, 2)}%` }}
-                />
-            </div>
-
-            <p className={clsx(
-                'mt-2 text-xs',
-                tono === 'destructive' ? 'text-destructive' : 'text-muted-foreground'
-            )}>
-                {nota ?? (pasado
-                    ? `${(usados - tope).toLocaleString('es-CO')} por encima de tu plan`
-                    : `Te queda un ${100 - porcentaje} %`)}
-            </p>
-        </div>
-    );
-}
-
-/**
- * La invitación a subir. Una sola, y la que toque.
- *
- * Tres avisos compitiendo —«te quedaste corto», «te falta IA», «te faltan
- * extensiones»— se leen como un anuncio y se saltan enteros. Se elige el que
- * corresponde a lo que de verdad le pasa a esta empresa, por orden de urgencia:
- * primero lo que ya se le quedó pequeño, luego lo que no tiene.
- */
-function Invitacion({ tono, icono: Icono = TrendingUp, titulo, texto, boton, mensaje, detalle = [] }) {
-    return (
-        <div className={clsx(
-            'rounded-xl border p-5',
-            tono === 'warning' ? 'border-warning/40 bg-warning/[0.07]' : 'border-primary/40 bg-primary/[0.07]'
-        )}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <div className={clsx(
-                        'mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg',
-                        tono === 'warning' ? 'bg-warning/15 text-warning' : 'bg-primary/15 text-primary'
-                    )}>
-                        <Icono className="size-4" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{titulo}</p>
-                        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{texto}</p>
-
-                        {detalle.length > 0 && (
-                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                {detalle.map(nivel => (
-                                    <div key={nivel.slug} className="rounded-lg border bg-card px-3 py-2.5">
-                                        <p className="text-xs font-semibold text-foreground">{nivel.nombre}</p>
-                                        <ul className="mt-1 space-y-0.5">
-                                            {[...(nivel.extensiones ?? []), ...(nivel.flujos ?? [])].map(linea => (
-                                                <li key={linea} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                                                    <Check className="mt-0.5 size-2.5 shrink-0 text-success" />
-                                                    {linea}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <Button asChild className="shrink-0 gap-2">
-                    <a href={contactoCon(mensaje)}>
-                        {boton} <ArrowRight className="size-4" />
-                    </a>
-                </Button>
-            </div>
-        </div>
-    );
-}
-
-function Renglon({ termino, valor }) {
-    return (
-        <div className="flex items-baseline justify-between gap-2">
-            <dt className="text-muted-foreground">{termino}</dt>
-            <dd className="font-medium tabular-nums text-foreground">{valor}</dd>
-        </div>
-    );
-}
-
-function Tarjeta({ extension, bloqueada }) {
-    const Icono = iconFor(extension.icono);
-
-    return (
-        <div className={clsx(
-            'flex items-start gap-3 rounded-lg border p-4',
-            bloqueada ? 'border-dashed bg-muted/20' : 'bg-card'
-        )}>
-            <div className={clsx(
-                'size-9 shrink-0 rounded-lg flex items-center justify-center',
-                bloqueada
-                    ? 'bg-muted text-muted-foreground'
-                    : extension.encendida ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
-            )}>
-                <Icono className="size-4" />
-            </div>
-
-            <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                    <p className={clsx(
-                        'text-sm font-semibold',
-                        bloqueada ? 'text-muted-foreground' : 'text-foreground'
-                    )}>
-                        {extension.nombre}
-                    </p>
-
-                    {bloqueada ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            <Lock className="size-2.5" /> {extension.plan_minimo}
-                        </span>
-                    ) : extension.encendida ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-success">
-                            <Check className="size-3" /> Activa
-                        </span>
-                    ) : (
-                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {extension.instalada ? 'Apagada' : 'Sin instalar'}
-                        </span>
-                    )}
-                </div>
-
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {extension.descripcion}
-                </p>
-
-                {/* El enlace sólo si puede hacer algo con él: mandar a alguien a
-                    una pantalla donde el botón está bloqueado es un callejón. */}
-                {!bloqueada && !extension.encendida && (
-                    <Link
-                        href={route('extensions.show', extension.slug)}
-                        className="mt-1.5 inline-block text-xs font-semibold text-primary hover:underline"
-                    >
-                        {extension.instalada ? 'Encender' : 'Activar'}
-                    </Link>
-                )}
-            </div>
-        </div>
-    );
+    return <Pastilla tono="warning" icono={AlertCircle}>Pendiente de pago</Pastilla>;
 }
 
 MiPlan.layout = page => <AppLayout>{page}</AppLayout>;

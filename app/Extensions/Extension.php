@@ -75,6 +75,24 @@ abstract class Extension
     }
 
     /**
+     * El proveedor externo sin el cual esta extensión no puede trabajar.
+     *
+     * Devuelve un id de `IntegrationProvider` (hoy sólo `integra`) o null, que
+     * es el caso de casi todas: las que se apañan con lo que ya hay en el CRM.
+     *
+     * Esto **sí se comprueba al instalar**, a diferencia de `permissions()`.
+     * Son cosas distintas: aquéllos son informativos —«a esto le vas a dar
+     * acceso»— y esto es una dependencia dura. Una extensión que sólo sabe
+     * preguntarle a un ERP que no está conectado se instala, se enciende, y no
+     * hace absolutamente nada: el usuario acaba pensando que está rota cuando
+     * lo que falta es la conexión, que además se arregla en otra pantalla.
+     */
+    public function requiresIntegration(): ?string
+    {
+        return null;
+    }
+
+    /**
      * Los campos configurables, en forma declarativa para que el frontend los
      * pinte sin saber nada de esta extensión en concreto.
      *
@@ -141,6 +159,7 @@ abstract class Extension
             'category' => $this->category(),
             'permissions' => $this->permissions(),
             'hooks' => $this->hooks(),
+            'requires_integration' => $this->requiresIntegration(),
         ];
     }
 }

@@ -85,6 +85,12 @@ class ChatController extends Controller
             // Sin empresa no hay nada que preguntarle a `UsaIntegra`: el chat se
             // abre igual (ver ChatSinEmpresaTest) y ahí no se pinta la ficha.
             'usa_integra' => $user->company ? UsaIntegra::de($user->company) : false,
+            // Si el contrato del panel ofrece el botón de diagnosticar la red.
+            // Va como prop por lo mismo que el resto: el panel ya hace una
+            // petición por conversación para traer la ficha, y preguntar
+            // aparte por una extensión sería una segunda petición para pintar
+            // un botón.
+            'diagnostico_red' => $this->ajustesDiagnosticoRed($user->company_id),
         ]);
     }
 
@@ -171,6 +177,38 @@ class ChatController extends Controller
             'activa' => true,
             'automatico' => (bool) ($ajustes['automatico'] ?? true),
             'cuantas' => max(1, min(5, (int) ($ajustes['cuantas'] ?? 3))),
+        ];
+    }
+
+    /**
+     * Si el panel del cliente ofrece diagnosticar la red, y con qué.
+     *
+     * No mira si Integra está conectado: de eso ya se encarga `usa_integra`,
+     * que decide si el panel entero se pinta, y la extensión no se puede
+     * instalar sin conexión. Aquí sólo se pregunta por el interruptor.
+     *
+     * @return array{activa: bool, informe: bool}
+     */
+    private function ajustesDiagnosticoRed(?int $companyId): array
+    {
+        $apagado = ['activa' => false, 'informe' => false];
+
+        if (! $companyId) {
+            return $apagado;
+        }
+
+        $diagnostico = CompanyExtension::where('company_id', $companyId)
+            ->where('slug', 'internet_diagnostic')
+            ->where('enabled', true)
+            ->first();
+
+        if (! $diagnostico) {
+            return $apagado;
+        }
+
+        return [
+            'activa' => true,
+            'informe' => (bool) ($diagnostico->settings()['informe_whatsapp'] ?? true),
         ];
     }
 

@@ -6,6 +6,7 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import {
     ArrowLeft, Download, Power, Trash2, Loader2, Save, ShieldCheck, Zap, Check, Eye, Lock,
+    Plug, AlertTriangle, ArrowRight,
 } from 'lucide-react';
 import { iconFor, categoryLabel } from './icons';
 import { Maqueta, tieneMaqueta } from './maquetas';
@@ -21,6 +22,13 @@ export default function ExtensionShow({ extension: initial }) {
     const [saved, setSaved] = useState(false);
 
     const Icon = iconFor(extension.icon);
+
+    // Lo que le falta a ESTA empresa para poder usarla: o no ha conectado el
+    // proveedor, o lo conectó pero su token no llega a lo que la extensión
+    // pide. Son dos arreglos distintos y por eso se cuentan por separado.
+    const dependencia = extension.dependencia ?? null;
+    const faltaConexion = Boolean(dependencia && !dependencia.conectada);
+    const faltaScope = Boolean(dependencia?.conectada && dependencia.puede === false);
 
     async function run(action) {
         setBusy(true);
@@ -111,6 +119,17 @@ export default function ExtensionShow({ extension: initial }) {
                             <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-3 py-2 text-sm font-semibold text-muted-foreground">
                                 <Lock className="size-4" /> No incluido en tu plan
                             </span>
+                        ) : faltaConexion ? (
+                            /* Sin la integración que necesita no se ofrece
+                               «Instalar»: el servidor lo rechaza con un 409 y
+                               ofrecer un botón que no puede funcionar sólo
+                               sirve para que alguien lo pulse. En su lugar, el
+                               camino — que está en otra pantalla. */
+                            <Button asChild variant="outline" className="gap-2">
+                                <Link href={route('integrations.index')}>
+                                    <Plug className="size-4" /> Conectar {extension.dependencia.nombre}
+                                </Link>
+                            </Button>
                         ) : !extension.installed ? (
                             <Button className="gap-2" disabled={busy || !can('extensions.create')} onClick={install}>
                                 {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
@@ -145,6 +164,62 @@ export default function ExtensionShow({ extension: initial }) {
                 {error && (
                     <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                         {error}
+                    </div>
+                )}
+
+                {dependencia && (
+                    <div className={clsx(
+                        'flex items-start gap-3 rounded-xl border px-4 py-3.5',
+                        faltaConexion || faltaScope
+                            ? 'border-warning/40 bg-warning/10'
+                            : 'border-success/30 bg-success/10'
+                    )}>
+                        {faltaConexion || faltaScope
+                            ? <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                            : <Plug className="mt-0.5 size-4 shrink-0 text-success" />}
+
+                        <div className="min-w-0 flex-1 text-sm">
+                            {faltaConexion ? (
+                                <>
+                                    <p className="font-semibold text-foreground">
+                                        Necesita tu cuenta de {dependencia.nombre}
+                                    </p>
+                                    <p className="mt-0.5 leading-relaxed text-muted-foreground">
+                                        Esta extensión no hace nada por su cuenta: la consulta la
+                                        resuelve {dependencia.nombre}. Conecta tu cuenta en
+                                        Integraciones y podrás instalarla.
+                                    </p>
+                                    <Link
+                                        href={route('integrations.index')}
+                                        className="mt-1.5 inline-flex items-center gap-1 font-bold text-accent-foreground hover:underline"
+                                    >
+                                        Ir a Integraciones <ArrowRight className="size-3.5" />
+                                    </Link>
+                                </>
+                            ) : faltaScope ? (
+                                <>
+                                    <p className="font-semibold text-foreground">
+                                        Tu {dependencia.nombre} está conectado, pero le falta un permiso
+                                    </p>
+                                    <p className="mt-0.5 leading-relaxed text-muted-foreground">
+                                        El token no puede «{dependencia.etiqueta}». Pídele a quien
+                                        administra tu {dependencia.nombre} que lo reemita con el
+                                        permiso <code className="rounded bg-muted px-1 py-px font-mono text-xs">{dependencia.scope}</code>,
+                                        que no viene con los demás y hay que pedirlo aparte.
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-muted-foreground">
+                                    <span className="font-semibold text-foreground">
+                                        {dependencia.nombre} conectado.
+                                    </span>{' '}
+                                    Esta extensión funciona contra tu cuenta de {dependencia.nombre}
+                                    {dependencia.puede === true && dependencia.etiqueta
+                                        ? `, y su token puede «${dependencia.etiqueta.toLowerCase()}».`
+                                        : '.'}
+                                </p>
+                            )}
+                        </div>
                     </div>
                 )}
 

@@ -62,6 +62,13 @@ class IntegraClient
     public const CODE_ENDPOINT_MISSING = 4404;
 
     /**
+     * Segundos de espera del diagnóstico de red. Integra pide «30 como mínimo»
+     * porque el peor caso ronda los 20; los 35 son ese peor caso con margen
+     * para la ida y la vuelta.
+     */
+    public const TIMEOUT_DIAGNOSTICO = 35;
+
+    /**
      * Los scopes que hay que pedirle a Integra al emitir el token.
      *
      * Se piden TODOS y explícitamente porque `POST /api/v1/tokens` sin
@@ -287,11 +294,15 @@ class IntegraClient
             : [$base.'/software', $base];
     }
 
-    protected function request(): PendingRequest
+    /**
+     * @param ?int $timeout Segundos. Sólo lo pasa quien sabe que su endpoint
+     *        tarda más que el resto; 20 s cubre todo lo demás de sobra.
+     */
+    protected function request(?int $timeout = null): PendingRequest
     {
         $req = Http::baseUrl($this->baseUrl)
             ->acceptJson()
-            ->timeout(20);
+            ->timeout($timeout ?? 20);
 
         if ($this->token) {
             $req = $req->withToken($this->token);
@@ -307,16 +318,16 @@ class IntegraClient
      *
      * @throws \RuntimeException
      */
-    protected function call(string $method, string $path, array $data = []): Response
+    protected function call(string $method, string $path, array $data = [], ?int $timeout = null): Response
     {
         try {
             // Antes sólo distinguía post de get, así que cualquier otro verbo
             // —un put— salía como GET y el cambio no se guardaba, sin error.
             $res = match ($method) {
-                'post' => $this->request()->post($path, $data),
-                'put' => $this->request()->put($path, $data),
-                'patch' => $this->request()->patch($path, $data),
-                default => $this->request()->get($path, $data),
+                'post' => $this->request($timeout)->post($path, $data),
+                'put' => $this->request($timeout)->put($path, $data),
+                'patch' => $this->request($timeout)->patch($path, $data),
+                default => $this->request($timeout)->get($path, $data),
             };
         } catch (\Throwable $e) {
             Log::warning('Integra: error de red', ['path' => $path, 'msg' => $e->getMessage()]);
@@ -342,6 +353,15 @@ class IntegraClient
                 throw new \RuntimeException($message, 404);
             }
             throw new \RuntimeException('El entorno Integra no expone este recurso ('.$path.'). Verifica la URL y que la API esté actualizada.', self::CODE_ENDPOINT_MISSING);
+        }
+        // Integra limita algunas rutas —el diagnóstico de red, a 20 por
+        // minuto— y el mensaje genérico («Integra respondió con un error
+        // (429)») manda a revisar el token, que es justo lo que no pasa.
+        if ($res->status() === 429) {
+            throw new \RuntimeException(
+                $message ?? 'Integra está limitando las consultas: espera un minuto y vuelve a intentarlo.',
+                429
+            );
         }
         if ($res->status() === 422) {
             $errors = $res->json('errors');
@@ -747,6 +767,61 @@ class IntegraClient
     {
         try {
             $res = $this->call('get', '/api/v1/contratos/'.rawurlencode($nro).'/estado');
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return null;
+            }
+            throw $e;
+        }
+
+        return $res->json('data') ?? null;
+    }
+
+    /**
+     * Diagnóstico de red del contrato: qué le pasa al servicio, ahora mismo.
+     *
+     * **Es lento a propósito.** No lee un estado guardado: se conecta al router
+     * del cliente en el momento. Entre 2 y 6 segundos lo normal, hasta unos 20
+     * en el peor caso, y por eso va con su propio timeout de
+     * {@see self::TIMEOUT_DIAGNOSTICO} y no con los 20 s del resto — con el
+     * timeout de siempre, el peor caso se cortaba por nuestro lado justo cuando
+     * el diagnóstico era más interesante.
+     *
+     * **Necesita el scope `contratos.diagnostico`, que NO viene con
+     * `contratos.leer`**: hay que pedirlo aparte al emitir el token. Un token
+     * que lee contratos perfectamente responde 403 aquí.
+     *
+     * **Integra lo limita a 20 llamadas por minuto** (y por eso un 429 tiene
+     * mensaje propio). No sirve para recorrer la base: es de uno en uno, con un
+     * cliente al teléfono.
+     *
+     * Responde 200 aunque el router no conteste: ahí el veredicto es
+     * `nodo_incomunicado` o `sin_router`, que también es un resultado —de hecho
+     * es el que decide una visita—. Sólo el 404 significa «ese contrato no
+     * existe», y eso vuelve como null igual que en {@see contractStatus()}.
+     *
+     * De la respuesta, lo que se programa es `veredicto.codigo` (19 valores, en
+     * el Swagger de Integra); `veredicto.visita` dice si hay que mandar técnico
+     * —null es «depende del cliente»—, `veredicto.responsable` a qué área, y
+     * `veredicto.confianza` en «media» pide reintentar antes de despachar a
+     * nadie. `whatsapp` trae el informe ya redactado.
+     *
+     * @param string $nro Número de contrato (contracts.nro), NO el id que se ve
+     *        en la URL del software.
+     * @param ?int $timeout Sólo para el sondeo de capacidades, que no puede
+     *        dejar la pantalla de Integraciones medio minuto colgada.
+     * @return array|null null si Integra no conoce el contrato.
+     * @throws \RuntimeException 403 si al token le falta `contratos.diagnostico`.
+     */
+    public function contractDiagnostic(string $nro, ?int $timeout = null): ?array
+    {
+        try {
+            $res = $this->call(
+                'get',
+                '/api/v1/contratos/'.rawurlencode($nro).'/diagnostico',
+                [],
+                $timeout ?? self::TIMEOUT_DIAGNOSTICO
+            );
         } catch (\RuntimeException $e) {
             if ($e->getCode() === 404) {
                 return null;

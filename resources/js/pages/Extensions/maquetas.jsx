@@ -1,4 +1,4 @@
-import { Bell, Clock, Lightbulb, Sparkles, UserRound } from 'lucide-react';
+import { Activity, Bell, Clock, Copy, Lightbulb, Sparkles, UserRound, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 
 /**
@@ -357,6 +357,62 @@ function TextoPredictivo() {
 // descripción justo encima y repetirla sería ruido.
 
 /** Marco común de las mini: alto fijo para que la rejilla no quede escalonada. */
+function DiagnosticoDeInternet() {
+    return (
+        <>
+            <Pantalla titulo="Panel del cliente · contrato #23672">
+                <div className="space-y-2.5 px-3 py-3">
+                    <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] font-bold text-foreground">#23672</span>
+                        <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">Activo</span>
+                        <span className="ml-auto inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground">
+                            <Activity className="size-3" /> Diagnosticar
+                        </span>
+                    </div>
+
+                    <div className="rounded-lg border border-warning/40 bg-warning/10 p-2.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="size-1.5 shrink-0 rounded-full bg-warning" />
+                            <span className="text-[11px] font-bold text-foreground">Nodo incomunicado</span>
+                            <span className="ml-auto text-[10px] text-muted-foreground">hace un momento</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
+                                <Wrench className="size-2.5" /> Requiere visita
+                            </span>
+                            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                                Redes
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border bg-muted/40 p-2.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                                Informe para el cliente
+                            </span>
+                            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold text-accent-foreground">
+                                <Copy className="size-2.5" /> Copiar
+                            </span>
+                        </div>
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-foreground">
+                            Detectamos una afectación en el nodo que atiende tu sector. Ya hay una
+                            cuadrilla asignada; no necesitas hacer nada desde tu casa.
+                        </p>
+                    </div>
+                </div>
+            </Pantalla>
+            <Pie>
+                le pregunta a tu Integra, en el momento, qué le pasa al servicio de ese contrato:
+                Integra se conecta al router del cliente y contesta en unos segundos. Trae el
+                veredicto, si hace falta visita, a qué área mandarlo y el informe ya redactado para
+                copiar. No abre radicados, no agenda nada y no le escribe al cliente — eso lo
+                decides tú con la respuesta delante. Necesita tu cuenta de Integra conectada.
+            </Pie>
+        </>
+    );
+}
+
 function Mini({ children }) {
     return (
         <div className="mt-3 h-[76px] overflow-hidden rounded-lg border bg-background/60 px-2.5 py-2">
@@ -448,6 +504,20 @@ const MINIS = {
         </Mini>
     ),
 
+    internet_diagnostic: () => (
+        <Mini>
+            <div className="flex items-center gap-1.5">
+                <Activity className="size-3 shrink-0 text-accent-foreground" />
+                <span className="text-[11px] font-bold text-foreground">Contrato #23672</span>
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 rounded border border-warning/30 bg-warning/10 px-1.5 py-1">
+                <span className="size-1.5 shrink-0 rounded-full bg-warning" />
+                <span className="truncate text-[11px] font-semibold text-foreground">Nodo incomunicado</span>
+            </div>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">Requiere visita · Redes</p>
+        </Mini>
+    ),
+
     agent_signature: () => (
         <Mini>
             <div className="flex h-full items-center justify-end rounded bg-[#efeae2] px-2 dark:bg-[#0b141a]">
@@ -470,6 +540,7 @@ const MAQUETAS = {
     agent_signature: FirmaDelAgente,
     conversation_summary: ResumenConIa,
     predictive_text: TextoPredictivo,
+    internet_diagnostic: DiagnosticoDeInternet,
 };
 
 export function tieneMaqueta(slug) {

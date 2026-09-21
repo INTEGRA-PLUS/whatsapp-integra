@@ -2,6 +2,7 @@
 
 use App\Extensions\AgentSignatureExtension;
 use App\Extensions\CierreAutomaticoExtension;
+use App\Extensions\DiagnosticoDeInternetExtension;
 use App\Extensions\FollowUpExtension;
 use App\Extensions\KeywordRoutingExtension;
 use App\Extensions\ResumenExtension;
@@ -39,6 +40,7 @@ return [
         ResumenExtension::class,
         TextoPredictivoExtension::class,
         CierreAutomaticoExtension::class,
+        DiagnosticoDeInternetExtension::class,
     ],
 
 ];

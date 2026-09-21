@@ -3,7 +3,11 @@ import { useState } from 'react';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Check, Sparkles, ShieldCheck, ArrowRight, Users, Contact, Phone, Bot } from 'lucide-react';
+import { ListaConChecks, Titulo } from '@/components/seccion';
+import {
+    Check, Sparkles, ShieldCheck, ArrowRight, Users, Contact, Phone, Bot,
+    Table2, Percent, CircleCheck, CircleAlert,
+} from 'lucide-react';
 
 /**
  * El catálogo entero, para comparar y para pedir el cambio.
@@ -28,6 +32,19 @@ import { Check, Sparkles, ShieldCheck, ArrowRight, Users, Contact, Phone, Bot } 
  *
  * Porque lo paga su ERP. Sin eso, leer «Pro $59» cuando llevas dos años sin
  * pagarlo se entiende como una subida de precio.
+ *
+ * ## Cómo está compuesta (21-sep-2026)
+ *
+ * Es la pantalla hermana de «Mi plan» y se rehízo con ella, con las mismas
+ * piezas (`@/components/seccion`) y el mismo orden de lectura: la banda navy
+ * arriba dice dónde estás, y a partir de ahí todo es catálogo sobre fondo
+ * claro. Antes las dos pantallas se parecían sólo de lejos: el mismo bloque
+ * —«esto va en todos los planes»— era aquí una lista gris dentro de una caja y
+ * allí una rejilla de fichas.
+ *
+ * Lo que decide una pantalla de precios es el precio, así que es lo único que
+ * va en cuerpo grande: `$29` en `text-4xl font-black`, y todo lo demás por
+ * debajo. Antes el precio y el nombre del plan pesaban lo mismo.
  */
 export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
     const { flash = {} } = usePage().props;
@@ -49,46 +66,48 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
         <>
             <Head title="Planes" />
 
-            <div className="flex flex-col gap-7 p-6 lg:p-8 max-w-6xl">
+            <div className="mx-auto flex max-w-6xl flex-col gap-9 p-6 lg:p-8">
 
-                <div>
-                    <h1 className="text-2xl font-semibold text-foreground">Planes</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Todo lo que hay, con sus precios, para que puedas comparar con lo que tienes.
-                    </p>
-                </div>
+                <header className="flex items-center gap-3.5">
+                    <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-accent-foreground">
+                        <Table2 className="size-6" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Planes</h1>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                            Todo lo que hay, con sus precios, para que puedas comparar con lo que tienes.
+                        </p>
+                    </div>
+                </header>
 
                 {flash.success && <Aviso tono="success">{flash.success}</Aviso>}
                 {flash.error && <Aviso tono="warning">{flash.error}</Aviso>}
 
-                {/* Lo que tiene hoy, en una línea. Sin esto la tabla es una lista
-                    de precios y no una comparación. */}
-                <div className="rounded-xl border bg-card px-6 py-4">
-                    <p className="text-xs font-medium text-muted-foreground">Hoy tienes</p>
-                    <p className="mt-1 text-lg font-semibold text-foreground">
-                        {suCrm?.nombre} {suIa && suIa.slug !== 'ninguno' ? <>+ {suIa.nombre}</> : <span className="font-normal text-muted-foreground">· sin complemento de IA</span>}
-                    </p>
-                    {actual.incluido_en_integra && (
-                        <p className="mt-1.5 flex items-center gap-1.5 text-sm text-success">
-                            <ShieldCheck className="size-4" />
-                            Tu paquete de Integra cubre el CRM: de esta tabla sólo pagarías el complemento de IA.
-                        </p>
-                    )}
-                </div>
+                <HoyTienes actual={actual} suCrm={suCrm} suIa={suIa} />
 
                 {/* ── Los planes de CRM: el tamaño ──────────────────────────── */}
-                <section className="flex flex-col gap-3">
-                    <div>
-                        <h2 className="text-base font-semibold text-foreground">El plan de CRM decide tu tamaño</h2>
-                        <p className="text-sm text-muted-foreground">
-                            Cuántos agentes, cuántos contactos y cuántas líneas de WhatsApp. No son límites duros:
-                            no dejamos de atender a nadie porque tu empresa creció.
-                        </p>
-                    </div>
+                <section className="space-y-4">
+                    <Titulo
+                        eyebrow="El tamaño"
+                        nota="Cuántos agentes, cuántos contactos y cuántas líneas de WhatsApp. No son límites duros: no dejamos de atender a nadie porque tu empresa creció."
+                    >
+                        El plan de CRM
+                    </Titulo>
 
-                    <div className="grid gap-4 md:grid-cols-3">
+                    {/* El descuento del anual estaba en gris pequeño al pie de la
+                        tabla, que es donde va lo que no importa. Es un argumento
+                        de venta: sube y se dice en verde. */}
+                    {anual && anual.meses > anual.mensualidades && (
+                        <p className="inline-flex items-center gap-2 rounded-full border border-success/30 bg-success/10 px-3.5 py-1.5 text-xs font-semibold text-success">
+                            <Percent className="size-3.5 shrink-0" />
+                            Pagando al año se cobran {anual.mensualidades} mensualidades por {anual.meses} meses:
+                            {' '}{mesesGratis(anual)} no se {anual.meses - anual.mensualidades === 1 ? 'paga' : 'pagan'}.
+                        </p>
+                    )}
+
+                    <div className="grid gap-4 pt-1.5 md:grid-cols-3">
                         {crm.map(p => (
-                            <Tarjeta
+                            <TarjetaDePrecio
                                 key={p.slug}
                                 nombre={p.nombre}
                                 precio={p.precio}
@@ -102,30 +121,23 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
                                 <Renglon icono={Contact} texto={`${p.contactos.toLocaleString('es-CO')} contactos`} tuyo={actual.contactos} />
                                 <Renglon icono={Phone} texto={`${p.lineas} ${p.lineas === 1 ? 'línea' : 'líneas'} de WhatsApp`} tuyo={actual.lineas} />
                                 <Renglon icono={Bot} texto={`${p.credito_ia.toLocaleString('es-CO')} conversaciones con IA al mes`} />
-                            </Tarjeta>
+                            </TarjetaDePrecio>
                         ))}
                     </div>
-
-                    {anual && (
-                        <p className="text-xs text-muted-foreground">
-                            Pagando al año se cobran {anual.mensualidades} mensualidades por {anual.meses} meses:
-                            dos meses no se pagan.
-                        </p>
-                    )}
                 </section>
 
                 {/* ── El complemento: las funciones ─────────────────────────── */}
-                <section className="flex flex-col gap-3">
-                    <div>
-                        <h2 className="text-base font-semibold text-foreground">El complemento de IA decide qué se enciende</h2>
-                        <p className="text-sm text-muted-foreground">
-                            Se añade sobre el plan que ya tienes, sin cambiarlo. Es lo que se suma aparte en tu recibo.
-                        </p>
-                    </div>
+                <section className="space-y-4">
+                    <Titulo
+                        eyebrow="Las funciones"
+                        nota="Se añade sobre el plan que ya tienes, sin cambiarlo. Es lo que se suma aparte en tu recibo."
+                    >
+                        El complemento de IA
+                    </Titulo>
 
-                    <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-4 pt-1.5 md:grid-cols-3">
                         {ia.map(p => (
-                            <Tarjeta
+                            <TarjetaDePrecio
                                 key={p.slug}
                                 nombre={p.nombre}
                                 precio={p.precio}
@@ -133,32 +145,34 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
                                 pidiendo={pidiendo === p.slug}
                                 onPedir={p.slug === 'ninguno' ? null : () => pedir('ia', p.slug)}
                                 icono={p.slug === 'ninguno' ? null : Sparkles}
+                                // «Sin IA» no se compra: es la casilla de no
+                                // tener complemento. Con el mismo borde y la
+                                // misma sombra que las otras dos parecía una
+                                // opción más del catálogo.
+                                apagada={p.slug === 'ninguno'}
                             >
                                 {p.slug === 'ninguno' ? (
-                                    <p className="text-sm text-muted-foreground">El CRM funciona entero sin IA. Esto es lo que se añade encima.</p>
+                                    <p className="text-sm leading-relaxed text-muted-foreground">
+                                        El CRM funciona entero sin IA. Esto es lo que se añade encima.
+                                    </p>
                                 ) : (
                                     <>
                                         {p.extensiones.map(e => <Renglon key={e} texto={e} />)}
                                         {p.flujos.map(f => <Renglon key={f} texto={f} />)}
                                     </>
                                 )}
-                            </Tarjeta>
+                            </TarjetaDePrecio>
                         ))}
                     </div>
                 </section>
 
                 {/* ── Lo que va en todos ────────────────────────────────────── */}
                 {nucleo.length > 0 && (
-                    <section className="rounded-xl border bg-card p-6">
-                        <h2 className="text-base font-semibold text-foreground">Esto va en todos los planes</h2>
-                        <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
-                            {nucleo.map(n => (
-                                <p key={n} className="flex items-start gap-2 text-sm text-muted-foreground">
-                                    <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
-                                    {n}
-                                </p>
-                            ))}
-                        </div>
+                    <section className="space-y-4">
+                        <Titulo eyebrow="Incluido siempre" nota="Con cualquier plan y con o sin complemento de IA.">
+                            Esto va en todos
+                        </Titulo>
+                        <ListaConChecks items={nucleo} />
                     </section>
                 )}
 
@@ -172,49 +186,133 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
 
 Planes.layout = page => <AppLayout>{page}</AppLayout>;
 
+/** «dos meses», «un mes»: el descuento dicho en meses y no en una resta. */
+function mesesGratis(anual) {
+    const meses = anual.meses - anual.mensualidades;
+
+    return meses === 1 ? 'un mes' : `${meses} meses`;
+}
+
+/**
+ * Dónde estás hoy, antes de la tabla.
+ *
+ * Sin esta banda el catálogo es una lista de precios y no una comparación: lo
+ * que convierte «Pro $59» en una decisión es saber que estás en el Básico.
+ *
+ * Va en navy —`bg-sidebar`, el mismo token que la barra lateral, que ya es navy
+ * en los dos temas— para que sea la hermana del carné de «Mi plan». Es la única
+ * superficie oscura de la pantalla: el protagonista aquí es el precio, así que
+ * esto es una banda y no una cabecera de cuerpo entero.
+ */
+function HoyTienes({ actual, suCrm, suIa }) {
+    const conIa = suIa && suIa.slug !== 'ninguno';
+
+    return (
+        <section className="relative overflow-hidden rounded-3xl border border-sidebar-border/70 bg-sidebar px-7 py-6 text-sidebar-foreground shadow-lg lg:px-8">
+            <div aria-hidden className="pointer-events-none absolute -right-24 -top-32 size-72 rounded-full bg-sidebar-primary/20 blur-3xl" />
+
+            <div className="relative flex flex-wrap items-center justify-between gap-x-10 gap-y-4">
+                <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sidebar-foreground/50">
+                        Hoy tienes
+                    </p>
+                    <p className="mt-1.5 text-2xl font-black tracking-tight text-sidebar-foreground">
+                        {suCrm?.nombre}
+                        {conIa
+                            ? <span className="text-sidebar-accent-foreground"> + {suIa.nombre}</span>
+                            : <span className="font-medium text-sidebar-foreground/50"> · sin complemento de IA</span>}
+                    </p>
+                </div>
+
+                {/* Al cliente de Integra hay que decírselo antes de que lea la
+                    tabla: ver «Pro $59» cuando llevas dos años sin pagarlo se
+                    entiende como una subida de precio. */}
+                {actual.incluido_en_integra && (
+                    <p className="flex max-w-sm items-start gap-2.5 rounded-xl border border-sidebar-border bg-sidebar-accent/25 px-3.5 py-2.5 text-xs leading-relaxed text-sidebar-foreground/80">
+                        <ShieldCheck className="mt-px size-4 shrink-0 text-sidebar-accent-foreground" />
+                        Tu paquete de Integra cubre el CRM: de esta tabla sólo pagarías el complemento de IA.
+                    </p>
+                )}
+            </div>
+        </section>
+    );
+}
+
 /**
  * Una tarjeta del catálogo.
  *
  * El botón no dice «cambiar» sino «lo quiero»: no hay autoservicio y fingir que
- * lo hay es peor que no tenerlo. El que ya es tuyo no lleva botón.
+ * lo hay es peor que no tenerlo.
+ *
+ * El que ya es tuyo tampoco se queda sin pie. Antes no pintaba nada ahí y la
+ * tarjeta del plan actual quedaba más corta que sus vecinas, justo la que
+ * tendría que ser la referencia para comparar.
  */
-function Tarjeta({ nombre, precio, gratis, esElSuyo, esElSugerido, pidiendo, onPedir, icono: Icono, children }) {
+function TarjetaDePrecio({
+    nombre, precio, gratis, esElSuyo, esElSugerido, pidiendo, onPedir,
+    icono: Icono, apagada, children,
+}) {
+    const destacada = esElSugerido && !esElSuyo;
+
     return (
         <div className={clsx(
-            'flex flex-col rounded-xl border bg-card p-5',
-            esElSuyo && 'border-primary/50 ring-1 ring-primary/20',
-            esElSugerido && !esElSuyo && 'border-success/50'
+            'relative flex flex-col rounded-2xl border p-6 transition-shadow',
+            apagada
+                ? 'border-dashed bg-muted/30'
+                : 'bg-card shadow-sm hover:shadow-md',
+            esElSuyo && 'border-primary/50 ring-2 ring-primary/30',
+            destacada && 'border-warning/50 ring-2 ring-warning/30'
         )}>
-            <div className="flex items-start justify-between gap-2">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                    {Icono && <Icono className="size-4 text-accent-foreground" />}
-                    {nombre}
-                </p>
-                {esElSuyo && <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">El tuyo</span>}
-                {esElSugerido && !esElSuyo && <span className="rounded-md bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">Te encajaría</span>}
-            </div>
+            {/* Cinta y no un fondo tintado: en la pantalla de un portátil con
+                poco brillo, un `bg-primary/10` y un blanco son el mismo color. */}
+            {(esElSuyo || destacada) && (
+                <span className={clsx(
+                    'absolute -top-2.5 left-6 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider',
+                    esElSuyo ? 'bg-primary text-primary-foreground' : 'bg-warning text-warning-foreground'
+                )}>
+                    {esElSuyo ? <><Check className="size-3" strokeWidth={3.5} /> El tuyo</> : 'Te encajaría'}
+                </span>
+            )}
 
-            <p className="mt-2 flex items-baseline gap-1.5">
+            <p className="flex items-center gap-1.5 text-base font-black tracking-tight text-foreground">
+                {Icono && <Icono className="size-4 text-accent-foreground" />}
+                {nombre}
+            </p>
+
+            <p className="mt-3 flex items-baseline gap-2">
                 {gratis && precio > 0 ? (
                     <>
-                        <span className="text-2xl font-semibold tracking-tight text-success">Incluido</span>
-                        <span className="text-xs text-muted-foreground line-through">${precio}</span>
+                        <span className="text-3xl font-black tracking-tight text-success">Incluido</span>
+                        <span className="text-sm text-muted-foreground line-through tabular-nums">${precio}</span>
                     </>
                 ) : (
                     <>
-                        <span className="text-2xl font-semibold tracking-tight text-foreground">${precio}</span>
-                        <span className="text-xs text-muted-foreground">/mes</span>
+                        {/* El «$0» de «Sin IA» no compite con los precios de
+                            verdad: en el mismo cuerpo que un $49, la casilla de
+                            no tener complemento se leía como la oferta de la
+                            fila. */}
+                        <span className={clsx(
+                            'font-black tabular-nums tracking-tight',
+                            apagada ? 'text-2xl text-muted-foreground' : 'text-4xl text-foreground'
+                        )}>
+                            ${precio}
+                        </span>
+                        <span className="text-sm text-muted-foreground">/mes</span>
                     </>
                 )}
             </p>
 
-            <div className="mt-4 flex flex-1 flex-col gap-1.5">{children}</div>
+            <div className="mt-5 flex flex-1 flex-col gap-2.5">{children}</div>
 
-            {onPedir && !esElSuyo && (
-                <Button variant="outline" size="sm" className="mt-5 gap-2" disabled={pidiendo} onClick={onPedir}>
-                    {pidiendo ? 'Enviando…' : <>Lo quiero <ArrowRight className="size-3.5" /></>}
+            {esElSuyo ? (
+                <p className="mt-6 flex items-center justify-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 py-2.5 text-xs font-bold text-accent-foreground">
+                    <Check className="size-3.5" strokeWidth={3} /> Es el que tienes
+                </p>
+            ) : onPedir ? (
+                <Button className="mt-6 w-full gap-2" disabled={pidiendo} onClick={onPedir}>
+                    {pidiendo ? 'Enviando…' : <>Lo quiero <ArrowRight className="size-4" /></>}
                 </Button>
-            )}
+            ) : null}
         </div>
     );
 }
@@ -227,12 +325,12 @@ function Tarjeta({ nombre, precio, gratis, esElSuyo, esElSugerido, pidiendo, onP
  */
 function Renglon({ icono: Icono = Check, texto, tuyo }) {
     return (
-        <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <Icono className="mt-0.5 size-3.5 shrink-0 text-success" />
+        <p className="flex items-start gap-2.5 text-sm leading-snug text-foreground">
+            <Icono className="mt-0.5 size-4 shrink-0 text-accent-foreground" />
             <span>
                 {texto}
                 {typeof tuyo === 'number' && (
-                    <span className="text-muted-foreground/60"> · usas {tuyo.toLocaleString('es-CO')}</span>
+                    <span className="text-muted-foreground"> · usas {tuyo.toLocaleString('es-CO')}</span>
                 )}
             </span>
         </p>
@@ -240,12 +338,17 @@ function Renglon({ icono: Icono = Check, texto, tuyo }) {
 }
 
 function Aviso({ tono, children }) {
+    const Icono = tono === 'success' ? CircleCheck : CircleAlert;
+
     return (
         <div className={clsx(
-            'rounded-lg border px-4 py-3 text-sm',
-            tono === 'success' ? 'border-success/30 bg-success/10 text-success' : 'border-warning/30 bg-warning/10 text-warning'
+            'flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm leading-relaxed',
+            tono === 'success'
+                ? 'border-success/30 bg-success/10 text-success'
+                : 'border-warning/40 bg-warning/10 text-warning'
         )}>
-            {children}
+            <Icono className="mt-0.5 size-4 shrink-0" />
+            <span>{children}</span>
         </div>
     );
 }

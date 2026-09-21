@@ -30,10 +30,13 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import {
+    Activity,
     AlertTriangle,
     ArrowLeft,
+    Check,
     ChevronDown,
     ChevronRight,
+    Copy,
     FileText,
     Loader2,
     MapPin,
@@ -307,7 +310,196 @@ function DetalleFactura({ facturaId }) {
 }
 
 /** El contrato entero: lo que no cabe en el panel pero ya está descargado. */
-function DetalleContrato({ contrato, onFactura }) {
+/**
+ * El diagnóstico de red del contrato (extensión «Diagnóstico de internet»).
+ *
+ * Es la única parte de la ficha que no se carga con el panel: se pide cuando
+ * alguien la pide. Integra se conecta al router del cliente en el momento —2 a
+ * 6 segundos, hasta unos 20 en el peor caso—, así que traerlo de oficio
+ * significaría esperar eso cada vez que un asesor abre un contrato para mirar
+ * el plan, y gastar el cupo de 20 consultas por minuto de toda la empresa en
+ * gente que no preguntó nada.
+ *
+ * Tampoco se guarda: un diagnóstico de hace un minuto ya no dice nada de «no me
+ * sirve el internet», que es la conversación en la que esto se usa.
+ *
+ * Los 19 códigos de veredicto viven en el Swagger de Integra y aquí se pintan
+ * como vienen, sólo con el guion bajo quitado. Es a propósito: media docena de
+ * etiquetas escritas a mano y trece códigos crudos se lee peor que trece
+ * códigos legibles, y a la primera que Integra añadiera un veredicto nuevo
+ * tendríamos un hueco. Lo que el asesor lee de verdad es el informe redactado.
+ */
+function DiagnosticoDeRed({ conversationId, contratoNro, conInforme }) {
+    const [estado, setEstado] = useState('inicial');   // inicial | cargando | listo | error
+    const [resultado, setResultado] = useState(null);
+    const [error, setError] = useState(null);
+    const [copiado, setCopiado] = useState(false);
+
+    async function diagnosticar() {
+        setEstado('cargando');
+        setError(null);
+        try {
+            const { data } = await axios.get('/api/integrations/integra/diagnostico', {
+                params: { conversation_id: conversationId, contrato: contratoNro },
+                // Más que el del servidor a Integra (35 s), para que quien
+                // corte sea siempre el que tiene el motivo que contar.
+                timeout: 45000,
+            });
+            setResultado(data.diagnostico ?? null);
+            setEstado('listo');
+        } catch (err) {
+            setError(
+                err?.code === 'ECONNABORTED'
+                    ? 'Integra tardó demasiado en contestar. Vuelve a intentarlo.'
+                    : err?.response?.data?.message ?? 'No se pudo diagnosticar la red.'
+            );
+            setEstado('error');
+        }
+    }
+
+    const veredicto = resultado?.veredicto ?? {};
+    const visita = veredicto.visita;
+    const tono = visita === true ? 'warning' : visita === false ? 'success' : 'info';
+
+    async function copiar() {
+        try {
+            await navigator.clipboard.writeText(resultado.whatsapp);
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 2000);
+        } catch {
+            // Sin permiso de portapapeles no hay nada que avisar: el texto está
+            // a la vista y se puede seleccionar a mano.
+        }
+    }
+
+    return (
+        <div className="space-y-2">
+            <button
+                type="button"
+                onClick={diagnosticar}
+                disabled={estado === 'cargando'}
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-[12.5px] font-bold text-accent-foreground transition-colors hover:bg-primary/20 disabled:opacity-60"
+            >
+                {estado === 'cargando'
+                    ? <><Loader2 className="size-3.5 animate-spin" /> Consultando el equipo…</>
+                    : <><Activity className="size-3.5" /> {estado === 'inicial' ? 'Diagnosticar la red' : 'Volver a diagnosticar'}</>}
+            </button>
+
+            {/* La espera se explica mientras dura. Sin esto, veinte segundos de
+                botón girando se leen como que la pantalla se colgó. */}
+            {estado === 'cargando' && (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Integra se está conectando al router del cliente. Suele tardar unos segundos y
+                    puede llegar a veinte si el equipo está en las últimas.
+                </p>
+            )}
+
+            {estado === 'error' && (
+                <p className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-destructive">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    {error}
+                </p>
+            )}
+
+            {estado === 'listo' && resultado && (
+                <div className={clsx(
+                    'rounded-xl border p-3',
+                    tono === 'warning' && 'border-warning/40 bg-warning/10',
+                    tono === 'success' && 'border-success/30 bg-success/10',
+                    tono === 'info' && 'border-border bg-muted/40'
+                )}>
+                    <div className="flex items-center gap-1.5">
+                        <span className={clsx(
+                            'size-1.5 shrink-0 rounded-full',
+                            tono === 'warning' ? 'bg-warning' : tono === 'success' ? 'bg-success' : 'bg-muted-foreground'
+                        )} />
+                        <span className="text-[12.5px] font-bold text-foreground">
+                            {legible(veredicto.codigo) || 'Sin veredicto'}
+                        </span>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {/* `null` en «visita» no es «no»: es que depende de lo
+                            que haga el cliente, y decirlo importa tanto como
+                            los otros dos casos. */}
+                        <Insignia tono={tono}>
+                            {visita === true
+                                ? <><Wrench className="size-2.5" /> Requiere visita</>
+                                : visita === false
+                                    ? <><Check className="size-2.5" /> Sin visita</>
+                                    : 'La visita depende del cliente'}
+                        </Insignia>
+
+                        {veredicto.responsable && (
+                            <Insignia>{legible(veredicto.responsable)}</Insignia>
+                        )}
+                    </div>
+
+                    {/* Confianza media: Integra no está seguro. Mandar una
+                        cuadrilla con esto es mandarla a medias. */}
+                    {veredicto.confianza === 'media' && (
+                        <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-warning">
+                            <AlertTriangle className="mt-px size-3 shrink-0" />
+                            Integra no está seguro del todo. Repite el diagnóstico antes de despachar
+                            a un técnico.
+                        </p>
+                    )}
+
+                    {conInforme && resultado.whatsapp && (
+                        <div className="mt-2.5 rounded-lg border border-border/60 bg-background/60 p-2.5">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                                    Informe para el cliente
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={copiar}
+                                    className="ml-auto inline-flex items-center gap-1 text-[10.5px] font-bold text-accent-foreground hover:underline"
+                                >
+                                    {copiado ? <><Check className="size-2.5" /> Copiado</> : <><Copy className="size-2.5" /> Copiar</>}
+                                </button>
+                            </div>
+                            <p className="mt-1.5 whitespace-pre-wrap text-[11.5px] leading-relaxed text-foreground">
+                                {resultado.whatsapp}
+                            </p>
+                            {/* Que no se envía solo se dice aquí, donde está el
+                                botón de copiar, y no en la ficha de la
+                                extensión que nadie relee. */}
+                            <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+                                No se le ha enviado nada al cliente: esto se copia y se pega.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** `nodo_incomunicado` → «Nodo incomunicado». */
+function legible(codigo) {
+    if (!codigo) return null;
+
+    const texto = String(codigo).replace(/_/g, ' ');
+
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+/** Insignia del diagnóstico. */
+function Insignia({ tono = 'muted', children }) {
+    return (
+        <span className={clsx(
+            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+            tono === 'warning' && 'border-warning/40 bg-warning/15 text-warning',
+            tono === 'success' && 'border-success/30 bg-success/15 text-success',
+            (tono === 'muted' || tono === 'info') && 'border-border bg-muted text-muted-foreground'
+        )}>
+            {children}
+        </span>
+    );
+}
+
+function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
     const a = contrato.ampliado ?? {};
     const consumoPorDia = a.consumo?.por_dia ?? [];
 
@@ -324,6 +516,17 @@ function DetalleContrato({ contrato, onFactura }) {
             </div>
 
             {contrato.detalle && <p className="text-[12.5px] text-muted-foreground">{contrato.detalle}</p>}
+
+            {/* Arriba del todo, y no al final entre el WiFi y las facturas: se
+                abre este contrato justo porque el cliente dice que no tiene
+                internet, así que lo primero que se busca aquí es esto. */}
+            {diagnostico?.activa && conversationId && contrato.nro && (
+                <DiagnosticoDeRed
+                    conversationId={conversationId}
+                    contratoNro={contrato.nro}
+                    conInforme={diagnostico.informe !== false}
+                />
+            )}
 
             <div>
                 <Campo label="Plan" valor={contrato.plan} />
@@ -426,7 +629,7 @@ function DetalleContrato({ contrato, onFactura }) {
  * lista tenga vuelta atrás: sin ella, cerrar el detalle cerraba también la lista
  * y había que volver a abrirla desde el panel.
  */
-function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver }) {
+function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver, diagnostico, conversationId }) {
     const vista = pila[pila.length - 1];
     const pendientes = ficha.facturas?.pendientes ?? [];
     const historial = ficha.facturas?.historial ?? [];
@@ -555,7 +758,12 @@ function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver }) {
                     )}
 
                     {vista.tipo === 'contrato' && contrato && (
-                        <DetalleContrato contrato={contrato} onFactura={(id) => onEntrar({ tipo: 'factura', id })} />
+                        <DetalleContrato
+                            contrato={contrato}
+                            onFactura={(id) => onEntrar({ tipo: 'factura', id })}
+                            diagnostico={diagnostico}
+                            conversationId={conversationId}
+                        />
                     )}
 
                     {vista.tipo === 'factura' && <DetalleFactura facturaId={vista.id} />}
@@ -565,7 +773,7 @@ function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver }) {
     );
 }
 
-export default function FichaIntegra({ conversationId }) {
+export default function FichaIntegra({ conversationId, diagnostico = { activa: false, informe: true } }) {
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState(null);
     const [ficha, setFicha] = useState(null);
@@ -814,6 +1022,8 @@ export default function FichaIntegra({ conversationId }) {
                     onCerrar={() => setPila([])}
                     onEntrar={entrar}
                     onVolver={volver}
+                    diagnostico={diagnostico}
+                    conversationId={conversationId}
                 />
             )}
         </div>
