@@ -4,6 +4,7 @@ use App\Http\Controllers\FacturaRapidaController;
 use App\Http\Controllers\MiPlanController;
 use App\Http\Controllers\PlanesController;
 use App\Http\Controllers\ResumenController;
+use App\Http\Controllers\TextoPredictivoController;
 use App\Http\Controllers\AiDocumentoController;
 use App\Http\Controllers\AiFlowSettingsController;
 use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
@@ -731,6 +732,11 @@ Route::middleware('auth')->group(function () {
         // traer resultados de hace meses.
         Route::get('/conversations/{conversationId}/messages/search', [ChatController::class, 'searchMessages']);
         Route::post('/conversations/{conversationId}/resumen', [ResumenController::class, 'resumir'])
+            ->middleware('permission:chat.view');
+        // Sugerencias de respuesta sobre el cuadro de redacción. `chat.view` y no
+        // `chat.update`: no escribe nada ni envía nada — deja tres borradores en
+        // la pantalla de quien ya puede leer la conversación.
+        Route::post('/conversations/{conversationId}/sugerencias', [TextoPredictivoController::class, 'sugerir'])
             ->middleware('permission:chat.view');
         Route::get('/messages/{messageId}/media', [ChatController::class, 'downloadMedia']);
 

@@ -72,6 +72,12 @@ class ChatController extends Controller
             // el botón en el primer render: pedirlos aparte lo haría
             // aparecer medio segundo después, que es peor que no tenerlo.
             'resumen_ia' => $this->ajustesResumen($user->company_id),
+            // Ajustes del texto predictivo, y por lo mismo que los del resumen:
+            // el cuadro de redacción decide en el primer render si pide
+            // sugerencias solas. Pedir esto aparte significaría abrir el chat,
+            // esperar y que las sugerencias aparezcan cuando ya estás
+            // escribiendo, que es justo cuando estorban.
+            'texto_predictivo' => $this->ajustesTextoPredictivo($user->company_id),
             // Si la ficha del cliente en el ERP se pinta o no. Va como prop y no
             // la decide el propio panel porque la alternativa es que toda empresa
             // ajena a Integra vea un bloque «Integra» que sólo puede decirle que
@@ -126,6 +132,45 @@ class ChatController extends Controller
         return [
             'activa' => (bool) $resumen,
             'minimo' => $resumen ? max(2, (int) ($resumen->settings()['minimo'] ?? 8)) : 8,
+        ];
+    }
+
+    /**
+     * Si el cuadro de redacción ofrece sugerencias, y de qué forma.
+     *
+     * `activa` es false —y no se manda nada más— cuando la extensión no está
+     * encendida: así el frontend no tiene que saber nada de extensiones para
+     * decidir si hay botón.
+     *
+     * Las instrucciones de la empresa NO viajan aquí: son para el modelo, no
+     * para la pantalla, y mandarlas al navegador sería publicar la política
+     * comercial de la empresa en el HTML de cada asesor.
+     *
+     * @return array{activa: bool, automatico: bool, cuantas: int}
+     */
+    private function ajustesTextoPredictivo(?int $companyId): array
+    {
+        $apagado = ['activa' => false, 'automatico' => false, 'cuantas' => 3];
+
+        if (! $companyId) {
+            return $apagado;
+        }
+
+        $predictivo = CompanyExtension::where('company_id', $companyId)
+            ->where('slug', 'predictive_text')
+            ->where('enabled', true)
+            ->first();
+
+        if (! $predictivo) {
+            return $apagado;
+        }
+
+        $ajustes = $predictivo->settings();
+
+        return [
+            'activa' => true,
+            'automatico' => (bool) ($ajustes['automatico'] ?? true),
+            'cuantas' => max(1, min(5, (int) ($ajustes['cuantas'] ?? 3))),
         ];
     }
 

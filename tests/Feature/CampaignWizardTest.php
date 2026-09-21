@@ -331,4 +331,70 @@ class CampaignWizardTest extends TestCase
             ->assertJsonPath('total', 1)
             ->assertJsonPath('contacts.0.phone_number', '573245637786');
     }
+
+    public function test_el_filtro_de_activos_deja_fuera_a_los_dados_de_baja(): void
+    {
+        Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Cliente Activo',
+            'phone_number' => '573245637786',
+        ]);
+
+        Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Cliente De Baja',
+            'phone_number' => '573001112233',
+            'opted_out_at' => now(),
+        ]);
+
+        // Sin el filtro salen los dos: el listado completo sigue siendo posible.
+        $this->actingAs($this->user)
+            ->getJson(route('campaigns.contacts.search', [
+                'instance_id' => $this->instance->id,
+                'source' => 'contacts',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('total', 2);
+
+        $this->actingAs($this->user)
+            ->getJson(route('campaigns.contacts.search', [
+                'instance_id' => $this->instance->id,
+                'source' => 'contacts',
+                'only_active' => 1,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('contacts.0.phone_number', '573245637786');
+    }
+
+    /**
+     * «Seleccionar los N» tiene que traerse exactamente lo que dice el recuento:
+     * si el listado filtra y la resolución no, la campaña sale con gente que en
+     * pantalla no estaba.
+     */
+    public function test_seleccionar_todos_respeta_el_filtro_de_activos(): void
+    {
+        Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Cliente Activo',
+            'phone_number' => '573245637786',
+        ]);
+
+        Contact::create([
+            'company_id' => $this->company->id,
+            'name' => 'Cliente De Baja',
+            'phone_number' => '573001112233',
+            'opted_out_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->getJson(route('campaigns.contacts.resolve', [
+                'instance_id' => $this->instance->id,
+                'source' => 'contacts',
+                'only_active' => 1,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('contacts.0.phone_number', '573245637786');
+    }
 }

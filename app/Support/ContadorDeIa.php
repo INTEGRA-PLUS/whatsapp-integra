@@ -28,6 +28,11 @@ class ContadorDeIa
         'menu' => 0.00065,
         'chat' => 0.00066,
         'resumen' => 0.00090,
+        // Una llamada, prompt corto y tres frases de salida: entre el semáforo y
+        // el resumen. Lo que lo hace caro no es el precio sino el patrón —se
+        // pide al abrir cada chat—, y ese freno es el caché por último mensaje
+        // del controlador, no la tarifa.
+        'predictivo' => 0.00048,
     ];
 
     /**

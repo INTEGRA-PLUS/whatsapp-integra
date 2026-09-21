@@ -677,6 +677,10 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
     const [fuente, setFuente] = useState('conversations');
     const [q, setQ] = useState('');
     const [tagIds, setTagIds] = useState([]);
+    // Viene marcado: a quien pidió la baja no se le envía de todos modos —el
+    // envío lo marca «omitido»—, así que tenerlo en la lista sólo infla el
+    // recuento y hace que «Seleccionar los N» prometa más de lo que sale.
+    const [soloActivos, setSoloActivos] = useState(true);
     const [resultados, setResultados] = useState([]);
     const [total, setTotal] = useState(0);
     const [pagina, setPagina] = useState(1);
@@ -692,7 +696,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
         if (fuente === 'paste' || fuente === 'segments') return;
         setCargando(true);
         axios.get(route('campaigns.contacts.search'), {
-            params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds, page },
+            params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds, only_active: soloActivos ? 1 : 0, page },
         })
             .then(res => {
                 // Funcional a propósito: `buscar` está memoizado por filtros, así
@@ -702,7 +706,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                 setPagina(page);
             })
             .finally(() => setCargando(false));
-    }, [form.instance_id, fuente, q, tagIds]);
+    }, [form.instance_id, fuente, q, tagIds, soloActivos]);
 
     useEffect(() => {
         clearTimeout(debounce.current);
@@ -728,7 +732,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
 
     async function seleccionarTodos() {
         const res = await axios.get(route('campaigns.contacts.resolve'), {
-            params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds },
+            params: { instance_id: form.instance_id, source: fuente, q, tag_ids: tagIds, only_active: soloActivos ? 1 : 0 },
         });
         anotarRecorte(res.data);
         update(f => {
@@ -743,7 +747,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
         const res = await axios.post(route('campaigns.segments.store'), {
             name: nombre,
             source: fuente,
-            filters: { q, tag_ids: tagIds },
+            filters: { q, tag_ids: tagIds, only_active: soloActivos },
         });
         setMisSegmentos(s => [...s, res.data.segment]);
     }
@@ -755,6 +759,9 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                 source: segmento.source,
                 q: segmento.filters?.q ?? '',
                 tag_ids: segmento.filters?.tag_ids ?? [],
+                // Los segmentos guardados antes de este filtro no lo traen: se
+                // aplican como estaban, sin recortar a activos por su cuenta.
+                only_active: segmento.filters?.only_active ? 1 : 0,
             },
         });
         anotarRecorte(res.data);
@@ -814,8 +821,25 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                             </div>
                         )}
 
+                        {fuente === 'contacts' && (
+                            <button
+                                type="button"
+                                onClick={() => setSoloActivos(v => !v)}
+                                aria-pressed={soloActivos}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                                    soloActivos ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
+                                }`}
+                            >
+                                {soloActivos && <Check className="size-3" />}
+                                Solo clientes activos
+                            </button>
+                        )}
+
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{total} {total === 1 ? 'resultado' : 'resultados'}</span>
+                            <span>
+                                {total} {total === 1 ? 'resultado' : 'resultados'}
+                                {fuente === 'contacts' && soloActivos && ' · sin los dados de baja'}
+                            </span>
                             <div className="flex gap-3">
                                 {total > 0 && (
                                     <button type="button" onClick={seleccionarTodos} className="underline hover:text-foreground">
@@ -891,6 +915,7 @@ function PasoDestinatarios({ form, update, errors, tags, segments }) {
                                     <div className="text-xs text-muted-foreground">
                                         {s.source === 'contacts' ? 'Contactos del CRM' : 'Conversaciones'}
                                         {s.filters?.q ? ` · «${s.filters.q}»` : ''}
+                                        {s.filters?.only_active ? ' · solo activos' : ''}
                                     </div>
                                 </div>
                                 <Button variant="outline" size="sm" onClick={() => aplicarSegmento(s)}>Añadir</Button>

@@ -6,6 +6,7 @@ use App\Extensions\FollowUpExtension;
 use App\Extensions\KeywordRoutingExtension;
 use App\Extensions\ResumenExtension;
 use App\Extensions\SentimientoExtension;
+use App\Extensions\TextoPredictivoExtension;
 
 return [
 
@@ -36,6 +37,7 @@ return [
         AgentSignatureExtension::class,
         SentimientoExtension::class,
         ResumenExtension::class,
+        TextoPredictivoExtension::class,
         CierreAutomaticoExtension::class,
     ],
 

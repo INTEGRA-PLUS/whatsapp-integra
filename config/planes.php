@@ -121,8 +121,8 @@ return [
         'esencial' => [
             'nombre' => 'IA Esencial',
             'precio' => 19,
-            // Las dos que ya funcionan, están probadas y se enseñan en la demo.
-            'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
+            // Las que ya funcionan, están probadas y se enseñan en la demo.
+            'extensiones' => ['conversation_summary', 'sentiment_traffic_light', 'predictive_text'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
             // La que resuelve contra el ERP, desde el 18-sep-2026. Antes este
             // nivel eran el resumen y el semáforo: dos funciones que ve el
@@ -140,7 +140,7 @@ return [
         'completa' => [
             'nombre' => 'IA Completa',
             'precio' => 49,
-            'extensiones' => ['conversation_summary', 'sentiment_traffic_light'],
+            'extensiones' => ['conversation_summary', 'sentiment_traffic_light', 'predictive_text'],
             'ajustes' => ['sentiment_traffic_light' => ['usar_ia']],
             // Lo que separa este nivel del anterior es `ai_chat`: que la IA
             // además CONVERSE —los chats libres y las opciones de menú que

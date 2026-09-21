@@ -1,4 +1,4 @@
-import { Bell, Clock, Sparkles, UserRound } from 'lucide-react';
+import { Bell, Clock, Lightbulb, Sparkles, UserRound } from 'lucide-react';
 import clsx from 'clsx';
 
 /**
@@ -300,6 +300,55 @@ function ResumenConIa() {
     );
 }
 
+function TextoPredictivo() {
+    return (
+        <>
+            <Pantalla titulo="Cuadro de redacción del chat">
+                <div className="px-3 pt-2.5">
+                    <div className="max-w-[80%] rounded rounded-tl-none bg-muted px-2 py-1.5 text-[11px] leading-tight text-foreground">
+                        cuanto se demora el técnico en llegar?
+                    </div>
+                </div>
+
+                {/* Las tres, flotando SOBRE el campo: no empujan la conversación
+                    hacia arriba. Es la diferencia que más se nota al usarlo. */}
+                <div className="mx-3 mt-3 rounded-lg border bg-popover shadow-sm">
+                    <div className="flex items-center gap-1.5 border-b bg-muted/40 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <Lightbulb className="size-3" /> Sugerencias
+                        <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                            · las escribes tú, no se envían solas
+                        </span>
+                    </div>
+                    {[
+                        ['gestionando', 'Ya estoy verificando la visita y le confirmo por aquí.'],
+                        ['pedir dirección', '¿Me confirma la dirección para revisar el agendamiento?'],
+                        ['ofrecer llamada', 'Si prefiere, le podemos llamar apenas tengamos la respuesta.'],
+                    ].map(([etiqueta, texto]) => (
+                        <div key={etiqueta} className="flex items-start gap-2 px-2.5 py-1.5">
+                            <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                                {etiqueta}
+                            </span>
+                            <span className="text-[11px] leading-tight text-foreground/90">{texto}</span>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mx-3 mb-3 mt-2 flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5">
+                    <span className="flex-1 text-[11px] text-muted-foreground/60">Escribe un mensaje…</span>
+                    <Lightbulb className="size-3.5 shrink-0 text-primary" />
+                </div>
+            </Pantalla>
+            <Pie>
+                propone hasta tres formas de contestar el mensaje que tienes delante. Pulsas una y el
+                texto entra en el campo, para que lo corrijas antes de enviarlo — <span className="font-semibold text-foreground">nunca
+                envía nada sola</span>. Y no se inventa datos: cualquier sugerencia con un precio, una
+                fecha o un plazo que no esté ya escrito en la conversación se descarta antes de que la
+                veas. Si hace falta un dato que no hay, la sugerencia lo pide.
+            </Pie>
+        </>
+    );
+}
+
 // ─── Versiones mini, para las tarjetas del catálogo ──────────────────────────
 // Las tarjetas van en rejilla de hasta tres columnas, así que la maqueta entera
 // no cabe. Estas son un resumen, no una versión encogida: enseñan UNA cosa —la
@@ -379,6 +428,26 @@ const MINIS = {
         </Mini>
     ),
 
+    predictive_text: () => (
+        <Mini>
+            <div className="flex items-center gap-1.5">
+                <Lightbulb className="size-3 shrink-0 text-primary" />
+                <span className="text-[11px] font-bold text-foreground">Sugerencias</span>
+            </div>
+            {[
+                ['gestionando', 'Ya lo estoy verificando…'],
+                ['pedir dato', '¿Me confirma la dirección?'],
+            ].map(([etiqueta, texto]) => (
+                <div key={etiqueta} className="mt-1 flex items-center gap-1.5">
+                    <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[9px] font-semibold uppercase text-primary">
+                        {etiqueta}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">{texto}</span>
+                </div>
+            ))}
+        </Mini>
+    ),
+
     agent_signature: () => (
         <Mini>
             <div className="flex h-full items-center justify-end rounded bg-[#efeae2] px-2 dark:bg-[#0b141a]">
@@ -400,6 +469,7 @@ const MAQUETAS = {
     keyword_routing: EnrutadoPorPalabra,
     agent_signature: FirmaDelAgente,
     conversation_summary: ResumenConIa,
+    predictive_text: TextoPredictivo,
 };
 
 export function tieneMaqueta(slug) {

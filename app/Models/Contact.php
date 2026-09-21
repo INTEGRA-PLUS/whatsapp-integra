@@ -99,6 +99,16 @@ class Contact extends Model
         return $query->whereNotNull('opted_out_at');
     }
 
+    /**
+     * Los que siguen recibiendo campañas. Es lo contrario de la baja, y la
+     * única noción de «activo» que guarda la ficha: no dice nada del estado del
+     * servicio en el ERP.
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('opted_out_at');
+    }
+
     public function scopeSearch($query, $search)
     {
         return $query->where(function ($q) use ($search) {

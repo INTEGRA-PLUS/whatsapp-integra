@@ -275,6 +275,17 @@ return [
         'webhook_modo' => env('ONEPAY_WEBHOOK_MODO', 'aprender'),
     ],
 
+    'texto_predictivo' => [
+        'webhook_url' => env('PREDICTIVO_WEBHOOK_URL'),
+        'api_key' => env('PREDICTIVO_API_KEY'),
+        // El más corto de los tres flujos, y a propósito. El semáforo espera 45
+        // porque es un job de fondo y el resumen 30 porque alguien pulsó un
+        // botón y sabe que va a tardar. Aquí el asesor tiene el cursor en el
+        // campo: pasados veinticinco segundos ya escribió la frase, y la
+        // sugerencia llega para estorbar.
+        'timeout' => (int) env('PREDICTIVO_TIMEOUT', 25),
+    ],
+
     'resumen' => [
         'webhook_url' => env('RESUMEN_WEBHOOK_URL'),
         'api_key' => env('RESUMEN_API_KEY'),

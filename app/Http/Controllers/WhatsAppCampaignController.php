@@ -596,6 +596,7 @@ class WhatsAppCampaignController extends Controller
             'source' => 'nullable|in:conversations,contacts',
             'q' => 'nullable|string|max:120',
             'tag_ids' => 'nullable|array',
+            'only_active' => 'nullable|boolean',
             'page' => 'nullable|integer|min:1',
         ]);
 
@@ -615,6 +616,10 @@ class WhatsAppCampaignController extends Controller
             // descartaría después, con el recuento ya cuadrado de más.
             $query = Contact::where('company_id', $user->company_id)
                 ->whereNotNull('phone_number')
+                // Los dados de baja se descartan igualmente al enviar (quedan
+                // como «omitidos»): filtrarlos aquí es lo que hace que el «N
+                // resultados» y el «seleccionar los N» cuadren con lo que sale.
+                ->when($request->boolean('only_active'), fn ($q) => $q->active())
                 ->when($term !== '', fn ($q) => $q->search($term));
 
             $total = $query->count();
@@ -674,6 +679,7 @@ class WhatsAppCampaignController extends Controller
             'source' => 'nullable|in:conversations,contacts',
             'q' => 'nullable|string|max:120',
             'tag_ids' => 'nullable|array',
+            'only_active' => 'nullable|boolean',
         ]);
 
         $user = auth()->user();
@@ -693,6 +699,7 @@ class WhatsAppCampaignController extends Controller
         if ($request->input('source', 'conversations') === 'contacts') {
             $rows = Contact::where('company_id', $user->company_id)
                 ->whereNotNull('phone_number')
+                ->when($request->boolean('only_active'), fn ($q) => $q->active())
                 ->when($term !== '', fn ($q) => $q->search($term))
                 ->limit($techo + 1)
                 ->get(['id', 'name', 'phone_number', 'identificacion'])

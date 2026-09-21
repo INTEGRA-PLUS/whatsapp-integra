@@ -103,7 +103,8 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     Bot,
-    Sparkles
+    Sparkles,
+    Lightbulb
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -122,6 +123,7 @@ import {
 } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import QuickReplyPicker from '@/components/quick-reply-picker';
+import SugerenciasPicker from '@/components/sugerencias-picker';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { refreshNotifications, useConversationsRefresh } from '@/lib/notifications';
 import { playNotificationSound } from '@/lib/notificationSound';
@@ -1622,7 +1624,7 @@ function PaymentModal({ integration, conversation, onClose }) {
     );
 }
 
-export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 }, usa_integra = false }) {
+export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 }, texto_predictivo = { activa: false, automatico: false, cuantas: 3 }, usa_integra = false }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -1746,6 +1748,17 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const [resumenAbierto, setResumenAbierto] = useState(false);
     const [resumenCargando, setResumenCargando] = useState(false);
     const [resumenError, setResumenError] = useState(null);
+
+    // ── Texto predictivo ─────────────────────────────────────────────────────
+    const [sugerencias, setSugerencias] = useState([]);
+    const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+    const [sugerenciasCargando, setSugerenciasCargando] = useState(false);
+    const [sugerenciasError, setSugerenciasError] = useState(null);
+    // De qué mensaje son las que ya se pidieron. Sin esta marca, el automático
+    // vuelve a disparar en cada render del hilo —y `messages` se reemplaza
+    // entero con cada acuse de entrega que llega de Meta—, así que un chat
+    // quieto pediría una inferencia por cada palomita.
+    const sugerenciasPedidasPara = useRef(null);
     const [editingTag, setEditingTag] = useState(null); // {id, name, color} cuando se edita una etiqueta
     const [selectedAgentId, setSelectedAgentId] = useState('');
     const [agentFilterQuery, setAgentFilterQuery] = useState('');
@@ -2174,6 +2187,10 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
             return;
         }
         setNewMessage(value);
+        // Quien ya está escribiendo no necesita que le sugieran cómo empezar, y
+        // el panel flota justo encima del campo: dejarlo abierto es tapar la
+        // conversación mientras se redacta. Vuelve con el botón.
+        if (value) setSugerenciasAbiertas(false);
         updateQuickReplyState(value, cursor);
     }, [composerMode, updateQuickReplyState, updateMentionState, integrations, closeQuickReplies, notifyTyping]);
 
@@ -2202,11 +2219,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
             closeQuickReplies();
             return;
         }
+        if (e.key === 'Escape' && sugerenciasAbiertas) {
+            e.preventDefault();
+            setSugerenciasAbiertas(false);
+            return;
+        }
         if (e.key === 'Enter' && !qrOpen && !mentionOpen && !e.shiftKey) {
             e.preventDefault();
             if (composerMode === 'note') sendNote(); else sendMessage();
         }
-    }, [qrOpen, qrMatches, qrIndex, applyQuickReply, closeQuickReplies, mentionOpen, mentionMatches, mentionIndex, applyMention, closeMentions, composerMode]);
+    }, [qrOpen, qrMatches, qrIndex, applyQuickReply, closeQuickReplies, mentionOpen, mentionMatches, mentionIndex, applyMention, closeMentions, composerMode, sugerenciasAbiertas]);
 
     useEffect(() => {
         const el = messageInputRef.current;
@@ -2665,6 +2687,13 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         setResumen(null);
         setResumenAbierto(false);
         setResumenError(null);
+        // Y las sugerencias, por lo mismo: son respuestas al mensaje de OTRO
+        // cliente. Arrastrarlas al chat siguiente es ofrecerle a alguien el
+        // borrador de una conversación que no es la suya.
+        setSugerencias([]);
+        setSugerenciasAbiertas(false);
+        setSugerenciasError(null);
+        sugerenciasPedidasPara.current = null;
         // El adjunto pertenece a la nota de este chat: arrastrarlo al siguiente
         // haría que se guardara en la conversación equivocada.
         clearNoteImage();
@@ -3459,6 +3488,93 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         // created_at dejaba escribir al asesor para que el envío muriera después.
         return (Date.now() - new Date(lastInbound.sent_at || lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
     }, [messages, selectedConversation]);
+
+    /**
+     * Pide sugerencias de respuesta para la conversación abierta.
+     *
+     * `borrador` es lo que el asesor lleve escrito: sin mandarlo, pedir
+     * sugerencias a media frase devuelve tres respuestas que empiezan de cero y
+     * ninguna sirve para continuar la que estaba escribiendo.
+     *
+     * `silencioso` lo usa el automático. Un error que nadie provocó no puede
+     * abrir un panel encima del campo de texto para decirlo: si las sugerencias
+     * que llegan solas fallan, no llegan y ya está.
+     */
+    const pedirSugerencias = useCallback(async (borrador = '', refrescar = false, silencioso = false) => {
+        const conv = selectedConversationRef.current;
+        if (!conv) return;
+
+        if (!silencioso) setSugerenciasAbiertas(true);
+        setSugerenciasCargando(true);
+        setSugerenciasError(null);
+
+        try {
+            const { data } = await axios.post(
+                `/api/chat/conversations/${conv.id}/sugerencias`,
+                { borrador, ...(refrescar ? { refrescar: true } : {}) }
+            );
+
+            // El asesor pudo cambiar de chat mientras el modelo pensaba. Pintar
+            // esto ahora sería ofrecerle, sobre el cliente que tiene delante,
+            // tres respuestas escritas para otro.
+            if (selectedConversationRef.current?.id !== conv.id) return;
+
+            const llegaron = data.sugerencias ?? [];
+            setSugerencias(llegaron);
+            // El automático sólo abre el panel si hay algo que enseñar. Abrirlo
+            // para decir "no se me ocurre nada" es tapar la conversación con un
+            // aviso que nadie pidió.
+            if (llegaron.length > 0) setSugerenciasAbiertas(true);
+        } catch (err) {
+            if (selectedConversationRef.current?.id !== conv.id) return;
+            if (silencioso) return;
+            setSugerenciasError(
+                err?.response?.data?.message ?? 'No se pudieron preparar las sugerencias.'
+            );
+        } finally {
+            setSugerenciasCargando(false);
+        }
+    }, []);
+
+    /**
+     * Mete la sugerencia en el campo. **No la envía**, ni aquí ni en ningún
+     * otro sitio: ese clic de más es toda la diferencia entre una ayuda de
+     * redacción y un bot contestando en nombre de la empresa.
+     */
+    const aplicarSugerencia = useCallback((sugerencia) => {
+        const texto = sugerencia?.texto ?? '';
+        setNewMessage(texto);
+        setSugerenciasAbiertas(false);
+
+        const el = messageInputRef.current;
+        if (!el) return;
+        el.focus();
+        // El cursor al final y no al principio: lo que se hace después de elegir
+        // una sugerencia es rematarla, no reescribirla desde delante.
+        requestAnimationFrame(() => {
+            try { el.setSelectionRange(texto.length, texto.length); } catch { /* el navegador no siempre deja */ }
+        });
+    }, []);
+
+    // El automático. Las cuatro condiciones son de coste y de cortesía a la vez:
+    // sugerirle a alguien que ya está escribiendo es estorbarle; pedir
+    // sugerencias sobre un mensaje nuestro es pagar por tres formas de hablar
+    // solos; y con la ventana vencida sólo sale una plantilla, así que las tres
+    // frases nacerían muertas.
+    useEffect(() => {
+        if (!texto_predictivo.activa || !texto_predictivo.automatico) return;
+        if (composerMode !== 'reply' || windowExpired) return;
+        if (!selectedConversation || newMessage) return;
+
+        const ultimo = messages[messages.length - 1];
+        if (!ultimo || ultimo.direction !== 'inbound') return;
+
+        const huella = `${selectedConversation.id}:${ultimo.id}`;
+        if (sugerenciasPedidasPara.current === huella) return;
+        sugerenciasPedidasPara.current = huella;
+
+        pedirSugerencias('', false, true);
+    }, [texto_predictivo, composerMode, windowExpired, selectedConversation, messages, newMessage, pedirSugerencias]);
 
     async function sendMessage() {
         if (!newMessage.trim() || sending) return;
@@ -6470,6 +6586,21 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         />
                                                     )}
 
+                                                    {/* Detrás de las respuestas rápidas a propósito:
+                                                        si el asesor escribió «/» ya sabe lo que
+                                                        busca, y taparle su propia lista con tres
+                                                        sugerencias del modelo es quitarle de en
+                                                        medio lo que había pedido. */}
+                                                    {composerMode === 'reply' && sugerenciasAbiertas && !qrOpen && (
+                                                        <SugerenciasPicker
+                                                            sugerencias={sugerencias}
+                                                            cargando={sugerenciasCargando}
+                                                            error={sugerenciasError}
+                                                            onSelect={aplicarSugerencia}
+                                                            onRefrescar={() => pedirSugerencias(newMessage, true)}
+                                                            onCerrar={() => setSugerenciasAbiertas(false)}
+                                                        />
+                                                    )}
                                                     {composerMode === 'reply' && qrOpen && (
                                                         <QuickReplyPicker
                                                             matches={qrMatches}
@@ -6557,6 +6688,27 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                 >
                                                                     <FileText className="size-[19px]" />
                                                                 </button>
+                                                                {/* Con la ventana vencida no se
+                                                                    deshabilita, se esconde: un botón
+                                                                    gris que nadie sabe por qué está
+                                                                    gris se pulsa igual. */}
+                                                                {texto_predictivo.activa && !windowExpired && (
+                                                                    <button
+                                                                        onClick={() => (sugerenciasAbiertas
+                                                                            ? setSugerenciasAbiertas(false)
+                                                                            : pedirSugerencias(newMessage))}
+                                                                        className={clsx(
+                                                                            "size-9 flex items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                                                                            sugerenciasAbiertas
+                                                                                ? "text-primary bg-primary/10"
+                                                                                : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                                                                        )}
+                                                                        title="Sugerencias de respuesta — las escribes tú, no se envían solas"
+                                                                        aria-label="Sugerencias de respuesta"
+                                                                    >
+                                                                        <Lightbulb className={`size-[19px] ${sugerenciasCargando ? 'animate-pulse' : ''}`} />
+                                                                    </button>
+                                                                )}
                                                             </>
                                                         ) : (
                                                             <>
