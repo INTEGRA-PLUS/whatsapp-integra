@@ -201,13 +201,19 @@ function Fila({ titulo, subtitulo, derecha, onClick }) {
 }
 
 /** Pareja etiqueta/valor de las fichas del diálogo. */
-function Campo({ label, valor }) {
+function Campo({ label, valor, mono = false }) {
     if (valor == null || valor === '') return null;
 
     return (
         <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-border/30 last:border-0">
             <span className="text-[11.5px] text-muted-foreground shrink-0">{label}</span>
-            <span className="text-[12.5px] text-foreground text-right">{valor}</span>
+            <span className={clsx(
+                'text-foreground text-right',
+                // Monoespaciada la que se lee dígito a dígito para teclearla en
+                // otra parte: en proporcional, un 1 y una l de una IP se
+                // confunden justo cuando el técnico la está copiando.
+                mono ? 'text-[12px] font-mono' : 'text-[12.5px]',
+            )}>{valor}</span>
         </div>
     );
 }
@@ -324,6 +330,7 @@ function DetalleContrato({ contrato, onFactura }) {
                 <Campo label="Velocidad" valor={contrato.bajada ? `${contrato.bajada}/${contrato.subida} Mbps` : null} />
                 <Campo label="Precio" valor={formatCOP(contrato.precio)} />
                 <Campo label="Tecnología" valor={contrato.tecnologia} />
+                <Campo label="IP" valor={contrato.ip} mono />
                 <Campo label="Televisión" valor={contrato.television ? 'Sí' : null} />
                 <Campo label="Dirección" valor={contrato.direccion} />
                 <Campo label="Monto para reactivar" valor={formatCOP(contrato.monto_para_reactivar)} />

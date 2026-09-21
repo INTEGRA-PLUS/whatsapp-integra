@@ -11,7 +11,8 @@ namespace App\Services;
  * Aquí se junta en una sola llamada todo lo que el ERP sabe de esa persona.
  *
  * Integra no tiene un endpoint "dame todo del cliente": lo reparte en tres.
- *   - `/contactos/buscar` → datos personales, contratos y facturas pendientes.
+ *   - `/contactos/buscar` → datos personales, contratos (con su `red.ip`) y
+ *     facturas pendientes.
  *   - `/facturas`         → el historial (lo que ya pagó, no sólo lo que debe).
  *   - `/contratos/{nro}/resumen` → pagos recientes, radicados, promesa de pago,
  *     saldo a favor y el ciclo de facturación. Es POR CONTRATO, así que hay que
@@ -349,6 +350,11 @@ class FichaDeClienteIntegra
                 'television' => (bool) ($c['television']['tiene_servicio'] ?? false),
                 'direccion' => $c['ubicacion']['direccion_instalacion'] ?? null,
                 'tecnologia' => $c['tecnologia'] ?? null,
+                // La IP viene gratis en `/contactos/buscar`, dentro de `red`, y
+                // es el dato con el que el técnico entra al equipo. Ojo con
+                // buscarla en el resumen del contrato: ése es el que lee el bot
+                // y a propósito no trae IP, MAC, ONU ni MikroTik.
+                'ip' => $c['red']['ip'] ?? null,
                 'grupo_corte' => $c['grupo_corte'] ?? null,
                 'motivo' => $extra['motivo'] ?? null,
                 'detalle' => $extra['detalle'] ?? null,

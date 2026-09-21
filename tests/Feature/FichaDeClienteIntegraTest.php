@@ -206,6 +206,23 @@ class FichaDeClienteIntegraTest extends TestCase
             ->assertJsonPath('contratos.0.ampliado.contrato_digital.firmado', true);
     }
 
+    /**
+     * La IP del equipo es lo primero que pide el técnico cuando el agente le
+     * pasa el caso. Viaja en `/contactos/buscar` —dentro de `red`— y no en el
+     * resumen del contrato, que es el que lee el bot y a propósito no trae
+     * datos de infraestructura.
+     */
+    public function test_el_contrato_trae_la_ip_del_cliente(): void
+    {
+        $this->fakeIntegra();
+        $conversacion = $this->conversacion();
+
+        $this->actingAs($this->usuario($conversacion))
+            ->getJson('/api/integrations/integra/ficha?conversation_id='.$conversacion->id)
+            ->assertOk()
+            ->assertJsonPath('contratos.0.ip', '10.80.1.59');
+    }
+
     /** El detalle de la factura: los ítems, que es lo que el listado no manda. */
     public function test_el_detalle_de_la_factura_trae_los_items_cobrados(): void
     {
@@ -337,6 +354,7 @@ class FichaDeClienteIntegraTest extends TestCase
                     'plan_internet' => ['nombre' => 'Fibra 100 Mbps', 'precio' => 75000, 'bajada' => 100, 'subida' => 50],
                     'television' => ['tiene_servicio' => false],
                     'ubicacion' => ['direccion_instalacion' => 'Cra 12 # 4-55'],
+                    'red' => ['ip' => '10.80.1.59', 'mac' => 'AA:BB:CC:DD:EE:FF'],
                 ], $contratos),
                 'facturas_pendientes' => [
                     ['codigo' => 'EST-8891', 'por_pagar' => 95000, 'vencimiento' => '2026-09-05', 'contrato_nro' => '10432'],
