@@ -84,6 +84,59 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | El aviso operativo que escribe una persona
+    |--------------------------------------------------------------------------
+    |
+    | Las dos de arriba las dispara el sistema. Faltaba la de mandar un aviso a
+    | mano —un corte, un mantenimiento, un cambio de canales— fuera de la
+    | ventana de 24 h, que es justo cuando hace falta: si el cliente no ha
+    | escrito hoy, WhatsApp no acepta texto libre y el asesor se queda sin
+    | forma de avisarle.
+    |
+    | Sin una plantilla así lo que se acaba usando es la de marketing que haya
+    | a mano, y eso no es un detalle de formulario: Meta cobra las de marketing
+    | más caras, no las entrega a quien tenga silenciadas las promociones y
+    | castiga la calidad del número cuando la gente las marca como no deseadas.
+    | Un aviso del servicio es UTILITY y va por otro carril.
+    |
+    | El texto es el que Comuna13 tiene aprobado y lleva meses enviando,
+    | copiado carácter por carácter —espacios finales incluidos— por lo mismo
+    | que las dos de abajo: una plantilla aprobada es un activo, y cualquier
+    | retoque la devuelve a la cola de revisión de Meta.
+    |
+    */
+
+    'notificaciones' => [
+        'label' => 'Notificación al cliente',
+        'description' => 'Un aviso operativo del servicio —un corte, un mantenimiento, un cambio— '
+            .'que el asesor escribe y envía aunque el cliente no haya escrito en 24h. '
+            .'No sirve para promociones: eso es marketing y va en otra plantilla.',
+        'category' => 'UTILITY',
+        'language' => 'es_CO',
+        'components' => [
+            [
+                'type' => 'HEADER',
+                'format' => 'TEXT',
+                'text' => 'Notificaciones.',
+            ],
+            [
+                // El emoji va escapado y los espacios del final de línea están
+                // puestos a propósito: es el texto aprobado tal cual, y aquí un
+                // carácter de diferencia es otra plantilla.
+                'type' => 'BODY',
+                'text' => "Usuario \u{2139}\u{FE0F} \n{{1}} \nEste mensaje corresponde a información operativa de su servicio activo.\nGracias.",
+                'example' => [
+                    'body_text' => [['Se le informa que debido a una actualización de canales que hicimos recientemente se debe realizar la búsqueda automática de canales en su televisor...']],
+                ],
+            ],
+        ],
+        'variable_hints' => [
+            '1' => 'El aviso que quieres dar (ej. «Mañana de 8:00 a 11:00 habrá mantenimiento programado en tu sector»)',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Las dos de Integra: la factura y la tirilla del pago
     |--------------------------------------------------------------------------
     |

@@ -38,6 +38,69 @@ class PlantillasDeIntegraTest extends TestCase
             ->assertJsonPath('data.reanudar_conversacion_cliente.category', 'UTILITY');
     }
 
+    /**
+     * La de avisos operativos sale para todo el mundo, tenga Integra o no.
+     *
+     * La manda una persona, no el ERP, así que condicionarla a la conexión
+     * dejaría sin ella justo a quien más la necesita: el que todavía no tiene
+     * nada automatizado.
+     */
+    /** @test */
+    public function la_de_notificaciones_se_ofrece_a_todos(): void
+    {
+        $respuesta = $this->actingAs($this->admin())
+            ->getJson('/api/templates/defaults')
+            ->assertOk();
+
+        $respuesta->assertJsonPath('data.notificaciones.category', 'UTILITY');
+        $respuesta->assertJsonPath('data.notificaciones.language', 'es_CO');
+    }
+
+    /**
+     * Es UTILITY y tiene que seguir siéndolo.
+     *
+     * Marcarla como MARKETING la mete en otro carril: Meta la cobra más cara,
+     * no la entrega a quien tenga silenciadas las promociones y castiga la
+     * calidad del número cuando la marcan como no deseada. Un corte de
+     * servicio no es una promoción.
+     */
+    /** @test */
+    public function la_de_notificaciones_no_es_marketing(): void
+    {
+        $catalogo = config('whatsapp_default_templates');
+
+        $this->assertSame('UTILITY', $catalogo['notificaciones']['category']);
+        $this->assertArrayNotHasKey('requiere_integra', $catalogo['notificaciones']);
+    }
+
+    /**
+     * Y su texto es, carácter por carácter, el que Meta ya aprobó.
+     *
+     * Está copiado del que Comuna13 lleva meses enviando. Retocarlo —aunque
+     * sea un espacio del final de línea, que los tiene— la devuelve a la cola
+     * de revisión de Meta y puede volver rechazada, así que el parecido no es
+     * casual y no se "mejora".
+     */
+    /** @test */
+    public function el_texto_de_notificaciones_es_el_aprobado(): void
+    {
+        $cuerpo = collect(config('whatsapp_default_templates.notificaciones.components'))
+            ->firstWhere('type', 'BODY');
+
+        $this->assertSame(
+            "Usuario \u{2139}\u{FE0F} \n{{1}} \nEste mensaje corresponde a información operativa de su servicio activo.\nGracias.",
+            $cuerpo['text']
+        );
+
+        // El encabezado es de texto fijo: no lleva variable ni adjunto, así que
+        // no necesita archivo de muestra para que Meta la apruebe.
+        $encabezado = collect(config('whatsapp_default_templates.notificaciones.components'))
+            ->firstWhere('type', 'HEADER');
+
+        $this->assertSame('TEXT', $encabezado['format']);
+        $this->assertArrayNotHasKey('sample_file', config('whatsapp_default_templates.notificaciones'));
+    }
+
     /** @test */
     public function con_integra_conectado_aparecen_las_dos(): void
     {
