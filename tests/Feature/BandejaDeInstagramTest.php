@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -28,6 +29,9 @@ class BandejaDeInstagramTest extends TestCase
 
     private const CLIENTE = '1089304012345678';
 
+    /** Lo que Meta contesta cuando se le pregunta quién escribe. */
+    private ?array $perfil = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -37,6 +41,116 @@ class BandejaDeInstagramTest extends TestCase
             'services.meta.instagram.verify_token' => 'el-token',
             'services.meta.webhook_app_secrets' => '28822685693981719:'.self::SECRETO,
         ]);
+
+        // Abrir una conversación pregunta a Meta quién escribe. Sin este fake
+        // los tests salen a internet de verdad y tardan cuatro veces más.
+        //
+        // Va como callback y no como mapa de URLs porque Laravel evalúa los
+        // stubs en el orden en que se registraron: uno puesto aquí ganaría
+        // siempre al que pusiera cada test, y todos verían el 404.
+        Http::fake(fn () => $this->perfil === null
+            ? Http::response([], 404)
+            : Http::response($this->perfil, 200));
+    }
+
+    /** Con el perfil resuelto, el chat dice «@alejo.higuita». */
+    public function test_el_chat_ensena_el_usuario_de_instagram(): void
+    {
+        $this->perfil = [
+            'name' => 'Alejo Higuita',
+            'username' => 'alejo.higuita',
+            'profile_pic' => 'https://scontent.cdninstagram.com/foto.jpg',
+        ];
+
+        $linea = $this->lineaDeInstagram();
+
+        $this->enviar($this->evento(['text' => 'Probando']))->assertOk();
+
+        $this->assertSame(
+            '@alejo.higuita',
+            WhatsAppConversation::where('instance_id', $linea->id)->value('name')
+        );
+
+        $this->assertSame('alejo.higuita', Contact::where('company_id', $linea->company_id)->value('username'));
+    }
+
+    /**
+     * Si Meta no contesta, el hilo se abre igual.
+     *
+     * El nombre es lo de menos: perder el mensaje por no saber quién lo manda
+     * sería mucho peor, y Meta reintentaría el lote entero.
+     */
+    public function test_sin_perfil_el_mensaje_se_guarda_igual(): void
+    {
+        $this->perfil = null;
+
+        $linea = $this->lineaDeInstagram();
+
+        $this->enviar($this->evento(['text' => 'Probando']))->assertOk();
+
+        $conversacion = WhatsAppConversation::where('instance_id', $linea->id)->first();
+
+        $this->assertNotNull($conversacion);
+        $this->assertStringStartsWith('Instagram · ', $conversacion->name);
+        $this->assertSame('Probando', WhatsAppMessage::first()->content);
+    }
+
+    /**
+     * El perfil se pide una vez, no en cada mensaje.
+     *
+     * Es un viaje a Meta dentro del webhook, y el webhook tiene que contestar
+     * rápido: si tarda, Meta da el lote por fallido y lo reintenta entero.
+     */
+    public function test_el_perfil_se_pregunta_una_sola_vez(): void
+    {
+        $this->perfil = ['username' => 'alejo.higuita'];
+
+        $this->lineaDeInstagram();
+
+        $this->enviar($this->evento(['text' => 'Hola'], 'mid-a'))->assertOk();
+        $this->enviar($this->evento(['text' => '¿Me confirmas?'], 'mid-b'))->assertOk();
+        $this->enviar($this->evento(['text' => 'Gracias'], 'mid-c'))->assertOk();
+
+        Http::assertSentCount(1);
+    }
+
+    /**
+     * Un hilo abierto cuando no se sabía el nombre se corrige solo.
+     *
+     * Los que ya están en la bandeja con «Instagram · 651818» también tienen
+     * dueño: en cuanto el cliente vuelve a escribir y Meta contesta, se
+     * renombran. Lo que no se toca es un nombre puesto a mano.
+     */
+    public function test_un_hilo_viejo_recupera_su_nombre(): void
+    {
+        $linea = $this->lineaDeInstagram();
+
+        // Primero sin perfil: queda con el nombre de relleno.
+        $this->enviar($this->evento(['text' => 'Hola'], 'mid-a'))->assertOk();
+        $conversacion = WhatsAppConversation::where('instance_id', $linea->id)->first();
+        $this->assertStringStartsWith('Instagram · ', $conversacion->name);
+
+        // Y al volver a escribir, con Meta contestando, se corrige.
+        $this->perfil = ['username' => 'alejo.higuita'];
+        $this->enviar($this->evento(['text' => 'Sigo aquí'], 'mid-b'))->assertOk();
+
+        $this->assertSame('@alejo.higuita', $conversacion->fresh()->name);
+    }
+
+    /** Pero un nombre puesto por el equipo manda sobre el de Instagram. */
+    public function test_un_nombre_puesto_a_mano_no_se_pisa(): void
+    {
+        $linea = $this->lineaDeInstagram();
+
+        $this->enviar($this->evento(['text' => 'Hola'], 'mid-a'))->assertOk();
+
+        $conversacion = WhatsAppConversation::where('instance_id', $linea->id)->first();
+        $conversacion->update(['name' => 'Don Camilo (el de la tienda)']);
+
+        $this->perfil = ['username' => 'alejo.higuita'];
+        $this->enviar($this->evento(['text' => 'Sigo aquí'], 'mid-b'))->assertOk();
+
+        $this->assertSame('Don Camilo (el de la tienda)', $conversacion->fresh()->name);
     }
 
     public function test_un_dm_entrante_abre_la_conversacion_y_se_guarda(): void

@@ -65,18 +65,31 @@ class BandejaDeInstagram
             return $existente;
         }
 
+        // Quién es el que escribe. Va antes de abrir la conversación para que
+        // nazca ya con su nombre: si se rellenara después, el aviso en tiempo
+        // real que sale más abajo llegaría con «Instagram · 651818» y el asesor
+        // vería saltar un chat sin nombre.
+        $perfil = $this->perfilDeQuienEscribe($linea, $cliente, $esEco);
+
         $conversacion = WhatsAppConversation::resolverPorIdentidad($linea->id, $cliente, [
-            'name' => $this->nombreDelCliente($evento, $cliente),
+            'name' => $this->nombreDelCliente($evento, $cliente, $perfil),
             'status' => 'open',
             'last_message_at' => now(),
         ]);
+
+        // Una conversación abierta antes de que supiéramos el nombre se queda
+        // con el identificador para siempre, así que se corrige en cuanto se
+        // sabe: los hilos de ayer también tienen dueño.
+        if ($perfil && ($perfil['username'] ?? null) && $this->esNombreDeRelleno($conversacion->name)) {
+            $conversacion->update(['name' => '@'.$perfil['username']]);
+        }
 
         // Quien escribe por primera vez queda como contacto, igual que en
         // WhatsApp (`ensureContactRegistered`). Sin esto, los clientes que
         // llegan por Instagram no salían en Contactos ni contaban para el tramo
         // contratado, así que una empresa podía crecer por Instagram y no
         // notarse en ninguna parte.
-        $this->registrarContacto($linea, $conversacion, $cliente, $evento);
+        $this->registrarContacto($linea, $conversacion, $cliente, $evento, $perfil);
 
         [$tipo, $contenido, $media] = $this->contenido($evento['message'] ?? []);
 
@@ -197,14 +210,15 @@ class BandejaDeInstagram
         Instance $linea,
         WhatsAppConversation $conversacion,
         string $cliente,
-        array $evento
+        array $evento,
+        ?array $perfil = null
     ): void {
         if ($conversacion->contact_id) {
             return;
         }
 
         try {
-            $username = $evento['sender']['username'] ?? null;
+            $username = $perfil['username'] ?? $evento['sender']['username'] ?? null;
 
             $contacto = $username
                 ? Contact::where('company_id', $linea->company_id)->where('username', $username)->first()
@@ -216,7 +230,7 @@ class BandejaDeInstagram
                 // Instagram rompería `normalizePhone` y acabaría mandando
                 // mensajes a un número que no existe.
                 'username' => $username,
-                'name' => $this->nombreDelCliente($evento, $cliente),
+                'name' => $this->nombreDelCliente($evento, $cliente, $perfil),
             ]);
 
             $conversacion->update(['contact_id' => $contacto->id]);
@@ -235,9 +249,54 @@ class BandejaDeInstagram
         }
     }
 
-    private function nombreDelCliente(array $evento, string $cliente): string
+    /**
+     * El `@usuario` si se sabe; si no, algo que al menos no se repita.
+     *
+     * El respaldo lleva los últimos seis dígitos del IGSID y no un «Cliente de
+     * Instagram» a secas: con dos hilos sin resolver, dos nombres idénticos en
+     * la bandeja son imposibles de distinguir.
+     */
+    private function nombreDelCliente(array $evento, string $cliente, ?array $perfil = null): string
     {
-        return $evento['sender']['username'] ?? 'Instagram · '.substr($cliente, -6);
+        $usuario = $perfil['username'] ?? $evento['sender']['username'] ?? null;
+
+        if ($usuario) {
+            return '@'.$usuario;
+        }
+
+        return $perfil['name'] ?? 'Instagram · '.substr($cliente, -6);
+    }
+
+    /** ¿El nombre es el de respaldo, o ya lo puso alguien? */
+    private function esNombreDeRelleno(?string $nombre): bool
+    {
+        return $nombre === null || str_starts_with($nombre, 'Instagram · ');
+    }
+
+    /**
+     * El perfil de quien escribe, sólo cuando hace falta.
+     *
+     * No se pide en los ecos —el que escribe ahí es la propia empresa— ni
+     * cuando el hilo ya tiene nombre: sería un viaje a Meta por cada mensaje
+     * dentro del webhook, que es lo que no puede tardar.
+     *
+     * @return array{username: ?string, name: ?string, profile_pic: ?string}|null
+     */
+    private function perfilDeQuienEscribe(Instance $linea, string $cliente, bool $esEco): ?array
+    {
+        if ($esEco || empty($linea->access_token)) {
+            return null;
+        }
+
+        $yaConocido = WhatsAppConversation::where('instance_id', $linea->id)
+            ->where('wa_id', $cliente)
+            ->value('name');
+
+        if ($yaConocido !== null && ! $this->esNombreDeRelleno($yaConocido)) {
+            return null;
+        }
+
+        return app(InstagramMensajeriaService::class)->perfilDelCliente($linea, $cliente);
     }
 
     /**

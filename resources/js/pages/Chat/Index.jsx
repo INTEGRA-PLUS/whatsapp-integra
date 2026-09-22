@@ -23,6 +23,7 @@ import { ResumenDialog } from '@/pages/Chat/ResumenDialog';
 import FichaIntegra from '@/components/FichaIntegra';
 import axios from 'axios';
 import { clsx } from 'clsx';
+import { LogoCanal } from '@/components/logo-canal';
 import {
     templateBodyComponent,
     templateHeaderFormat,
@@ -4863,7 +4864,12 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         : "text-muted-foreground hover:bg-info/10 hover:text-info"
                                                 )}
                                             >
-                                                <span className={clsx("size-2 rounded-full shrink-0", inst.active === false ? "bg-muted" : "bg-[#25d366]")} />
+                                                {/* El logo del canal y no un punto verde: con WhatsApp
+                                                    e Instagram en la misma cuenta son bandejas distintas,
+                                                    y el agente tiene que saber en cuál está antes de
+                                                    escribir. El punto decía «activa», que es lo que
+                                                    `apagado` sigue diciendo en gris. */}
+                                                <LogoCanal instancia={inst} apagado={inst.active === false} className="size-6" />
                                                 <span className="flex-1 text-left truncate">{inst.name || 'Sin nombre'}</span>
                                             </button>
                                         );
