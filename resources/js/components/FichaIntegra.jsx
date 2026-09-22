@@ -37,6 +37,7 @@ import {
     ChevronDown,
     ChevronRight,
     Copy,
+    ExternalLink,
     FileText,
     Loader2,
     MapPin,
@@ -218,6 +219,43 @@ function Campo({ label, valor, mono = false }) {
                 mono ? 'text-[12px] font-mono' : 'text-[12.5px]',
             )}>{valor}</span>
         </div>
+    );
+}
+
+/**
+ * La IP del equipo, enlazada a su panel.
+ *
+ * Abre `http://<ip>` en otra pestaña, que es lo que el técnico hace a mano
+ * cincuenta veces al día: leer la IP de la ficha y teclearla en la barra. Sólo
+ * funciona desde dentro de la red del operador (o por VPN) —es una IP privada,
+ * no una pública— y por eso el enlace no promete nada: si no hay ruta, la
+ * pestaña nueva se queda en blanco y no se ha perdido la ficha.
+ *
+ * **Se comprueba que sea una IPv4 antes de enlazarla.** El valor viene del ERP,
+ * y un `href` construido con lo que mande otro sistema es un `javascript:` a la
+ * espera de que alguien guarde cualquier cosa en ese campo. Si no lo es, se
+ * pinta como texto y ya está: seguirá siendo copiable.
+ */
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+function EnlaceDeIp({ ip }) {
+    const limpia = String(ip ?? '').trim();
+
+    if (!IPV4.test(limpia)) {
+        return limpia || null;
+    }
+
+    return (
+        <a
+            href={`http://${limpia}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Abrir el equipo en otra pestaña (sólo desde la red del operador)"
+            className="inline-flex items-center gap-1 text-accent-foreground hover:underline"
+        >
+            {limpia}
+            <ExternalLink className="size-3 shrink-0" />
+        </a>
     );
 }
 
@@ -533,7 +571,7 @@ function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
                 <Campo label="Velocidad" valor={contrato.bajada ? `${contrato.bajada}/${contrato.subida} Mbps` : null} />
                 <Campo label="Precio" valor={formatCOP(contrato.precio)} />
                 <Campo label="Tecnología" valor={contrato.tecnologia} />
-                <Campo label="IP" valor={contrato.ip} mono />
+                {contrato.ip && <Campo label="IP" valor={<EnlaceDeIp ip={contrato.ip} />} mono />}
                 <Campo label="Televisión" valor={contrato.television ? 'Sí' : null} />
                 <Campo label="Dirección" valor={contrato.direccion} />
                 <Campo label="Monto para reactivar" valor={formatCOP(contrato.monto_para_reactivar)} />
