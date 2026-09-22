@@ -134,6 +134,39 @@ export default function EmbeddedSignupButton({ onConnected }) {
         return sessionInfo.current;
     }, []);
 
+    /**
+     * Lo que pasa después de que Meta devuelve el código.
+     *
+     * Va aparte porque el callback de `FB.login` no puede ser asíncrono —el SDK
+     * comprueba el tipo y lo rechaza— y aquí sí hace falta esperar al mensaje
+     * con la cuenta.
+     */
+    const terminar = useCallback(async (code, coexistencia) => {
+        const info = await esperarLaCuenta();
+
+        if (cancelado.current) {
+            setError('Cerraste la ventana de Meta antes de terminar. Vuelve a abrirla y llega hasta el último paso.');
+            return;
+        }
+
+        setLoading(true);
+
+        // Se manda aunque falte la cuenta. El `postMessage` de Meta es una
+        // comodidad, no la fuente: el token que el servidor canjea con este
+        // código sabe a qué WABA pertenece. Antes se abortaba aquí y el código
+        // —de un solo uso— se tiraba, así que el cliente tenía que repetir la
+        // ventana entera por un mensaje que no llegó a tiempo.
+        axios.post('/api/embedded-signup', {
+            code,
+            waba_id: info?.waba_id ?? null,
+            phone_number_id: info?.phone_number_id ?? null,
+            diagnostico: { eventos: rastro.current, coexistencia },
+        })
+            .then(({ data }) => onConnected?.(data))
+            .catch(err => setError(err?.response?.data?.message ?? 'No se pudo completar la conexión.'))
+            .finally(() => setLoading(false));
+    }, [esperarLaCuenta, onConnected]);
+
     const launch = useCallback((coexistencia = false) => {
         setError(null);
 
@@ -146,36 +179,24 @@ export default function EmbeddedSignupButton({ onConnected }) {
         rastro.current = [];
         cancelado.current = false;
 
-        window.FB.login(async (response) => {
+        // El callback NO puede ser `async`.
+        //
+        // El SDK de Meta comprueba el tipo de lo que se le pasa y una función
+        // asíncrona no lo pasa: revienta con «Expression is of type
+        // asyncfunction, not function» y la ventana no llega a abrirse. Lo
+        // aprendimos rompiéndolo el 22-sep-2026, al añadir la espera de la
+        // cuenta: el arreglo de un fallo silencioso se llevó por delante el
+        // camino entero.
+        //
+        // La espera vive dentro, en una función aparte que sí puede serlo.
+        window.FB.login((response) => {
             const code = response?.authResponse?.code;
 
             // Sin código el cliente cerró la ventana o no autorizó. No es un
             // fallo que haya que explicar: simplemente no pasó nada.
             if (!code) return;
 
-            const info = await esperarLaCuenta();
-
-            if (cancelado.current) {
-                setError('Cerraste la ventana de Meta antes de terminar. Vuelve a abrirla y llega hasta el último paso.');
-                return;
-            }
-
-            setLoading(true);
-
-            // Se manda aunque falte la cuenta. El `postMessage` de Meta es una
-            // comodidad, no la fuente: el token que el servidor canjea con este
-            // código sabe a qué WABA pertenece. Antes se abortaba aquí y el
-            // código —de un solo uso— se tiraba, así que el cliente tenía que
-            // repetir la ventana entera por un mensaje que no llegó a tiempo.
-            axios.post('/api/embedded-signup', {
-                code,
-                waba_id: info?.waba_id ?? null,
-                phone_number_id: info?.phone_number_id ?? null,
-                diagnostico: { eventos: rastro.current, coexistencia },
-            })
-                .then(({ data }) => onConnected?.(data))
-                .catch(err => setError(err?.response?.data?.message ?? 'No se pudo completar la conexión.'))
-                .finally(() => setLoading(false));
+            terminar(code, coexistencia);
         }, {
             config_id: config.config_id,
             response_type: 'code',
@@ -193,7 +214,7 @@ export default function EmbeddedSignupButton({ onConnected }) {
                 ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
                 : { setup: {} },
         });
-    }, [config, onConnected, esperarLaCuenta]);
+    }, [config, terminar]);
 
     if (!config) return null;
 
