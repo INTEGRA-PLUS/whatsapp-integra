@@ -308,6 +308,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/guia-coexistencia', fn () => Inertia::render('Instances/GuiaCoexistencia'))
         ->name('instances.guia-coexistencia');
 
+    // Cómo subir el cupo de 250 mensajes diarios que Meta le pone a toda cuenta
+    // nueva. Va aquí, junto a las líneas, porque el problema es de la línea y ahí
+    // es donde lo busca quien lo tiene. Mismo motivo que la de coexistencia para
+    // estar dentro del producto: se necesita mirando la pantalla de los envíos
+    // fallidos, no en un PDF que alguien mandó la semana pasada.
+    Route::get('/instances/guia-limites-whatsapp', fn () => Inertia::render('Instances/GuiaLimitesWhatsApp'))
+        ->name('instances.guia-limites');
+
     // Respaldo por consulta del progreso de la importación de coexistencia,
     // para cuando el websocket no conecta. Va antes de nada que capture
     // /instances/{algo} con otro significado.

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge } from 'lucide-react';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
@@ -113,6 +113,18 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                     <div>
                         <h1 className="text-2xl font-semibold text-foreground">Instancias</h1>
                         <p className="text-sm text-muted-foreground mt-1">Gestiona tus conexiones con la API de Meta</p>
+                        {/* El tope de 250 mensajes al día es lo que más trae a
+                            esta pantalla después de conectar, y el error de Meta
+                            —«Spam Rate limit hit»— manda a buscar por el lado
+                            equivocado. El enlace va aquí para que aparezca antes
+                            de que llamen. */}
+                        <Link
+                            href="/instances/guia-limites-whatsapp"
+                            className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-foreground hover:underline"
+                        >
+                            <Gauge className="size-3.5" />
+                            ¿Tus mensajes salen como «Fallido»? Sube el límite de WhatsApp
+                        </Link>
                     </div>
                     {/* Conectar con Facebook es el camino normal; "Nueva
                         Instancia" queda como respaldo para pegar los datos a
