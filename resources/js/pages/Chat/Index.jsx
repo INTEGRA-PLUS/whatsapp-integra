@@ -5951,7 +5951,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                 </DropdownMenuItem>
                                                             )}
                                                             {canEditSent && (
-                                                                <DropdownMenuItem onClick={() => setEditingSent({ id: msg.id, content: msg.content || '' })} className="gap-2.5 text-[13px]">
+                                                                <DropdownMenuItem onClick={() => setEditingSent({ id: msg.id, content: msg.content || '', original: msg.content || '', created_at: msg.created_at })} className="gap-2.5 text-[13px]">
                                                                     <PencilIcon className="size-4 text-muted-foreground" />
                                                                     Editar
                                                                 </DropdownMenuItem>
@@ -6175,49 +6175,14 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                         IA
                                                                     </span>
                                                                 )}
+                                                                {/* La corrección se edita en un diálogo aparte y no
+                                                                    aquí dentro. Dentro de la burbuja, el textarea y sus
+                                                                    botones caían debajo de la hora y los checks —que son
+                                                                    `absolute bottom-0 right-0`—, así que «Guardar»
+                                                                    aparecía tapado por la hora y, al estar el bloque
+                                                                    absoluto después en el DOM, se llevaba el clic. */}
                                                                 {msg.type === 'text' && (
-                                                                    editingSent?.id === msg.id ? (
-                                                                        /* Corrección en línea. El aviso es lo importante: sin él,
-                                                                           el asesor da por hecho que el cliente ve el cambio. */
-                                                                        <div className="space-y-1.5 py-1 min-w-[240px]">
-                                                                            <textarea
-                                                                                autoFocus
-                                                                                rows={3}
-                                                                                value={editingSent.content}
-                                                                                onChange={e => setEditingSent({ ...editingSent, content: e.target.value })}
-                                                                                onKeyDown={e => {
-                                                                                    if (e.key === 'Escape') setEditingSent(null);
-                                                                                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSentEdit(); }
-                                                                                }}
-                                                                                maxLength={4096}
-                                                                                className="w-full rounded-md bg-white/80 dark:bg-black/25 border border-black/10 dark:border-white/15 px-2 py-1.5 text-[12.5px] leading-[17px] outline-none focus:ring-2 focus:ring-primary/40 resize-y"
-                                                                            />
-                                                                            <p className="flex items-start gap-1 text-[10px] leading-[13px] opacity-70">
-                                                                                <AlertTriangle className="size-3 mt-px shrink-0" />
-                                                                                Corrige el registro del panel. El cliente seguirá viendo el texto original en su WhatsApp.
-                                                                            </p>
-                                                                            <div className="flex items-center justify-end gap-1.5">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => setEditingSent(null)}
-                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-                                                                                >
-                                                                                    Cancelar
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={saveSentEdit}
-                                                                                    disabled={savingSent || !editingSent.content.trim()}
-                                                                                    className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-primary hover:bg-primary text-primary-foreground disabled:opacity-50 transition-colors inline-flex items-center gap-1"
-                                                                                >
-                                                                                    {savingSent && <Loader2 className="size-3 animate-spin" />}
-                                                                                    Guardar
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
-                                                                    )
+                                                                    <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content}</p>
                                                                 )}
                                                                 
                                                                 {msg.type === 'image' && (
@@ -7279,6 +7244,100 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                     />
                 )}
 
+                {/* Corregir un mensaje ya enviado.
+                    En diálogo y no dentro de la burbuja, como hace WhatsApp: ahí
+                    el textarea competía por el sitio con la hora y los checks
+                    —`absolute bottom-0 right-0`— y el botón de guardar quedaba
+                    debajo de ellos, tapado y sin recibir el clic.
+
+                    Enseña arriba el mensaje tal como salió, y es la parte que no
+                    es decorativa: lo que se corrige es el registro del panel, así
+                    que tener delante lo que el cliente sí está viendo es lo que
+                    evita corregir creyendo que se está reenviando. */}
+                {editingSent && (
+                    <div
+                        className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                        onClick={() => { if (!savingSent) setEditingSent(null); }}
+                    >
+                        <div
+                            className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-border/10 bg-white dark:bg-[#1c272e] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="flex items-center gap-3 px-5 py-4 border-b border-border/40 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingSent(null)}
+                                    disabled={savingSent}
+                                    title="Cerrar"
+                                    className="size-8 -ml-1 flex items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40"
+                                >
+                                    <X className="size-4" />
+                                </button>
+                                <h3 className="font-bold text-base leading-tight text-foreground">Edita el mensaje</h3>
+                            </div>
+
+                            {/* El original, sobre el fondo del chat para que se
+                                lea como lo que es: lo que el cliente tiene. */}
+                            <div className="px-5 py-5 bg-[#e5ddd5] dark:bg-[#0b141a] shrink-0">
+                                <div className="flex justify-end">
+                                    <div className="max-w-[85%] rounded-lg rounded-tr-none bg-[#dcf8c6] dark:bg-[#005c4b] px-2.5 py-1.5 shadow-sm">
+                                        <p className="text-[12.5px] leading-[17px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap break-words">
+                                            {editingSent.original || 'Sin contenido'}
+                                        </p>
+                                        <span className="mt-0.5 block text-right text-[9px] font-bold uppercase tracking-tighter text-muted-foreground/80 dark:text-white/65">
+                                            {formatMessageTimeOnly(editingSent.created_at)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="px-5 py-4 space-y-3 overflow-y-auto">
+                                <textarea
+                                    autoFocus
+                                    rows={3}
+                                    value={editingSent.content}
+                                    onChange={e => setEditingSent({ ...editingSent, content: e.target.value })}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Escape') setEditingSent(null);
+                                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveSentEdit(); }
+                                    }}
+                                    maxLength={4096}
+                                    placeholder="Escribe la corrección"
+                                    className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-primary/40 resize-y"
+                                />
+
+                                <p className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] leading-relaxed text-foreground">
+                                    <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+                                    <span>
+                                        Corrige el registro del panel. <span className="font-semibold">El cliente seguirá
+                                        viendo el texto original</span> en su WhatsApp: Meta no deja editar lo que ya salió.
+                                    </span>
+                                </p>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border/40 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingSent(null)}
+                                    disabled={savingSent}
+                                    className="h-10 px-4 rounded-lg text-sm font-bold text-foreground bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 transition-colors disabled:opacity-40"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={saveSentEdit}
+                                    disabled={savingSent || !editingSent.content.trim()}
+                                    className="h-10 px-5 inline-flex items-center gap-2 rounded-lg text-sm font-bold text-primary-foreground bg-primary hover:opacity-90 transition-opacity disabled:opacity-50"
+                                >
+                                    {savingSent ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                                    Guardar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Panel lateral con la información del contacto */}
                 {selectedConversation && (
                     <Sheet open={showContactPanel} onOpenChange={(open) => { setShowContactPanel(open); if (!open) setEditingContact(false); }}>
@@ -7286,7 +7345,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                             <div className="flex flex-col h-full overflow-y-auto">
                                 {/* Encabezado del panel */}
                                 <div className="flex flex-col items-center text-center gap-2.5 px-6 pt-6 pb-4 bg-gradient-to-b from-primary/10 to-transparent border-b border-border/40">
-                                    <div className="size-16 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-xl uppercase shadow-md">
+                                    <div className="size-20 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-2xl uppercase shadow-md">
                                         {selectedConversation.initials}
                                     </div>
                                     <div className="min-w-0 w-full">
