@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\Contact;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -199,6 +200,69 @@ class BandejaDeInstagramTest extends TestCase
         $this->enviar($this->evento(['text' => '¿Sigue ahí?'], 'mid-2'))->assertOk();
 
         $this->assertSame('open', WhatsAppConversation::where('instance_id', $linea->id)->firstOrFail()->status);
+    }
+
+    /**
+     * Quien escribe por Instagram entra en Contactos.
+     *
+     * No entraba. `registrarContacto()` usaba `Contact::` sin importar la
+     * clase, así que PHP la buscaba en `App\Services\Contact` y lanzaba «Class
+     * not found»; el `try/catch` que está ahí para que un contacto no tire el
+     * mensaje se lo tragaba, y el aviso del log no decía de qué clase era el
+     * error. Resultado: durante días los mensajes se guardaron bien y ningún
+     * cliente de Instagram llegó nunca a la agenda (visto el 22-sep-2026).
+     */
+    public function test_quien_escribe_por_instagram_queda_en_contactos(): void
+    {
+        $linea = $this->lineaDeInstagram();
+
+        $evento = $this->evento(['text' => 'Hola, ¿tienen disponible?']);
+        $evento['sender']['username'] = 'clienta.bonita';
+
+        $this->enviar($evento)->assertOk();
+
+        $contacto = Contact::where('company_id', $linea->company_id)->first();
+
+        $this->assertNotNull($contacto, 'El cliente de Instagram no llegó a Contactos.');
+        $this->assertSame('clienta.bonita', $contacto->username);
+
+        // Y sin teléfono: inventarse uno con el id de Instagram acabaría
+        // mandando mensajes a un número que no existe.
+        $this->assertNull($contacto->phone_number);
+
+        $this->assertSame(
+            $contacto->id,
+            WhatsAppConversation::where('instance_id', $linea->id)->first()->contact_id
+        );
+    }
+
+    /** Sin usuario de Instagram se guarda igual, con un nombre que se entiende. */
+    public function test_sin_usuario_el_contacto_se_crea_con_un_nombre_legible(): void
+    {
+        $linea = $this->lineaDeInstagram();
+
+        $this->enviar($this->evento(['text' => 'Buenas']))->assertOk();
+
+        $contacto = Contact::where('company_id', $linea->company_id)->first();
+
+        $this->assertNotNull($contacto);
+        $this->assertStringStartsWith('Instagram · ', $contacto->name);
+    }
+
+    /** El mismo cliente escribiendo dos veces no se duplica en la agenda. */
+    public function test_el_mismo_cliente_no_se_duplica_en_contactos(): void
+    {
+        $linea = $this->lineaDeInstagram();
+
+        $primero = $this->evento(['text' => 'Hola'], 'mid-a');
+        $primero['sender']['username'] = 'clienta.bonita';
+        $this->enviar($primero)->assertOk();
+
+        $segundo = $this->evento(['text' => '¿Me confirmas?'], 'mid-b');
+        $segundo['sender']['username'] = 'clienta.bonita';
+        $this->enviar($segundo)->assertOk();
+
+        $this->assertSame(1, Contact::where('company_id', $linea->company_id)->count());
     }
 
     private function evento(array $mensaje, string $mid = 'mid-1'): array

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\ConversationEvent;
 use App\Events\WhatsAppMessageEvent;
+use App\Models\Contact;
 use App\Models\Instance;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -220,8 +221,15 @@ class BandejaDeInstagram
 
             $conversacion->update(['contact_id' => $contacto->id]);
         } catch (\Throwable $e) {
+            // El `catch` está para que un contacto que no se puede crear no tire
+            // el mensaje, que es lo que importa. Pero se tragó durante días un
+            // `use` que faltaba —«Class App\Services\Contact not found»— y
+            // ningún cliente de Instagram llegó nunca a Contactos. Por eso va
+            // la clase de la excepción: un error de programación y uno de datos
+            // no se leen igual.
             Log::channel('instagram')->warning('⚠️ No se pudo registrar el contacto de Instagram', [
                 'cuenta' => $linea->external_account_id,
+                'excepcion' => $e::class,
                 'error' => $e->getMessage(),
             ]);
         }
