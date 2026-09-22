@@ -371,11 +371,13 @@ function DiagnosticoDeRed({ conversationId, contratoNro, conInforme }) {
     const [estado, setEstado] = useState('inicial');   // inicial | cargando | listo | error
     const [resultado, setResultado] = useState(null);
     const [error, setError] = useState(null);
+    const [sinPermiso, setSinPermiso] = useState(false);
     const [copiado, setCopiado] = useState(false);
 
     async function diagnosticar() {
         setEstado('cargando');
         setError(null);
+        setSinPermiso(false);
         try {
             const { data } = await axios.get('/api/integrations/integra/diagnostico', {
                 params: { conversation_id: conversationId, contrato: contratoNro },
@@ -386,6 +388,7 @@ function DiagnosticoDeRed({ conversationId, contratoNro, conInforme }) {
             setResultado(data.diagnostico ?? null);
             setEstado('listo');
         } catch (err) {
+            setSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
             setError(
                 err?.code === 'ECONNABORTED'
                     ? 'Integra tardó demasiado en contestar. Vuelve a intentarlo.'
@@ -433,10 +436,30 @@ function DiagnosticoDeRed({ conversationId, contratoNro, conInforme }) {
             )}
 
             {estado === 'error' && (
-                <p className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-destructive">
-                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                    {error}
-                </p>
+                sinPermiso ? (
+                    <div className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2">
+                        <p className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-foreground">
+                            <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+                            <span>{error}</span>
+                        </p>
+                        {/* Enlace normal y no un <Link> de Inertia: esto vive
+                            dentro del chat, y navegar dejaría al asesor sin la
+                            conversación que estaba atendiendo. */}
+                        <a
+                            href="/integrations"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1.5 inline-flex items-center gap-1 pl-5 text-[11px] font-bold text-accent-foreground hover:underline"
+                        >
+                            Abrir Integraciones <ExternalLink className="size-2.5" />
+                        </a>
+                    </div>
+                ) : (
+                    <p className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-destructive">
+                        <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                        {error}
+                    </p>
+                )
             )}
 
             {estado === 'listo' && resultado && (

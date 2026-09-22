@@ -136,6 +136,33 @@ class DiagnosticoDeRedTest extends TestCase
             ->assertJsonPath('diagnostico.veredicto.confianza', 'media');
     }
 
+    /**
+     * El 403 de Integra dice «El token no tiene permiso para esta operación»,
+     * que delante de un cliente que espera no sirve de nada: ni dice qué
+     * permiso, ni que hay que pedirlo aparte, ni que se arregla reconectando.
+     * Es el caso que se vio en producción con la primera empresa que instaló la
+     * extensión, porque `contratos.diagnostico` no estaba entre los scopes que
+     * pedía el asistente de conexión.
+     */
+    public function test_el_permiso_que_falta_se_dice_con_su_nombre_y_su_arreglo(): void
+    {
+        $this->conectarIntegra();
+        $this->encenderExtension();
+        // El resto del ERP sigue respondiendo: el token lee contratos
+        // perfectamente, que es lo que hace este fallo tan desconcertante.
+        $this->fakeIntegra(estado: 403);
+
+        $respuesta = $this->actingAs($this->asesor)
+            ->getJson($this->url('10432'))
+            ->assertStatus(422)
+            ->assertJsonPath('motivo', 'sin_permiso');
+
+        $mensaje = $respuesta->json('message');
+
+        $this->assertStringContainsString('contratos.diagnostico', $mensaje);
+        $this->assertStringContainsString('Reconecta', $mensaje);
+    }
+
     public function test_no_se_diagnostica_un_contrato_de_otro_cliente(): void
     {
         $this->conectarIntegra();
@@ -331,8 +358,26 @@ class DiagnosticoDeRedTest extends TestCase
      * El ERP: el contacto con su contrato (que es lo que acota qué se puede
      * diagnosticar) y el diagnóstico.
      */
-    private function fakeIntegra(array $diagnostico = []): void
+    private function fakeIntegra(array $diagnostico = [], int $estado = 200): void
     {
+        // El 403 se arma aquí y no con un segundo `Http::fake()` en el test:
+        // los stubs se encadenan y gana el primero que registre la clase, así
+        // que el de abajo se quedaría con la llamada igualmente.
+        $respuestaDiagnostico = $estado === 200
+            ? Http::response(['success' => true, 'data' => array_merge([
+                'veredicto' => [
+                    'codigo' => 'nodo_incomunicado',
+                    'visita' => true,
+                    'responsable' => 'redes',
+                    'confianza' => 'alta',
+                ],
+                'whatsapp' => 'Hay una afectación en el nodo de tu sector.',
+            ], $diagnostico)])
+            : Http::response([
+                'success' => false,
+                'message' => 'El token no tiene permiso para esta operación.',
+            ], $estado);
+
         Http::fake([
             '*/api/v1/contactos/buscar*' => Http::response(['success' => true, 'data' => [[
                 'id' => 4012,
@@ -357,15 +402,7 @@ class DiagnosticoDeRedTest extends TestCase
                 'facturacion' => [], 'servicio' => [], 'soportes' => [],
             ]]),
 
-            '*/api/v1/contratos/*/diagnostico*' => Http::response(['success' => true, 'data' => array_merge([
-                'veredicto' => [
-                    'codigo' => 'nodo_incomunicado',
-                    'visita' => true,
-                    'responsable' => 'redes',
-                    'confianza' => 'alta',
-                ],
-                'whatsapp' => 'Hay una afectación en el nodo de tu sector.',
-            ], $diagnostico)]),
+            '*/api/v1/contratos/*/diagnostico*' => $respuestaDiagnostico,
         ]);
     }
 }

@@ -631,7 +631,22 @@ class IntegrationController extends Controller
                 ], 403);
             }
 
-            $diagnostico = $client->contractDiagnostic((string) $data['contrato']);
+            try {
+                $diagnostico = $client->contractDiagnostic((string) $data['contrato']);
+            } catch (\RuntimeException $e) {
+                // El permiso que falta se marca aparte del resto de fallos: el
+                // panel lo pinta como un aviso con salida a Integraciones y no
+                // como un error rojo, porque no es que algo se haya roto — es
+                // que falta un paso, y hay uno concreto que darlo.
+                if ($e->getCode() === 403) {
+                    return response()->json([
+                        'message' => $e->getMessage(),
+                        'motivo' => 'sin_permiso',
+                    ], 422);
+                }
+
+                throw $e;
+            }
 
             // null es el 404 de Integra: el contrato no existe para el ERP. No
             // es lo mismo que un router que no contesta —eso vuelve con 200 y

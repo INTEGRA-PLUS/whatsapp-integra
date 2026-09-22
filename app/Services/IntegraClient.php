@@ -123,11 +123,28 @@ class IntegraClient
 
     public const ABILITY_AJUSTES_ESCRIBIR = 'whatsapp.ajustes.escribir';
 
+    /**
+     * Diagnosticar la red del contrato (extensión «Diagnóstico de internet»).
+     *
+     * Va en los opcionales por lo mismo que los de arriba —es nuevo en Integra
+     * y no todos los entornos lo conocen—, pero sobre todo tiene que estar
+     * AQUÍ: mientras no se pidió, todo token emitido por el asistente salía sin
+     * él, y la extensión se instalaba con la integración en verde para morir
+     * después en un 403 delante de un cliente que estaba esperando. Es el mismo
+     * agujero que dejó en su día a las empresas sin `contratos.leer`.
+     *
+     * Ojo: esto sólo arregla las conexiones NUEVAS. Un token ya emitido no gana
+     * permisos solo — hay que reconectar, y eso es lo que dice el mensaje del
+     * 403 en el panel del chat.
+     */
+    public const ABILITY_DIAGNOSTICO = 'contratos.diagnostico';
+
     public const ABILITIES_OPTIONAL = [
         self::ABILITY_EMIT,
         self::ABILITY_INSTANCIAS,
         self::ABILITY_AJUSTES_LEER,
         self::ABILITY_AJUSTES_ESCRIBIR,
+        self::ABILITY_DIAGNOSTICO,
     ];
 
     protected string $baseUrl;
@@ -826,6 +843,21 @@ class IntegraClient
             if ($e->getCode() === 404) {
                 return null;
             }
+
+            // El 403 de Integra dice «El token no tiene permiso para esta
+            // operación», que delante de un cliente que espera no sirve de
+            // nada: ni dice qué permiso, ni que hay que pedirlo aparte, ni que
+            // se arregla reconectando. Se reescribe aquí, que es el único sitio
+            // que sabe qué se estaba pidiendo.
+            if ($e->getCode() === 403) {
+                throw new \RuntimeException(
+                    'A tu token de Integra le falta el permiso «'.self::ABILITY_DIAGNOSTICO.'», que no '
+                    .'viene con los demás. Reconecta Integra desde Integraciones con tu usuario y '
+                    .'contraseña: el token nuevo ya sale con él.',
+                    403
+                );
+            }
+
             throw $e;
         }
 

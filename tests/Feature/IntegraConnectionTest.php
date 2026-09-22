@@ -121,6 +121,13 @@ class IntegraConnectionTest extends TestCase
         // Los dos que faltaban en producción, por si alguien recorta la lista.
         $this->assertContains('contratos.leer', IntegraClient::ABILITIES);
         $this->assertContains('radicados.crear', IntegraClient::ABILITIES);
+
+        // Y el del diagnóstico de red, que se pidió tarde y por eso la
+        // extensión se instalaba con la integración en verde para morir después
+        // en un 403 delante de un cliente. Va en los opcionales porque no todos
+        // los entornos Integra lo conocen todavía.
+        $this->assertContains(IntegraClient::ABILITY_DIAGNOSTICO, IntegraClient::ABILITIES_OPTIONAL);
+        $this->assertContains(IntegraClient::ABILITY_DIAGNOSTICO, $esperados);
     }
 
     /**

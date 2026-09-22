@@ -7279,8 +7279,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                         <SheetContent side="right" className="w-full sm:max-w-md p-0 gap-0">
                             <div className="flex flex-col h-full overflow-y-auto">
                                 {/* Encabezado del panel */}
-                                <div className="flex flex-col items-center text-center gap-3 px-6 pt-10 pb-6 bg-gradient-to-b from-primary/10 to-transparent border-b border-border/40">
-                                    <div className="size-20 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-2xl uppercase shadow-md">
+                                <div className="flex flex-col items-center text-center gap-2.5 px-6 pt-6 pb-4 bg-gradient-to-b from-primary/10 to-transparent border-b border-border/40">
+                                    <div className="size-16 rounded-full bg-gradient-to-br from-primary to-success flex items-center justify-center text-primary-foreground font-bold text-xl uppercase shadow-md">
                                         {selectedConversation.initials}
                                     </div>
                                     <div className="min-w-0 w-full">
@@ -7312,7 +7312,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
                                 {editingContact ? (
                                     /* ----- Modo edición ----- */
-                                    <div className="flex flex-col gap-4 px-6 py-6">
+                                    <div className="flex flex-col gap-4 px-6 py-5">
                                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Editar contacto</p>
 
                                         <div className="grid grid-cols-2 gap-3">
@@ -7428,9 +7428,9 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                 ) : (
                                     <>
                                         {/* ----- Modo lectura ----- */}
-                                        <div className="flex flex-col gap-5 px-6 py-6">
+                                        <div className="flex flex-col gap-4 px-6 py-5">
                                             {/* Datos de contacto */}
-                                            <div className="space-y-3">
+                                            <div className="space-y-2.5">
                                                 <div className="flex items-center justify-between">
                                                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Datos de contacto</p>
                                                     <button
@@ -7481,7 +7481,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             </div>
 
                                             {/* Agente asignado */}
-                                            <div className="space-y-3">
+                                            <div className="space-y-2.5">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Agente asignado</p>
                                                 <div className="flex items-center gap-3 text-sm">
                                                     <User className="size-4 text-muted-foreground shrink-0" />
@@ -7494,7 +7494,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             </div>
 
                                             {/* Etiquetas */}
-                                            <div className="space-y-3">
+                                            <div className="space-y-2.5">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Etiquetas</p>
                                                 {selectedConversation.tags?.length ? (
                                                     <div className="flex flex-wrap gap-1.5">
@@ -7527,7 +7527,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 conectado» le plantea una pregunta que no sabe responder.
                                                 Ver App\Support\UsaIntegra. */}
                                             {usa_integra && (
-                                                <div className="border-t border-border/40 pt-5">
+                                                <div className="border-t border-border/40 pt-4">
                                                     <FichaIntegra conversationId={selectedConversation.id} diagnostico={diagnostico_red} />
                                                 </div>
                                             )}
