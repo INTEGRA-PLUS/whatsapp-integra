@@ -52,6 +52,7 @@ class InstanceController extends Controller
             // de Meta, así que no se pinta. Mismo criterio que el del registro
             // insertado de WhatsApp.
             'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
+            'messengerDisponible' => app(\App\Services\MessengerLoginService::class)->estaConfigurado(),
         ]);
     }
 

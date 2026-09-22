@@ -109,6 +109,20 @@ return [
             // moverla para tocar Instagram es un riesgo que no hace falta.
             'api_version' => env('META_IG_API_VERSION', 'v23.0'),
         ],
+        // Messenger. Va sobre la app de Facebook de siempre (META_APP_ID) y su
+        // clave, así que no añade credenciales nuevas: lo único suyo es la
+        // configuración del diálogo de Facebook Login para empresas.
+        'messenger' => [
+            // El identificador de la configuración de «Inicio de sesión con
+            // Facebook para empresas». Sin él se cae al login clásico pidiendo
+            // los permisos sueltos: funciona, pero el cliente no ve el selector
+            // de páginas de Meta.
+            'config_id' => env('META_FB_LOGIN_CONFIG_ID'),
+            // Aparte de `api_version` por lo mismo que las demás: esa la usan
+            // los envíos de WhatsApp de los once clientes en producción.
+            'api_version' => env('META_MESSENGER_API_VERSION', 'v23.0'),
+            'verify_token' => env('META_MESSENGER_WEBHOOK_VERIFY_TOKEN') ?: env('META_WEBHOOK_VERIFY_TOKEN'),
+        ],
         'api_version' => env('META_API_VERSION', 'v21.0'),
         // La coexistencia (`smb_app_data`, `is_on_biz_app`) no existe en la v21
         // con la que envían los 11 clientes en producción. Va aparte por lo

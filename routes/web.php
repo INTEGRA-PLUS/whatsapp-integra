@@ -19,6 +19,8 @@ use App\Http\Controllers\ExtensionController;
 use App\Http\Controllers\InstagramConexionController;
 use App\Http\Controllers\InstagramPrivacidadController;
 use App\Http\Controllers\InstagramWebhookController;
+use App\Http\Controllers\MessengerConexionController;
+use App\Http\Controllers\MessengerWebhookController;
 use App\Http\Controllers\FlujoIaController;
 use App\Http\Controllers\ModoDeAtencionController;
 use App\Http\Controllers\InstanceController;
@@ -69,11 +71,19 @@ Route::post('pagos/onepay', \App\Http\Controllers\OnePayWebhookController::class
 Route::get('/webhooks/instagram', [InstagramWebhookController::class, 'verificar']);
 Route::post('/webhooks/instagram', [InstagramWebhookController::class, 'recibir']);
 
+// El tópico `page`, en su propia URL: Meta admite un callback por tópico.
+Route::get('/webhooks/messenger', [MessengerWebhookController::class, 'verificar']);
+Route::post('/webhooks/messenger', [MessengerWebhookController::class, 'recibir']);
+
 // Las tres URL que Meta exige registrar en Business Login. El revisor del App
 // Review las visita: si alguna no contesta 200, la solicitud se rechaza antes
 // de mirar el screencast.
 Route::get('/instagram/callback', [InstagramConexionController::class, 'callback'])
     ->name('instagram.callback');
+// Pública porque Facebook redirige aquí sin cabeceras nuestras, y porque es una
+// de las URL que visita el revisor del App Review.
+Route::get('/messenger/callback', [MessengerConexionController::class, 'callback'])
+    ->name('messenger.callback');
 Route::match(['get', 'post'], '/instagram/desautorizar', [InstagramPrivacidadController::class, 'desautorizar']);
 Route::match(['get', 'post'], '/instagram/eliminar-datos', [InstagramPrivacidadController::class, 'eliminarDatos']);
 Route::get('/instagram/eliminar-datos/{codigo}', [InstagramPrivacidadController::class, 'estadoDeBorrado'])
@@ -302,6 +312,16 @@ Route::middleware('auth')->group(function () {
     // callback lo recoge de la sesión, no de la URL.
     Route::get('/instancias/conectar-instagram', [InstagramConexionController::class, 'conectar'])
         ->middleware('permission:instances.create')->name('instagram.conectar');
+
+    Route::get('/instancias/conectar-messenger', [MessengerConexionController::class, 'conectar'])
+        ->middleware('permission:instances.create')->name('messenger.conectar');
+    // La elección de página va aparte del callback: el cliente puede recargar
+    // esa pantalla o volver a ella, y repetir el callback exigiría otro código
+    // de autorización que ya se gastó.
+    Route::get('/instancias/messenger/elegir', [MessengerConexionController::class, 'elegir'])
+        ->middleware('permission:instances.create')->name('messenger.elegir');
+    Route::post('/instancias/messenger/elegir', [MessengerConexionController::class, 'guardar'])
+        ->middleware('permission:instances.create')->name('messenger.guardar');
 
     // La guía de conexión por coexistencia, dentro del producto. Va antes que
     // /instances/{instance} para que "guia-coexistencia" no se tome por un id.

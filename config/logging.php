@@ -138,6 +138,17 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Aparte del de Instagram aunque los dos canales se parezcan: cuando no
+        // entran mensajes de uno, lo primero que se hace es abrir su log, y
+        // mezclarlos obliga a filtrar antes de poder leer nada.
+        'messenger' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/messenger.log'),
+            'level' => 'debug',
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'whatsapp' => [
             'driver' => 'daily',
             'path' => storage_path('logs/whatsapp.log'),

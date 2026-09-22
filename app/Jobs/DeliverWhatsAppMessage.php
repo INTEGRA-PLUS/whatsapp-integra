@@ -56,12 +56,12 @@ class DeliverWhatsAppMessage implements ShouldQueue
         $to = $conversation->recipientId();
         $phoneNumberId = $instance->phone_number_id;
 
-        // Instagram sale por otro sitio: otro host, otro token y sin número de
-        // por medio. Se corta aquí y no dentro del `match` de abajo porque casi
-        // nada de lo que sigue —plantillas, guardas de parámetros, multimedia—
-        // existe en ese canal.
-        if ($instance->esInstagram()) {
-            $this->entregarPorInstagram($message, $instance, $conversation, $to);
+        // Instagram y Messenger salen por otro sitio: otro host, otro token y
+        // sin número de por medio. Se cortan aquí y no dentro del `match` de
+        // abajo porque casi nada de lo que sigue —plantillas, guardas de
+        // parámetros, multimedia— existe en esos canales.
+        if ($instance->esInstagram() || $instance->esMessenger()) {
+            $this->entregarPorMeta($message, $instance, $conversation, $to);
 
             return;
         }
@@ -191,37 +191,40 @@ class DeliverWhatsAppMessage implements ShouldQueue
     }
 
     /**
-     * La entrega por Instagram Direct.
+     * La entrega por Instagram Direct o por Messenger.
      *
      * Sólo texto de momento, y se dice claramente en vez de fallar con un error
-     * de Meta que no explica nada: los adjuntos por este canal necesitan subir
-     * el archivo antes y eso todavía no está hecho.
+     * de Meta que no explica nada: los adjuntos por estos canales necesitan
+     * subir el archivo antes y eso todavía no está hecho.
      *
      * Al terminar comparte el mismo final que WhatsApp —guardar el identificador,
      * marcar enviado y emitir en tiempo real— porque para la bandeja un mensaje
      * es un mensaje.
      */
-    private function entregarPorInstagram(
+    private function entregarPorMeta(
         WhatsAppMessage $message,
         \App\Models\Instance $instance,
         \App\Models\WhatsAppConversation $conversation,
         string $to,
     ): void {
+        $canal = $instance->nombreDelCanal();
+
         if ($message->type !== 'text') {
-            $this->markFailed($message, "Por Instagram todavía solo se puede enviar texto, no {$message->type}.");
+            $this->markFailed($message, "Por {$canal} todavía solo se puede enviar texto, no {$message->type}.");
 
             return;
         }
 
-        // Sin el prefijo con el nombre del agente que sí lleva WhatsApp: en
-        // Instagram Direct el asesor escribe desde la cuenta de la empresa y
-        // repetir ahí un "*Nombre:*" en negrita se ve como spam.
-        $result = app(\App\Services\InstagramMensajeriaService::class)
-            ->enviarTexto($instance, $to, $message->content ?? '');
+        // Sin el prefijo con el nombre del agente que sí lleva WhatsApp: aquí
+        // el asesor escribe desde la cuenta de la empresa y repetir un
+        // "*Nombre:*" en negrita se ve como spam.
+        $result = $instance->esMessenger()
+            ? app(\App\Services\MessengerMensajeriaService::class)->enviarTexto($instance, $to, $message->content ?? '')
+            : app(\App\Services\InstagramMensajeriaService::class)->enviarTexto($instance, $to, $message->content ?? '');
 
         if (! ($result['success'] ?? false)) {
             $error = $result['error']['error']['message']
-                ?? (is_string($result['error'] ?? null) ? $result['error'] : 'Error al enviar por Instagram');
+                ?? (is_string($result['error'] ?? null) ? $result['error'] : "Error al enviar por {$canal}");
 
             $this->markFailed($message, $error, $result['error']['error']['code'] ?? null);
 

@@ -6,10 +6,11 @@ import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, C
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
+import ConectarMessengerButton from '@/components/ConectarMessengerButton';
 import { LogoCanal, EtiquetaCanal } from '@/components/logo-canal';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false }) {
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
     // El token recién creado. Vive sólo en memoria y sólo hasta cerrar el aviso:
@@ -133,6 +134,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                     <div className="flex items-center gap-2">
                         <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
                         <ConectarInstagramButton disponible={instagramDisponible} />
+                        <ConectarMessengerButton disponible={messengerDisponible} />
                         <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nueva Instancia
                         </Button>

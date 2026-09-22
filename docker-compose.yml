@@ -90,6 +90,12 @@ x-app-env: &app-env
   # demás, porque el validador de firmas prueba todas las entradas.
   META_IG_APP_ID: ${META_IG_APP_ID:-}
   META_IG_WEBHOOK_VERIFY_TOKEN: ${META_IG_WEBHOOK_VERIFY_TOKEN:-}
+  # Messenger. Va sobre META_APP_ID y su clave, así que aquí sólo viaja la
+  # configuración del diálogo. Declararlas es obligatorio aunque estén vacías:
+  # el contenedor no lee el .env del host, y una variable que no esté en este
+  # bloque simplemente no existe dentro por mucho que esté en .env.docker.
+  META_FB_LOGIN_CONFIG_ID: ${META_FB_LOGIN_CONFIG_ID:-}
+  META_MESSENGER_WEBHOOK_VERIFY_TOKEN: ${META_MESSENGER_WEBHOOK_VERIFY_TOKEN:-}
   # Con default vacío la variable llega PUESTA pero vacía, y una cadena vacía
   # pisa el valor por defecto de config/services.php. El default va aquí, como
   # en META_API_VERSION dos líneas más abajo.
