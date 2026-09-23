@@ -21,7 +21,8 @@ class VerPlantillas extends Command
     protected $signature = 'whatsapp:plantillas
         {instancia : Id de la instancia}
         {--buscar= : Sólo las que contengan este texto en el nombre}
-        {--cuerpo : Enseña el texto completo de cada componente}';
+        {--cuerpo : Enseña el texto completo de cada componente}
+        {--detalle= : Pide a Meta UNA plantilla por su id y enseña lo que responde}';
 
     protected $description = 'Lista las plantillas que tiene una instancia en Meta';
 
@@ -38,6 +39,21 @@ class VerPlantillas extends Command
             $this->error('Esa instancia no existe o no tiene WABA y token.');
 
             return self::FAILURE;
+        }
+
+        // Pedir UNA plantilla por su id no es lo mismo que listarlas: el detalle
+        // pide campos que sólo existen en algunos estados, y Meta tumba la
+        // consulta entera si alguno no aplica. Esto enseña la respuesta cruda,
+        // que es la única forma de ver de qué campo se queja.
+        if ($id = $this->option('detalle')) {
+            $res = $this->meta->getTemplate((string) $id, $instance->access_token);
+
+            $this->newLine();
+            $this->line($res['success'] ? '<fg=green>Meta respondió:</>' : '<fg=red>Meta falló:</>');
+            $this->line(json_encode($res['success'] ? $res['data'] : $res['error'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            $this->newLine();
+
+            return $res['success'] ? self::SUCCESS : self::FAILURE;
         }
 
         $resultado = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [

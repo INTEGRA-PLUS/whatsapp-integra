@@ -1071,14 +1071,62 @@ class TemplateController extends Controller
 
         $result = $this->meta->getTemplate($templateId, $instance->access_token);
 
-        if (!$result['success']) {
-            return response()->json([
-                'message' => 'Error consultando la plantilla.',
-                'error' => $result['error'] ?? null,
-            ], 502);
+        if ($result['success']) {
+            return response()->json(['data' => $result['data']]);
         }
 
-        return response()->json(['data' => $result['data']]);
+        // Meta se queja de campos que sólo existen en algunos estados
+        // —`quality_score` y `rejected_reason` no están en una plantilla que
+        // todavía está en revisión— y tumba la consulta entera con un (#100).
+        // El resultado era que justo la plantilla que acabas de mandar a revisar
+        // es la única que no se puede previsualizar, que es cuando más falta
+        // hace: es la que quieres comprobar.
+        //
+        // El listado del WABA sí la trae, con sus componentes. Se busca ahí.
+        $delListado = $this->plantillaDelListado($instance, $templateId);
+
+        if ($delListado !== null) {
+            Log::info('Plantilla leída del listado: el detalle por id falló', [
+                'template_id' => $templateId,
+                'error' => $result['error'] ?? null,
+            ]);
+
+            return response()->json(['data' => $delListado]);
+        }
+
+        return response()->json([
+            'message' => 'Error consultando la plantilla.',
+            'error' => $result['error'] ?? null,
+        ], 502);
+    }
+
+    /**
+     * La plantilla, buscada en el listado del WABA.
+     *
+     * Es el plan B de `show()`. El listado pide menos campos —los que existen
+     * en cualquier estado— así que responde donde el detalle por id falla, y
+     * trae los `components`, que es lo único que la vista previa necesita.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function plantillaDelListado(Instance $instance, string $templateId): ?array
+    {
+        $listado = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+            'fields' => 'id,name,language,status,category,components',
+            'limit' => 500,
+        ]);
+
+        if (! ($listado['success'] ?? false)) {
+            return null;
+        }
+
+        foreach ($listado['data']['data'] ?? [] as $plantilla) {
+            if ((string) ($plantilla['id'] ?? '') === $templateId) {
+                return $plantilla;
+            }
+        }
+
+        return null;
     }
 
     /**
