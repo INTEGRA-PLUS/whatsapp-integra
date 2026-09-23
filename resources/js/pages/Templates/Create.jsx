@@ -560,7 +560,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
 
                 {/* Cuerpo: formulario + vista previa */}
                 <div className="flex-1 bg-muted/20">
-                    <div className="max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 px-6 py-6 pb-28">
+                    <div className="max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 px-6 py-6">
                         <div className="space-y-5">
                             {apiError && (
                                 <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -640,8 +640,12 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                     </div>
                 </div>
 
-                {/* Barra inferior estilo Meta */}
-                <div className="fixed bottom-0 left-0 right-0 z-30 border-t bg-card/95 backdrop-blur">
+                {/* La barra de abajo, pegada al pie del formulario y no a la
+                    ventana. Con `fixed left-0 right-0` se estiraba por debajo
+                    del menú lateral, así que «Cancelar» quedaba flotando sobre
+                    la navegación y parecía pertenecerle. `sticky` la mantiene
+                    a la vista igual, pero dentro del ancho del contenido. */}
+                <div className="sticky bottom-0 z-30 border-t bg-card/95 backdrop-blur">
                     <div className="max-w-6xl mx-auto w-full flex items-center justify-between gap-3 px-6 py-3">
                         <Link href={route('templates.index')}>
                             <Button type="button" variant="ghost" disabled={submitting}>Cancelar</Button>
