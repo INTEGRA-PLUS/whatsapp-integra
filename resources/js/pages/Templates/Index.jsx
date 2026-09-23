@@ -111,7 +111,7 @@ const LANG_LABELS = {
     fr: 'Francés', it: 'Italiano', de: 'Alemán',
 };
 
-export default function TemplatesIndex({ instances = [] }) {
+export default function TemplatesIndex({ instances = [], negocio = '' }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
@@ -476,6 +476,7 @@ export default function TemplatesIndex({ instances = [] }) {
                     templateId={detail.id}
                     templateName={detail.name}
                     instanceId={instanceId}
+                    negocio={negocio}
                     onClose={() => setDetail(null)}
                     onSelectSibling={(sibling) => setDetail({ id: sibling.id, name: sibling.name })}
                 />
@@ -680,9 +681,23 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                                 </span>
                             )}
                         </div>
-                        <h3 className="font-mono text-base font-semibold text-foreground truncate" title={family.name}>
-                            {family.name}
-                        </h3>
+                        {/* El nombre abre el detalle. Hasta ahora lo único que
+                            se podía pulsar era la pastilla del idioma —pequeña,
+                            y con el estado escrito dentro, que la hace parecer
+                            una etiqueta y no un botón—. Así que quien quería ver
+                            su plantilla hacía clic en el nombre, que es lo
+                            obvio, y no pasaba nada. */}
+                        <button
+                            type="button"
+                            onClick={() => onOpenDetail(family.variants[0])}
+                            title={`Ver ${family.name}`}
+                            className="group/nombre flex max-w-full items-center gap-1.5 text-left"
+                        >
+                            <h3 className="font-mono text-base font-semibold text-foreground truncate group-hover/nombre:underline" title={family.name}>
+                                {family.name}
+                            </h3>
+                            <Eye className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/nombre:opacity-100" />
+                        </button>
                     </div>
                 </div>
 
@@ -764,15 +779,18 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
     );
 }
 
-function TemplateDetailModal({ templateId, templateName, instanceId, onClose, onSelectSibling }) {
+function TemplateDetailModal({ templateId, templateName, instanceId, negocio, onClose, onSelectSibling }) {
     const [template, setTemplate] = useState(null);
     const [siblings, setSiblings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState('detail');
+    const [tab, setTab] = useState('preview');
 
+    // Se abre por la vista previa y no por la ficha de datos: quien entra aquí
+    // quiere ver cómo le va a llegar el mensaje al cliente. El id, la categoría
+    // y el estado están a una pestaña, y ya se ven en la tarjeta de fuera.
     useEffect(() => {
-        setTab('detail');
+        setTab('preview');
     }, [templateId]);
 
     useEffect(() => {
@@ -829,7 +847,9 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                     {!loading && template && tab === 'preview' && (
                         <WhatsAppPreview
                             model={templateToModel(template)}
-                            verifiedName={templateName}
+                            // El negocio, no el nombre técnico de la plantilla:
+                            // el cliente ve quién le escribe, no `facturacion`.
+                            verifiedName={negocio || 'Tu negocio'}
                             empty="Esta plantilla no tiene componentes para previsualizar."
                         />
                     )}

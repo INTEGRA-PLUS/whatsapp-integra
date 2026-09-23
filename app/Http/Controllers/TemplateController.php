@@ -26,6 +26,10 @@ class TemplateController extends Controller
 
         return Inertia::render('Templates/Index', [
             'instances' => $instances,
+            // Para que la vista previa se encabece con el nombre del negocio y
+            // no con el nombre técnico de la plantilla: el cliente ve quién le
+            // escribe, no «facturacion».
+            'negocio' => $user->company?->name,
         ]);
     }
 
