@@ -27,6 +27,14 @@ use Illuminate\Support\Facades\Notification;
  */
 class CheckInstanceHealth extends Command
 {
+    /** Cómo se llama en castellano cada entidad de las que responde Meta. */
+    private const QUIEN = [
+        'WABA' => 'La cuenta de WhatsApp',
+        'BUSINESS' => 'El portafolio del negocio',
+        'APP' => 'La app de Meta',
+        'PHONE_NUMBER' => 'El número',
+    ];
+
     protected $signature = 'whatsapp:health-check
         {--instance= : Revisa solo esta instancia (id)}
         {--quiet-notifications : No notifica; sólo actualiza el estado}';
@@ -54,6 +62,7 @@ class CheckInstanceHealth extends Command
 
         $caidas = 0;
         $recuperadas = 0;
+        $bloqueadas = 0;
 
         foreach ($instances as $instance) {
             $anterior = $instance->health_status;
@@ -66,6 +75,37 @@ class CheckInstanceHealth extends Command
             ]);
 
             $etiqueta = $instance->company->name ?? "instancia #{$instance->id}";
+
+            // Y la otra mitad de la pregunta: conectado no es lo mismo que
+            // poder enviar. Una cuenta sana a la que se le venció la tarjeta
+            // responde a todo y no entrega nada.
+            $antesPodia = $instance->puede_enviar;
+            $podra = $estado === 'ok' ? $this->puedeEnviar($instance) : null;
+
+            if ($podra !== null) {
+                $instance->update([
+                    'puede_enviar' => $podra['estado'],
+                    'puede_enviar_motivo' => $podra['motivo'],
+                    'puede_enviar_visto_at' => now(),
+                ]);
+
+                if ($podra['estado'] !== 'AVAILABLE') {
+                    $this->line("    <fg=yellow>envío {$podra['estado']}:</> ".$podra['motivo']);
+                }
+
+                // Sólo en el cambio: repetirlo a diario convierte el aviso en
+                // ruido, y el ruido es lo que hace que nadie mire.
+                //
+                // «Cambio» incluye la primera vez que se mira, no sólo pasar de
+                // disponible a bloqueado: una cuenta que ya estaba bloqueada
+                // antes de que existiera esta comprobación es justo la que hay
+                // que descubrir, y exigir un AVAILABLE previo la dejaría muda
+                // para siempre.
+                if ($podra['estado'] !== 'AVAILABLE' && $antesPodia !== $podra['estado']) {
+                    $bloqueadas++;
+                    $this->avisarDelBloqueo($instance, $podra['motivo']);
+                }
+            }
 
             if ($estado === 'unreachable') {
                 $this->line("  ✗ {$etiqueta}: {$error}");
@@ -91,7 +131,8 @@ class CheckInstanceHealth extends Command
         }
 
         $this->newLine();
-        $this->info("Revisadas: {$instances->count()} · Caídas nuevas: {$caidas} · Recuperadas: {$recuperadas}");
+        $this->info("Revisadas: {$instances->count()} · Caídas nuevas: {$caidas} · Recuperadas: {$recuperadas}"
+            ." · Bloqueadas para enviar: {$bloqueadas}");
 
         return self::SUCCESS;
     }
@@ -136,6 +177,103 @@ class CheckInstanceHealth extends Command
             ?? (is_string($res['error'] ?? null) ? $res['error'] : 'Meta no reconoce el número o el token.');
 
         return ['unreachable', mb_substr($motivo, 0, 240)];
+    }
+
+    /**
+     * ¿Meta deja enviar por esta cuenta?
+     *
+     * Pregunta por el WABA, el portafolio del negocio y la app a la vez. Se
+     * devuelve el primero que no esté disponible, porque es el que hay que
+     * arreglar; si son varios, el resto sale en el motivo.
+     *
+     * `null` cuando no se puede saber —una línea sin WABA, o Meta que no
+     * contesta—: eso no es un bloqueo y pintarlo como tal sería inventarse una
+     * alarma.
+     *
+     * @return array{estado: string, motivo: ?string}|null
+     */
+    private function puedeEnviar(Instance $instance): ?array
+    {
+        if ($instance->esInstagram() || ! $instance->waba_id || ! $instance->access_token) {
+            return null;
+        }
+
+        $res = $this->meta->healthStatus($instance->waba_id, $instance->access_token);
+
+        if (! ($res['success'] ?? false)) {
+            return null;
+        }
+
+        $salud = $res['data']['health_status'] ?? [];
+        $general = $salud['can_send_message'] ?? null;
+
+        if ($general === null) {
+            return null;
+        }
+
+        if ($general === 'AVAILABLE') {
+            return ['estado' => 'AVAILABLE', 'motivo' => null];
+        }
+
+        $motivos = [];
+
+        foreach ($salud['entities'] ?? [] as $entidad) {
+            if (($entidad['can_send_message'] ?? 'AVAILABLE') === 'AVAILABLE') {
+                continue;
+            }
+
+            $quien = self::QUIEN[$entidad['entity_type'] ?? ''] ?? ($entidad['entity_type'] ?? 'algo');
+            $detalle = collect($entidad['errors'] ?? [])
+                ->map(fn ($e) => $e['description'] ?? $e['error_description'] ?? $e['message'] ?? null)
+                ->filter()
+                ->implode('. ');
+
+            $motivos[] = trim($quien.($detalle !== '' ? ': '.$detalle : ''));
+        }
+
+        return [
+            'estado' => (string) $general,
+            'motivo' => $motivos === [] ? null : mb_substr(implode(' · ', $motivos), 0, 480),
+        ];
+    }
+
+    /**
+     * Avisa de que la cuenta dejó de poder enviar.
+     *
+     * Va a los admins de la empresa y no sólo al log por lo mismo que el aviso
+     * de caída: la información ya existía y nadie la miraba. Y se nombra al
+     * portafolio cuando es él quien falla, porque ahí el arreglo no está en el
+     * CRM: está en la facturación de Meta.
+     */
+    private function avisarDelBloqueo(Instance $instance, ?string $motivo): void
+    {
+        Log::channel('whatsapp')->error('🚫 La cuenta no puede enviar', [
+            'instance_id' => $instance->id,
+            'company' => $instance->company->name ?? null,
+            'waba_id' => $instance->waba_id,
+            'motivo' => $motivo,
+        ]);
+
+        if ($this->option('quiet-notifications')) {
+            return;
+        }
+
+        $admins = User::where('company_id', $instance->company_id)
+            ->where('role', 'admin')
+            ->where('active', true)
+            ->get();
+
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        Notification::send($admins, new SystemNotification(
+            'WhatsApp no está dejando enviar',
+            "Meta bloqueó el envío por «{$instance->name}» ({$instance->display_phone_number}). "
+                .($motivo ?: 'No dio un motivo.')
+                .' La causa más común es el medio de pago del portafolio: revísalo en el Administrador comercial de Meta.',
+            'Sistema'
+        ));
     }
 
     /**

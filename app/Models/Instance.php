@@ -25,6 +25,9 @@ class Instance extends Model
         'health_status',
         'health_checked_at',
         'health_error',
+        'puede_enviar',
+        'puede_enviar_motivo',
+        'puede_enviar_visto_at',
         'meta',
         'access_token',
         'token_expires_at',
@@ -57,6 +60,7 @@ class Instance extends Model
     protected $casts = [
         'active' => 'boolean',
         'health_checked_at' => 'datetime',
+        'puede_enviar_visto_at' => 'datetime',
         'api_token_created_at' => 'datetime',
         'api_token_last_used_at' => 'datetime',
         'api_last_seen_at' => 'datetime',

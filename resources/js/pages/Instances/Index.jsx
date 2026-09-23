@@ -184,10 +184,12 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                                         !instance.active ? 'bg-muted text-muted-foreground'
                                             : instance.health_status === 'unreachable' ? 'bg-destructive/10 text-destructive'
+                                            : instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE' ? 'bg-warning/15 text-warning'
                                             : 'bg-success/15 text-success'
                                     }`}>
                                         {!instance.active ? 'Inactiva'
                                             : instance.health_status === 'unreachable' ? 'Sin conexión'
+                                            : instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE' ? 'No envía'
                                             : 'Activa'}
                                     </span>
                                 </div>
@@ -199,6 +201,26 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                     instanceId={instance.id}
                                     initial={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
                                 />
+                                {/* Conectado no es lo mismo que poder enviar.
+                                    Una cuenta sana a la que se le venció la
+                                    tarjeta del portafolio responde a todo y no
+                                    entrega nada: el CRM no puede leer el medio
+                                    de pago —Meta se lo niega a quien no es BSP—
+                                    pero sí puede leer la consecuencia, y avisa
+                                    antes de que empiecen a rebotar las facturas. */}
+                                {instance.active && instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE' && (
+                                    <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                                        <p className="font-medium">Meta no está dejando enviar por esta cuenta.</p>
+                                        <p className="opacity-90 mt-0.5">
+                                            {instance.puede_enviar_motivo ?? 'Meta no dio un motivo.'}
+                                        </p>
+                                        <p className="opacity-90 mt-1">
+                                            La causa más común es el medio de pago del portafolio. Revísalo en el
+                                            Administrador comercial de Meta.
+                                        </p>
+                                    </div>
+                                )}
+
                                 {instance.active && instance.health_status === 'unreachable' && (
                                     <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                                         <p className="font-medium">Meta no responde por esta cuenta.</p>

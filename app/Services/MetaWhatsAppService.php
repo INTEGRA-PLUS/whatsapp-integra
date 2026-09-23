@@ -750,6 +750,24 @@ class MetaWhatsAppService
         ]);
     }
 
+    /**
+     * Si Meta deja enviar por esta cuenta, y qué entidad lo impide si no.
+     *
+     * Responde por tres cosas a la vez —la cuenta de WhatsApp, el portafolio
+     * del negocio y la app— y ahí está su valor: cuando lo que falla es el
+     * **portafolio**, casi siempre es la facturación, que es justo lo que no se
+     * puede consultar de otra forma. `primary_funding_id` responde «You do not
+     * have permission»: somos Tech Provider, no BSP, y el medio de pago vive en
+     * el portafolio del cliente.
+     *
+     * Así que no se lee la tarjeta: se lee la consecuencia, que además llega
+     * antes de que empiecen a rebotar las facturas.
+     */
+    public function healthStatus(string $wabaId, string $accessToken)
+    {
+        return $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'health_status']);
+    }
+
     public function getPhoneNumber(string $phoneNumberId, string $accessToken)
     {
         return $this->graphGet("/{$phoneNumberId}", $accessToken, [
