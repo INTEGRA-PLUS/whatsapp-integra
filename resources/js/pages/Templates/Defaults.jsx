@@ -30,7 +30,7 @@ const STATUS_STYLES = {
     REJECTED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
 };
 
-export default function TemplatesDefaults({ instances = [], catalog = {} }) {
+export default function TemplatesDefaults({ instances = [], catalog = {}, negocio = '' }) {
     const [instanceId, setInstanceId] = useState(instances[0]?.id ?? null);
     const [statuses, setStatuses] = useState({}); // { [key]: [{id, language, status}, ...] | null }
     const [syncing, setSyncing] = useState(null); // key en curso
@@ -165,7 +165,7 @@ export default function TemplatesDefaults({ instances = [], catalog = {} }) {
                             </div>
 
                             <div className="grid md:grid-cols-2 gap-4">
-                                <WhatsAppPreview model={templateToModel(entry)} verifiedName="Tu negocio" />
+                                <WhatsAppPreview model={templateToModel(entry)} verifiedName={negocio || 'Tu negocio'} />
 
                                 <div className="space-y-3">
                                     {entry.variable_hints && Object.keys(entry.variable_hints).length > 0 && (

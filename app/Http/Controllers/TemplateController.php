@@ -85,13 +85,20 @@ class TemplateController extends Controller
 
         return Inertia::render('Templates/Defaults', [
             'instances' => $instances,
-            'catalog'   => $this->defaultTemplatesCatalog(),
+            'catalog'   => $this->catalogoParaVerlo(),
+            // Para que la vista previa se encabece con el nombre de quien mira,
+            // y no con un «Tu negocio» genérico al lado de un ejemplo que dice
+            // otra empresa.
+            'negocio'   => $user->company?->name,
         ]);
     }
 
     public function defaults()
     {
-        return response()->json(['data' => $this->defaultTemplatesCatalog()]);
+        return response()->json([
+            'data' => $this->catalogoParaVerlo(),
+            'negocio' => auth()->user()->company?->name,
+        ]);
     }
 
     /**
@@ -190,6 +197,54 @@ class TemplateController extends Controller
 
         return collect(config('whatsapp_default_templates', []))
             ->reject(fn (array $entrada) => ($entrada['requiere_integra'] ?? false) && ! $conIntegra)
+            ->all();
+    }
+
+    /**
+     * El catálogo con el ejemplo del negocio cambiado por el de quien mira.
+     *
+     * `example.body_text` es lo que se le manda a **Meta** para que revise la
+     * plantilla, así que ahí tiene que haber un valor plausible y fijo: hoy es
+     * «MEGASTORE». El problema era que la vista previa lee ese mismo ejemplo,
+     * de modo que toda empresa que abría la pantalla leía un mensaje que
+     * saludaba a otra —y encima bajo un encabezado que decía «Tu negocio»—.
+     *
+     * Se cambia **sólo para mirar**. `syncDefault()` sigue leyendo el catálogo
+     * de verdad: cambiar el ejemplo que ve Meta empresa por empresa sería
+     * cambiar la plantilla que se crea.
+     */
+    protected function catalogoParaVerlo(): array
+    {
+        $negocio = auth()->user()->company?->name;
+
+        if (! $negocio) {
+            return $this->defaultTemplatesCatalog();
+        }
+
+        return collect($this->defaultTemplatesCatalog())
+            ->map(function (array $entrada) use ($negocio) {
+                $cual = (int) ($entrada['variable_negocio'] ?? 0);
+
+                if ($cual < 1) {
+                    return $entrada;
+                }
+
+                foreach ($entrada['components'] ?? [] as $i => $componente) {
+                    if (($componente['type'] ?? '') !== 'BODY') {
+                        continue;
+                    }
+
+                    // `body_text` es una lista de juegos de ejemplo; en la
+                    // práctica siempre trae uno.
+                    foreach ($componente['example']['body_text'] ?? [] as $j => $juego) {
+                        if (array_key_exists($cual - 1, $juego)) {
+                            $entrada['components'][$i]['example']['body_text'][$j][$cual - 1] = $negocio;
+                        }
+                    }
+                }
+
+                return $entrada;
+            })
             ->all();
     }
 
