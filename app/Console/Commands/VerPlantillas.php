@@ -57,7 +57,7 @@ class VerPlantillas extends Command
         }
 
         $resultado = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
-            'fields' => 'name,status,category,language,components',
+            'fields' => 'id,name,status,category,language,components',
             'limit' => 500,
         ]);
 
@@ -85,11 +85,14 @@ class VerPlantillas extends Command
 
         foreach ($plantillas as $t) {
             $this->line(sprintf(
-                '  <fg=cyan>%s</>  <fg=gray>%s · %s · %s</>',
+                '  <fg=cyan>%s</>  <fg=gray>%s · %s · %s · id %s</>',
                 $t['name'] ?? '?',
                 $t['status'] ?? '?',
                 $t['category'] ?? '?',
                 $t['language'] ?? '?',
+                // El id hace falta para `--detalle`, y para cotejar con el panel
+                // de Meta cuando dos plantillas se llaman igual en dos idiomas.
+                $t['id'] ?? '?',
             ));
 
             if (! $this->option('cuerpo')) {
