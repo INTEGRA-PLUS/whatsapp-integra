@@ -12,6 +12,7 @@ use App\Services\MetaWhatsAppService;
 use App\Support\IntegrationProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class WebhookEndpointController extends Controller
@@ -590,6 +591,14 @@ class WebhookEndpointController extends Controller
             ? 'Listo: el ERP enviará por esa línea a partir del próximo envío.'
             : 'Se quitó la elección: el ERP volverá a usar la primera línea activa.';
 
+        // La elección también se escribe en Integra. Guardarla sólo aquí servía
+        // mientras el ERP entrara con la credencial de una línea viva; si esa
+        // línea se apagaba, cada factura recibía un 401 y había que ir a pegar
+        // la credencial nueva a mano (Nac Technology, 23-sep-2026).
+        if ($instanceId !== null && ($sincronia = $this->sincronizarLineaEnIntegra($instanceId)) !== null) {
+            $aviso .= ' '.$sincronia;
+        }
+
         if ($request->expectsJson()) {
             return response()->json(['ok' => true, 'message' => $aviso]);
         }
@@ -610,6 +619,48 @@ class WebhookEndpointController extends Controller
      *
      * @param  list<string>  $faltan
      */
+    /**
+     * Deja en Integra la línea elegida como la que envía. Devuelve la frase que
+     * se suma al aviso, o null si no hay Integra conectado (no es un error: es
+     * una empresa que no lo usa).
+     */
+    private function sincronizarLineaEnIntegra(int $instanceId): ?string
+    {
+        $cliente = $this->clienteDeIntegra();
+        if (! $cliente) {
+            return null;
+        }
+
+        $linea = Instance::where('id', $instanceId)
+            ->where('company_id', auth()->user()->company_id)
+            ->first(['id', 'name', 'phone_number_id', 'waba_id', 'display_phone_number']);
+
+        $res = $cliente->usarLineaParaEnvios([
+            'phone_number_id' => $linea->phone_number_id,
+            'waba_id' => $linea->waba_id,
+            'nombre' => $linea->name,
+            'numero' => $linea->display_phone_number,
+        ]);
+
+        if ($res['ok']) {
+            return 'Integra ya quedó configurado para enviar por ella.';
+        }
+
+        Log::warning('Integra: no se pudo cambiar la línea de envío', [
+            'company_id' => auth()->user()->company_id,
+            'instance_id' => $instanceId,
+            'error' => $res['error'] ?? null,
+        ]);
+
+        return match (true) {
+            $res['sin_permiso'] ?? false => 'Pero no se pudo cambiar en Integra: tu conexión es anterior a esta función. '
+                .'Vuelve a conectarla en Integraciones.',
+            $res['sin_endpoint'] ?? false => 'Pero tu versión de Integra todavía no permite cambiarla desde aquí: '
+                .'actualízala o cambia la instancia activa allá.',
+            default => 'Pero no se pudo cambiar en Integra; revisa la conexión en Integraciones.',
+        };
+    }
+
     private function rechazarLinea(Request $request, string $motivo, array $faltan = [])
     {
         if ($request->expectsJson()) {

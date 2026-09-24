@@ -253,6 +253,86 @@ class LineaDelErpTest extends TestCase
     }
 
     /**
+     * Elegir la línea también la deja activa en Integra, por su API.
+     *
+     * Nac Technology, 23-sep-2026: el número se reconectó, la línea vieja quedó
+     * apagada aquí y el ERP seguía entrando con ella. Elegir la nueva sólo en el
+     * CRM no servía: cada factura llegaba con la credencial apagada y se
+     * rechazaba. Había que ir a pegar la credencial nueva a mano en Integra.
+     */
+    public function test_elegir_la_linea_la_cambia_tambien_en_integra(): void
+    {
+        [$empresa, , $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+        $this->conectarIntegra($empresa);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*waba-hoy/message_templates*' => \Illuminate\Support\Facades\Http::response(['data' => []], 200),
+            '*waba-nueva/message_templates*' => \Illuminate\Support\Facades\Http::response(['data' => []], 200),
+            '*/api/v1/whatsapp/linea-envio' => \Illuminate\Support\Facades\Http::response(
+                ['success' => true, 'data' => ['cambiada' => true, 'anterior' => 'pnid-vieja']], 200),
+            '*' => \Illuminate\Support\Facades\Http::response(['data' => []], 200),
+        ]);
+
+        $respuesta = $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id])
+            ->assertOk();
+
+        $this->assertStringContainsString('Integra ya quedó configurado', $respuesta->json('message'));
+        \Illuminate\Support\Facades\Http::assertSent(fn ($r) => str_contains($r->url(), '/api/v1/whatsapp/linea-envio')
+            && $r->method() === 'PUT'
+            && $r['phone_number_id'] === $segunda->phone_number_id
+            && $r['waba_id'] === 'waba-nueva');
+    }
+
+    /** Sin Integra conectado no hay a quién avisar, y no es un error. */
+    public function test_sin_integra_conectado_no_llama_a_nadie(): void
+    {
+        [$empresa, , $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+        $this->fingirCatalogos(enLaDeHoy: [], enLaNueva: []);
+
+        $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id])
+            ->assertOk();
+
+        \Illuminate\Support\Facades\Http::assertNotSent(fn ($r) => str_contains($r->url(), 'linea-envio'));
+        $this->assertSame($segunda->id, $empresa->fresh()->instanciaDelErp()->id);
+    }
+
+    /** Un Integra sin el endpoint no impide elegir aquí; se dice qué falta. */
+    public function test_si_integra_no_tiene_el_endpoint_se_avisa_y_se_guarda_igual(): void
+    {
+        [$empresa, , $segunda] = $this->empresaConDosLineas();
+        $usuario = $this->adminDe($empresa);
+        $this->conectarIntegra($empresa);
+
+        \Illuminate\Support\Facades\Http::fake([
+            '*/api/v1/whatsapp/linea-envio' => \Illuminate\Support\Facades\Http::response(['message' => 'Not Found'], 404),
+            '*' => \Illuminate\Support\Facades\Http::response(['data' => []], 200),
+        ]);
+
+        $respuesta = $this->actingAs($usuario)
+            ->postJson('/integrations/linea-erp', ['instance_id' => $segunda->id])
+            ->assertOk();
+
+        $this->assertStringContainsString('Integra', $respuesta->json('message'));
+        $this->assertStringNotContainsString('ya quedó configurado', $respuesta->json('message'));
+        $this->assertSame($segunda->id, $empresa->fresh()->instanciaDelErp()->id);
+    }
+
+    private function conectarIntegra(Company $empresa): void
+    {
+        \App\Models\CompanyIntegration::create([
+            'company_id' => $empresa->id,
+            'key' => \App\Models\CompanyIntegration::KEY_INVOICE_PAYMENTS,
+            'base_url' => 'https://miempresa.integra.test',
+            'access_token' => 'itg_'.Str::random(20),
+            'status' => 'connected',
+        ]);
+    }
+
+    /**
      * @param  array<int, array<string, string>>  $enLaDeHoy
      * @param  array<int, array<string, string>>  $enLaNueva
      */

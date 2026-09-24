@@ -1602,6 +1602,9 @@ function LineasDelErp({ showToast, canManage }) {
 
     const activas = lineasDelErp.filter(l => l.ultima_vez);
     const actual = lineasDelErp.find(l => l.es_la_del_erp);
+    // A qué línea mover la credencial apagada: la elegida o, si hay una sola
+    // activa, esa. Con varias y ninguna elegida, que decida quien administra.
+    const destinoDeLaCredencial = actual ?? (lineasDelErp.length === 1 ? lineasDelErp[0] : null);
 
     /**
      * El cambio se pide con axios, no con `router.post`.
@@ -1662,10 +1665,30 @@ function LineasDelErp({ showToast, canManage }) {
                             <> · <span className="font-mono">{credencialApagada.phone_number_id}</span></>
                         )}. Esa línea está apagada y cada factura o recibo que intente mandar se rechaza.
                     </p>
-                    <p className="mt-1.5 pl-5">
-                        Hay que cambiar la credencial en tu software administrativo por la de la línea activa:
-                        genera un token en Instancias y pégalo allí.
-                    </p>
+                    {/* Antes había que generar un token y pegarlo a mano en el ERP.
+                        Ahora el cambio se escribe en Integra por su API. */}
+                    {destinoDeLaCredencial ? (
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2 pl-5">
+                            <Button
+                                size="sm"
+                                disabled={!canManage || guardando !== null}
+                                onClick={() => elegir(destinoDeLaCredencial.id)}
+                                className="h-7 px-2.5 text-[11px]"
+                            >
+                                {guardando === destinoDeLaCredencial.id
+                                    ? <><Loader2 className="mr-1 size-3 animate-spin" /> Cambiando en Integra…</>
+                                    : `Usar ${destinoDeLaCredencial.nombre} para los envíos de Integra`}
+                            </Button>
+                            <span className="text-destructive/80">Se cambia en Integra al instante, sin copiar nada.</span>
+                        </div>
+                    ) : (
+                        <p className="mt-1.5 pl-5">
+                            Elige abajo con «Usar esta» la línea por la que debe enviar: se configura en Integra al instante.
+                        </p>
+                    )}
+                    {rechazo && destinoDeLaCredencial && rechazo.id === destinoDeLaCredencial.id && (
+                        <p className="mt-1.5 pl-5 font-semibold">{rechazo.motivo}</p>
+                    )}
                 </div>
             )}
 
