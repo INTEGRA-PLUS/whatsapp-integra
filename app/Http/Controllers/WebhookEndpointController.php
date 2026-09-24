@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\DeliverWebhook;
-use App\Models\WebhookEndpoint;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
+use App\Models\WebhookEndpoint;
+use App\Services\IntegraClient;
+use App\Services\MetaWhatsAppService;
 use App\Support\IntegrationProvider;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
 class WebhookEndpointController extends Controller
@@ -27,14 +30,55 @@ class WebhookEndpointController extends Controller
     public function index()
     {
         return Inertia::render('Integrations/Index', [
-            'webhooks'      => $this->companyWebhooks()->get(),
-            'eventCatalog'  => config('webhooks.events', []),
+            'webhooks' => $this->companyWebhooks()->get(),
+            'eventCatalog' => config('webhooks.events', []),
             // El catálogo de proveedores conectables. Viaja desde el backend
             // para que añadir uno nuevo no exija tocar también el frontend.
-            'providers'     => IntegrationProvider::forDisplay(),
-            'lineasDelErp'  => $this->lineasDelErp(),
-            'lineaElegida'  => auth()->user()->company->tieneLineaDelErpElegida(),
+            'providers' => IntegrationProvider::forDisplay(),
+            'lineasDelErp' => $this->lineasDelErp(),
+            'lineaElegida' => auth()->user()->company->tieneLineaDelErpElegida(),
+            'credencialApagada' => $this->credencialApagada(),
         ]);
+    }
+
+    /**
+     * La última línea por la que entró el ERP, si hoy está apagada.
+     *
+     * Elegir la línea aquí vale «aunque el software siga entrando con la
+     * credencial de siempre»… mientras esa credencial sea de una instancia
+     * activa. El API sólo acepta activas, así que si se apaga la instancia con
+     * la que el ERP se autentica, cada factura recibe un 401 y el panel seguía
+     * prometiendo que no había que tocar nada del otro lado.
+     *
+     * Pasó con Nac Technology el 23-sep-2026: al reconectar el número, Meta le
+     * dio un `phone_number_id` y un WABA nuevos, la instancia vieja quedó
+     * apagada doce segundos después de su último uso, y el ERP seguía
+     * configurado con el identificador viejo. La lista de líneas sólo enseña
+     * las activas, así que la credencial del ERP no aparecía en ninguna parte.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function credencialApagada(): ?array
+    {
+        $ultima = Instance::where('company_id', auth()->user()->company_id)
+            ->whereNotNull('api_last_seen_at')
+            ->orderByDesc('api_last_seen_at')
+            ->first(['id', 'name', 'active', 'phone_number_id', 'display_phone_number', 'api_last_seen_at', 'api_last_seen_via', 'updated_at']);
+
+        if (! $ultima || $ultima->active) {
+            return null;
+        }
+
+        return [
+            'nombre' => $ultima->name,
+            'numero' => $ultima->display_phone_number,
+            'phone_number_id' => $ultima->phone_number_id,
+            'ultima_vez' => $ultima->api_last_seen_at->toIso8601String(),
+            'credencial' => $ultima->api_last_seen_via,
+            // Aproximado: `updated_at` es el último cambio de la instancia, y
+            // apagarla suele ser el último. Basta para saber desde cuándo.
+            'apagada_desde' => $ultima->updated_at?->toIso8601String(),
+        ];
     }
 
     /**
@@ -159,7 +203,7 @@ class WebhookEndpointController extends Controller
             return null;
         }
 
-        $res = app(\App\Services\MetaWhatsAppService::class)
+        $res = app(MetaWhatsAppService::class)
             ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
 
         if (! ($res['success'] ?? false)) {
@@ -210,7 +254,7 @@ class WebhookEndpointController extends Controller
     }
 
     /** La conexión con Integra de esta empresa, si está conectada. */
-    private function clienteDeIntegra(): ?\App\Services\IntegraClient
+    private function clienteDeIntegra(): ?IntegraClient
     {
         $integracion = CompanyIntegration::where('company_id', auth()->user()->company_id)
             ->whereIn('key', IntegrationProvider::find(IntegrationProvider::INTEGRA)['legacy_keys'] ?? [])
@@ -233,7 +277,7 @@ class WebhookEndpointController extends Controller
      *
      * @return list<string>
      */
-    private function plantillasQueFaltan(\App\Models\Company $company, int $nuevaId): array
+    private function plantillasQueFaltan(Company $company, int $nuevaId): array
     {
         $actual = $company->instanciaDelErp();
         $nueva = Instance::find($nuevaId);
@@ -269,7 +313,7 @@ class WebhookEndpointController extends Controller
             return null;
         }
 
-        $res = app(\App\Services\MetaWhatsAppService::class)
+        $res = app(MetaWhatsAppService::class)
             ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
 
         if (! ($res['success'] ?? false)) {
@@ -489,11 +533,11 @@ class WebhookEndpointController extends Controller
 
         $webhook = WebhookEndpoint::create([
             'company_id' => $companyId,
-            'name'       => $validated['name'],
-            'url'        => $validated['url'],
-            'events'     => $validated['events'],
-            'headers'    => $validated['headers'] ?? null,
-            'active'     => $validated['active'] ?? true,
+            'name' => $validated['name'],
+            'url' => $validated['url'],
+            'events' => $validated['events'],
+            'headers' => $validated['headers'] ?? null,
+            'active' => $validated['active'] ?? true,
             'created_by' => auth()->id(),
         ]);
 
@@ -527,10 +571,10 @@ class WebhookEndpointController extends Controller
         $this->authorizeOwnership($webhook);
 
         DeliverWebhook::dispatch($webhook->id, 'webhook.test', [
-            'event'      => 'webhook.test',
+            'event' => 'webhook.test',
             'company_id' => $webhook->company_id,
-            'sent_at'    => now()->toIso8601String(),
-            'data'       => [
+            'sent_at' => now()->toIso8601String(),
+            'data' => [
                 'message' => 'Este es un evento de prueba desde tu plataforma WhatsApp.',
             ],
         ]);
@@ -591,8 +635,8 @@ class WebhookEndpointController extends Controller
                 'ok' => $response->successful(),
                 'status_code' => $code,
                 'says' => $response->successful()
-                    ? 'Tu servidor recibió el evento de prueba (HTTP ' . $code . ').'
-                    : 'Tu servidor respondió HTTP ' . $code . ' y no aceptó el evento.',
+                    ? 'Tu servidor recibió el evento de prueba (HTTP '.$code.').'
+                    : 'Tu servidor respondió HTTP '.$code.' y no aceptó el evento.',
                 'fix' => $response->successful() ? null : WebhookEndpoint::hintForStatus($code),
             ]);
         } catch (\Throwable $e) {
@@ -617,12 +661,12 @@ class WebhookEndpointController extends Controller
         $validEvents = array_keys(config('webhooks.events', []));
 
         return $request->validate([
-            'name'       => "$rule|string|max:100",
-            'url'        => "$rule|url|max:2048",
-            'events'     => "$rule|array|min:1",
-            'events.*'   => 'string|in:' . implode(',', $validEvents),
-            'headers'    => 'nullable|array',
-            'active'     => 'boolean',
+            'name' => "$rule|string|max:100",
+            'url' => "$rule|url|max:2048",
+            'events' => "$rule|array|min:1",
+            'events.*' => 'string|in:'.implode(',', $validEvents),
+            'headers' => 'nullable|array',
+            'active' => 'boolean',
         ]);
     }
 

@@ -1537,7 +1537,7 @@ function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar
  * un cliente (9-sep-2026).
  */
 function LineasDelErp({ showToast, canManage }) {
-    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
+    const { lineasDelErp = [], lineaElegida = false, credencialApagada = null } = usePage().props;
     const [guardando, setGuardando] = useState(null);
     // Qué línea se pidió cambiar y por qué no se pudo. Va por línea y no suelto
     // arriba: el motivo se lee al lado del botón que lo provocó.
@@ -1546,7 +1546,8 @@ function LineasDelErp({ showToast, canManage }) {
     // facturación de toda la empresa a otro número; no es un clic de ida.
     const [confirmando, setConfirmando] = useState(null);
 
-    if (lineasDelErp.length === 0) return null;
+    // Sin líneas activas pero con la credencial apagada es cuando más falta el aviso.
+    if (lineasDelErp.length === 0 && !credencialApagada) return null;
 
     const activas = lineasDelErp.filter(l => l.ultima_vez);
     const actual = lineasDelErp.find(l => l.es_la_del_erp);
@@ -1570,7 +1571,7 @@ function LineasDelErp({ showToast, canManage }) {
             setConfirmando(null);
             showToast?.(data.message ?? 'Listo: el ERP enviará por esa línea.');
             router.reload({
-                only: ['lineasDelErp', 'lineaElegida'],
+                only: ['lineasDelErp', 'lineaElegida', 'credencialApagada'],
                 preserveScroll: true,
                 preserveState: true,
             });
@@ -1591,6 +1592,32 @@ function LineasDelErp({ showToast, canManage }) {
             Icon={Plug}
             does="La línea por la que tu software administrativo manda facturas y recibos."
         >
+            {/* La credencial con la que entra el ERP es de una línea apagada.
+                El API sólo acepta activas, así que cada envío recibe un 401 y
+                elegir línea aquí no lo arregla: la petición no llega a
+                preguntar. Nac Technology, 23-sep-2026: reconectaron el número,
+                Meta le dio un phone_number_id nuevo y la instancia vieja se
+                apagó con el ERP todavía configurado con ella. */}
+            {credencialApagada && (
+                <div className="mb-3 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                    <p className="flex items-start gap-1.5 font-semibold">
+                        <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                        Tu software administrativo entra con la credencial de una línea apagada, así que no puede enviar.
+                    </p>
+                    <p className="mt-1.5 pl-5">
+                        La última vez que entró fue {formatearUltimaVez(credencialApagada.ultima_vez)}, por
+                        {' '}{credencialApagada.nombre}{credencialApagada.numero ? ` (${credencialApagada.numero})` : ''}
+                        {credencialApagada.phone_number_id && (
+                            <> · <span className="font-mono">{credencialApagada.phone_number_id}</span></>
+                        )}. Esa línea está apagada y cada factura o recibo que intente mandar se rechaza.
+                    </p>
+                    <p className="mt-1.5 pl-5">
+                        Hay que cambiar la credencial en tu software administrativo por la de la línea activa:
+                        genera un token en Instancias y pégalo allí.
+                    </p>
+                </div>
+            )}
+
             {lineasDelErp.length > 1 && !lineaElegida && (
                 <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="mt-px size-3.5 shrink-0" />
@@ -1737,11 +1764,15 @@ function LineasDelErp({ showToast, canManage }) {
                 pregunta, sí, pero enviaba con su credencial de siempre y salía
                 por la línea de siempre: la frase prometía algo que no pasaba. Lo
                 que lo cumple ahora es que el cambio se aplica de este lado. */}
-            <p className="mt-3 text-[11px] text-muted-foreground">
-                El cambio vale desde el siguiente envío y se aplica aquí, así que no hay que tocar
-                nada del otro lado aunque tu software administrativo siga entrando con la
-                credencial de siempre.
-            </p>
+            {/* Y la promesa sólo se hace cuando es verdad: con la credencial
+                apagada, sí hay que tocar el otro lado. */}
+            {!credencialApagada && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                    El cambio vale desde el siguiente envío y se aplica aquí, así que no hay que tocar
+                    nada del otro lado aunque tu software administrativo siga entrando con la
+                    credencial de siempre.
+                </p>
+            )}
 
             {/* Con qué credencial entra dice si ese cliente ya se puede migrar
                 al token de verdad: el phone_number_id no es un secreto, se

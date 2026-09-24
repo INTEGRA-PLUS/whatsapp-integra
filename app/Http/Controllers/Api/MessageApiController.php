@@ -114,6 +114,37 @@ class MessageApiController extends Controller
         ]);
     }
 
+    /**
+     * Un 401 con la credencial de una instancia que existe pero está apagada.
+     *
+     * Es el único 401 que tiene dueño: detrás hay un ERP de verdad que se ha
+     * quedado sin enviar, no un token inventado. Hasta ahora no dejaba rastro
+     * y el log de acceso no guarda la cabecera, así que el 24-sep-2026 hubo 41
+     * rechazos en dos horas y no había forma de saber de qué empresa eran.
+     *
+     * Sólo se registra si la instancia existe: un token que no es de nadie no
+     * dice nada útil, y volcarlo al log sería guardar lo que alguien probó.
+     */
+    private function avisarSiLaCredencialEstaApagada(string $token, Request $request): void
+    {
+        $apagada = Instance::where('active', false)
+            ->where(fn ($q) => $q->where('api_token', Instance::hashApiToken($token))
+                ->orWhere('phone_number_id', $token))
+            ->first(['id', 'company_id', 'phone_number_id']);
+
+        if (! $apagada) {
+            return;
+        }
+
+        Log::channel('whatsapp')->warning('🔌 El ERP entra con la credencial de una línea apagada', [
+            'instance_id' => $apagada->id,
+            'company_id' => $apagada->company_id,
+            'ruta' => $request->path(),
+            'linea_activa' => $apagada->company?->instanciaDelErp()?->id,
+            'que_hacer' => 'Cambiar la credencial en el ERP por un token de la línea activa.',
+        ]);
+    }
+
     private function validateInstance(Request $request)
     {
         $token = $request->header('X-Instance-Token');
@@ -146,6 +177,8 @@ class MessageApiController extends Controller
         // —se enseña en la pantalla de Instancias y en el panel de Meta— así
         // que sólo se acepta mientras queden clientes por migrar.
         if (! config('whatsapp.api.allow_legacy_token', true)) {
+            $this->avisarSiLaCredencialEstaApagada($token, $request);
+
             return null;
         }
 
@@ -169,6 +202,10 @@ class MessageApiController extends Controller
         }
 
         $instance = $candidates->first();
+
+        if (! $instance) {
+            $this->avisarSiLaCredencialEstaApagada($token, $request);
+        }
 
         // Cada uso del esquema viejo deja rastro con la empresa: es la lista de
         // a quién falta avisar antes de poder apagarlo.
