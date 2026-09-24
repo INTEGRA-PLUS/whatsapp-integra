@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { COUNTRIES, splitPhoneNumber, joinPhoneNumber, cleanUsername } from '@/lib/countries';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Contact as ContactIcon, Search, Phone, AtSign, Mail, MessageSquare, Info, UserPlus, Loader2, Check, Link2, Bell, BellOff } from 'lucide-react';
 
@@ -145,24 +146,17 @@ export default function ContactsIndex({ contacts: pagina, unregistered: initialU
         <>
             <Head title="Contactos" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <ContactIcon className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Contactos</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Tu agenda de clientes. Asocia los números que escriben a un contacto para identificarlos.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={ContactIcon}
+                    titulo="Contactos"
+                    descripcion="Tu agenda de clientes. Asocia los números que escriben a un contacto para identificarlos."
+                >
                     {can('contacts.create') && tab === 'registered' && (
                         <Button onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nuevo Contacto
                         </Button>
                     )}
-                </div>
+                </CabeceraModulo>
 
                 {optOutRequests.length > 0 && can('contacts.update') && (
                     <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 p-4 space-y-3">

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { WhatsAppPreview, templateToModel } from './preview';
 import {
-    ArrowLeft,
     Sparkles,
     Loader2,
     RefreshCw,
@@ -83,19 +83,12 @@ export default function TemplatesDefaults({ instances = [], catalog = {}, negoci
         <>
             <Head title="Plantillas por defecto" />
             <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-                <div className="flex items-center gap-3">
-                    <Link href={route('templates.index')} className="text-muted-foreground hover:text-foreground transition-colors">
-                        <ArrowLeft className="size-5" />
-                    </Link>
-                    <div className="flex-1">
-                        <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
-                            <Sparkles className="size-5 text-accent-foreground" /> Plantillas por defecto Integra CRM
-                        </h1>
-                        <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-                            Catálogo de plantillas mantenido por Integra CRM, disponible para todas las empresas. Sincronízalas
-                            con tu WABA en un clic; quedan pendientes de aprobación por Meta como cualquier otra plantilla.
-                        </p>
-                    </div>
+                <CabeceraModulo
+                    icono={Sparkles}
+                    volver={route('templates.index')}
+                    titulo="Plantillas por defecto Integra CRM"
+                    descripcion="Catálogo de plantillas mantenido por Integra CRM, disponible para todas las empresas. Sincronízalas con tu WABA en un clic; quedan pendientes de aprobación por Meta como cualquier otra plantilla."
+                >
                     {instances.length > 1 && (
                         <select
                             value={instanceId ?? ''}
@@ -107,7 +100,7 @@ export default function TemplatesDefaults({ instances = [], catalog = {}, negoci
                             ))}
                         </select>
                     )}
-                </div>
+                </CabeceraModulo>
 
                 {instances.length === 0 && (
                     <div className="rounded-2xl border border-dashed py-12 text-center text-sm text-muted-foreground">

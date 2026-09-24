@@ -3,8 +3,9 @@ import { Head, Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
-    AlertTriangle, ChevronLeft, Download, Loader2, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
+    AlertTriangle, Download, Loader2, Megaphone, MessageSquare, Pause, Play, RefreshCw, Send, XCircle,
 } from 'lucide-react';
 import { WhatsAppPreview } from '@/pages/Templates/preview';
 import {
@@ -97,60 +98,57 @@ export default function CampaignsShow({ campaign: campaignInicial, recipients: r
             <Head title={campaign.name} />
 
             <div className="flex flex-col gap-6 p-6">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-start gap-3 min-w-0">
-                        <Link href={route('campaigns.index')} className="mt-1 text-muted-foreground hover:text-foreground">
-                            <ChevronLeft className="size-5" />
-                        </Link>
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <h1 className="text-2xl font-semibold text-foreground truncate">{campaign.name}</h1>
-                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[campaign.status] ?? 'bg-muted'}`}>
-                                    {STATUS_LABEL[campaign.status] ?? campaign.status}
-                                </span>
-                                {enCurso && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                {campaign.uses_template
-                                    ? <>Plantilla <span className="font-medium text-foreground">{campaign.template_name}</span> ({campaign.template_language})</>
-                                    : 'Campaña de texto libre: WhatsApp no la entrega fuera de la ventana de 24 horas.'}
-                                {campaign.instance ? ` · ${campaign.instance.name}` : ''}
-                                {campaign.created_by ? ` · creada por ${campaign.created_by}` : ''}
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        {campaign.can_launch && (
-                            <Button onClick={() => accion('send', `¿Enviar a ${campaign.total_recipients} destinatarios?`)} className="gap-2">
-                                <Send className="size-4" /> Enviar ahora
-                            </Button>
-                        )}
-                        {enCurso && (
-                            <Button variant="outline" onClick={() => accion('pause')} className="gap-2">
-                                <Pause className="size-4" /> Pausar
-                            </Button>
-                        )}
-                        {campaign.status === 'paused' && (
-                            <Button onClick={() => accion('resume')} className="gap-2">
-                                <Play className="size-4" /> Reanudar
-                            </Button>
-                        )}
-                        {(enCurso || campaign.status === 'paused') && (
-                            <Button variant="outline" onClick={() => accion('cancel', '¿Cancelar el envío? Los que faltan no se enviarán.')} className="gap-2 text-destructive">
-                                <XCircle className="size-4" /> Cancelar
-                            </Button>
-                        )}
-                        {c.failed > 0 && !enCurso && (
-                            <Button variant="outline" onClick={() => accion('retry-failed', `¿Reintentar ${c.failed} envíos fallidos?`)} className="gap-2">
-                                <RefreshCw className="size-4" /> Reintentar fallidos
-                            </Button>
-                        )}
-                        <a href={route('campaigns.export', campaign.id)}>
-                            <Button variant="outline" className="gap-2"><Download className="size-4" /> CSV</Button>
-                        </a>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={Megaphone}
+                    volver={route('campaigns.index')}
+                    titulo={
+                        <span className="flex flex-wrap items-center gap-2">
+                            <span className="truncate">{campaign.name}</span>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[campaign.status] ?? 'bg-muted'}`}>
+                                {STATUS_LABEL[campaign.status] ?? campaign.status}
+                            </span>
+                            {enCurso && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+                        </span>
+                    }
+                    descripcion={
+                        <>
+                            {campaign.uses_template
+                                ? <>Plantilla <span className="font-medium text-foreground">{campaign.template_name}</span> ({campaign.template_language})</>
+                                : 'Campaña de texto libre: WhatsApp no la entrega fuera de la ventana de 24 horas.'}
+                            {campaign.instance ? ` · ${campaign.instance.name}` : ''}
+                            {campaign.created_by ? ` · creada por ${campaign.created_by}` : ''}
+                        </>
+                    }
+                >
+                    {campaign.can_launch && (
+                        <Button onClick={() => accion('send', `¿Enviar a ${campaign.total_recipients} destinatarios?`)} className="gap-2">
+                            <Send className="size-4" /> Enviar ahora
+                        </Button>
+                    )}
+                    {enCurso && (
+                        <Button variant="outline" onClick={() => accion('pause')} className="gap-2">
+                            <Pause className="size-4" /> Pausar
+                        </Button>
+                    )}
+                    {campaign.status === 'paused' && (
+                        <Button onClick={() => accion('resume')} className="gap-2">
+                            <Play className="size-4" /> Reanudar
+                        </Button>
+                    )}
+                    {(enCurso || campaign.status === 'paused') && (
+                        <Button variant="outline" onClick={() => accion('cancel', '¿Cancelar el envío? Los que faltan no se enviarán.')} className="gap-2 text-destructive">
+                            <XCircle className="size-4" /> Cancelar
+                        </Button>
+                    )}
+                    {c.failed > 0 && !enCurso && (
+                        <Button variant="outline" onClick={() => accion('retry-failed', `¿Reintentar ${c.failed} envíos fallidos?`)} className="gap-2">
+                            <RefreshCw className="size-4" /> Reintentar fallidos
+                        </Button>
+                    )}
+                    <a href={route('campaigns.export', campaign.id)}>
+                        <Button variant="outline" className="gap-2"><Download className="size-4" /> CSV</Button>
+                    </a>
+                </CabeceraModulo>
 
                 {!campaign.uses_template && (
                     <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning">

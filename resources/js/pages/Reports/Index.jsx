@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import { ArrowUp, Clock, Inbox, MessageCircle, Users, AlertCircle, BarChart3, User as UserIcon, X, Gauge, Smile, Meh, Frown, HelpCircle } from 'lucide-react';
 
@@ -39,14 +40,11 @@ export default function ReportsIndex(props) {
         <>
             <Head title="Reportes" />
             <div className="flex flex-col gap-6 p-6">
-                <div className="flex items-center justify-between flex-wrap gap-4">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Reportes de agentes</h1>
-                        <p className="text-sm text-muted-foreground mt-1">
-                            Tiempos de respuesta, mensajes enviados y conversaciones sin responder.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={BarChart3}
+                    titulo="Reportes de agentes"
+                    descripcion="Tiempos de respuesta, mensajes enviados y conversaciones sin responder."
+                />
 
                 <form onSubmit={applyFilters} className="flex items-end flex-wrap gap-3 rounded-xl border bg-card p-4">
                     <div className="space-y-1">

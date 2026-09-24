@@ -9,6 +9,7 @@ import { Blocks, Search, Download, Power, Settings2, Loader2, Info, Lock ,
 } from 'lucide-react';
 import { iconFor, CATEGORIES, categoryLabel } from './icons';
 import { MaquetaMini } from './maquetas';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 export default function ExtensionsIndex({ extensions: initial }) {
     const { auth } = usePage().props;
@@ -57,22 +58,15 @@ export default function ExtensionsIndex({ extensions: initial }) {
         <>
             <Head title="Extensiones" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Blocks className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Extensiones</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Añade comportamientos a tu CRM. Instala lo que necesites, configúralo y enciéndelo cuando esté listo.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={Blocks}
+                    titulo="Extensiones"
+                    descripcion="Añade comportamientos a tu CRM. Instala lo que necesites, configúralo y enciéndelo cuando esté listo."
+                >
                     <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                         {instaladas} de {extensions.length} instaladas
                     </span>
-                </div>
+                </CabeceraModulo>
 
                 {error && (
                     <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

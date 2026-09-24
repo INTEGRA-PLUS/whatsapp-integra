@@ -2,7 +2,8 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { useMemo } from 'react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, ArrowLeft, Save } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
+import { AlertCircle, Save, ShieldCheck } from 'lucide-react';
 import EditorAccesos from '@/components/roles/EditorAccesos';
 import ResumenAccesos from '@/components/roles/ResumenAccesos';
 
@@ -30,21 +31,13 @@ export default function Edit({ role, grupos, niveles, rolePermissions }) {
             <Head title={`Editar rol: ${role.name}`} />
 
             <div className="mx-auto max-w-6xl p-6 lg:p-10">
-                <div className="mb-8 flex items-center gap-4">
-                    <Button asChild variant="outline" size="icon" className="rounded-full">
-                        <Link href={route('roles.index')} aria-label="Volver a roles">
-                            <ArrowLeft className="size-4" />
-                        </Link>
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                            Editar «{role.name}»
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            Los cambios se aplican de inmediato a todas las personas con este rol.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={ShieldCheck}
+                    titulo={`Editar «${role.name}»`}
+                    descripcion="Los cambios se aplican de inmediato a todas las personas con este rol."
+                    volver={route('roles.index')}
+                    className="mb-8"
+                />
 
                 {esAdmin && (
                     <div className="mb-8 flex items-start gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/[0.07] p-5">

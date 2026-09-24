@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     CalendarClock, CheckCheck, Eye, HelpCircle, Megaphone, Plus, RefreshCw, Send, Trash2,
 } from 'lucide-react';
@@ -28,25 +29,20 @@ export default function CampaignsIndex({ campaigns = [], instances = [] }) {
         <>
             <Head title="Campañas" />
             <div className="flex flex-col gap-6 p-6">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Campañas</h1>
-                        <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-                            Un mismo aviso a mucha gente. Se envía con una plantilla aprobada por WhatsApp, que es lo único
-                            que llega a quien no te ha escrito en las últimas 24 horas.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
-                            <HelpCircle className="size-4" /> ¿Cómo funciona?
+                <CabeceraModulo
+                    icono={Megaphone}
+                    titulo="Campañas"
+                    descripcion="Un mismo aviso a mucha gente. Se envía con una plantilla aprobada por WhatsApp, que es lo único que llega a quien no te ha escrito en las últimas 24 horas."
+                >
+                    <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
+                        <HelpCircle className="size-4" /> ¿Cómo funciona?
+                    </Button>
+                    <Link href={puedeCrear ? route('campaigns.create') : '#'}>
+                        <Button className="gap-2" disabled={!puedeCrear}>
+                            <Plus className="size-4" /> Nueva campaña
                         </Button>
-                        <Link href={puedeCrear ? route('campaigns.create') : '#'}>
-                            <Button className="gap-2" disabled={!puedeCrear}>
-                                <Plus className="size-4" /> Nueva campaña
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
+                    </Link>
+                </CabeceraModulo>
 
                 {!puedeCrear && (
                     <div className="rounded-xl border border-warning/30 bg-warning/15 dark:border-warning/30 px-4 py-3 text-sm text-warning">

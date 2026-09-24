@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { BellRing, Send, Users, User as UserIcon, Info, Megaphone, CheckCircle2 } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 export default function NotificationsIndex({ users: initialUsers, announcements: initialAnnouncements }) {
     const users = initialUsers ?? [];
@@ -62,17 +63,11 @@ export default function NotificationsIndex({ users: initialUsers, announcements:
         <>
             <Head title="Notificaciones" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex items-center gap-3">
-                    <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                        <BellRing className="size-6" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Notificaciones del sistema</h1>
-                        <p className="text-sm text-muted-foreground mt-0.5">
-                            Envía un anuncio a un usuario o a todo el equipo. Aparecerá en su campanita.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={BellRing}
+                    titulo="Notificaciones del sistema"
+                    descripcion="Envía un anuncio a un usuario o a todo el equipo. Aparecerá en su campanita."
+                />
 
                 <div className="grid gap-6 lg:grid-cols-5">
                     {/* Compose */}

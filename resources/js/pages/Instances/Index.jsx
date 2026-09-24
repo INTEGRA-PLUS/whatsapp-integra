@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
@@ -117,12 +118,11 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
         <>
             <Head title="Instancias" />
             <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 p-4 sm:p-6">
-                <header className="flex flex-col gap-1">
-                    <h1 className="text-2xl font-black tracking-tight text-foreground">Instancias</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Tus números de WhatsApp y cuentas de Instagram y Messenger conectados al CRM.
-                    </p>
-                </header>
+                <CabeceraModulo
+                    icono={Settings}
+                    titulo="Instancias"
+                    descripcion="Tus números de WhatsApp y cuentas de Instagram y Messenger conectados al CRM."
+                />
 
                 {instances.length > 0 && (
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

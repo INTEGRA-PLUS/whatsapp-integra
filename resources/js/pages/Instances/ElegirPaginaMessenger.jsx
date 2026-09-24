@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
-import { AlertTriangle, ArrowLeft, Check, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, MessageCircle } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -35,23 +36,12 @@ export default function ElegirPaginaMessenger({ paginas = [] }) {
             <Head title="Elegir página de Messenger" />
 
             <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6 lg:p-8">
-                <div>
-                    <button
-                        type="button"
-                        onClick={() => router.visit(route('instances.index'))}
-                        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                        <ArrowLeft className="size-4" /> Volver a instancias
-                    </button>
-
-                    <h1 className="text-xl font-black tracking-tight text-foreground">
-                        ¿Qué página quieres atender desde Integra?
-                    </h1>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        Los mensajes de la página que elijas entrarán a tu bandeja, junto a los de WhatsApp.
-                        Puedes conectar las demás después.
-                    </p>
-                </div>
+                <CabeceraModulo
+                    icono={MessageCircle}
+                    volver={route('instances.index')}
+                    titulo="¿Qué página quieres atender desde Integra?"
+                    descripcion="Los mensajes de la página que elijas entrarán a tu bandeja, junto a los de WhatsApp. Puedes conectar las demás después."
+                />
 
                 {conectables.length === 0 && (
                     <div className="flex items-start gap-2.5 rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning">

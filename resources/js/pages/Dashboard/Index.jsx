@@ -5,8 +5,9 @@ import Flujograma from '@/components/dashboard/Flujograma';
 import PuestaEnMarcha from '@/components/dashboard/PuestaEnMarcha';
 import {
     AlertTriangle, ArrowRight, Contact, Inbox, Layers, MessageSquare,
-    Megaphone, Send, UserX, Wifi, WifiOff, Clock,
+    Megaphone, Send, UserX, Wifi, WifiOff, Clock, Home,
 } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 /**
  * La portada del producto.
@@ -40,14 +41,11 @@ export default function DashboardIndex({ metricas, actividad, canales, puestaEnM
             <Head title="Inicio" />
 
             <div className="p-4 lg:p-6 space-y-5 max-w-[1600px] mx-auto">
-                <header>
-                    <h1 className="text-2xl font-black tracking-tight text-foreground">
-                        Hola, {auth?.user?.name}
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        {auth?.user?.company_name}
-                    </p>
-                </header>
+                <CabeceraModulo
+                    icono={Home}
+                    titulo={`Hola, ${auth?.user?.name ?? ''}`}
+                    descripcion={auth?.user?.company_name}
+                />
 
                 {/* Los dos avisos que no pueden esperar a que alguien baje la
                     pantalla: sin canal no funciona nada, y un canal caído deja

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Bot, Power, PowerOff, AlertCircle } from 'lucide-react';
 
@@ -97,17 +98,15 @@ export default function AutoResponsesIndex({ autoResponses, instances }) {
         <>
             <Head title="Respuestas Automáticas" />
             <div className="flex flex-col gap-6 p-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Respuestas Automáticas</h1>
-                        <p className="text-sm text-muted-foreground mt-1">
-                            Cuando un cliente escriba el texto que definas, se responderá con el mensaje configurado.
-                        </p>
-                    </div>
+                <CabeceraModulo
+                    icono={Bot}
+                    titulo="Respuestas Automáticas"
+                    descripcion="Cuando un cliente escriba el texto que definas, se responderá con el mensaje configurado."
+                >
                     <Button onClick={() => setShowCreate(true)} className="gap-2">
                         <Plus className="size-4" /> Nueva respuesta
                     </Button>
-                </div>
+                </CabeceraModulo>
 
                 {autoResponses.length === 0 ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">

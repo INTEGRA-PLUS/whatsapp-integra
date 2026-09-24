@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import ModoDeAtencion from '@/components/modo-de-atencion';
 import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
@@ -293,22 +294,18 @@ export default function WhatsAppMenusIndex({ menus, instances, agents, limits, a
         <>
             <Head title="Menús de WhatsApp" />
             <div className="flex flex-col gap-6 p-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Menús de WhatsApp</h1>
-                        <p className="text-sm text-muted-foreground mt-1">
-                            El cliente elige una opción tocándola en vez de escribir lo que necesita.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
-                            <HelpCircle className="size-4" /> ¿Cómo funciona?
-                        </Button>
-                        <Button onClick={() => { refrescarLaIa(); setShowCreate(true); }} className="gap-2">
-                            <Plus className="size-4" /> Nuevo menú
-                        </Button>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={ListTree}
+                    titulo="Menús de WhatsApp"
+                    descripcion="El cliente elige una opción tocándola en vez de escribir lo que necesita."
+                >
+                    <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
+                        <HelpCircle className="size-4" /> ¿Cómo funciona?
+                    </Button>
+                    <Button onClick={() => { refrescarLaIa(); setShowCreate(true); }} className="gap-2">
+                        <Plus className="size-4" /> Nuevo menú
+                    </Button>
+                </CabeceraModulo>
 
 
                 {/* La decisión va primero: qué recibe un cliente cuando

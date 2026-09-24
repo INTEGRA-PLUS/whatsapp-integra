@@ -3,9 +3,11 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { TabButton, WhatsAppPreview, templateToModel } from './preview';
 import {
     FileText,
+    FileType,
     Search,
     RefreshCw,
     ChevronDown,
@@ -212,67 +214,52 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
         <>
             <Head title="Plantillas" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                {/* HERO HEADER */}
-                <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 lg:p-8">
-                    <div className="absolute -top-12 -right-12 size-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-                    <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                        <div className="flex items-center gap-4">
-                            <div className="size-14 rounded-2xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
-                                <FileText className="size-7" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl lg:text-3xl font-semibold text-foreground tracking-tight">
-                                    Plantillas de WhatsApp
-                                </h1>
-                                <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-                                    Administra las plantillas aprobadas por Meta y sus traducciones a distintos idiomas.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {instances.length > 1 && (
-                                <select
-                                    value={instanceId ?? ''}
-                                    onChange={e => setInstanceId(Number(e.target.value) || null)}
-                                    className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                >
-                                    {instances.map(i => (
-                                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
-                                    ))}
-                                </select>
-                            )}
-                            <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
-                                {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                                Actualizar
-                            </Button>
-                            <Link href={route('templates.analytics')}>
-                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
-                                    <BarChart3 className="size-4" /> Analítica
-                                </Button>
-                            </Link>
-                            <Link href={route('templates.defaults')}>
-                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
-                                    <Sparkles className="size-4" /> Plantillas por defecto
-                                </Button>
-                            </Link>
-                            {can('templates.create') && instanceId && instances.length > 1 && (
-                                <Button
-                                    onClick={() => setCopiando(true)}
-                                    variant="outline"
-                                    className="gap-2 h-9 bg-card/80"
-                                    title="Llevar plantillas de esta línea a otra"
-                                >
-                                    <Copy className="size-4" /> Copiar a otra línea
-                                </Button>
-                            )}
-                            {can('templates.create') && instanceId && (
-                                <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
-                                    <Sparkles className="size-4" /> Nueva plantilla
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={FileType}
+                    titulo="Plantillas de WhatsApp"
+                    descripcion="Administra las plantillas aprobadas por Meta y sus traducciones a distintos idiomas."
+                >
+                    {instances.length > 1 && (
+                        <select
+                            value={instanceId ?? ''}
+                            onChange={e => setInstanceId(Number(e.target.value) || null)}
+                            className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        >
+                            {instances.map(i => (
+                                <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                            ))}
+                        </select>
+                    )}
+                    <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
+                        {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Actualizar
+                    </Button>
+                    <Link href={route('templates.analytics')}>
+                        <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                            <BarChart3 className="size-4" /> Analítica
+                        </Button>
+                    </Link>
+                    <Link href={route('templates.defaults')}>
+                        <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                            <Sparkles className="size-4" /> Plantillas por defecto
+                        </Button>
+                    </Link>
+                    {can('templates.create') && instanceId && instances.length > 1 && (
+                        <Button
+                            onClick={() => setCopiando(true)}
+                            variant="outline"
+                            className="gap-2 h-9 bg-card/80"
+                            title="Llevar plantillas de esta línea a otra"
+                        >
+                            <Copy className="size-4" /> Copiar a otra línea
+                        </Button>
+                    )}
+                    {can('templates.create') && instanceId && (
+                        <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
+                            <Sparkles className="size-4" /> Nueva plantilla
+                        </Button>
+                    )}
+                </CabeceraModulo>
 
                 {copiando && (
                     <CopiarPlantillasModal

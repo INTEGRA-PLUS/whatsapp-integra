@@ -7,6 +7,7 @@ import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderCon
 import IntegrationsHelp from './IntegrationsHelp';
 import { WhatsAppPreview } from '../Templates/preview';
 import { cn } from '@/lib/utils';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
@@ -33,23 +34,15 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
         <>
             <Head title="Integraciones" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Plug className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Integraciones</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Conecta tu WhatsApp con sistemas externos y úsalos desde el chat.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={Webhook}
+                    titulo="Integraciones"
+                    descripcion="Conecta tu WhatsApp con sistemas externos y úsalos desde el chat."
+                >
                     <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
                         <HelpCircle className="size-4" /> ¿Cómo funciona?
                     </Button>
-                </div>
+                </CabeceraModulo>
 
                 {/* Sub-nav */}
                 <div className="flex gap-1 border-b">

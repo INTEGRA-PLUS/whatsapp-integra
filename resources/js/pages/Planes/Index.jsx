@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { ListaConChecks, Titulo } from '@/components/seccion';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     Check, Sparkles, ShieldCheck, ArrowRight, Users, Contact, Phone, Bot,
     Table2, Percent, CircleCheck, CircleAlert,
@@ -68,17 +69,11 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
 
             <div className="mx-auto flex max-w-6xl flex-col gap-9 p-6 lg:p-8">
 
-                <header className="flex items-center gap-3.5">
-                    <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-accent-foreground">
-                        <Table2 className="size-6" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Planes</h1>
-                        <p className="mt-0.5 text-sm text-muted-foreground">
-                            Todo lo que hay, con sus precios, para que puedas comparar con lo que tienes.
-                        </p>
-                    </div>
-                </header>
+                <CabeceraModulo
+                    icono={Table2}
+                    titulo="Planes"
+                    descripcion="Todo lo que hay, con sus precios, para que puedas comparar con lo que tienes."
+                />
 
                 {flash.success && <Aviso tono="success">{flash.success}</Aviso>}
                 {flash.error && <Aviso tono="warning">{flash.error}</Aviso>}

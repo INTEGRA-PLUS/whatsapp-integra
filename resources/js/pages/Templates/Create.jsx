@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { WhatsAppPreview, formStateToModel } from './preview';
 import {
     Plus,
@@ -14,9 +15,9 @@ import {
     Code,
     Smile,
     Info,
-    ChevronLeft,
     CheckCircle2,
     Languages,
+    FileType,
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -536,25 +537,21 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         <>
             <Head title={isTranslation ? `Nueva traducción · ${familyName}` : 'Crear plantilla'} />
             <div className="flex flex-col min-h-[calc(100vh-3rem)]">
-                {/* Encabezado de página */}
-                <div className="border-b bg-card px-6 py-4">
-                    <div className="flex items-center justify-between gap-4 max-w-6xl mx-auto w-full">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <Link href={route('templates.index')} className="text-muted-foreground hover:text-foreground">
-                                <ChevronLeft className="size-5" />
-                            </Link>
-                            <div className="min-w-0">
-                                <h1 className="text-lg font-semibold text-foreground truncate">
-                                    {isTranslation ? <>Nueva traducción de <span className="font-mono">{familyName}</span></> : 'Crear plantilla'}
-                                </h1>
-                                <p className="text-xs text-muted-foreground">
-                                    {isTranslation
-                                        ? 'La subplantilla mantiene el nombre y la categoría; solo cambia el idioma y el contenido.'
-                                        : 'Meta revisará el contenido y las variables de la plantilla antes de aprobarla.'}
-                                </p>
-                            </div>
-                        </div>
-                        <Stepper step={step} />
+                {/* Encabezado de página: sobre el mismo fondo que el cuerpo,
+                    para que no quede una franja de otro color encima. */}
+                <div className="bg-muted/20 px-6 pt-6">
+                    <div className="max-w-6xl mx-auto w-full">
+                        <CabeceraModulo
+                            icono={isTranslation ? Languages : FileType}
+                            volver={route('templates.index')}
+                            accionesClassName="hidden sm:flex"
+                            titulo={isTranslation ? <>Nueva traducción de <span className="font-mono">{familyName}</span></> : 'Crear plantilla'}
+                            descripcion={isTranslation
+                                ? 'La subplantilla mantiene el nombre y la categoría; solo cambia el idioma y el contenido.'
+                                : 'Meta revisará el contenido y las variables de la plantilla antes de aprobarla.'}
+                        >
+                            <Stepper step={step} />
+                        </CabeceraModulo>
                     </div>
                 </div>
 

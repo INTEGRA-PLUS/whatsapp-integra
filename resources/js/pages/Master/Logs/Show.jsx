@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Trash2, AlertTriangle, FileText, Copy, Check, Eraser } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
+import { Trash2, AlertTriangle, FileText, Copy, Check, Eraser } from 'lucide-react';
 
 export default function LogsShow({ log }) {
     const [confirming, setConfirming] = useState(false);
@@ -35,46 +36,31 @@ export default function LogsShow({ log }) {
         <>
             <Head title={`${log.name} · Logs`} />
             <div className="flex flex-col min-h-screen bg-muted/10">
-                <div className="bg-card/40 backdrop-blur-3xl px-8 py-6 sticky top-0 z-40 border-b border-border/20 shadow-sm">
-                    <div className="max-w-[1700px] mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                            <Link href={route('master.logs.index')}>
-                                <Button variant="ghost" size="icon" className="size-11 rounded-xl">
-                                    <ArrowLeft className="size-5" />
-                                </Button>
-                            </Link>
-                            <div className="size-12 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground shadow-xl shadow-primary/20">
-                                <FileText className="size-6" />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-black tracking-tight text-foreground font-mono">{log.name}</h1>
-                                <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mt-1">
-                                    {log.size_human} · {lines.length.toLocaleString()} líneas · {log.modified_at}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <Button
-                                variant="ghost"
-                                onClick={handleCopy}
-                                className="rounded-xl h-11 px-5 font-black uppercase tracking-widest text-[10px] gap-2"
-                            >
-                                {copied ? <><Check className="size-4" /> Copiado</> : <><Copy className="size-4" /> Copiar</>}
-                            </Button>
-                            <Button
-                                onClick={() => setClearing(true)}
-                                className="rounded-xl h-11 px-5 bg-warning hover:bg-warning text-primary-foreground font-black uppercase tracking-widest text-[10px] gap-2"
-                            >
-                                <Eraser className="size-4" /> Vaciar
-                            </Button>
-                            <Button
-                                onClick={() => setConfirming(true)}
-                                className="rounded-xl h-11 px-5 bg-destructive hover:bg-destructive text-white font-black uppercase tracking-widest text-[10px] gap-2"
-                            >
-                                <Trash2 className="size-4" /> Eliminar
-                            </Button>
-                        </div>
-                    </div>
+                <div className="mx-auto w-full max-w-[1700px] px-4 pt-4 sm:px-8 sm:pt-6">
+                    <CabeceraModulo
+                        icono={FileText}
+                        titulo={<span className="font-mono break-all">{log.name}</span>}
+                        descripcion={`${log.size_human} · ${lines.length.toLocaleString()} líneas · ${log.modified_at}`}
+                        volver={route('master.logs.index')}
+                    >
+                        <Button variant="outline" size="sm" onClick={handleCopy} className="gap-2">
+                            {copied ? <><Check className="size-4" /> Copiado</> : <><Copy className="size-4" /> Copiar</>}
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => setClearing(true)}
+                            className="bg-warning hover:bg-warning text-primary-foreground gap-2"
+                        >
+                            <Eraser className="size-4" /> Vaciar
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => setConfirming(true)}
+                            className="bg-destructive hover:bg-destructive text-white gap-2"
+                        >
+                            <Trash2 className="size-4" /> Eliminar
+                        </Button>
+                    </CabeceraModulo>
                 </div>
 
                 <div className="p-8 max-w-[1700px] mx-auto w-full">

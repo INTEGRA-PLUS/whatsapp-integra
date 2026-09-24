@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { 
     Sparkles,
     Check,
@@ -33,6 +34,7 @@ import {
     UserCog,
     CreditCard,
     Download,
+    LayoutGrid,
 } from 'lucide-react';
 
 export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], complementos = [], ciclos = [], cobros = [], planes_resumen, cobro_del_mes }) {
@@ -310,43 +312,40 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                     pulsarlos. Un panel interno no tiene a quién impresionar:
                     tiene que decir dónde estás, dejarte cambiar de sitio y
                     quitarse de en medio. */}
-                <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-6 py-4 backdrop-blur">
-                    <div className="mx-auto flex max-w-[1500px] flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <h1 className="font-heading text-lg font-semibold tracking-tight text-foreground">
-                                    Panel master
-                                </h1>
+                <div className="mx-auto w-full max-w-[1500px] px-4 pt-4 sm:px-6 sm:pt-6">
+                    <CabeceraModulo
+                        icono={LayoutGrid}
+                        titulo={
+                            <span className="flex items-center gap-2">
+                                Panel master
                                 <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                     Interno
                                 </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{SUBTITULO[activeTab]}</p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3">
-                            <nav className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
-                                {PESTANAS.map(({ value, label }) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        onClick={() => cambiarPestana(value)}
-                                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                                            activeTab === value
-                                                ? 'bg-card text-foreground shadow-sm'
-                                                : 'text-muted-foreground hover:text-foreground'
-                                        }`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </nav>
-                            <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
-                                <Plus className="size-4" /> Nueva empresa
-                            </Button>
-                        </div>
-                    </div>
-                </header>
+                            </span>
+                        }
+                        descripcion={SUBTITULO[activeTab]}
+                    >
+                        <nav className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+                            {PESTANAS.map(({ value, label }) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => cambiarPestana(value)}
+                                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        activeTab === value
+                                            ? 'bg-card text-foreground shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </nav>
+                        <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
+                            <Plus className="size-4" /> Nueva empresa
+                        </Button>
+                    </CabeceraModulo>
+                </div>
 
                 <div className="mx-auto w-full max-w-[1500px] space-y-8 p-6">
 

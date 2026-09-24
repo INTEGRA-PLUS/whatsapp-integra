@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { iconFor } from '@/pages/Extensions/icons';
 import { ListaConChecks, Pastilla, Titulo } from '@/components/seccion';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 /**
  * «Mi plan», tal y como lo ve el cliente.
@@ -60,19 +61,11 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
 
             <div className="mx-auto flex max-w-6xl flex-col gap-9 p-6 lg:p-8">
 
-                <header className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-accent-foreground">
-                            <BadgeCheck className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Mi plan</h1>
-                            <p className="mt-0.5 text-sm text-muted-foreground">
-                                Lo que tienes contratado, cuánto llevas usado y qué puedes activar.
-                            </p>
-                        </div>
-                    </div>
-
+                <CabeceraModulo
+                    icono={BadgeCheck}
+                    titulo="Mi plan"
+                    descripcion="Lo que tienes contratado, cuánto llevas usado y qué puedes activar."
+                >
                     {/* Siempre visible. El cliente que más puede crecer es el que
                         ya lo tiene todo encendido, y a ése la pantalla no le
                         ofrecía ningún sitio donde preguntar. */}
@@ -81,7 +74,7 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             Hablar con nosotros <ArrowRight className="size-4" />
                         </a>
                     </Button>
-                </header>
+                </CabeceraModulo>
 
                 <Carne plan={plan} periodo={periodo} porPagar={por_pagar} />
 

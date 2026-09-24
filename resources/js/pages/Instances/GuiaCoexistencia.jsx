@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Aviso, Captura as CapturaBase, Paso as PasoBase, useAvance } from '@/components/guia';
-import { ArrowLeft, ChevronDown, Monitor, RotateCcw, Smartphone, Unplug } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
+import { ChevronDown, Monitor, RotateCcw, Smartphone, Unplug } from 'lucide-react';
 
 /**
  * La guía de conexión por coexistencia, dentro del producto.
@@ -60,21 +61,12 @@ export default function GuiaCoexistencia() {
             <Head title="Conectar tu WhatsApp Business" />
             <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6 pb-24">
 
-                <div>
-                    <Link
-                        href="/instances"
-                        className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                        <ArrowLeft className="size-4" /> Volver a Instancias
-                    </Link>
-                    <h1 className="mt-3 text-2xl font-semibold text-foreground">
-                        Conectar el número que ya usas en WhatsApp Business
-                    </h1>
-                    <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-                        Sin perder tus chats y sin dejar de responder desde el celular. Toma unos 15 minutos
-                        y necesitas el teléfono a la mano.
-                    </p>
-                </div>
+                <CabeceraModulo
+                    icono={Smartphone}
+                    volver="/instances"
+                    titulo="Conectar el número que ya usas en WhatsApp Business"
+                    descripcion="Sin perder tus chats y sin dejar de responder desde el celular. Toma unos 15 minutos y necesitas el teléfono a la mano."
+                />
 
                 {/* Avance del recorrido */}
                 <div className="sticky top-2 z-10 rounded-xl border bg-card/95 px-4 py-3 shadow-xs backdrop-blur">

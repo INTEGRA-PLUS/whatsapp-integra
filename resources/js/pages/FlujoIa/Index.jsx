@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import ModoDeAtencion from '@/components/modo-de-atencion';
 import OrdenDeLaConversacion from '@/components/orden-de-la-conversacion';
 import { Button } from '@/components/ui/button';
@@ -1576,17 +1577,11 @@ export default function FlujoIaIndex({ tiene_ia, plan, orden = {}, usa_integra =
         <AppLayout breadcrumb={['IA que responde']}>
             <Head title="IA que responde" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-xl bg-primary/10 p-2.5 dark:bg-primary/15">
-                        <Sparkles className="size-5 text-accent-foreground" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-bold tracking-tight text-foreground">IA que responde</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            La IA que atiende a tus contactos cuando ningún menú reconoce lo que escriben.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={Sparkles}
+                    titulo="IA que responde"
+                    descripcion="La IA que atiende a tus contactos cuando ningún menú reconoce lo que escriben."
+                />
 
                 {/* Antes que cualquier interruptor: cuándo entra esta IA.
                     Manda el menú y ella es el último recurso, y quien no lo

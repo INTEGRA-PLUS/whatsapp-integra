@@ -2,7 +2,8 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Check, Loader2, Shield, User as UserIcon, UserPlus } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
+import { Check, Loader2, Shield, User as UserIcon, UserPlus, Users } from 'lucide-react';
 
 /**
  * Alta de un usuario de la empresa.
@@ -42,19 +43,12 @@ export default function Create({ roles }) {
             <Head title="Nuevo usuario" />
 
             <div className="flex max-w-3xl flex-col gap-6 p-6 lg:p-8">
-                <div className="flex items-center gap-3">
-                    <Button asChild variant="outline" size="icon" className="size-8 shrink-0">
-                        <Link href={route('users.index')} aria-label="Volver a usuarios">
-                            <ArrowLeft className="size-4" />
-                        </Link>
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Nuevo usuario</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Entrará al CRM con este correo y su contraseña.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={Users}
+                    titulo="Nuevo usuario"
+                    descripcion="Entrará al CRM con este correo y su contraseña."
+                    volver={route('users.index')}
+                />
 
                 <form onSubmit={enviar} className="flex flex-col gap-6">
                     <section className="rounded-xl border bg-card p-5">

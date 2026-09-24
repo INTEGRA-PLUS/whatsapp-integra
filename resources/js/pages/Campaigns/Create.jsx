@@ -3,6 +3,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     AlertTriangle, Check, ChevronLeft, ChevronRight, FileText, Loader2,
     MessageSquareText, Search, Send, Upload, Users, X,
@@ -219,18 +220,17 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
             <Head title="Nueva campaña" />
 
             <div className="flex flex-col min-h-[calc(100vh-3rem)]">
-                <header className="border-b bg-card px-6 py-4 flex items-center gap-4">
-                    <Link href={route('campaigns.index')} className="text-muted-foreground hover:text-foreground">
-                        <ChevronLeft className="size-5" />
-                    </Link>
-                    <div className="min-w-0 flex-1">
-                        <h1 className="text-lg font-semibold text-foreground truncate">Nueva campaña</h1>
-                        <p className="text-xs text-muted-foreground">
-                            Un mismo aviso a mucha gente, con una plantilla aprobada por WhatsApp.
-                        </p>
-                    </div>
-                    <Stepper step={step} onGo={irA} />
-                </header>
+                <div className="w-full max-w-6xl mx-auto px-6 pt-6">
+                    <CabeceraModulo
+                        icono={Send}
+                        volver={route('campaigns.index')}
+                        accionesClassName="hidden sm:flex"
+                        titulo="Nueva campaña"
+                        descripcion="Un mismo aviso a mucha gente, con una plantilla aprobada por WhatsApp."
+                    >
+                        <Stepper step={step} onGo={irA} />
+                    </CabeceraModulo>
+                </div>
 
                 <div className="flex-1 w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 px-6 py-6 pb-28">
                     <div className="min-w-0 space-y-6">
