@@ -472,6 +472,33 @@ class IntegraClient
     }
 
     /**
+     * Da de alta en Integra una plantilla aprobada en Meta.
+     *
+     * Integra sólo puede enviar plantillas que tiene registradas, y hasta ahora
+     * se registraban a mano allí con el nombre y el idioma exactos. Si ya está,
+     * Integra devuelve la que tiene en vez de duplicarla.
+     *
+     * @param  array{nombre: string, idioma: string, categoria?: string, encabezado: ?string, texto: string}  $plantilla
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function registrarPlantilla(array $plantilla): array
+    {
+        try {
+            $res = $this->call('post', '/api/v1/whatsapp/plantillas', [
+                'title' => $plantilla['nombre'],
+                'language' => $plantilla['idioma'],
+                'body_header' => $plantilla['encabezado'],
+                'contenido' => $plantilla['texto'],
+                'clasificacion' => $plantilla['categoria'] ?? 'UTILITY',
+            ]);
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
      * Qué dato del ERP va en cada `{{n}}` de una plantilla.
      *
      * El `{{1}}` de Meta no significa nada por sí solo: lo que le da sentido es

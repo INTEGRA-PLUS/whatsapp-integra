@@ -830,6 +830,8 @@ function ProviderSection({ can, onBack }) {
  * que no existan dos copias de la misma configuración: el problema con el que
  * empezó todo este trabajo.
  */
+const etiquetaDeUso = { factura: 'facturas', tirilla: 'recibos de pago', contrato: 'contratos' };
+
 function AjustesDeEnvio({ showToast, canManage }) {
     const { lineasDelErp = [] } = usePage().props;
     // Por qué línea envía Integra ahora mismo. Estas plantillas se eligen en
@@ -867,7 +869,16 @@ function AjustesDeEnvio({ showToast, canManage }) {
         try {
             const { data } = await axios.put('/integrations/ajustes-envio', cambios);
             setEstado(e => ({ ...e, ...data }));
-            showToast('Guardado en Integra.');
+
+            // Recién registrada en Integra no tiene dicho qué dato va en cada
+            // variable, y sin eso la factura sale con los huecos vacíos: se
+            // abre el editor directamente en vez de confiar en que lo pulsen.
+            if (data.registrada) {
+                showToast('Registrada en Integra y elegida. Ahora di qué dato va en cada variable.');
+                setParametrizando({ id: data.registrada, uso: etiquetaDeUso[cambios.registrar?.uso] ?? 'plantilla' });
+            } else {
+                showToast('Guardado en Integra.');
+            }
         } catch (e) {
             showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
             cargar();
@@ -898,7 +909,20 @@ function AjustesDeEnvio({ showToast, canManage }) {
         );
     }
 
-    const conDocumento = (estado.disponibles ?? []).filter(p => p.con_documento);
+    const soloEnMeta = estado.solo_en_meta ?? [];
+    const conDocumento = [...(estado.disponibles ?? []), ...soloEnMeta].filter(p => p.con_documento);
+
+    // Una opción del desplegable es un id de Integra o, si empieza por
+    // `meta:`, una plantilla aprobada en la línea que Integra todavía no conoce.
+    const elegir = (clave, campo, valor) => {
+        if (valor.startsWith('meta:')) {
+            const p = soloEnMeta[Number(valor.slice(5))];
+            if (p) guardar({ registrar: { uso: clave, nombre: p.nombre, idioma: p.idioma } }, clave);
+            return;
+        }
+
+        guardar({ [campo]: valor ? Number(valor) : null }, clave);
+    };
 
     return (
         <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
@@ -975,17 +999,36 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                     <select
                                         value={actual?.id ?? ''}
                                         disabled={!canManage || guardando === clave}
-                                        onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
+                                        onChange={e => elegir(clave, campo, e.target.value)}
                                         className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
                                     >
                                         <option value="">Sin elegir</option>
-                                        {(estado.disponibles ?? []).map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.title} ({p.language})
-                                                {p.con_documento ? '' : ' · sin adjunto'}
-                                                {p.en_la_linea === false ? ' · no está en esta línea' : ''}
-                                            </option>
-                                        ))}
+                                        {/* Dos grupos porque son dos sitios: lo
+                                            que Integra ya tiene registrado, y lo
+                                            que Meta aprobó en el número pero
+                                            Integra aún no conoce. Antes sólo
+                                            salía lo primero, y una plantilla
+                                            aprobada con otro nombre no se podía
+                                            elegir desde ninguna parte. */}
+                                        <optgroup label="Registradas en Integra">
+                                            {(estado.disponibles ?? []).map(p => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.title} ({p.language})
+                                                    {p.con_documento ? '' : ' · sin adjunto'}
+                                                    {p.en_la_linea === false ? ' · no está en esta línea' : ''}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        {soloEnMeta.length > 0 && (
+                                            <optgroup label={`Aprobadas en ${estado.linea?.numero || 'tu número'} · se registran en Integra al elegirlas`}>
+                                                {soloEnMeta.map((p, i) => (
+                                                    <option key={`${p.nombre}|${p.idioma}`} value={`meta:${i}`}>
+                                                        {p.nombre} ({p.idioma})
+                                                        {p.con_documento ? '' : ' · sin adjunto'}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
                                     </select>
 
                                     {/* Elegir la plantilla y decir qué lleva
@@ -1024,6 +1067,14 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                               Los catálogos de Meta son por número y no se heredan: mientras siga así, estos
                                               envíos se caen uno a uno.
                                           </span>
+                                      </p>
+                                      {/* Lo normal es elegir otra que ya esté
+                                          aprobada; copiarla obliga a esperar
+                                          otra revisión de Meta. */}
+                                      <p className="mt-1.5 pl-5">
+                                          {soloEnMeta.length > 0
+                                              ? 'Elige en el desplegable una de las aprobadas en tu número, o cópiala a esta línea y espera a que Meta la apruebe.'
+                                              : 'Cópiala a esta línea y espera a que Meta la apruebe.'}
                                       </p>
                                       <a
                                           href="/templates"

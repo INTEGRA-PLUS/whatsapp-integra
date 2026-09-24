@@ -113,6 +113,12 @@ class WebhookEndpointController extends Controller
             'plantilla_factura_id' => 'nullable|integer',
             'plantilla_tirilla_id' => 'nullable|integer',
             'plantilla_contrato_id' => 'nullable|integer',
+            // Elegir una plantilla aprobada en Meta que Integra aún no conoce:
+            // se registra allí primero y se elige con el id que devuelva.
+            'registrar' => 'nullable|array',
+            'registrar.uso' => 'required_with:registrar|in:factura,tirilla,contrato',
+            'registrar.nombre' => 'required_with:registrar|string|max:512',
+            'registrar.idioma' => 'required_with:registrar|string|max:20',
         ]);
 
         $cliente = $this->clienteDeIntegra();
@@ -121,13 +127,50 @@ class WebhookEndpointController extends Controller
             return response()->json(['message' => 'Integra no está conectado.'], 422);
         }
 
+        $registrada = null;
+
+        if (! empty($validado['registrar'])) {
+            $pedida = $validado['registrar'];
+            unset($validado['registrar']);
+
+            // El contenido se toma de Meta, no del navegador: lo que se registra
+            // en Integra tiene que ser exactamente lo que Meta aprobó, o el
+            // número de variables no cuadra y Meta rechaza cada envío.
+            $linea = auth()->user()->company->instanciaDelErp();
+            $catalogo = $linea ? $this->catalogoAprobadoDe($linea) : null;
+
+            if ($catalogo === null) {
+                return response()->json(['message' => 'No se pudo leer el catálogo de Meta de la línea. Inténtalo en un minuto.'], 502);
+            }
+
+            $plantilla = collect($catalogo)->first(fn ($p) => ($p['name'] ?? '') === $pedida['nombre']
+                && ($p['language'] ?? '') === $pedida['idioma']);
+
+            if (! $plantilla) {
+                return response()->json(['message' => "{$pedida['nombre']} ({$pedida['idioma']}) no está aprobada en la línea por la que envía Integra."], 422);
+            }
+
+            $alta = $cliente->registrarPlantilla($this->paraRegistrar($plantilla));
+
+            if (! $alta['ok']) {
+                return response()->json(['message' => $this->avisoDeAjustes($alta)], 422);
+            }
+
+            $registrada = (int) $alta['datos']['id'];
+            $validado["plantilla_{$pedida['uso']}_id"] = $registrada;
+        }
+
         $res = $cliente->guardarAjustesDeEnvio($validado);
 
         if (! $res['ok']) {
             return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
         }
 
-        return response()->json(['ok' => true] + $this->contrastadoConLaLinea($res['datos']));
+        // Guardar no devuelve la lista de disponibles; tras registrar una
+        // plantilla nueva se vuelve a leer para que aparezca en el desplegable.
+        $datos = $registrada ? (($cliente->ajustesDeEnvio()['datos'] ?? null) ?: $res['datos']) : $res['datos'];
+
+        return response()->json(['ok' => true, 'registrada' => $registrada] + $this->contrastadoConLaLinea($datos));
     }
 
     /**
@@ -309,6 +352,22 @@ class WebhookEndpointController extends Controller
      */
     private function aprobadasDe(Instance $linea): ?array
     {
+        $catalogo = $this->catalogoAprobadoDe($linea);
+
+        if ($catalogo === null) {
+            return null;
+        }
+
+        return array_map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''], $catalogo);
+    }
+
+    /**
+     * Las plantillas aprobadas de una línea, tal cual las devuelve Meta.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function catalogoAprobadoDe(Instance $linea): ?array
+    {
         if (empty($linea->waba_id) || empty($linea->access_token)) {
             return null;
         }
@@ -323,9 +382,30 @@ class WebhookEndpointController extends Controller
         return collect($res['data']['data'] ?? [])
             ->where('status', 'APPROVED')
             ->reject(fn ($p) => in_array($p['name'] ?? '', self::PLANTILLAS_DE_MUESTRA, true))
-            ->map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''])
             ->values()
             ->all();
+    }
+
+    /**
+     * Lo que Integra necesita para dar de alta una plantilla aprobada en Meta.
+     *
+     * @param  array<string, mixed>  $plantilla
+     * @return array{nombre: string, idioma: string, categoria: string, con_documento: bool, encabezado: ?string, texto: string}
+     */
+    private function paraRegistrar(array $plantilla): array
+    {
+        $componentes = collect($plantilla['components'] ?? []);
+        $encabezado = $componentes->first(fn ($c) => strtoupper($c['type'] ?? '') === 'HEADER');
+        $formato = $encabezado ? strtoupper($encabezado['format'] ?? 'TEXT') : null;
+
+        return [
+            'nombre' => $plantilla['name'] ?? '',
+            'idioma' => $plantilla['language'] ?? '',
+            'categoria' => $plantilla['category'] ?? 'UTILITY',
+            'con_documento' => $formato === 'DOCUMENT',
+            'encabezado' => $formato,
+            'texto' => $componentes->first(fn ($c) => strtoupper($c['type'] ?? '') === 'BODY')['text'] ?? '',
+        ];
     }
 
     /**
@@ -360,11 +440,13 @@ class WebhookEndpointController extends Controller
             'numero' => $linea->display_phone_number,
         ];
 
-        $aprobadas = $this->aprobadasDe($linea);
+        $catalogo = $this->catalogoAprobadoDe($linea);
 
-        if ($aprobadas === null || ! isset($datos['disponibles'])) {
+        if ($catalogo === null || ! isset($datos['disponibles'])) {
             return $datos;
         }
+
+        $aprobadas = array_map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''], $catalogo);
 
         $datos['disponibles'] = array_map(function ($plantilla) use ($aprobadas) {
             $nombre = $plantilla['title'] ?? '';
@@ -378,6 +460,23 @@ class WebhookEndpointController extends Controller
 
             return $plantilla;
         }, $datos['disponibles']);
+
+        // Y al revés: lo que la línea tiene aprobado e Integra no conoce. El
+        // desplegable sólo ofrecía lo registrado en Integra, así que una
+        // plantilla aprobada en Meta con otro nombre —`facturacion` donde
+        // Integra tenía `facturas`— no se podía elegir desde ninguna parte, y
+        // la pantalla de Plantillas la enseñaba aprobada. Nac Technology,
+        // 24-sep-2026. Se ofrecen aquí y se registran en Integra al elegirlas.
+        $enIntegra = collect($datos['disponibles'])
+            ->map(fn ($p) => ($p['title'] ?? '').'|'.($p['language'] ?? ''))
+            ->all();
+
+        $datos['solo_en_meta'] = collect($catalogo)
+            ->reject(fn ($p) => in_array(($p['name'] ?? '').'|'.($p['language'] ?? ''), $enIntegra, true))
+            ->map(fn ($p) => $this->paraRegistrar($p))
+            ->sortBy('nombre')
+            ->values()
+            ->all();
 
         return $datos;
     }

@@ -252,6 +252,112 @@ class AjustesDeEnvioDelErpTest extends TestCase
             ->assertJsonPath('disponibles.0.en_la_linea', false);
     }
 
+    /**
+     * Lo aprobado en la línea que Integra no conoce se ofrece para elegir.
+     *
+     * Nac Technology, 24-sep-2026: Meta tenía aprobadas `facturacion` y
+     * `tirilla`, Integra sólo conocía `facturas` y `tirillas`, y el desplegable
+     * —que sólo leía Integra— no dejaba elegir las buenas desde ninguna parte.
+     */
+    public function test_ofrece_las_aprobadas_en_meta_que_integra_no_tiene(): void
+    {
+        $this->conectarIntegra();
+        $this->lineaDelErp();
+
+        Http::fake([
+            '*/whatsapp/ajustes' => Http::response(['success' => true, 'data' => [
+                'disponibles' => [['id' => 48, 'title' => 'facturas', 'language' => 'es']],
+            ]], 200),
+            '*/message_templates*' => Http::response(['data' => [
+                $this->enMeta('facturacion', 'es_CO', 'APPROVED'),
+                $this->enMeta('tirilla', 'es_CO', 'APPROVED'),
+                $this->enMeta('borrador', 'es', 'PENDING'),
+                $this->enMeta('hello_world', 'en_US', 'APPROVED'),
+            ]], 200),
+        ]);
+
+        $solo = $this->actingAs($this->usuario)
+            ->getJson('/integrations/ajustes-envio')
+            ->assertOk()
+            ->json('solo_en_meta');
+
+        // Ni la pendiente, ni la de muestra de Meta, ni las que ya están en Integra.
+        $this->assertSame(['facturacion', 'tirilla'], array_column($solo, 'nombre'));
+        $this->assertTrue($solo[0]['con_documento']);
+        $this->assertSame('DOCUMENT', $solo[0]['encabezado']);
+    }
+
+    /** Elegirla la registra en Integra con el contenido de Meta y la deja elegida. */
+    public function test_elegir_una_de_meta_la_registra_en_integra_y_la_elige(): void
+    {
+        $this->conectarIntegra();
+        $this->lineaDelErp();
+
+        Http::fake([
+            '*/whatsapp/plantillas' => Http::response(['success' => true, 'data' => ['id' => 60]], 201),
+            '*/whatsapp/ajustes' => Http::response(['success' => true, 'data' => [
+                'plantillas' => ['factura' => ['id' => 60]],
+                'disponibles' => [['id' => 60, 'title' => 'facturacion', 'language' => 'es_CO']],
+            ]], 200),
+            '*/message_templates*' => Http::response(['data' => [
+                $this->enMeta('facturacion', 'es_CO', 'APPROVED'),
+            ]], 200),
+        ]);
+
+        $this->actingAs($this->usuario)
+            ->putJson('/integrations/ajustes-envio', [
+                'registrar' => ['uso' => 'factura', 'nombre' => 'facturacion', 'idioma' => 'es_CO'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('registrada', 60)
+            ->assertJsonPath('disponibles.0.en_la_linea', true);
+
+        // El texto viene de Meta, no del navegador.
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/whatsapp/plantillas')
+            && $r['title'] === 'facturacion'
+            && $r['language'] === 'es_CO'
+            && $r['body_header'] === 'DOCUMENT'
+            && $r['contenido'] === 'Hola {{1}}, tu factura de {{2}}');
+
+        Http::assertSent(fn ($r) => $r->method() === 'PUT'
+            && str_ends_with($r->url(), '/whatsapp/ajustes')
+            && $r['plantilla_factura_id'] === 60);
+    }
+
+    /** Lo que no está aprobado en la línea no se registra: Meta rechazaría cada envío. */
+    public function test_no_registra_lo_que_la_linea_no_tiene_aprobado(): void
+    {
+        $this->conectarIntegra();
+        $this->lineaDelErp();
+
+        Http::fake([
+            '*/message_templates*' => Http::response(['data' => [
+                $this->enMeta('facturacion', 'es_CO', 'PENDING'),
+            ]], 200),
+            '*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $this->actingAs($this->usuario)
+            ->putJson('/integrations/ajustes-envio', [
+                'registrar' => ['uso' => 'factura', 'nombre' => 'facturacion', 'idioma' => 'es_CO'],
+            ])
+            ->assertStatus(422);
+
+        Http::assertNotSent(fn ($r) => str_contains($r->url(), '/whatsapp/'));
+    }
+
+    /** @return array<string, mixed> */
+    private function enMeta(string $nombre, string $idioma, string $estado): array
+    {
+        return [
+            'name' => $nombre, 'language' => $idioma, 'status' => $estado,
+            'components' => [
+                ['type' => 'HEADER', 'format' => 'DOCUMENT'],
+                ['type' => 'BODY', 'text' => 'Hola {{1}}, tu factura de {{2}}'],
+            ],
+        ];
+    }
+
     private function lineaDelErp(): Instance
     {
         return Instance::create([
