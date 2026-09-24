@@ -18,10 +18,12 @@ import {
  *
  *   1. Qué le va a cambiar en el celular. La pantalla de consentimiento de Meta
  *      NO lo cuenta, y descubrirlo después es lo que genera la queja.
- *   2. Los cuatro requisitos, con casillas: sin marcarlas no se avanza. Uno de
+ *   2. Los cinco requisitos, con casillas: sin marcarlas no se avanza. Uno de
  *      ellos es tener cuenta de Facebook, que parece obvio y no lo es: el paso
  *      3 la da por supuesta —"se crea con tu cuenta de Facebook de siempre"— y
- *      quien no la tiene se entera con el portafolio ya a medias.
+ *      quien no la tiene se entera con el portafolio ya a medias. Otro es
+ *      desvincular la IA de Meta: Meta sólo lo dice después de escribir el
+ *      número, con un código (#3441060) que no explica nada al cliente.
  *   3. El portafolio comercial. Un ISP pequeño con una cuenta de Facebook
  *      normal no tiene ninguno, y toda la documentación —la nuestra incluida—
  *      daba por hecho que sí.
@@ -33,7 +35,7 @@ import {
  */
 export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     const [paso, setPaso] = useState(1);
-    const [confirmado, setConfirmado] = useState({ appBusiness: false, antiguedad: false, facebook: false, celular: false });
+    const [confirmado, setConfirmado] = useState({ appBusiness: false, antiguedad: false, sinIaMeta: false, facebook: false, celular: false });
     const [portafolio, setPortafolio] = useState(false);
     const [vinculada, setVinculada] = useState(false);
 
@@ -44,7 +46,7 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
     useEffect(() => {
         if (!open) return;
         setPaso(1);
-        setConfirmado({ appBusiness: false, antiguedad: false, facebook: false, celular: false });
+        setConfirmado({ appBusiness: false, antiguedad: false, sinIaMeta: false, facebook: false, celular: false });
         setPortafolio(false);
         setVinculada(false);
     }, [open]);
@@ -70,6 +72,17 @@ export default function AsistenteConexion({ open, onCancel, onLaunch }) {
             id: 'antiguedad',
             titulo: 'Lleva más de una semana en uso',
             detalle: 'Meta pide al menos 7 días de actividad real antes de aceptar una cuenta.',
+        },
+        // Meta no lo avisa hasta que el número ya está escrito en su ventana, y
+        // entonces lo rechaza con el #3441060 («Tu agente de Business AI ya está
+        // vinculado a este número»). Pasó con NOVA Partners el 24-sep-2026: el
+        // cliente había activado las respuestas con IA de Meta en la app.
+        {
+            id: 'sinIaMeta',
+            titulo: 'La IA de Meta está desvinculada',
+            detalle: 'Si usas las respuestas con IA de WhatsApp Business, quítalas antes: en la app, '
+                + 'Herramientas empresariales → Tu Business AI → Respuestas de IA → Desvincular IA. '
+                + 'Si nunca la activaste, no tienes que hacer nada.',
         },
         {
             id: 'facebook',

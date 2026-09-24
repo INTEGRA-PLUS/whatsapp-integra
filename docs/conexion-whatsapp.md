@@ -419,6 +419,30 @@ Por eso el backend acepta que falte y lo resuelve preguntando por los números d
 WABA, ya con el token en la mano. Exigirlo hacía fallar la conexión en el último
 paso, después de que el cliente ya había aceptado todo.
 
+### Dos rechazos del número que parecen de requisitos y no lo son
+
+Los dos le salieron a NOVA Partners el **24-sep-2026**, uno detrás del otro, al
+conectar el +57 304 587 4126 por coexistencia.
+
+**«No cumple los requisitos» en el desplegable.** Tras el paso de Meta Business
+Suite, el número aparece en la lista de «Agrega tu número de teléfono» con esa
+etiqueta y el aviso «Este número no se puede compartir con esta app». No es el
+número: esa lista sólo comparte números que ya están en Cloud API, y uno de la
+app no lo está. Hay que dejar «Ingresar un nuevo número de teléfono» y
+escribirlo; Meta reconoce entonces que está en la app y pasa al QR. El
+asistente ya lo avisaba en el paso 5, y aun así el cliente eligió de la lista.
+
+**`#3441060`: «Tu agente de Business AI ya está vinculado a este número».** El
+cliente tenía activadas las respuestas con IA de Meta en la app. Mientras estén
+vinculadas, Meta no deja conectar el número a ninguna plataforma. Se quita en
+la app: *Herramientas empresariales → Tu Business AI → Respuestas de IA →
+Desvincular IA*. Meta sólo lo dice **después** de escribir el número, así que
+ahora es la quinta casilla del paso 2 del asistente y figura en la guía.
+
+Y un efecto secundario de esos intentos: la WABA se crea en Meta aunque la
+ventana no llegue al final, y queda «Revisión en curso» sin que el CRM tenga
+instancia. Al repetir, hay que elegir **esa** cuenta, no crear otra.
+
 ### Por qué el listener se registra antes de abrir la ventana
 
 Meta devuelve las dos mitades del resultado **por caminos distintos**:

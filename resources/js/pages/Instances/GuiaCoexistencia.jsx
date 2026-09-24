@@ -95,9 +95,12 @@ export default function GuiaCoexistencia() {
                     </div>
                 </div>
 
-                <Aviso tono="info" titulo="Antes de empezar, comprueba cuatro cosas">
+                <Aviso tono="info" titulo="Antes de empezar, comprueba cinco cosas">
                     <p>El número usa la app de <strong>WhatsApp Business</strong>, no la de WhatsApp normal.</p>
                     <p>Lleva <strong>más de una semana</strong> en uso: Meta pide actividad real antes de aceptarlo.</p>
+                    <p>Si activaste las <strong>respuestas con IA de Meta</strong> en la app, desvincúlalas: en
+                    Herramientas empresariales → Tu Business AI → Respuestas de IA → Desvincular IA. Con la IA
+                    vinculada, Meta rechaza el número.</p>
                     <p>Tienes una <strong>cuenta de Facebook</strong>: es con la que se entra a Meta y se crea
                     el portafolio. No hace falta página ni publicar nada.</p>
                     <p>Tienes el <strong>celular a la mano</strong>, con cámara y batería.</p>
@@ -422,6 +425,8 @@ export default function GuiaCoexistencia() {
                         {[
                             ['«Este número ya está registrado en una cuenta de WhatsApp»', 'Falta el paso 1, o tu número no cumple los requisitos. Revisa que la cuenta lleve más de una semana de uso.'],
                             ['Mi número no aparece en la lista', 'Es lo normal: esa lista sólo trae números que ya están en la API. Escríbelo a mano.'],
+                            ['Mi número sale en la lista con «No cumple los requisitos»', 'No lo elijas ahí: deja «Ingresar un nuevo número de teléfono» y escríbelo. Aparece porque ya lo vinculaste en el paso 2, pero un número de la app no se comparte desde esa lista.'],
+                            ['«Tu agente de Business AI ya está vinculado a este número» (#3441060)', 'Tienes activadas las respuestas con IA de Meta en la app. Desvincúlalas en Herramientas empresariales → Tu Business AI → Respuestas de IA → Desvincular IA, espera un par de minutos y vuelve a intentarlo.'],
                             ['Salen números de otra cuenta mía', 'También es normal. La lista muestra lo que aún no está conectado aquí, no la cuenta en la que estás.'],
                             ['«Tu número no es elegible, se necesita más actividad»', 'La cuenta de WhatsApp Business es demasiado reciente. Úsala con normalidad y vuelve a intentar en unos días.'],
                             ['La ventana no se abre', 'Tu navegador está bloqueando las ventanas emergentes.'],
