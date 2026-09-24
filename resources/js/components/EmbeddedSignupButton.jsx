@@ -220,7 +220,7 @@ export default function EmbeddedSignupButton({ onConnected }) {
 
     return (
         <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button onClick={() => launch(false)} disabled={loading} className="gap-2 bg-[#1877f2] hover:bg-[#166fe0] text-white">
                     {loading ? <Loader2 className="size-4 animate-spin" /> : <MessageCircle className="size-4" />}
                     {loading ? 'Conectando…' : 'Conectar un número nuevo'}
