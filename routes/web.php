@@ -421,6 +421,9 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.create')->name('create');
         Route::get('/defaults', [TemplateController::class, 'defaultsIndex'])
             ->middleware('permission:templates.view')->name('defaults');
+        Route::get('/{templateId}/edit', [TemplateController::class, 'edit'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.update')->name('edit');
     });
 
     Route::prefix('api/templates')->group(function () {
@@ -447,6 +450,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/{templateId}', [TemplateController::class, 'show'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.view');
+        Route::post('/{templateId}', [TemplateController::class, 'update'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.update');
         Route::post('/upload-media', [TemplateController::class, 'uploadMedia'])
             ->middleware('permission:templates.create');
         Route::post('/', [TemplateController::class, 'store'])

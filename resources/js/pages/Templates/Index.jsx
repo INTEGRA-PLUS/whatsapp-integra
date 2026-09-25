@@ -31,6 +31,7 @@ import {
     Copy,
     ArrowRight,
     AlertTriangle,
+    Pencil,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -464,6 +465,7 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                     templateName={detail.name}
                     instanceId={instanceId}
                     negocio={negocio}
+                    canEdit={can('templates.update')}
                     onClose={() => setDetail(null)}
                     onSelectSibling={(sibling) => setDetail({ id: sibling.id, name: sibling.name })}
                 />
@@ -766,7 +768,10 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
     );
 }
 
-function TemplateDetailModal({ templateId, templateName, instanceId, negocio, onClose, onSelectSibling }) {
+/** Los estados en los que Meta deja editar una plantilla. */
+const ESTADOS_EDITABLES = ['APPROVED', 'REJECTED', 'PAUSED'];
+
+function TemplateDetailModal({ templateId, templateName, instanceId, negocio, canEdit = false, onClose, onSelectSibling }) {
     const [template, setTemplate] = useState(null);
     const [siblings, setSiblings] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -809,9 +814,30 @@ function TemplateDetailModal({ templateId, templateName, instanceId, negocio, on
                         <h2 className="text-lg font-semibold text-foreground font-mono truncate">{templateName}</h2>
                         <p className="text-xs text-muted-foreground mt-0.5">Detalle de plantilla y traducciones</p>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={onClose}>
-                        <X className="size-4" />
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                        {/* Se edita el idioma que está abierto: cada traducción es
+                            una plantilla aparte en Meta, con su propio estado. */}
+                        {canEdit && template && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                disabled={!ESTADOS_EDITABLES.includes(template.status)}
+                                title={ESTADOS_EDITABLES.includes(template.status)
+                                    ? `Editar la versión en ${template.language}`
+                                    : 'Meta solo deja editar plantillas aprobadas, rechazadas o pausadas'}
+                                onClick={() => router.visit(route('templates.edit', {
+                                    templateId: template.id,
+                                    instance_id: instanceId,
+                                }))}
+                            >
+                                <Pencil className="size-3.5" /> Editar
+                            </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={onClose}>
+                            <X className="size-4" />
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Tab strip */}

@@ -18,6 +18,8 @@ import {
     CheckCircle2,
     Languages,
     FileType,
+    Pencil,
+    TriangleAlert,
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -81,7 +83,15 @@ function emptyComponents() {
     };
 }
 
-function componentsFromTemplate(template) {
+/**
+ * El estado del formulario a partir de una plantilla de Meta.
+ *
+ * Con `conservarMuestras` (al editar) se quedan también los ejemplos de los
+ * botones y la URL del archivo de muestra del encabezado: la plantilla es la
+ * misma y se espera poder guardarla sin volver a subir nada. El servidor
+ * convierte esa URL en un handle nuevo antes de mandarla a Meta.
+ */
+function componentsFromTemplate(template, { conservarMuestras = false } = {}) {
     const out = emptyComponents();
     for (const c of template?.components ?? []) {
         if (c.type === 'HEADER' && (c.format ?? 'TEXT') === 'TEXT') {
@@ -89,7 +99,13 @@ function componentsFromTemplate(template) {
         } else if (c.type === 'HEADER') {
             // Encabezado multimedia: el handle de muestra es de un solo uso, así que
             // en traducciones/duplicados se exige volver a subir el archivo.
-            out.header = { ...out.header, media: c.format ?? 'IMAGE' };
+            const muestra = conservarMuestras ? (c.example?.header_handle?.[0] ?? '') : '';
+            out.header = {
+                ...out.header,
+                media: c.format ?? 'IMAGE',
+                handle: muestra,
+                fileName: muestra ? 'el archivo actual de la plantilla' : '',
+            };
         } else if (c.type === 'BODY') {
             out.body = { text: c.text ?? '' };
         } else if (c.type === 'FOOTER') {
@@ -99,9 +115,9 @@ function componentsFromTemplate(template) {
                 type: b.type ?? 'QUICK_REPLY',
                 text: b.text ?? '',
                 url: b.url ?? '',
-                url_example: '',
+                url_example: conservarMuestras && b.type === 'URL' ? (b.example?.[0] ?? '') : '',
                 phone_number: b.phone_number ?? '',
-                example: '',
+                example: conservarMuestras && b.type === 'COPY_CODE' ? (b.example?.[0] ?? '') : '',
                 otp_type: b.otp_type ?? 'COPY_CODE',
                 autofill_text: b.autofill_text ?? '',
                 package_name: b.package_name ?? '',
@@ -110,6 +126,31 @@ function componentsFromTemplate(template) {
         }
     }
     return out;
+}
+
+/**
+ * Los valores de ejemplo de las variables, por token, tal como Meta los guarda.
+ * Sin ellos, editar una plantilla con variables obligaba a reescribir todos
+ * los ejemplos aunque sólo se quisiera corregir una palabra.
+ */
+function examplesFromTemplate(template) {
+    const header = {};
+    const body = {};
+    for (const c of template?.components ?? []) {
+        if (c.type === 'HEADER') {
+            for (const p of c.example?.header_text_named_params ?? []) header[p.param_name] = p.example ?? '';
+            detectVars(c.text).forEach((t, i) => {
+                if (header[t] === undefined && c.example?.header_text?.[i] !== undefined) header[t] = c.example.header_text[i];
+            });
+        } else if (c.type === 'BODY') {
+            for (const p of c.example?.body_text_named_params ?? []) body[p.param_name] = p.example ?? '';
+            const valores = c.example?.body_text?.[0] ?? [];
+            detectVars(c.text).forEach((t, i) => {
+                if (body[t] === undefined && valores[i] !== undefined) body[t] = valores[i];
+            });
+        }
+    }
+    return { header, body };
 }
 
 // Detecta variables {{1}}/{{nombre}} en orden de aparición, sin duplicados.
@@ -149,6 +190,7 @@ function nextVarToken(existing, format) {
 
 export default function TemplatesCreate({ instances = [], prefill = {} }) {
     const isTranslation = prefill.mode === 'translation';
+    const isEdit = prefill.mode === 'edit';
     const familyName = prefill.family ?? '';
 
     const [instanceId, setInstanceId] = useState(() => {
@@ -171,7 +213,10 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
     const [created, setCreated] = useState(null);
     const [usedLanguages, setUsedLanguages] = useState(() => new Set());
     const [familyVerifiedName, setFamilyVerifiedName] = useState(null);
-    const [loadingSource, setLoadingSource] = useState(isTranslation);
+    const [loadingSource, setLoadingSource] = useState(isTranslation || isEdit);
+    // La plantilla tal como está en Meta, al editar. Su estado decide qué se
+    // puede tocar: la categoría de una aprobada, por ejemplo, no.
+    const [original, setOriginal] = useState(null);
 
     const bodyRef = useRef(null);
     const [emojiOpen, setEmojiOpen] = useState(false);
@@ -208,6 +253,39 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             .finally(() => !cancelled && setLoadingSource(false));
         return () => { cancelled = true; };
     }, []);
+
+    // Al editar se carga la plantilla entera, con sus ejemplos y su muestra.
+    useEffect(() => {
+        if (!isEdit || !prefill.template_id) return;
+        let cancelled = false;
+        axios.get(`/api/templates/${prefill.template_id}`, { params: { instance_id: instanceId } })
+            .then(({ data }) => {
+                if (cancelled) return;
+                const tpl = data.data ?? {};
+                setOriginal(tpl);
+                setName(tpl.name ?? '');
+                setLanguage(tpl.language ?? '');
+                setCategory(tpl.category ?? 'UTILITY');
+                setComps(componentsFromTemplate(tpl, { conservarMuestras: true }));
+                const textos = (tpl.components ?? []).map(c => c.text ?? '').join(' ');
+                setParameterFormat(
+                    tpl.parameter_format
+                        ?? (detectVars(textos).some(t => !isNumeric(t)) ? 'NAMED' : 'POSITIONAL')
+                );
+                const ejemplos = examplesFromTemplate(tpl);
+                setHeaderExamples(ejemplos.header);
+                setBodyExamples(ejemplos.body);
+            })
+            .catch(err => {
+                if (cancelled) return;
+                setApiError(err?.response?.data?.message ?? 'No se pudo cargar la plantilla.');
+            })
+            .finally(() => !cancelled && setLoadingSource(false));
+        return () => { cancelled = true; };
+    }, []);
+
+    const editable = !isEdit || ['APPROVED', 'REJECTED', 'PAUSED'].includes(original?.status);
+    const categoriaBloqueada = isTranslation || (isEdit && original?.status === 'APPROVED');
 
     const headerVars = useMemo(() => detectVars(comps.header.text), [comps.header.text]);
     const bodyVars = useMemo(() => detectVars(comps.body.text), [comps.body.text]);
@@ -258,6 +336,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         if (name.length > 512) e.name = 'Máximo 512 caracteres.';
         if (!language) e.language = 'Selecciona un idioma.';
         if (isTranslation && usedLanguages.has(language)) e.language = 'Ya existe una plantilla de esta familia en ese idioma.';
+        if (isEdit && !original) e.instance = 'La plantilla todavía no ha cargado.';
         if (!instanceId) e.instance = 'Selecciona una instancia.';
         return e;
     }
@@ -410,12 +489,23 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         setApiError(null);
         setSubmitting(true);
         try {
-            const res = await axios.post('/api/templates', buildPayload());
+            // Al editar sólo viajan categoría y contenido: nombre e idioma no
+            // se pueden cambiar en Meta, y el servidor no los acepta.
+            const payload = buildPayload();
+            const res = isEdit
+                ? await axios.post(`/api/templates/${prefill.template_id}`, {
+                    instance_id: payload.instance_id,
+                    category: payload.category,
+                    parameter_format: payload.parameter_format,
+                    components: payload.components,
+                })
+                : await axios.post('/api/templates', payload);
             setCreated({
                 template: res.data.data,
                 waba_id: res.data.waba_id,
                 instance: res.data.instance,
                 verified_in_meta: res.data.verified_in_meta,
+                editada: !!res.data.editada,
             });
         } catch (err) {
             const resp = err?.response?.data;
@@ -435,7 +525,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                     || meta?.error_user_title
                     || meta?.message
                     || resp?.message
-                    || 'No se pudo crear la plantilla.'
+                    || (isEdit ? 'No se pudieron guardar los cambios.' : 'No se pudo crear la plantilla.')
                 );
             }
         } finally {
@@ -527,7 +617,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
     if (created) {
         return (
             <>
-                <Head title="Plantilla enviada" />
+                <Head title={created.editada ? 'Cambios enviados' : 'Plantilla enviada'} />
                 <CreatedScreen created={created} />
             </>
         );
@@ -535,18 +625,22 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
 
     return (
         <>
-            <Head title={isTranslation ? `Nueva traducción · ${familyName}` : 'Crear plantilla'} />
+            <Head title={isEdit ? `Editar · ${name || 'plantilla'}` : isTranslation ? `Nueva traducción · ${familyName}` : 'Crear plantilla'} />
             <div className="flex flex-col min-h-[calc(100vh-3rem)]">
                 {/* Encabezado de página: sobre el mismo fondo que el cuerpo,
                     para que no quede una franja de otro color encima. */}
                 <div className="bg-muted/20 px-6 pt-6">
                     <div className="max-w-6xl mx-auto w-full">
                         <CabeceraModulo
-                            icono={isTranslation ? Languages : FileType}
+                            icono={isEdit ? Pencil : isTranslation ? Languages : FileType}
                             volver={route('templates.index')}
                             accionesClassName="hidden sm:flex"
-                            titulo={isTranslation ? <>Nueva traducción de <span className="font-mono">{familyName}</span></> : 'Crear plantilla'}
-                            descripcion={isTranslation
+                            titulo={isEdit
+                                ? <>Editar <span className="font-mono">{name || 'plantilla'}</span>{language ? <span className="font-mono text-muted-foreground"> · {language}</span> : null}</>
+                                : isTranslation ? <>Nueva traducción de <span className="font-mono">{familyName}</span></> : 'Crear plantilla'}
+                            descripcion={isEdit
+                                ? 'El nombre y el idioma no se pueden cambiar. Al guardar, Meta vuelve a revisar la plantilla.'
+                                : isTranslation
                                 ? 'La subplantilla mantiene el nombre y la categoría; solo cambia el idioma y el contenido.'
                                 : 'Meta revisará el contenido y las variables de la plantilla antes de aprobarla.'}
                         >
@@ -567,13 +661,48 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
 
                             {loadingSource && (
                                 <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
-                                    <Loader2 className="size-4 animate-spin" /> Cargando plantilla de origen…
+                                    <Loader2 className="size-4 animate-spin" /> {isEdit ? 'Cargando la plantilla…' : 'Cargando plantilla de origen…'}
+                                </div>
+                            )}
+
+                            {/* Lo que Meta no cuenta hasta que ya pasó: mientras
+                                revisa la edición, la plantilla no se puede enviar.
+                                Aquí hay plantillas —las facturas y tirillas del
+                                ERP— que salen solas todo el día, y editarlas a
+                                media mañana es dejar de mandarlas hasta que Meta
+                                conteste. */}
+                            {isEdit && original && editable && (
+                                <div className="flex gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+                                    <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                                    <div className="space-y-1 text-foreground">
+                                        <p className="font-semibold">Al guardar, Meta vuelve a revisar la plantilla.</p>
+                                        <p className="text-muted-foreground">
+                                            Mientras la revisa <strong className="text-foreground">no se puede enviar</strong>: suele
+                                            tardar minutos, pero puede llegar a 24 horas. Si la usas para facturas, campañas o
+                                            envíos automáticos, esos mensajes fallarán hasta que Meta la apruebe.
+                                        </p>
+                                        {original.status === 'APPROVED' && (
+                                            <p className="text-muted-foreground">
+                                                Una plantilla aprobada solo se puede editar <strong className="text-foreground">una vez
+                                                cada 24 horas</strong> y 10 veces al mes, y su categoría no se puede cambiar.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {isEdit && original && !editable && (
+                                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                                    Meta solo deja editar plantillas aprobadas, rechazadas o pausadas. Esta está
+                                    en estado <strong>{original.status}</strong>: espera a que Meta termine de revisarla.
                                 </div>
                             )}
 
                             {step === 1 && (
                                 <StepConfig
                                     isTranslation={isTranslation}
+                                    isEdit={isEdit}
+                                    categoriaBloqueada={categoriaBloqueada}
                                     instances={instances}
                                     instanceId={instanceId}
                                     setInstanceId={setInstanceId}
@@ -596,6 +725,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                                     setComps={setComps}
                                     parameterFormat={parameterFormat}
                                     setParameterFormat={setParameterFormat}
+                                    formatoBloqueado={isEdit}
                                     headerVars={headerVars}
                                     bodyVars={bodyVars}
                                     headerExamples={headerExamples}
@@ -656,9 +786,9 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                             {step === 1 ? (
                                 <Button type="button" onClick={goNext}>Siguiente</Button>
                             ) : (
-                                <Button type="button" onClick={handleSubmit} disabled={submitting || !comps.body.text.trim()} className="gap-2">
+                                <Button type="button" onClick={handleSubmit} disabled={submitting || !comps.body.text.trim() || !editable} className="gap-2">
                                     {submitting && <Loader2 className="size-4 animate-spin" />}
-                                    Enviar para revisión
+                                    {isEdit ? 'Guardar y enviar a revisión' : 'Enviar para revisión'}
                                 </Button>
                             )}
                         </div>
@@ -734,7 +864,7 @@ function CounterInput({ value, onChange, maxLength, placeholder, disabled }) {
 }
 
 function StepConfig({
-    isTranslation, instances, instanceId, setInstanceId,
+    isTranslation, isEdit = false, categoriaBloqueada = false, instances, instanceId, setInstanceId,
     name, setName, category, setCategory, language, setLanguage,
     usedLanguages, allowCategoryChange, setAllowCategoryChange, errors,
 }) {
@@ -743,11 +873,13 @@ function StepConfig({
             <div>
                 <h2 className="text-base font-semibold text-foreground">Configura tu plantilla</h2>
                 <p className="text-xs text-muted-foreground mt-1">
-                    Elige la categoría, el nombre y el idioma. {isTranslation ? 'El nombre y la categoría vienen de la plantilla principal.' : 'Después podrás añadir traducciones (subplantillas) a otros idiomas.'}
+                    {isEdit
+                        ? 'El nombre y el idioma son fijos en Meta. La categoría solo se puede cambiar si la plantilla no está aprobada.'
+                        : <>Elige la categoría, el nombre y el idioma. {isTranslation ? 'El nombre y la categoría vienen de la plantilla principal.' : 'Después podrás añadir traducciones (subplantillas) a otros idiomas.'}</>}
                 </p>
             </div>
 
-            {instances.length > 1 && !isTranslation && (
+            {instances.length > 1 && !isTranslation && !isEdit && (
                 <div className="space-y-1.5">
                     <FieldLabel>Instancia (WABA)</FieldLabel>
                     <select
@@ -765,7 +897,7 @@ function StepConfig({
 
             <div className="space-y-1.5">
                 <FieldLabel hint="Cambia cómo se cobra y revisa Meta el mensaje. UTILITY para avisos de cuenta, MARKETING para promociones.">
-                    Categoría {isTranslation && <span className="text-xs font-normal text-muted-foreground">(bloqueada)</span>}
+                    Categoría {categoriaBloqueada && <span className="text-xs font-normal text-muted-foreground">(bloqueada)</span>}
                 </FieldLabel>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {CATEGORIES.map(c => {
@@ -774,7 +906,7 @@ function StepConfig({
                             <button
                                 key={c.value}
                                 type="button"
-                                disabled={isTranslation}
+                                disabled={categoriaBloqueada}
                                 onClick={() => setCategory(c.value)}
                                 className={`rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
                                     active ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:border-primary/40'
@@ -791,26 +923,32 @@ function StepConfig({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                     <FieldLabel hint="Identificador interno de la plantilla en Meta. Solo minúsculas, números y guiones bajos.">
-                        Nombre {isTranslation && <span className="text-xs font-normal text-muted-foreground">(bloqueado)</span>}
+                        Nombre {(isTranslation || isEdit) && <span className="text-xs font-normal text-muted-foreground">(bloqueado)</span>}
                     </FieldLabel>
                     <input
                         type="text"
                         value={name}
                         onChange={e => setName(e.target.value.toLowerCase())}
-                        disabled={isTranslation}
+                        disabled={isTranslation || isEdit}
                         placeholder="cortes_servicio"
                         className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm font-mono shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
                     />
                     {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
                 </div>
                 <div className="space-y-1.5">
-                    <FieldLabel>Idioma</FieldLabel>
+                    <FieldLabel>Idioma {isEdit && <span className="text-xs font-normal text-muted-foreground">(bloqueado)</span>}</FieldLabel>
                     <select
                         value={language}
                         onChange={e => setLanguage(e.target.value)}
-                        className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        disabled={isEdit}
+                        className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50 disabled:opacity-60"
                     >
                         <option value="">Selecciona...</option>
+                        {/* Un idioma que no está en la lista corta —la plantilla se
+                            creó en Meta— tiene que poder verse al editarla. */}
+                        {isEdit && language && !LANGUAGES.some(l => l.code === language) && (
+                            <option value={language}>{language}</option>
+                        )}
                         {LANGUAGES.map(l => (
                             <option key={l.code} value={l.code} disabled={isTranslation && usedLanguages.has(l.code)}>
                                 {l.code} — {l.label}{isTranslation && usedLanguages.has(l.code) ? ' (ya existe)' : ''}
@@ -828,7 +966,7 @@ function StepConfig({
                 </div>
             )}
 
-            {!isTranslation && (
+            {!isTranslation && !isEdit && (
                 <label className="flex items-center gap-2 text-sm text-foreground">
                     <input
                         type="checkbox"
@@ -844,7 +982,7 @@ function StepConfig({
 }
 
 function StepContent({
-    comps, setComps, parameterFormat, setParameterFormat,
+    comps, setComps, parameterFormat, setParameterFormat, formatoBloqueado = false,
     headerVars, bodyVars, headerExamples, setHeaderExamples, bodyExamples, setBodyExamples,
     errors, bodyRef, emojiOpen, setEmojiOpen, insertInBody,
     addHeaderVariable, addBodyVariable, handleHeaderFile,
@@ -868,10 +1006,13 @@ function StepContent({
                     <FieldLabel hint='Con "Número" las variables son {{1}}, {{2}}... Con "Nombre" usas nombres descriptivos como {{cliente}} o {{fecha_corte}}.'>
                         Tipo de variable
                     </FieldLabel>
+                    {/* Meta no deja cambiar el tipo de variable al editar: sólo
+                        categoría y contenido. */}
                     <select
                         value={parameterFormat}
                         onChange={e => setParameterFormat(e.target.value)}
-                        className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        disabled={formatoBloqueado}
+                        className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50 disabled:opacity-60"
                     >
                         <option value="POSITIONAL">Número</option>
                         <option value="NAMED">Nombre</option>
@@ -1255,9 +1396,13 @@ function CreatedScreen({ created }) {
                             <CheckCircle2 className="size-5" />
                         </div>
                         <div>
-                            <h2 className="text-lg font-semibold text-foreground">Plantilla enviada a Meta</h2>
+                            <h2 className="text-lg font-semibold text-foreground">
+                                {created.editada ? 'Cambios enviados a Meta' : 'Plantilla enviada a Meta'}
+                            </h2>
                             <p className="text-xs text-muted-foreground mt-1">
-                                Meta la recibió en estado <span className="font-medium text-foreground">{tpl.status ?? 'PENDING'}</span>. La aprobación suele tardar unos minutos.
+                                {created.editada
+                                    ? 'Meta está revisando la plantilla editada. Hasta que la apruebe no se puede enviar; suele tardar unos minutos.'
+                                    : <>Meta la recibió en estado <span className="font-medium text-foreground">{tpl.status ?? 'PENDING'}</span>. La aprobación suele tardar unos minutos.</>}
                             </p>
                         </div>
                     </div>
@@ -1277,12 +1422,12 @@ function CreatedScreen({ created }) {
                                 <span className="text-foreground text-right">{created.instance.name}{created.instance.display_phone_number ? ` · ${created.instance.display_phone_number}` : ''}</span>
                             </div>
                         )}
-                        <div className="flex justify-between gap-3">
+                        {!created.editada && <div className="flex justify-between gap-3">
                             <span className="text-muted-foreground">Verificada en Meta</span>
                             <span className={created.verified_in_meta ? 'text-success font-medium' : 'text-warning font-medium'}>
                                 {created.verified_in_meta ? 'Sí' : 'No respondió aún'}
                             </span>
-                        </div>
+                        </div>}
                     </div>
 
                     <div className="flex gap-2 pt-1">

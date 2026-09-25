@@ -55,6 +55,34 @@ class TemplateController extends Controller
         ]);
     }
 
+    /**
+     * El mismo editor que al crear, abierto sobre una plantilla que ya existe.
+     *
+     * La plantilla se carga desde el navegador —como en las traducciones— y
+     * no aquí: así el editor reutiliza el mismo camino de lectura, con su plan
+     * B para las plantillas cuyo detalle por id falla.
+     */
+    public function edit(Request $request, string $templateId)
+    {
+        $user = auth()->user();
+
+        $instances = Instance::where('company_id', $user->company_id)
+            ->where('active', true)
+            ->whereNotNull('waba_id')
+            ->whereNotNull('access_token')
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_phone_number', 'waba_id']);
+
+        return Inertia::render('Templates/Create', [
+            'instances' => $instances,
+            'prefill' => [
+                'mode' => 'edit',
+                'template_id' => $templateId,
+                'instance_id' => $request->query('instance_id'),
+            ],
+        ]);
+    }
+
     public function analyticsIndex()
     {
         $user = auth()->user();
@@ -710,23 +738,7 @@ class TemplateController extends Controller
             'category' => 'required|in:MARKETING,UTILITY,AUTHENTICATION',
             'allow_category_change' => 'nullable|boolean',
             'parameter_format' => 'nullable|in:POSITIONAL,NAMED',
-            'components' => 'required|array|min:1',
-            'components.*.type' => 'required|in:HEADER,BODY,FOOTER,BUTTONS',
-            'components.*.format' => 'nullable|in:TEXT,IMAGE,VIDEO,DOCUMENT,LOCATION',
-            'components.*.text' => 'nullable|string|max:1024',
-            'components.*.example' => 'nullable|array',
-            'components.*.add_security_recommendation' => 'nullable|boolean',
-            'components.*.code_expiration_minutes' => 'nullable|integer|min:1|max:90',
-            'components.*.buttons' => 'nullable|array|max:10',
-            'components.*.buttons.*.type' => 'nullable|in:QUICK_REPLY,URL,PHONE_NUMBER,COPY_CODE,OTP',
-            'components.*.buttons.*.text' => 'nullable|string|max:25',
-            'components.*.buttons.*.url' => 'nullable|string|max:2000',
-            'components.*.buttons.*.phone_number' => 'nullable|string|max:20',
-            'components.*.buttons.*.example' => 'nullable|array',
-            'components.*.buttons.*.otp_type' => 'nullable|in:COPY_CODE,ONE_TAP,ZERO_TAP',
-            'components.*.buttons.*.autofill_text' => 'nullable|string|max:25',
-            'components.*.buttons.*.package_name' => 'nullable|string|max:200',
-            'components.*.buttons.*.signature_hash' => 'nullable|string|max:50',
+            ...$this->reglasDeComponentes(),
         ]);
 
         $semanticErrors = $this->validateComponentsRules(
@@ -787,6 +799,157 @@ class TemplateController extends Controller
             ],
             'verified_in_meta' => $verified,
         ], 201);
+    }
+
+    /**
+     * Edita una plantilla en Meta.
+     *
+     * Las reglas son de Meta y fallan con mensajes poco claros, así que se
+     * comprueban aquí antes de gastar la llamada:
+     *
+     * - Sólo se editan plantillas APPROVED, REJECTED o PAUSED.
+     * - Nombre e idioma no se tocan nunca; la categoría, sólo si no está
+     *   aprobada.
+     * - Los `components` se reemplazan enteros.
+     * - Una aprobada admite 1 edición cada 24 h y 10 cada 30 días. Ese tope no
+     *   se puede consultar antes: si se supera, se devuelve el error de Meta.
+     *
+     * Mientras Meta revisa la edición la plantilla NO se puede enviar. El
+     * editor lo avisa antes de mandar, porque aquí hay plantillas —las de
+     * facturas del ERP— que salen solas a diario.
+     */
+    public function update(Request $request, string $templateId)
+    {
+        $data = $request->validate([
+            'instance_id' => 'nullable|integer',
+            'category' => 'required|in:MARKETING,UTILITY,AUTHENTICATION',
+            'parameter_format' => 'nullable|in:POSITIONAL,NAMED',
+            ...$this->reglasDeComponentes(),
+        ]);
+
+        $semanticErrors = $this->validateComponentsRules(
+            $data['components'],
+            $data['category'],
+            $data['parameter_format'] ?? 'POSITIONAL'
+        );
+        if (!empty($semanticErrors)) {
+            return response()->json([
+                'message' => 'Componentes inválidos.',
+                'errors' => $semanticErrors,
+            ], 422);
+        }
+
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
+        }
+
+        // La plantilla tiene que estar en el WABA de ESTA línea. El token de la
+        // instancia puede alcanzar otros WABA —el de usuario del sistema de la
+        // app ve los de varios clientes—, así que editar por el id que manda el
+        // navegador, sin más, dejaría tocar la plantilla de otra empresa.
+        $actual = $this->plantillaDelListado($instance, $templateId);
+
+        if ($actual === null) {
+            return response()->json([
+                'message' => 'No encontramos esa plantilla en esta línea.',
+            ], 404);
+        }
+
+        $estado = $actual['status'] ?? null;
+        if (!in_array($estado, ['APPROVED', 'REJECTED', 'PAUSED'], true)) {
+            return response()->json([
+                'message' => 'Meta sólo deja editar plantillas aprobadas, rechazadas o pausadas. '
+                    .'Esta está en estado '.($estado ?? 'desconocido').'.',
+            ], 422);
+        }
+
+        $categoriaCambia = ($actual['category'] ?? null) !== $data['category'];
+        if ($categoriaCambia && $estado === 'APPROVED') {
+            return response()->json([
+                'message' => 'La categoría de una plantilla aprobada no se puede cambiar. '
+                    .'Crea una plantilla nueva con la categoría que necesitas.',
+            ], 422);
+        }
+
+        $componentes = $this->sanitizeComponents($data['components']);
+
+        // Si el encabezado multimedia no se cambió, el editor devuelve la URL
+        // de la muestra que Meta guarda, no un handle. Meta no acepta esa URL
+        // al editar: hay que volver a subir el archivo y mandar el handle nuevo.
+        foreach ($componentes as $i => $componente) {
+            $muestra = $componente['example']['header_handle'][0] ?? null;
+
+            if (is_string($muestra) && str_starts_with($muestra, 'http')) {
+                $handle = $this->rehacerMuestraDelEncabezado($muestra, $instance);
+
+                if ($handle === null) {
+                    return response()->json([
+                        'message' => 'No se pudo reutilizar el archivo del encabezado. Vuelve a subirlo e inténtalo de nuevo.',
+                    ], 422);
+                }
+
+                $componentes[$i]['example']['header_handle'] = [$handle];
+            }
+        }
+
+        $payload = ['components' => $componentes];
+        if ($categoriaCambia) {
+            $payload['category'] = $data['category'];
+        }
+
+        $result = $this->meta->editTemplate($templateId, $instance->access_token, $payload);
+
+        if (!$result['success']) {
+            return response()->json([
+                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Meta no aceptó los cambios.',
+                'error' => $result['error'] ?? null,
+            ], 502);
+        }
+
+        return response()->json([
+            'data' => [
+                'id' => $templateId,
+                'name' => $actual['name'] ?? null,
+                'language' => $actual['language'] ?? null,
+                'status' => 'PENDING',
+            ],
+            'waba_id' => $instance->waba_id,
+            'instance' => [
+                'id' => $instance->id,
+                'name' => $instance->name,
+                'display_phone_number' => $instance->display_phone_number,
+            ],
+            'editada' => true,
+        ]);
+    }
+
+
+    /**
+     * Las reglas de validación de `components`, iguales al crear y al editar:
+     * Meta pide lo mismo en los dos casos.
+     */
+    protected function reglasDeComponentes(): array
+    {
+        return [
+            'components' => 'required|array|min:1',
+            'components.*.type' => 'required|in:HEADER,BODY,FOOTER,BUTTONS',
+            'components.*.format' => 'nullable|in:TEXT,IMAGE,VIDEO,DOCUMENT,LOCATION',
+            'components.*.text' => 'nullable|string|max:1024',
+            'components.*.example' => 'nullable|array',
+            'components.*.add_security_recommendation' => 'nullable|boolean',
+            'components.*.code_expiration_minutes' => 'nullable|integer|min:1|max:90',
+            'components.*.buttons' => 'nullable|array|max:10',
+            'components.*.buttons.*.type' => 'nullable|in:QUICK_REPLY,URL,PHONE_NUMBER,COPY_CODE,OTP',
+            'components.*.buttons.*.text' => 'nullable|string|max:25',
+            'components.*.buttons.*.url' => 'nullable|string|max:2000',
+            'components.*.buttons.*.phone_number' => 'nullable|string|max:20',
+            'components.*.buttons.*.example' => 'nullable|array',
+            'components.*.buttons.*.otp_type' => 'nullable|in:COPY_CODE,ONE_TAP,ZERO_TAP',
+            'components.*.buttons.*.autofill_text' => 'nullable|string|max:25',
+            'components.*.buttons.*.package_name' => 'nullable|string|max:200',
+            'components.*.buttons.*.signature_hash' => 'nullable|string|max:50',
+        ];
     }
 
     /**
