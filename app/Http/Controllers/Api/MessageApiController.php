@@ -770,11 +770,22 @@ class MessageApiController extends Controller
                 'guard_error' => $guard['error'],
             ]);
 
+            // Por la API las plantillas llegan del ERP, y cuando el número de
+            // datos no cuadra casi siempre es que nadie dijo qué va en cada
+            // variable. Este texto es el que el ERP enseña tal cual en la
+            // pantalla de facturas: el 25-sep-2026 Nac Technology vio «necesita
+            // 4 datos y el envío manda 3» sin ninguna pista de dónde se
+            // arreglaba.
+            $error = $guard['error'];
+            if ($guard['code'] === 'template_body_parameters') {
+                $error .= ' Revisa qué dato va en cada variable en el CRM: Integraciones → Envíos automáticos → Variables.';
+            }
+
             return response()->json([
                 'success' => false,
                 'code' => TemplateParameterGuard::CODE,
                 'reason' => $guard['code'],
-                'error' => $guard['error'],
+                'error' => $error,
             ], 422);
         }
 

@@ -145,6 +145,33 @@ class PlantillaDelErpEnElChatTest extends TestCase
         $this->assertSame('[Plantilla: facturacion]', WhatsAppMessage::latest('id')->first()->content);
     }
 
+    /**
+     * Si el ERP manda menos datos de los que pide la plantilla, el error dice
+     * dónde se arregla. El ERP lo enseña tal cual en la pantalla de facturas.
+     */
+    public function test_si_faltan_datos_el_error_dice_donde_se_asignan_las_variables(): void
+    {
+        $this->fakeGraph();
+
+        $respuesta = $this->withHeader('X-Instance-Token', $this->token)
+            ->postJson('/api/v1/messages/template', [
+                'to' => '573001112233',
+                'template_name' => 'facturacion',
+                'language_code' => 'es',
+                'components' => [[
+                    'type' => 'body',
+                    'parameters' => [
+                        ['type' => 'text', 'text' => 'CONECTA COMUNICACIONES SAS'],
+                        ['type' => 'text', 'text' => 'FE13922'],
+                    ],
+                ]],
+            ])
+            ->assertStatus(422);
+
+        $this->assertStringContainsString('necesita 3 datos en el cuerpo y el envío manda 2', $respuesta->json('error'));
+        $this->assertStringContainsString('Integraciones → Envíos automáticos → Variables', $respuesta->json('error'));
+    }
+
     private function fakeGraph(): void
     {
         Http::fake([
