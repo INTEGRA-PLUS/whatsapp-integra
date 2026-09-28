@@ -6,7 +6,35 @@ Messenger, con los textos ya escritos. Mismo formato que
 
 App: **Integra CRM** · `865904982715022` · borrador `1068915315747320`
 
-## Estado al 27-sep-2026
+## Estado al 27-sep-2026 (noche): formulario rellenado, falta la llamada de prueba
+
+Todo el formulario está rellenado en el borrador `1068915315747320`. Lo único que
+impide enviar es que Meta cuente la llamada de prueba de `pages_messaging`: el
+panel dice «0 de 1» aunque el CRM ya contestó por Messenger tres veces (19:56,
+20:34 y 21:52). Meta avisa de que tarda **hasta 24 h** en reflejarlas. Mirar el
+28-sep por la tarde: si sigue en 0, mandar una respuesta más desde el Chat.
+
+| Bloque | Estado |
+|---|---|
+| `pages_show_list` | Completo |
+| `pages_manage_metadata` | Completo (llamada de prueba: «Completado») |
+| `pages_read_engagement` | Completo (llamada de prueba: «Completado») |
+| Business Asset User Profile Access | Completo |
+| `pages_messaging` | Todo relleno (descripción, vídeo, página Integra, instrucciones, confirmación) salvo la llamada de prueba |
+| Tratamiento de datos | Revisado: las respuestas de Instagram (aprobadas el 22-sep) siguen siendo ciertas; se cambió «conversaciones de WhatsApp» por «de WhatsApp, Instagram y Messenger» |
+| Instrucciones para revisores | Reescritas para Messenger. «¿Facebook Login integrado?» pasó de *No* a **Sí** |
+
+El vídeo subido en los cinco bloques es `Messenger - App Review (final).mp4`
+(1 min 43 s): la toma de las 21:50 sin el login —salía el autocompletado de
+Chrome con correos de otras personas—, con la lista de chats personales de
+Messenger difuminada y rótulos en inglés en una franja bajo la imagen, para que
+no tapen nada.
+
+Textos precargados que eran falsos y se reescribieron: `pages_read_engagement`
+decía que analizamos publicaciones, métricas y estadísticas de la página, y no lo
+hacemos.
+
+## Estado al 27-sep-2026 (tarde)
 
 | Paso | Estado |
 |---|---|
@@ -216,12 +244,11 @@ Antes de grabar: quitar la **suplantación** de la cabecera del CRM (sale en
 
 - [x] Ensayo real: mensaje de una cuenta con rol → llega al CRM → respuesta sale (27-sep)
 - [ ] Llamada de prueba de `pages_messaging` contada (mirar el 28-sep)
-- [ ] `pages_show_list` y `pages_read_engagement` añadidos al borrador
-      (Casos de uso → Messenger from Meta → Permisos y funciones → Acciones → Agregar a la revisión)
-- [ ] (Recomendado) *Business Asset User Profile Access* añadido
-- [ ] Cuenta de evaluador para el revisor, según pide Meta
-- [ ] Descripciones pegadas (sección 2)
-- [ ] Screencast grabado y auditado
-- [ ] Data Use Checkup revisado (viene con lo de Instagram)
-- [ ] Instrucciones para revisores con el usuario Meta Reviewer (id 89, empresa 57)
+- [x] `pages_show_list` y `pages_read_engagement` añadidos al borrador
+- [x] *Business Asset User Profile Access* añadido
+- [ ] Cuenta de evaluador para el revisor, según pide Meta (no se ha creado; el revisor usa la suya)
+- [x] Descripciones pegadas (sección 2)
+- [x] Screencast grabado, auditado y subido en los cinco bloques
+- [x] Data Use Checkup revisado
+- [x] Instrucciones para revisores con el usuario Meta Reviewer (id 89, empresa 57)
 - [ ] Enviar y comprobar por API: `devtools_app_review status` → `is_pending: true`
