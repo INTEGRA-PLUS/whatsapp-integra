@@ -254,11 +254,14 @@ class Instance extends Model
     public function isMetaConfigured()
     {
         // Cada canal se configura con cosas distintas: WhatsApp con un número y
-        // una WABA, Instagram con una cuenta profesional. Messenger todavía no
-        // está construido, y decir que no está listo es la respuesta correcta
-        // —y la segura: ningún camino de salida intentará hablar con Meta por un
-        // canal que aún no sabe hacerlo.
-        if ($this->esInstagram()) {
+        // una WABA; Instagram con una cuenta profesional y Messenger con una
+        // página, los dos con su token.
+        //
+        // Messenger devolvió `false` aquí hasta el 27-sep-2026, de cuando aún no
+        // estaba construido. Se construyó el envío y nadie volvió a esta línea:
+        // la primera respuesta real desde el chat falló con «Instancia no
+        // configurada» sin llegar a salir.
+        if ($this->esInstagram() || $this->esMessenger()) {
             return ! empty($this->external_account_id) && ! empty($this->access_token);
         }
 

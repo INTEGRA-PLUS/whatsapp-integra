@@ -156,10 +156,15 @@ class CheckInstanceHealth extends Command
         // sin aceptar, entre otras— y un health-check que se cree eso apagaría
         // en verde líneas que funcionan. Con la configuración completa basta:
         // lo que de verdad falla, el token caducado, ya tiene su propia tarea.
-        if ($instance->esInstagram()) {
+        // Messenger, igual: sin este desvío caía en la comprobación de WhatsApp,
+        // que pide un phone_number_id que una página no tiene, y cada mañana la
+        // habría marcado «Sin conexión».
+        if ($instance->esInstagram() || $instance->esMessenger()) {
             return $instance->isMetaConfigured()
                 ? ['ok', null]
-                : ['unreachable', 'La cuenta de Instagram no tiene identificador o token configurado.'];
+                : ['unreachable', $instance->esMessenger()
+                    ? 'La página de Messenger no tiene identificador o token configurado.'
+                    : 'La cuenta de Instagram no tiene identificador o token configurado.'];
         }
 
         if (! $instance->access_token || ! $instance->phone_number_id) {
