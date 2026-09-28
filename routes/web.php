@@ -534,6 +534,16 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:contacts.view')
         ->name('contacts.index');
 
+    // Guías paso a paso de lo que más se pregunta. Sin permiso: son ayuda, y
+    // quien no puede crear plantillas también necesita saber cuánto tarda Meta
+    // en aprobarlas para contestárselo a un cliente. El contenido vive en
+    // `resources/js/pages/Guias/contenido.jsx`, junto a las pantallas que
+    // describe; la ruta sólo lleva el slug.
+    Route::inertia('/guias', 'Guias/Index')->name('guias.index');
+    Route::get('/guias/{guia}', fn (string $guia) => Inertia::render('Guias/Show', ['slug' => $guia]))
+        ->where('guia', '[a-z0-9-]+')
+        ->name('guias.show');
+
     // «Mi plan» — lo mismo que ve el master, contado desde el lado del cliente.
     // Sin permiso propio a propósito: cualquiera que pueda mirar las extensiones
     // puede ver en qué plan está, y un permiso más sería una casilla que alguien

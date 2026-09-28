@@ -26,6 +26,7 @@ import {
     Blocks,
     BadgeCheck,
     Table2,
+    BookOpen,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -136,6 +137,14 @@ export function AppSidebar() {
                     { title: 'Usuarios', href: route('users.index'), icon: Users, show: hasPermission('users.view') },
                     { title: 'Roles', href: route('roles.index'), icon: ShieldCheck, show: hasPermission('roles.view') },
                     { title: 'Notificaciones', href: route('announcements.index'), icon: BellRing, show: hasPermission('notifications.send') },
+                ],
+            },
+            {
+                // Al final y sin permiso: es a donde se va cuando no se sabe
+                // hacer algo, y eso le pasa a cualquier rol.
+                label: 'Ayuda',
+                items: [
+                    { title: 'Guías', href: route('guias.index'), icon: BookOpen },
                 ],
             },
         ];
