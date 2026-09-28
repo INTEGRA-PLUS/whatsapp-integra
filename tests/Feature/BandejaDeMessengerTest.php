@@ -10,6 +10,7 @@ use App\Models\WhatsAppMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -189,6 +190,52 @@ class BandejaDeMessengerTest extends TestCase
         $this->assertNotNull($mensaje);
         $this->assertSame('outbound', $mensaje->direction);
         $this->assertSame($linea->id, $mensaje->conversation->instance_id);
+    }
+
+    /**
+     * El eco de nuestra respuesta puede llegar en el mismo segundo en que el
+     * envío guarda su `mid`. El 27-sep-2026 eso dejó un «❌ Error procesando
+     * evento» por un mensaje que estaba bien. Aquí el `mid` aparece guardado
+     * justo antes de que el eco se escriba, como hizo el envío.
+     */
+    public function test_el_eco_que_llega_mientras_se_guarda_la_respuesta_no_es_un_error(): void
+    {
+        $linea = $this->lineaDeMessenger();
+        $conversacion = WhatsAppConversation::create([
+            'instance_id' => $linea->id,
+            'wa_id' => self::CLIENTE,
+            'status' => 'open',
+            'last_message_at' => now(),
+        ]);
+
+        WhatsAppMessage::creating(function (WhatsAppMessage $m) use ($conversacion) {
+            if ($m->wamid === 'mid-carrera' && ! WhatsAppMessage::where('wamid', 'mid-carrera')->exists()) {
+                \Illuminate\Support\Facades\DB::table('whatsapp_messages')->insert([
+                    'conversation_id' => $conversacion->id,
+                    'wamid' => 'mid-carrera',
+                    'type' => 'text',
+                    'content' => 'Ya vamos para allá',
+                    'direction' => 'outbound',
+                    'status' => 'sent',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        });
+
+        $canal = \Mockery::spy(\Psr\Log\LoggerInterface::class);
+        Log::spy();
+        Log::shouldReceive('channel')->andReturn($canal);
+
+        $this->enviar([
+            'sender' => ['id' => self::PAGINA],
+            'recipient' => ['id' => self::CLIENTE],
+            'timestamp' => now()->getTimestampMs(),
+            'message' => ['mid' => 'mid-carrera', 'is_echo' => true, 'text' => 'Ya vamos para allá'],
+        ])->assertOk();
+
+        $this->assertSame(1, WhatsAppMessage::where('wamid', 'mid-carrera')->count());
+        $canal->shouldNotHaveReceived('error');
     }
 
     /** @return array<string, mixed> */

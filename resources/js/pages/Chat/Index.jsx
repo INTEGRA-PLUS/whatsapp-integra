@@ -4601,7 +4601,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
     return (
         <>
-            <Head title="Chat WhatsApp Business" />
+            <Head title="Chat" />
             {confirmDialog}
 
             {/* Resultado de pedir la eliminación: sin esto el agente pulsa
@@ -5341,9 +5341,14 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         <div className="mx-auto size-24 rounded-full bg-primary/10 flex items-center justify-center mb-8">
                                             <MessageSquare className="size-12 text-accent-foreground/40" />
                                         </div>
-                                        <h3 className="text-2xl font-black text-foreground mb-3">Integra Plus para WhatsApp</h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed">Envía y recibe mensajes sin necesidad de mantener tu teléfono conectado. <br/>Centraliza toda tu operación en un solo lugar.</p>
-                                        <div className="mt-10 pt-8 border-t border-border/10 text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.3em]">Cifrado de extremo a extremo</div>
+                                        {/* Sin canal en el título: la misma pantalla atiende
+                                            WhatsApp, Instagram y Messenger, y con una página
+                                            de Messenger elegida decía «para WhatsApp» — en el
+                                            screencast del App Review de Messenger. Y sin el
+                                            «Cifrado de extremo a extremo» de antes, que no es
+                                            cierto: los mensajes pasan por nuestro servidor. */}
+                                        <h3 className="text-2xl font-black text-foreground mb-3">Tu bandeja de conversaciones</h3>
+                                        <p className="text-sm text-muted-foreground leading-relaxed">WhatsApp, Instagram y Messenger en un solo lugar. <br/>Elige una conversación para empezar.</p>
                                     </div>
                                 </div>
                             ) : (

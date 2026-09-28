@@ -10,6 +10,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Support\Realtime;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -106,22 +107,17 @@ abstract class BandejaDeMeta
 
         [$tipo, $contenido, $media] = $this->contenido($evento['message'] ?? []);
 
-        $mensaje = WhatsAppMessage::create(array_filter([
-            'conversation_id' => $conversacion->id,
-            'wamid' => $mid,
-            'reply_to_wamid' => $evento['message']['reply_to']['mid'] ?? null,
-            'type' => $tipo,
-            'content' => $contenido,
-            'media_url' => $media,
-            'direction' => $esEco ? 'outbound' : 'inbound',
-            'status' => $esEco ? 'sent' : 'delivered',
-            // Instagram manda el timestamp en milisegundos, no en segundos. Sin
-            // dividir, `sent_at` se va a dentro de cincuenta mil años y la
-            // ventana de 24 h se da por abierta para siempre.
-            'sent_at' => isset($evento['timestamp'])
-                ? Carbon::createFromTimestampMs((int) $evento['timestamp'], config('app.timezone'))
-                : now(),
-        ], fn ($valor) => $valor !== null));
+        // El eco de nuestra propia respuesta llega a veces en el mismo segundo
+        // en que el envío guarda su `mid`: la comprobación de arriba no lo ve y
+        // el índice único salta. El 27-sep-2026 dejó un «❌ Error procesando
+        // evento» en el log de Messenger por un mensaje que estaba bien. Si el
+        // `mid` ya está, el mensaje es ese.
+        try {
+            $mensaje = $this->crearMensaje($conversacion, (string) $mid, $evento, $esEco, $tipo, $contenido, $media);
+        } catch (UniqueConstraintViolationException) {
+            return WhatsAppMessage::where('wamid', $mid)->first();
+        }
+
 
         $reabierta = $conversacion->status === 'closed';
 
@@ -155,6 +151,36 @@ abstract class BandejaDeMeta
      *
      * @return array{0: string, 1: ?string, 2: ?string}
      */
+    /**
+     * @param  array<string, mixed>  $evento
+     */
+    private function crearMensaje(
+        WhatsAppConversation $conversacion,
+        string $mid,
+        array $evento,
+        bool $esEco,
+        string $tipo,
+        ?string $contenido,
+        ?string $media,
+    ): WhatsAppMessage {
+        return WhatsAppMessage::create(array_filter([
+            'conversation_id' => $conversacion->id,
+            'wamid' => $mid,
+            'reply_to_wamid' => $evento['message']['reply_to']['mid'] ?? null,
+            'type' => $tipo,
+            'content' => $contenido,
+            'media_url' => $media,
+            'direction' => $esEco ? 'outbound' : 'inbound',
+            'status' => $esEco ? 'sent' : 'delivered',
+            // Instagram manda el timestamp en milisegundos, no en segundos. Sin
+            // dividir, `sent_at` se va a dentro de cincuenta mil años y la
+            // ventana de 24 h se da por abierta para siempre.
+            'sent_at' => isset($evento['timestamp'])
+                ? Carbon::createFromTimestampMs((int) $evento['timestamp'], config('app.timezone'))
+                : now(),
+        ], fn ($valor) => $valor !== null));
+    }
+
     private function contenido(array $mensaje): array
     {
         if (isset($mensaje['text'])) {
