@@ -1004,6 +1004,15 @@ function AjustesDeEnvio({ showToast, canManage }) {
                         // falta, no se marca nada.
                         const elegida = (estado.disponibles ?? []).find(p => p.id === actual?.id);
                         const fueraDeLaLinea = elegida?.en_la_linea === false;
+                        // Una elegida que no existe en el número no se enseña
+                        // como elegida: «facturas (en)» con su marca en el
+                        // desplegable hacía pensar al cliente que alguien había
+                        // entrado a su software a escoger cosas. Para este número
+                        // no hay ninguna, y es lo que se dice. En Integra no se
+                        // borra desde aquí: esta pantalla sólo está mirando, y
+                        // un Meta que tarde en contestar desconfiguraría las
+                        // facturas de un cliente sin que nadie lo pidiera.
+                        const vigente = fueraDeLaLinea ? null : actual;
 
                         return (
                             <div key={clave} className="space-y-1.5">
@@ -1012,7 +1021,7 @@ function AjustesDeEnvio({ showToast, canManage }) {
 
                                 <div className="flex items-center gap-1.5">
                                     <select
-                                        value={actual?.id ?? ''}
+                                        value={vigente?.id ?? ''}
                                         disabled={!canManage || guardando === clave}
                                         onChange={e => elegir(clave, campo, e.target.value)}
                                         className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
@@ -1029,15 +1038,6 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                                 <option disabled value="-">No hay plantillas aprobadas en este número</option>
                                             )}
                                         </optgroup>
-                                        {/* La que está elegida hoy aunque no exista
-                                            en el número: sin ella el desplegable
-                                            diría «Sin elegir» y escondería justo
-                                            lo que el aviso rojo de abajo explica. */}
-                                        {fueraDeLaLinea && (
-                                            <optgroup label="Elegida ahora · no está en este número">
-                                                <option value={elegida.id}>{elegida.title} ({elegida.language})</option>
-                                            </optgroup>
-                                        )}
                                     </select>
 
                                     {/* Elegir la plantilla y decir qué lleva
@@ -1046,12 +1046,12 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                         pantalla y menos en otro sistema. */}
                                     <button
                                         type="button"
-                                        disabled={!actual?.id}
-                                        onClick={() => setParametrizando({ id: actual.id, uso: etiqueta.toLowerCase() })}
-                                        title={actual?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
+                                        disabled={!vigente?.id}
+                                        onClick={() => setParametrizando({ id: vigente.id, uso: etiqueta.toLowerCase() })}
+                                        title={vigente?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
                                         className={cn(
                                             'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
-                                            actual?.id
+                                            vigente?.id
                                                 ? 'cursor-pointer text-foreground hover:bg-muted'
                                                 : 'cursor-not-allowed text-muted-foreground/50',
                                         )}
@@ -1071,26 +1071,20 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                       <p className="flex items-start gap-1.5">
                                           <AlertTriangle className="mt-px size-3.5 shrink-0" />
                                           <span>
-                                              <span className="font-mono">{elegida.title} ({elegida.language})</span> no está
-                                              aprobada en {estado.linea?.numero || estado.linea?.nombre || 'la línea por la que envía Integra'}.
-                                              Los catálogos de Meta son por número y no se heredan: mientras siga así, estos
-                                              envíos se caen uno a uno.
+                                              <strong>No hay plantilla para {etiqueta.toLowerCase()} en {estado.linea?.numero || 'este número'}.</strong>{' '}
+                                              La que se usaba, <span className="font-mono">{elegida.title} ({elegida.language})</span>,
+                                              es de otro número y aquí no existe: hasta que elijas una de la lista, no se envían.
                                           </span>
                                       </p>
-                                      {/* Lo normal es elegir otra que ya esté
-                                          aprobada; copiarla obliga a esperar
-                                          otra revisión de Meta. */}
-                                      <p className="mt-1.5 pl-5">
-                                          {soloEnMeta.length > 0
-                                              ? 'Elige en el desplegable una de las aprobadas en tu número, o cópiala a esta línea y espera a que Meta la apruebe.'
-                                              : 'Cópiala a esta línea y espera a que Meta la apruebe.'}
+                                      {/* Copiarla es el camino largo —otra revisión de
+                                          Meta—, así que va como enlace y no como botón. */}
+                                      <p className="mt-1 pl-5">
+                                          ¿Necesitas justo esa?{' '}
+                                          <a href="/templates" className="font-medium underline underline-offset-2">
+                                              Cópiala a este número
+                                          </a>{' '}
+                                          y espera a que Meta la apruebe.
                                       </p>
-                                      <a
-                                          href="/templates"
-                                          className="mt-1.5 ml-5 inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-2 py-1 font-medium hover:bg-destructive/10"
-                                      >
-                                          <Copy className="size-3" /> Copiarla a esta línea
-                                      </a>
                                   </div>
                               )}
                             </div>
