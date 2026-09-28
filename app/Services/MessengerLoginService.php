@@ -298,7 +298,24 @@ class MessengerLoginService
             'access_token' => $this->appId().'|'.$this->appSecret(),
         ])->json('data.granular_scopes') ?? [];
 
+        // Y qué contesta Facebook al pedir cada una: si trae su token (sin
+        // enseñarlo), sus tareas o el error exacto.
+        $consultas = collect($alcances)->flatMap(fn ($a) => $a['target_ids'] ?? [])->unique()->mapWithKeys(function ($id) use ($tokenDeUsuario) {
+            $r = Http::get("https://graph.facebook.com/{$this->version()}/{$id}", [
+                'fields' => 'id,name,access_token,tasks',
+                'access_token' => $tokenDeUsuario,
+            ]);
+
+            return [$id => [
+                'http' => $r->status(),
+                'trae_token' => ! empty($r->json('access_token')),
+                'tareas' => $r->json('tasks'),
+                'error' => $r->json('error.message'),
+            ]];
+        })->all();
+
         return [
+            'consulta_por_pagina' => $consultas,
             'paginas_concedidas' => collect($alcances)->mapWithKeys(fn ($a) => [$a['scope'] ?? '?' => $a['target_ids'] ?? []])->all(),
             'permisos' => collect($permisos)->mapWithKeys(fn ($p) => [$p['permission'] ?? '?' => $p['status'] ?? '?'])->all(),
             'paginas_en_bruto' => collect($cuentas->json('data') ?? [])->map(fn ($p) => [
