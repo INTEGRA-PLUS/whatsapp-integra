@@ -13,6 +13,13 @@ import { FileType } from 'lucide-react';
  * siempre esas tres: «¿dónde lo hago?», «¿cuánto se demora?» y «¿por qué no me
  * deja?».
  *
+ * `imagenes` son capturas de la pantalla real, hechas con una empresa de
+ * demostración (nombre, número y WABA ficticios) y con lo que hay que tocar
+ * marcado en naranja. Viven en `public/img/guias/<slug>/` y no en
+ * `public/guias/`: una carpeta real con el mismo camino que la URL de la guía
+ * hace que nginx la sirva como directorio en vez de pasarle la página a Laravel.
+ * Si cambia el formulario, hay que rehacerlas.
+ *
  * `compartir` es el texto corto que se le pega a quien pregunta. Nació con la
  * pregunta que más se repite: «Me indica el procedimiento para crear una
  * plantilla que necesito» (28-sep-2026).
@@ -44,6 +51,7 @@ export const GUIAS = [
         pasos: [
             {
                 titulo: 'Abre Plantillas y pulsa «Nueva plantilla»',
+                imagenes: [{ src: '/img/guias/crear-plantilla/01-nueva-plantilla.jpg', ancho: 1136, alto: 125, alt: 'Cabecera de Plantillas con el botón verde «Nueva plantilla» a la derecha' }],
                 donde: 'Menú › Envíos › Plantillas',
                 duracion: '10 segundos',
                 cuerpo: (
@@ -62,6 +70,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Elige la categoría',
+                imagenes: [{ src: '/img/guias/crear-plantilla/02-categoria.jpg', ancho: 732, alto: 380, alt: 'Las tres categorías con «Utilidad» elegida, y la casilla para permitir que Meta reclasifique' }],
                 donde: 'Paso 1 · Configuración › Categoría',
                 duracion: '30 segundos',
                 cuerpo: (
@@ -105,6 +114,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Escribe el nombre',
+                imagenes: [{ src: '/img/guias/crear-plantilla/04-nombre-idioma.jpg', ancho: 732, alto: 380, alt: 'Nombre «recordatorio_pago» escrito y el idioma «es — Español» elegido' }],
                 donde: 'Paso 1 · Configuración › Nombre',
                 duracion: '30 segundos',
                 cuerpo: (
@@ -123,6 +133,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Elige el idioma y pulsa «Siguiente»',
+                imagenes: [{ src: '/img/guias/crear-plantilla/05-siguiente.jpg', ancho: 150, alto: 92, alt: 'Botón «Siguiente» en la barra inferior del formulario' }],
                 donde: 'Paso 1 · Configuración › Idioma',
                 duracion: '10 segundos',
                 cuerpo: (
@@ -141,6 +152,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Deja el tipo de variable en «Número»',
+                imagenes: [{ src: '/img/guias/crear-plantilla/06-tipo-variable.jpg', ancho: 348, alto: 90, alt: 'Selector «Tipo de variable» con «Número» elegido' }],
                 donde: 'Paso 2 · Contenido › Tipo de variable',
                 duracion: '5 segundos',
                 cuerpo: (
@@ -159,6 +171,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Elige el encabezado',
+                imagenes: [{ src: '/img/guias/crear-plantilla/07-encabezado-documento.jpg', ancho: 690, alto: 190, alt: 'Encabezado «Documento» elegido y el recuadro para subir el PDF de muestra' }],
                 donde: 'Paso 2 · Contenido › Muestra de contenido multimedia',
                 duracion: '1 minuto',
                 cuerpo: (
@@ -184,6 +197,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Escribe el cuerpo del mensaje',
+                imagenes: [{ src: '/img/guias/crear-plantilla/08-cuerpo.jpg', ancho: 736, alto: 251, alt: 'Cuerpo del mensaje con las variables {{1}}, {{2}} y {{3}} y el botón «Agregar variable»' }],
                 donde: 'Paso 2 · Contenido › Cuerpo',
                 duracion: '3 a 5 minutos',
                 cuerpo: (
@@ -209,6 +223,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Llena el ejemplo de cada variable',
+                imagenes: [{ src: '/img/guias/crear-plantilla/09-ejemplos.jpg', ancho: 686, alto: 206, alt: 'Ejemplos de las variables: Juan Pérez, $85.000 y 15 de octubre' }],
                 donde: 'Paso 2 · Contenido › debajo del cuerpo',
                 duracion: '1 minuto',
                 cuerpo: (
@@ -227,6 +242,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Agrega el pie de página y los botones (opcional)',
+                imagenes: [{ src: '/img/guias/crear-plantilla/10-pie-y-botones.jpg', ancho: 690, alto: 198, alt: 'Pie de página escrito y el botón «Agregar botón»' }],
                 donde: 'Paso 2 · Contenido › Pie de página y Botones',
                 duracion: '1 a 2 minutos',
                 cuerpo: (
@@ -247,6 +263,7 @@ export const GUIAS = [
             },
             {
                 titulo: 'Revisa la vista previa y pulsa «Enviar para revisión»',
+                imagenes: [{ src: '/img/guias/crear-plantilla/11a-vista-previa.jpg', ancho: 404, alto: 565, alt: 'Vista previa de la plantilla como le llega al cliente, con el PDF, el texto, el pie y el botón «Ya pagué»' }, { src: '/img/guias/crear-plantilla/11b-enviar.jpg', ancho: 312, alto: 92, alt: 'Botón «Enviar para revisión» en la barra inferior' }],
                 donde: 'Barra inferior del formulario',
                 duracion: '1 minuto',
                 cuerpo: (

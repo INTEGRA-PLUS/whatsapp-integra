@@ -172,6 +172,12 @@ function Paso({ paso, n, ultimo }) {
 
             <div className={cn(PROSA, 'mt-3')}>{paso.cuerpo}</div>
 
+            {paso.imagenes?.length > 0 && (
+                <div className="mt-3 flex flex-col items-start gap-3">
+                    {paso.imagenes.map(img => <Captura key={img.src} {...img} />)}
+                </div>
+            )}
+
             {(paso.consejo || paso.aviso) && (
                 <div className="mt-3 flex flex-col gap-2">
                     {paso.consejo && <Nota tono="consejo">{paso.consejo}</Nota>}
@@ -179,6 +185,29 @@ function Paso({ paso, n, ultimo }) {
                 </div>
             )}
         </li>
+    );
+}
+
+/**
+ * Una captura de la pantalla real. Se abre en grande al tocarla: en el móvil
+ * las letras del formulario no se leen a tamaño de columna.
+ */
+function Captura({ src, ancho, alto, alt }) {
+    return (
+        <a
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ver en grande"
+            className="inline-block max-w-full overflow-hidden rounded-xl border bg-muted/30 align-top transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+            {/* Capturadas al doble de resolución y pintadas a la mitad, que es
+                su tamaño real: nítidas en pantallas retina, y un botón suelto
+                no se estira a todo el ancho. `srcSet` con `2x` no bastaba: el
+                navegador toma `src` como candidata 1x y gana ésa. Ancho y alto
+                reservan el hueco antes de que cargue. */}
+            <img src={src} width={ancho} height={alto} alt={alt} loading="lazy" className="block h-auto max-w-full" />
+        </a>
     );
 }
 
