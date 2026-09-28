@@ -6196,6 +6196,18 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                         IA
                                                                     </span>
                                                                 )}
+                                                                {/* Lo que manda la extensión de cierre automático. Antes
+                                                                    salía como «IA», también en empresas sin IA, y parecía
+                                                                    que el CRM le había encendido algo que no pagaban. */}
+                                                                {isOut && !msg.sender?.name && msg.metadata?.action_type === 'cierre_automatico' && (
+                                                                    <span
+                                                                        className="mb-0.5 inline-flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide text-muted-foreground"
+                                                                        title="Lo envió la extensión de cierre automático: un texto fijo que se configura en Extensiones, no la IA."
+                                                                    >
+                                                                        <Clock className="size-2.5 shrink-0" />
+                                                                        Cierre automático
+                                                                    </span>
+                                                                )}
                                                                 {/* La corrección se edita en un diálogo aparte y no
                                                                     aquí dentro. Dentro de la burbuja, el textarea y sus
                                                                     botones caían debajo de la hora y los checks —que son

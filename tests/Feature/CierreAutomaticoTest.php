@@ -181,6 +181,53 @@ class CierreAutomaticoTest extends TestCase
 
     // ─── Ayudas ──────────────────────────────────────────────────────────────
 
+    /**
+     * Lo que manda el cierre automático no es de la IA.
+     *
+     * Viajaba por el mismo vehículo que las respuestas del modelo y se guardaba
+     * como `ia`: el chat lo etiquetaba «IA» en Nova Partners, que no la tiene
+     * contratada, y parecía que se le había encendido algo sin pagarlo
+     * (28-sep-2026).
+     */
+    public function test_su_mensaje_no_queda_marcado_como_ia(): void
+    {
+        $conv = $this->conversacionParada(45);
+
+        (new CierreAutomaticoExtension)->runScheduled($this->extension);
+
+        $enviado = WhatsAppMessage::where('conversation_id', $conv->id)->where('direction', 'outbound')->latest('id')->first();
+
+        $this->assertSame(CierreAutomaticoExtension::ORIGEN, $enviado->metadata['action_type'] ?? null);
+        $this->assertArrayNotHasKey('ia', $enviado->metadata ?? []);
+    }
+
+    /** Con contacto vinculado se le llama por su nombre, no por el de la conversación. */
+    public function test_usa_el_nombre_del_contacto(): void
+    {
+        $conv = $this->conversacionParada(45);
+        $contacto = \App\Models\Contact::create([
+            'company_id' => $this->instance->company_id,
+            'name' => 'Cindy',
+            'phone' => $conv->phone_number,
+        ]);
+        $conv->forceFill(['name' => '573008653612', 'contact_id' => $contacto->id])->saveQuietly();
+
+        (new CierreAutomaticoExtension)->runScheduled($this->extension);
+
+        $this->assertSame('¿Necesitas algo más, Cindy?', $this->ultimoTextoEnviado());
+    }
+
+    /** Sin nombre de verdad no se le lee al cliente su propio número: se quita el hueco. */
+    public function test_sin_nombre_no_pone_el_numero(): void
+    {
+        $conv = $this->conversacionParada(45);
+        $conv->forceFill(['name' => '573008653612'])->saveQuietly();
+
+        (new CierreAutomaticoExtension)->runScheduled($this->extension);
+
+        $this->assertSame('¿Necesitas algo más?', $this->ultimoTextoEnviado());
+    }
+
     private function conversacionParada(int $minutos): WhatsAppConversation
     {
         $conv = WhatsAppConversation::create([
