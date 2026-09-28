@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings, RefreshCw, Loader2 } from 'lucide-react';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
@@ -11,7 +11,9 @@ import ConectarMessengerButton from '@/components/ConectarMessengerButton';
 import { LogoCanal, EtiquetaCanal } from '@/components/logo-canal';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false, integra = null }) {
+    const permisos = usePage().props.auth?.user?.permissions ?? [];
+    const puedeSincronizar = permisos.includes('integrations.create');
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
     // El token recién creado. Vive sólo en memoria y sólo hasta cerrar el aviso:
@@ -197,6 +199,8 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                 key={instance.id}
                                 instance={instance}
                                 sync={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
+                                integra={integra}
+                                puedeSincronizar={puedeSincronizar}
                                 generando={generando === instance.id}
                                 onEditar={() => openEdit(instance)}
                                 onToken={() => generarToken(instance)}
@@ -383,7 +387,7 @@ function Cifra({ icono: Icono, etiqueta, valor, tono = null }) {
     );
 }
 
-function TarjetaInstancia({ instance, sync, generando, onEditar, onToken, onDesconectar, onReconectar, onEliminar }) {
+function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando, onEditar, onToken, onDesconectar, onReconectar, onEliminar }) {
     const estado = estadoDe(instance);
 
     return (
@@ -470,6 +474,14 @@ function TarjetaInstancia({ instance, sync, generando, onEditar, onToken, onDesc
                         </dd>
                     </div>
                 </dl>
+
+                {integra?.conectado && instance.active && (instance.channel ?? 'whatsapp') === 'whatsapp' && (
+                    <RecuadroIntegra
+                        instance={instance}
+                        esLaDeEnvio={integra.linea_de_envio === instance.id}
+                        puedeSincronizar={puedeSincronizar}
+                    />
+                )}
             </div>
 
             {/* `flex-wrap` y un ancho mínimo por botón: sin envolver, los
@@ -518,6 +530,78 @@ function TarjetaInstancia({ instance, sync, generando, onEditar, onToken, onDesc
                 </Button>
             </footer>
         </article>
+    );
+}
+
+/**
+ * Integra y esta línea: si es la que envía las facturas y un botón para dejar
+ * las dos puntas de acuerdo.
+ *
+ * El botón existe por Nova Partners (24-sep-2026): el número se conectó antes
+ * que Integra, el alta automática no llegó, y el software facturaba contra una
+ * línea que el CRM no conocía. «Instancia no válida o token ausente» en cada
+ * factura y ningún sitio donde arreglarlo sin tocar la base de datos.
+ *
+ * Sólo en la línea de envío: pasar las facturas a otra línea comprueba antes
+ * que tenga las plantillas, y eso se decide en Integraciones.
+ */
+function RecuadroIntegra({ instance, esLaDeEnvio, puedeSincronizar }) {
+    const [sincronizando, setSincronizando] = useState(false);
+    const [resultado, setResultado] = useState(null);
+
+    async function sincronizar() {
+        setSincronizando(true);
+        setResultado(null);
+        try {
+            const { data } = await axios.post(route('instances.sincronizar-integra', instance.id));
+            setResultado({ ok: true, texto: data.message });
+        } catch (e) {
+            setResultado({ ok: false, texto: e.response?.data?.message ?? 'No se pudo sincronizar con Integra.' });
+        } finally {
+            setSincronizando(false);
+        }
+    }
+
+    if (!esLaDeEnvio) {
+        return (
+            <p className="rounded-xl border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                Integra no envía las facturas por esta línea.{' '}
+                <Link href={route('integrations.index')} className="font-medium text-foreground underline underline-offset-2">
+                    Cambiarla en Integraciones
+                </Link>
+            </p>
+        );
+    }
+
+    return (
+        <div className="rounded-xl border bg-muted/30 px-3 py-2.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 font-medium text-foreground">
+                    <CheckCircle2 className="size-3.5 text-success" /> Integra envía las facturas por esta línea
+                </p>
+                {puedeSincronizar && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2.5 text-[11px]"
+                        disabled={sincronizando}
+                        onClick={sincronizar}
+                        title="Dejar esta línea como la de envío también en Integra"
+                    >
+                        {sincronizando ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                        Sincronizar con Integra
+                    </Button>
+                )}
+            </div>
+            {resultado && (
+                <p className={`mt-1.5 ${resultado.ok ? 'text-success' : 'text-destructive'}`}>{resultado.texto}</p>
+            )}
+            {!resultado && (
+                <p className="mt-1 text-muted-foreground">
+                    Si tu software responde «Instancia no válida o token ausente», sincroniza.
+                </p>
+            )}
+        </div>
     );
 }
 

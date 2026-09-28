@@ -778,7 +778,14 @@ function ProviderSection({ can, onBack }) {
                         <ProviderConnectForm
                             integrationKey="invoice_payments"
                             initialBaseUrl={payments?.base_url ?? ''}
-                            onConnected={() => { showToast('Conexión establecida con Integra.'); load(); }}
+                            onConnected={data => {
+                                // Al conectar se le llevan a Integra las líneas que ya había y se
+                                // deja la de facturación como la de envío: se dice cómo fue.
+                                const envio = data?.lineas_en_integra?.envio;
+                                showToast(envio ? `Conexión establecida con Integra. ${envio}` : 'Conexión establecida con Integra.');
+                                load();
+                                router.reload({ only: ['lineasDelErp', 'lineaElegida', 'credencialApagada'], preserveScroll: true });
+                            }}
                             onError={message => showToast(message, 'error')}
                         />
                     </div>

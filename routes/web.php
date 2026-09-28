@@ -354,6 +354,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/reconectar', [InstanceController::class, 'reconectar'])
         ->middleware('permission:instances.update')->name('instances.reconectar');
 
+    // Dejar en Integra esta línea como la que envía las facturas. Con el
+    // permiso de integraciones y no el de instancias: lo que cambia es el
+    // software administrativo, no el número.
+    Route::post('/instances/{instance}/sincronizar-integra', [InstanceController::class, 'sincronizarConIntegra'])
+        ->middleware('permission:integrations.create')->name('instances.sincronizar-integra');
+
     // Lo que se perdería al borrarla, para poder decirlo en el diálogo con
     // números en vez de con un "¿estás seguro?".
     Route::get('/instances/{instance}/resumen-borrado', [InstanceController::class, 'resumenBorrado'])

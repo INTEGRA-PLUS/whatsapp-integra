@@ -185,7 +185,55 @@ class IntegrationController extends Controller
             );
         }
 
-        return response()->json($this->present($key, $this->find($key)));
+        return response()->json($this->present($key, $this->find($key)) + [
+            'lineas_en_integra' => $this->lineasAIntegra(),
+        ]);
+    }
+
+    /**
+     * Al conectar Integra, llevarle las líneas que ya había.
+     *
+     * El alta automática de una línea en Integra sólo se intentaba al conectar
+     * el NÚMERO. Si Integra se conectaba después, esas líneas no llegaban nunca:
+     * Nova Partners conectó su número a las 19:27 y Integra a las 19:31 del
+     * 24-sep-2026, y el software facturó contra una línea que el CRM no conocía
+     * —«Instancia no válida o token ausente»— sin nada en pantalla que lo dijera.
+     *
+     * Todas se registran; la que factura, además, se deja como la de envío.
+     * Eso último sólo si no hay duda de cuál es: elegida a mano en el panel, o
+     * la única línea de WhatsApp. Con varias y ninguna elegida, la «por defecto»
+     * del CRM es la primera por id, que puede no ser la que Integra usa hoy, y
+     * reconectar Integra —por ejemplo para renovar el token— le cambiaría el
+     * número de facturación a un cliente que no pidió nada.
+     *
+     * Nunca tumba la conexión: si Integra no contesta, se dice y ya.
+     *
+     * @return array{registradas: int, envio: ?string}
+     */
+    private function lineasAIntegra(): array
+    {
+        $company = auth()->user()->company;
+
+        $lineas = Instance::where('company_id', $company->id)
+            ->where('active', true)
+            ->whereNotNull('phone_number_id')
+            ->get()
+            ->filter(fn (Instance $i) => $i->esWhatsApp());
+
+        $registradas = 0;
+        foreach ($lineas as $linea) {
+            if (app(\App\Services\RegistrarLineaEnIntegra::class)($linea)['empujada'] ?? false) {
+                $registradas++;
+            }
+        }
+
+        $deEnvio = $company->instanciaDelErp();
+        $sinDuda = $deEnvio && ($company->tieneLineaDelErpElegida() || $lineas->count() === 1);
+
+        return [
+            'registradas' => $registradas,
+            'envio' => $sinDuda ? app(\App\Services\LineaDeEnvioEnIntegra::class)($deEnvio)['mensaje'] : null,
+        ];
     }
 
     /** GET /api/integrations/{key}/status — verifica la conexión contra Integra. */

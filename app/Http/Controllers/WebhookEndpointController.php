@@ -6,6 +6,7 @@ use App\Jobs\DeliverWebhook;
 use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
+use App\Services\LineaDeEnvioEnIntegra;
 use App\Models\WebhookEndpoint;
 use App\Services\IntegraClient;
 use App\Services\MetaWhatsAppService;
@@ -626,39 +627,25 @@ class WebhookEndpointController extends Controller
      */
     private function sincronizarLineaEnIntegra(int $instanceId): ?string
     {
-        $cliente = $this->clienteDeIntegra();
-        if (! $cliente) {
+        $linea = Instance::where('id', $instanceId)
+            ->where('company_id', auth()->user()->company_id)
+            ->first();
+
+        if (! $linea) {
             return null;
         }
 
-        $linea = Instance::where('id', $instanceId)
-            ->where('company_id', auth()->user()->company_id)
-            ->first(['id', 'name', 'phone_number_id', 'waba_id', 'display_phone_number']);
+        $res = app(LineaDeEnvioEnIntegra::class)($linea);
 
-        $res = $cliente->usarLineaParaEnvios([
-            'phone_number_id' => $linea->phone_number_id,
-            'waba_id' => $linea->waba_id,
-            'nombre' => $linea->name,
-            'numero' => $linea->display_phone_number,
-        ]);
-
-        if ($res['ok']) {
-            return 'Integra ya quedó configurado para enviar por ella.';
+        if ($res['sin_conexion'] ?? false) {
+            return null;
         }
 
-        Log::warning('Integra: no se pudo cambiar la línea de envío', [
-            'company_id' => auth()->user()->company_id,
-            'instance_id' => $instanceId,
-            'error' => $res['error'] ?? null,
-        ]);
-
-        return match (true) {
-            $res['sin_permiso'] ?? false => 'Pero no se pudo cambiar en Integra: tu conexión es anterior a esta función. '
-                .'Vuelve a conectarla en Integraciones.',
-            $res['sin_endpoint'] ?? false => 'Pero tu versión de Integra todavía no permite cambiarla desde aquí: '
-                .'actualízala o cambia la instancia activa allá.',
-            default => 'Pero no se pudo cambiar en Integra; revisa la conexión en Integraciones.',
-        };
+        // Va detrás de «Listo: el ERP enviará por esa línea…», así que el fallo
+        // se dice como un «pero» y no como una frase suelta.
+        return $res['ok']
+            ? 'Integra ya quedó configurado para enviar por ella.'
+            : 'Pero '.lcfirst($res['mensaje']);
     }
 
     private function rechazarLinea(Request $request, string $motivo, array $faltan = [])

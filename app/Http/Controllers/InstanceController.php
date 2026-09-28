@@ -7,6 +7,9 @@ use App\Models\Contact;
 use App\Models\Instance;
 use App\Services\InstagramLoginService;
 use App\Services\RegistrarLineaEnIntegra;
+use App\Services\LineaDeEnvioEnIntegra;
+use App\Models\CompanyIntegration;
+use App\Support\IntegrationProvider;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
@@ -54,7 +57,47 @@ class InstanceController extends Controller
             // insertado de WhatsApp.
             'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
             'messengerDisponible' => app(\App\Services\MessengerLoginService::class)->estaConfigurado(),
+            // Para el recuadro de Integra de cada tarjeta: si hay software
+            // conectado y por cuál de las líneas factura.
+            'integra' => [
+                'conectado' => CompanyIntegration::where('company_id', $user->company_id)
+                    ->whereIn('key', IntegrationProvider::find(IntegrationProvider::INTEGRA)['legacy_keys'] ?? [])
+                    ->get()
+                    ->contains(fn (CompanyIntegration $i) => $i->isConnected()),
+                'linea_de_envio' => $user->company?->instanciaDelErp()?->id,
+            ],
         ]);
+    }
+
+    /**
+     * «Sincronizar con Integra»: dejar allá esta línea como la de envío.
+     *
+     * Es el arreglo a mano de cuando las dos puntas no coinciden y cada factura
+     * vuelve con «Instancia no válida o token ausente» (Nova Partners,
+     * 24-sep-2026). Sólo para la línea por la que ya factura el CRM: cambiar de
+     * línea es otra decisión —comprueba que la nueva tenga las plantillas— y se
+     * toma en Integraciones, no con un botón de sincronizar.
+     */
+    public function sincronizarConIntegra(Instance $instance)
+    {
+        abort_unless($instance->company_id === auth()->user()->company_id, 403);
+
+        if (! $instance->active || ! $instance->esWhatsApp() || ! $instance->phone_number_id) {
+            return response()->json([
+                'message' => 'Sólo una línea de WhatsApp conectada puede enviar las facturas de Integra.',
+            ], 422);
+        }
+
+        if (auth()->user()->company->instanciaDelErp()?->id !== $instance->id) {
+            return response()->json([
+                'message' => 'Integra envía las facturas por otra línea. Para cambiarla, elígela en '
+                    .'Integraciones › Por dónde envía Integra.',
+            ], 422);
+        }
+
+        $res = app(LineaDeEnvioEnIntegra::class)($instance);
+
+        return response()->json(['ok' => $res['ok'], 'message' => $res['mensaje']], $res['ok'] ? 200 : 422);
     }
 
     /**
