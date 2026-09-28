@@ -42,11 +42,16 @@ class PaginasDeMessengerTest extends TestCase
             }
 
             if (str_contains($r->url(), '/1426150013911590')) {
+                // Como Facebook de verdad: pedida por id, una página no tiene
+                // el campo `tasks` y la consulta entera falla si se pide.
+                if (str_contains((string) ($r->data()['fields'] ?? ''), 'tasks')) {
+                    return Http::response(['error' => ['message' => '(#100) Tried accessing nonexisting field (tasks)', 'code' => 100]], 400);
+                }
+
                 return Http::response([
                     'id' => '1426150013911590',
                     'name' => 'Integra',
                     'access_token' => 'token-de-la-pagina',
-                    'tasks' => ['MESSAGING', 'MODERATE'],
                 ]);
             }
 

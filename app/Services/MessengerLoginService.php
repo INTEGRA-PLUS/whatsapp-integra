@@ -254,19 +254,37 @@ class MessengerLoginService
             return [];
         }
 
-        $ids = collect($depuracion->json('data.granular_scopes') ?? [])
+        $alcances = collect($depuracion->json('data.granular_scopes') ?? []);
+
+        $ids = $alcances
             ->whereIn('scope', ['pages_messaging', 'pages_show_list', 'pages_manage_metadata'])
             ->flatMap(fn ($alcance) => $alcance['target_ids'] ?? [])
             ->unique()
             ->values();
 
-        return $ids->map(function ($id) use ($tokenDeUsuario) {
+        $conMensajeria = $alcances->where('scope', 'pages_messaging')
+            ->flatMap(fn ($alcance) => $alcance['target_ids'] ?? [])
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        return $ids->map(function ($id) use ($tokenDeUsuario, $conMensajeria) {
+            // Sin `tasks`: pedido así, por id, Facebook responde «(#100) Tried
+            // accessing nonexisting field (tasks)» y la consulta entera falla.
+            // Ese campo sólo existe en `/me/accounts`. Lo que decía —si se puede
+            // mensajear— aquí lo dice el propio token: `pages_messaging`
+            // concedido sobre esta página.
             $pagina = Http::get("https://graph.facebook.com/{$this->version()}/{$id}", [
-                'fields' => 'id,name,access_token,tasks,picture{url}',
+                'fields' => 'id,name,access_token,picture{url}',
                 'access_token' => $tokenDeUsuario,
             ]);
 
-            return $pagina->successful() ? $pagina->json() : null;
+            if (! $pagina->successful()) {
+                return null;
+            }
+
+            return $pagina->json() + [
+                'tasks' => in_array((string) $id, $conMensajeria, true) ? [self::TAREA_NECESARIA] : [],
+            ];
         })->filter()->values()->all();
     }
 
@@ -302,14 +320,13 @@ class MessengerLoginService
         // enseñarlo), sus tareas o el error exacto.
         $consultas = collect($alcances)->flatMap(fn ($a) => $a['target_ids'] ?? [])->unique()->mapWithKeys(function ($id) use ($tokenDeUsuario) {
             $r = Http::get("https://graph.facebook.com/{$this->version()}/{$id}", [
-                'fields' => 'id,name,access_token,tasks',
+                'fields' => 'id,name,access_token',
                 'access_token' => $tokenDeUsuario,
             ]);
 
             return [$id => [
                 'http' => $r->status(),
                 'trae_token' => ! empty($r->json('access_token')),
-                'tareas' => $r->json('tasks'),
                 'error' => $r->json('error.message'),
             ]];
         })->all();
