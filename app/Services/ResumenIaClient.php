@@ -52,8 +52,11 @@ class ResumenIaClient
                 ->withHeaders(['X-Api-Key' => (string) config('services.resumen.api_key')])
                 ->timeout((int) config('services.resumen.timeout', 30))
                 ->post((string) config('services.resumen.webhook_url'), [
-                    'empresa' => ['id' => 0, 'nombre' => 'Comprobación diaria'],
-                    'conversacion' => ['id' => 0, 'contacto' => 'Prueba'],
+                    // Ids que no existen pero no son cero: el flujo rechaza un id
+                    // vacío —«falta conversacion.id»— antes de llegar a Ollama, y
+                    // la prueba se quedaba sin probar nada.
+                    'empresa' => ['id' => self::ID_DE_PRUEBA, 'nombre' => 'Comprobación diaria'],
+                    'conversacion' => ['id' => self::ID_DE_PRUEBA, 'contacto' => 'Prueba'],
                     'tono' => 'telegrama',
                     'mensajes' => [
                         ['de' => 'cliente', 'texto' => 'Hola, ¿ya quedó registrado mi pago?', 'cuando' => now()->toIso8601String()],
@@ -68,10 +71,19 @@ class ResumenIaClient
             return ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => mb_substr($respuesta->body(), 0, 300)];
         }
 
-        return $this->leer($respuesta->json()) !== null
-            ? ['ok' => true, 'estado' => $respuesta->status(), 'detalle' => null]
-            : ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => 'Respondió, pero sin resumen.'];
+        if ($this->leer($respuesta->json()) !== null) {
+            return ['ok' => true, 'estado' => $respuesta->status(), 'detalle' => null];
+        }
+
+        // El flujo a veces contesta 200 con el motivo en `error`: se pasa tal
+        // cual, que es lo que dice si el fallo es de Ollama o del propio flujo.
+        $error = data_get($respuesta->json(), 'error') ?? data_get($respuesta->json(), 'output.error');
+
+        return ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => $error ? (string) $error : 'Respondió, pero sin resumen.'];
     }
+
+    /** Ni empresa ni conversación: el id con que viaja la comprobación diaria. */
+    public const ID_DE_PRUEBA = 999999999;
 
     /**
      * @param  list<WhatsAppMessage>  $mensajes  De más antiguo a más reciente.
