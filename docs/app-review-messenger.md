@@ -6,6 +6,19 @@ Messenger, con los textos ya escritos. Mismo formato que
 
 App: **Integra CRM** · `865904982715022` · borrador `1068915315747320`
 
+## Enviada el 28-sep-2026 (28-Sep-2026 14:39 hora de Colombia)
+
+Verificado por API (`devtools_app_review status`): `submission_status: PENDING`,
+`is_pending: true`, envío `1068915319080653`. La anterior (Instagram) tardó unos
+10 días. Al aprobarse, comprobar `access_level: advanced` en `privileges` para
+`pages_messaging`, `pages_manage_metadata`, `pages_show_list` y
+`pages_read_engagement`, no sólo que figuren como aprobados.
+
+La llamada de prueba de `pages_messaging` apareció la mañana del 28-sep (62
+llamadas) y, además, hubo que certificar en «Uso permitido → Renewal» los cinco
+permisos ya aprobados (Instagram, WhatsApp y `public_profile`). Sin esa pestaña
+el botón de enviar seguía gris aunque los cinco bloques nuevos estuvieran en verde.
+
 ## Estado al 27-sep-2026 (noche): formulario rellenado, falta la llamada de prueba
 
 Todo el formulario está rellenado en el borrador `1068915315747320`. Lo único que
@@ -243,7 +256,7 @@ Antes de grabar: quitar la **suplantación** de la cabecera del CRM (sale en
 ## 5 · Checklist antes de enviar
 
 - [x] Ensayo real: mensaje de una cuenta con rol → llega al CRM → respuesta sale (27-sep)
-- [ ] Llamada de prueba de `pages_messaging` contada (mirar el 28-sep)
+- [x] Llamada de prueba de `pages_messaging` contada (28-sep, 62 llamadas)
 - [x] `pages_show_list` y `pages_read_engagement` añadidos al borrador
 - [x] *Business Asset User Profile Access* añadido
 - [ ] Cuenta de evaluador para el revisor, según pide Meta (no se ha creado; el revisor usa la suya)
@@ -251,4 +264,4 @@ Antes de grabar: quitar la **suplantación** de la cabecera del CRM (sale en
 - [x] Screencast grabado, auditado y subido en los cinco bloques
 - [x] Data Use Checkup revisado
 - [x] Instrucciones para revisores con el usuario Meta Reviewer (id 89, empresa 57)
-- [ ] Enviar y comprobar por API: `devtools_app_review status` → `is_pending: true`
+- [x] Enviada y comprobada por API: `is_pending: true` (28-sep)
