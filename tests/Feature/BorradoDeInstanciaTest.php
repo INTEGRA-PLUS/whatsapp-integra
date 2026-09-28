@@ -73,6 +73,47 @@ class BorradoDeInstanciaTest extends TestCase
         $this->assertSame(0, WhatsAppMessage::count());
     }
 
+    /**
+     * Borrar una página de Messenger la desuscribe en Meta. Sin esto la página
+     * seguía mandando sus mensajes: el 27-sep-2026 una página real conectada por
+     * error a la empresa de pruebas no dejaba de enviar después de borrarla.
+     */
+    public function test_borrar_una_pagina_de_messenger_la_desuscribe_en_meta(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(['graph.facebook.com/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
+
+        [$user, $instance] = $this->instanciaConHistorial();
+        $instance->update([
+            'channel' => Instance::CANAL_MESSENGER,
+            'name' => 'Integra',
+            'external_account_id' => '1426150013911590',
+            'access_token' => 'token-de-la-pagina',
+            'phone_number_id' => null,
+            'waba_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('instances.destroy', $instance->id), ['confirmacion' => 'Integra'])
+            ->assertRedirect(route('instances.index'));
+
+        $this->assertDatabaseMissing('instances', ['id' => $instance->id]);
+        \Illuminate\Support\Facades\Http::assertSent(fn ($r) => $r->method() === 'DELETE'
+            && str_contains($r->url(), '/1426150013911590/subscribed_apps'));
+    }
+
+    /** Un número de WhatsApp no pasa por ahí: no tiene página que desuscribir. */
+    public function test_borrar_un_numero_de_whatsapp_no_llama_a_messenger(): void
+    {
+        \Illuminate\Support\Facades\Http::fake();
+
+        [$user, $instance] = $this->instanciaConHistorial();
+
+        $this->actingAs($user)
+            ->delete(route('instances.destroy', $instance->id), ['confirmacion' => $instance->name]);
+
+        \Illuminate\Support\Facades\Http::assertNotSent(fn ($r) => str_contains($r->url(), 'subscribed_apps'));
+    }
+
     /** Mayúsculas y espacios de más no deberían frustrar a nadie. */
     public function test_la_confirmacion_no_distingue_mayusculas_ni_espacios(): void
     {

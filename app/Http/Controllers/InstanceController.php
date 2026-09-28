@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\MessengerLoginService;
 use App\Models\Contact;
 use App\Models\Instance;
 use App\Services\InstagramLoginService;
@@ -282,6 +283,27 @@ class InstanceController extends Controller
             'phone_number_id' => $instance->phone_number_id,
             'usuario' => $user->email,
         ] + $perdido);
+
+        // Una página de Messenger se suscribió al webhook al conectarla, y borrar
+        // la fila no le dice nada a Meta: la página seguía mandándonos sus
+        // mensajes. El 27-sep-2026, preparando el App Review, se conectó por
+        // error la página de un cliente real a la empresa de pruebas; borrarla
+        // la dejaba enviando. Si Meta no contesta se borra igual —dejar una
+        // página sin poder quitarse sería peor—, pero queda escrito.
+        if ($instance->esMessenger()) {
+            try {
+                $desuscrita = app(MessengerLoginService::class)->desuscribirPagina($instance);
+            } catch (\Throwable $e) {
+                $desuscrita = false;
+            }
+
+            if (! $desuscrita) {
+                Log::channel('messenger')->warning('⚠️ La página borrada sigue suscrita en Meta', [
+                    'instance_id' => $instance->id,
+                    'pagina' => $instance->external_account_id,
+                ]);
+            }
+        }
 
         $instance->delete();
 
