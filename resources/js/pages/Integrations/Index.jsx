@@ -910,7 +910,22 @@ function AjustesDeEnvio({ showToast, canManage }) {
     }
 
     const soloEnMeta = estado.solo_en_meta ?? [];
-    const conDocumento = [...(estado.disponibles ?? []), ...soloEnMeta].filter(p => p.con_documento);
+
+    // Sólo lo que se puede enviar por el número de hoy: lo aprobado en él, esté
+    // ya registrado en Integra (un id) o no todavía (`meta:`, se registra al
+    // elegirlo). Antes salía todo lo que Integra tenía guardado para la empresa
+    // —diecinueve plantillas, catorce marcadas «no está en esta línea»— y con
+    // cinco aprobadas en el número no había forma de ver cuáles servían.
+    // Si Meta no contestó, `en_la_linea` no viene y se ofrece todo: no saber no
+    // es saber que falta.
+    const opciones = [
+        ...(estado.disponibles ?? [])
+            .filter(p => p.en_la_linea !== false)
+            .map(p => ({ valor: String(p.id), nombre: p.title, idioma: p.language, con_documento: p.con_documento })),
+        ...soloEnMeta.map((p, i) => ({ valor: `meta:${i}`, nombre: p.nombre, idioma: p.idioma, con_documento: p.con_documento })),
+    ].sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const conDocumento = opciones.filter(p => p.con_documento);
 
     // Una opción del desplegable es un id de Integra o, si empieza por
     // `meta:`, una plantilla aprobada en la línea que Integra todavía no conoce.
@@ -963,8 +978,8 @@ function AjustesDeEnvio({ showToast, canManage }) {
                     {conDocumento.length === 0 && (
                         <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                             <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                            Ninguna de tus plantillas lleva encabezado de documento, así que no pueden adjuntar
-                            el PDF. Crea una en Plantillas con encabezado de tipo DOCUMENTO.
+                            Ninguna de las plantillas aprobadas en este número lleva encabezado de documento, así
+                            que no pueden adjuntar el PDF. Crea una en Plantillas con encabezado de tipo Documento.
                         </p>
                     )}
 
@@ -1003,30 +1018,24 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                         className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
                                     >
                                         <option value="">Sin elegir</option>
-                                        {/* Dos grupos porque son dos sitios: lo
-                                            que Integra ya tiene registrado, y lo
-                                            que Meta aprobó en el número pero
-                                            Integra aún no conoce. Antes sólo
-                                            salía lo primero, y una plantilla
-                                            aprobada con otro nombre no se podía
-                                            elegir desde ninguna parte. */}
-                                        <optgroup label="Registradas en Integra">
-                                            {(estado.disponibles ?? []).map(p => (
-                                                <option key={p.id} value={p.id}>
-                                                    {p.title} ({p.language})
+                                        <optgroup label={`Aprobadas en ${estado.linea?.numero || 'tu número'}`}>
+                                            {opciones.map(p => (
+                                                <option key={p.valor} value={p.valor}>
+                                                    {p.nombre} ({p.idioma})
                                                     {p.con_documento ? '' : ' · sin adjunto'}
-                                                    {p.en_la_linea === false ? ' · no está en esta línea' : ''}
                                                 </option>
                                             ))}
+                                            {opciones.length === 0 && (
+                                                <option disabled value="-">No hay plantillas aprobadas en este número</option>
+                                            )}
                                         </optgroup>
-                                        {soloEnMeta.length > 0 && (
-                                            <optgroup label={`Aprobadas en ${estado.linea?.numero || 'tu número'} · se registran en Integra al elegirlas`}>
-                                                {soloEnMeta.map((p, i) => (
-                                                    <option key={`${p.nombre}|${p.idioma}`} value={`meta:${i}`}>
-                                                        {p.nombre} ({p.idioma})
-                                                        {p.con_documento ? '' : ' · sin adjunto'}
-                                                    </option>
-                                                ))}
+                                        {/* La que está elegida hoy aunque no exista
+                                            en el número: sin ella el desplegable
+                                            diría «Sin elegir» y escondería justo
+                                            lo que el aviso rojo de abajo explica. */}
+                                        {fueraDeLaLinea && (
+                                            <optgroup label="Elegida ahora · no está en este número">
+                                                <option value={elegida.id}>{elegida.title} ({elegida.language})</option>
                                             </optgroup>
                                         )}
                                     </select>
