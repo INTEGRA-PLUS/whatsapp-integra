@@ -83,9 +83,16 @@ class MessengerConexionController extends Controller
         $paginas = $this->messenger->paginas($token);
 
         if ($paginas === []) {
+            // Qué concedió Facebook de verdad. El 27-sep-2026 este mensaje salió
+            // tres veces seguidas con la página bien marcada en el diálogo, y sin
+            // esto no había forma de saber si faltaba un permiso o la página.
+            Log::channel('messenger')->warning('⚠️ Facebook no devolvió páginas utilizables', [
+                'empresa' => (int) $guardado['empresa'],
+            ] + $this->messenger->diagnosticoSinPaginas($token));
+
             return $this->volver(
                 $request,
-                'Esa cuenta de Facebook no administra ninguna página. Messenger se conecta a una página, no a un perfil personal.',
+                'Facebook no nos dio acceso a ninguna página. En la ventana de Facebook elige «Editar configuración», marca la página que quieres conectar y acepta todos los permisos. Messenger se conecta a una página, no a un perfil personal.',
                 false
             );
         }

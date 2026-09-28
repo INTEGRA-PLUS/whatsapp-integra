@@ -223,6 +223,40 @@ class MessengerLoginService
         return true;
     }
 
+    /**
+     * Lo que Facebook concedió en un token que no trae páginas, para el log.
+     *
+     * Nunca los tokens: sólo qué permisos quedaron concedidos o rechazados y qué
+     * páginas vinieron, con o sin su token de página.
+     *
+     * @return array<string, mixed>
+     */
+    public function diagnosticoSinPaginas(string $tokenDeUsuario): array
+    {
+        try {
+            $permisos = Http::get("https://graph.facebook.com/{$this->version()}/me/permissions", [
+                'access_token' => $tokenDeUsuario,
+            ])->json('data') ?? [];
+
+            $cuentas = Http::get("https://graph.facebook.com/{$this->version()}/me/accounts", [
+                'fields' => 'id,name,tasks',
+                'access_token' => $tokenDeUsuario,
+            ]);
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+
+        return [
+            'permisos' => collect($permisos)->mapWithKeys(fn ($p) => [$p['permission'] ?? '?' => $p['status'] ?? '?'])->all(),
+            'paginas_en_bruto' => collect($cuentas->json('data') ?? [])->map(fn ($p) => [
+                'id' => $p['id'] ?? null,
+                'nombre' => $p['name'] ?? null,
+                'tareas' => $p['tasks'] ?? [],
+            ])->all(),
+            'error_de_meta' => $cuentas->json('error.message'),
+        ];
+    }
+
     /** Y lo contrario, al desconectar: la página deja de mandarnos nada. */
     public function desuscribirPagina(Instance $linea): bool
     {
