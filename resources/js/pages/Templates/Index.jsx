@@ -452,6 +452,8 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                                 onToggle={() => toggle(family.name)}
                                 onOpenDetail={openDetail}
                                 canCreate={can('templates.create')}
+                                canEdit={can('templates.update')}
+                                instanceId={instanceId}
                                 onAddTranslation={() => goToTranslation(family)}
                             />
                         ))}
@@ -642,10 +644,14 @@ function StatCard({ icon: Icon, label, value, tone }) {
     );
 }
 
-function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTranslation }) {
+function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, instanceId, onAddTranslation }) {
     const CatIcon = CATEGORY_ICONS[family.category] ?? FileText;
     const variantCount = family.variants.length;
     const approvedCount = family.variants.filter(v => v.status === 'APPROVED').length;
+    // La versión que abren «Ver» y «Editar»: la aprobada si hay, que es la que
+    // se envía. Con varios idiomas, el detalle deja saltar a los demás.
+    const principal = family.variants.find(v => v.status === 'APPROVED') ?? family.variants[0];
+    const editable = principal && ESTADOS_EDITABLES.includes(principal.status);
 
     return (
         <div className="group rounded-xl border bg-card overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
@@ -754,15 +760,52 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                 )}
             </div>
 
-            {/* Footer: expand toggle */}
-            {variantCount > 0 && (
-                <button
-                    onClick={onToggle}
-                    className="w-full flex items-center justify-center gap-1.5 border-t bg-muted/20 hover:bg-muted/40 transition-colors text-[11px] text-muted-foreground py-1.5"
-                >
-                    {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                    {isOpen ? 'Ocultar detalle' : 'Ver detalle por idioma'}
-                </button>
+            {/* Las dos acciones que la gente busca, a la vista. Antes «ver» era
+                pulsar el nombre o la pastilla del idioma y «editar» estaba
+                dentro del detalle: nadie las encontraba y preguntaban cómo se
+                veía o se cambiaba una plantilla (28-sep-2026). */}
+            {principal && (
+                <div className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-4 py-2.5 sm:px-5">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 min-w-[7rem] flex-1 gap-1.5"
+                        onClick={() => onOpenDetail(principal)}
+                    >
+                        <Eye className="size-3.5" /> Ver plantilla
+                    </Button>
+                    {canEdit && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 min-w-[7rem] flex-1 gap-1.5"
+                            disabled={!editable}
+                            title={editable
+                                ? `Editar la versión en ${principal.language}`
+                                : 'Meta sólo deja editar plantillas aprobadas, rechazadas o pausadas'}
+                            onClick={() => router.visit(route('templates.edit', {
+                                templateId: principal.id,
+                                instance_id: instanceId,
+                            }))}
+                        >
+                            <Pencil className="size-3.5" /> Editar
+                        </Button>
+                    )}
+                    {/* El detalle por idioma sólo tiene sentido con varios idiomas;
+                        con uno repetía lo que ya dice la tarjeta. */}
+                    {variantCount > 1 && (
+                        <button
+                            type="button"
+                            onClick={onToggle}
+                            className="flex w-full items-center justify-center gap-1.5 pt-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                            {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                            {isOpen ? 'Ocultar idiomas' : `Ver los ${variantCount} idiomas`}
+                        </button>
+                    )}
+                </div>
             )}
         </div>
     );

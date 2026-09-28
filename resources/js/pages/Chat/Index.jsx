@@ -3490,6 +3490,22 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         return (Date.now() - new Date(lastInbound.sent_at || lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
     }, [messages, selectedConversation]);
 
+    // La plantilla que ya salió y espera respuesta, si la hay. Enviar una
+    // plantilla NO abre la ventana de 24 h —la abre la respuesta del cliente—,
+    // así que tras mandar la factura el aviso seguía diciendo «debes enviar
+    // primero una plantilla aprobada» debajo de la plantilla recién enviada, y
+    // parecía que no había salido (Nova Partners, 28-sep-2026). Una que falló
+    // no cuenta: ahí sí hay que mandar otra.
+    const plantillaEsperando = useMemo(() => {
+        if (!windowExpired) return null;
+        const momento = m => new Date(m.sent_at || m.created_at).getTime();
+        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+        return [...messages].reverse().find(m => m.direction === 'outbound'
+            && m.type === 'template'
+            && m.status !== 'failed'
+            && (!lastInbound || momento(m) > momento(lastInbound))) ?? null;
+    }, [messages, windowExpired]);
+
     /**
      * Pide sugerencias de respuesta para la conversación abierta.
      *
@@ -6409,21 +6425,46 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         </div>
                                     )}
 
-                                    {/* Ventana de 24h vencida: hay que reabrir con una plantilla aprobada */}
+                                    {/* Ventana de 24h cerrada. Dos casos con dos mensajes: si ya
+                                        salió una plantilla, lo que falta es que el cliente conteste
+                                        —no otra plantilla—; si no, hay que mandar una. */}
                                     {windowExpired && composerMode === 'reply' && !isRecording && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
-                                                <Clock className="size-4 mt-0.5 shrink-0" />
-                                                <span className="flex-1 leading-snug">
-                                                    La ventana de 24h para responder libremente a este contacto ya expiró. Debes enviar primero una <b>plantilla aprobada</b>.
-                                                </span>
-                                                <button
-                                                    onClick={() => setShowTemplates(true)}
-                                                    className="shrink-0 rounded-md bg-warning hover:bg-warning text-primary-foreground text-[11px] font-bold px-2.5 py-1 transition-colors"
-                                                >
-                                                    Enviar plantilla
-                                                </button>
-                                            </div>
+                                            {plantillaEsperando ? (
+                                                <div className="flex items-start gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-[12px] text-foreground">
+                                                    <CheckCircle2 className="size-4 mt-0.5 shrink-0 text-info" />
+                                                    <span className="flex-1 leading-snug">
+                                                        {/* «10:03 a. m.» ya termina en punto: no se le añade otro. */}
+                                                        <b>{`Plantilla enviada ${cuandoSeEnvio(plantillaEsperando)}`.replace(/\.?$/, '.')}</b>{' '}
+                                                        <span className="text-muted-foreground">
+                                                            Podrás escribirle libremente en cuanto el cliente responda: WhatsApp abre
+                                                            las 24 horas con su respuesta, no con la plantilla.
+                                                        </span>
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setShowTemplates(true)}
+                                                        className="shrink-0 rounded-md border border-info/40 px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-info/15"
+                                                    >
+                                                        Enviar otra
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
+                                                    <Clock className="size-4 mt-0.5 shrink-0" />
+                                                    <span className="flex-1 leading-snug">
+                                                        {messages.some(m => m.direction === 'inbound')
+                                                            ? 'Pasaron más de 24 horas desde el último mensaje del cliente.'
+                                                            : 'Este cliente todavía no te ha escrito.'}{' '}
+                                                        Para escribirle, envía una <b>plantilla aprobada</b>; cuando responda podrás escribir libremente.
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setShowTemplates(true)}
+                                                        className="shrink-0 rounded-md bg-warning hover:bg-warning text-primary-foreground text-[11px] font-bold px-2.5 py-1 transition-colors"
+                                                    >
+                                                        Enviar plantilla
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -8725,3 +8766,13 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
 }
 
 ChatIndex.layout = page => <AppLayout breadcrumb={['Chat']}>{page}</AppLayout>;
+
+/** «hoy a las 10:00 a. m.», «ayer a las…» o la fecha: para el aviso de la plantilla enviada. */
+function cuandoSeEnvio(m) {
+    const fecha = new Date(m.sent_at || m.created_at);
+    const hora = fecha.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+    const dias = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(fecha).setHours(0, 0, 0, 0)) / 86400000);
+    if (dias === 0) return `hoy a las ${hora}`;
+    if (dias === 1) return `ayer a las ${hora}`;
+    return `el ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} a las ${hora}`;
+}
