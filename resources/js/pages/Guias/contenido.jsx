@@ -333,9 +333,9 @@ export const GUIAS = [
             cuerpo: (
                 <>
                     <p>
-                        En Plantillas, toca la etiqueta del idioma en rojo (la que dice <strong>es · Rechazada</strong>). Se
-                        abre la plantilla: en la pestaña <strong>Detalle</strong> sale el <strong>motivo de rechazo</strong>.
-                        Los más comunes:
+                        En Plantillas, pulsa <strong>Ver plantilla</strong> en su tarjeta (también sirve tocar la etiqueta
+                        roja del idioma, la que dice <strong>es · Rechazada</strong>). En la pestaña <strong>Detalle</strong>
+                        sale el <strong>motivo de rechazo</strong>. Los más comunes:
                     </p>
                     <ul>
                         <li>El texto parece una promoción y la categoría es Utilidad.</li>
@@ -345,7 +345,7 @@ export const GUIAS = [
                         <li>Los ejemplos de las variables no se entienden.</li>
                     </ul>
                     <p>
-                        En esa misma ventana, arriba a la derecha, pulsa <strong>Editar</strong>, corrige lo que dice el motivo
+                        Pulsa <strong>Editar</strong> —en la tarjeta o arriba a la derecha de esa ventana—, corrige lo que dice el motivo
                         y pulsa <strong>Guardar y enviar a revisión</strong>. Entra de nuevo a revisión y tarda lo mismo que la
                         primera vez.
                     </p>
