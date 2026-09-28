@@ -13,7 +13,7 @@
  * colores en esta pantalla, ese es el límite: los tokens sí, el esqueleto de
  * WhatsApp no.
  */
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
@@ -696,6 +696,36 @@ function TooltipSemaforo({ nivel, texto, lado = 'top', children }) {
     );
 }
 
+/**
+ * El texto entero al pasar el ratón, sólo si está cortado.
+ *
+ * En la lista, el nombre y el último mensaje se truncan con «…», y para saber
+ * quién era «Maria Angel Guerrero Torr…» o qué decía el mensaje había que abrir
+ * la conversación (28-sep-2026). Si el texto cabe, no sale nada: un tooltip que
+ * repite lo que ya se lee sólo estorba al mover el ratón por la lista.
+ */
+function TextoCompleto({ texto, children }) {
+    const ref = useRef(null);
+    const [abierto, setAbierto] = useState(false);
+
+    if (!texto) return children;
+
+    return (
+        // Con una pequeña espera: recorrer la lista con el ratón no debe ir
+        // abriendo y cerrando un tooltip en cada fila.
+        <Tooltip
+            delayDuration={350}
+            open={abierto}
+            onOpenChange={quiere => setAbierto(quiere && !!ref.current && ref.current.scrollWidth > ref.current.clientWidth)}
+        >
+            <TooltipTrigger asChild>{cloneElement(children, { ref })}</TooltipTrigger>
+            <TooltipContent side="top" align="start" className="max-w-xs whitespace-pre-wrap break-words text-left">
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
@@ -781,12 +811,14 @@ const ConversationItem = memo(({
                             identifica a nadie. El nombre es lo único por lo que
                             se reconoce una fila, así que se queda con el espacio
                             y lo que cede es la insignia. */}
-                        <p className={clsx(
-                            "min-w-0 flex-1 text-sm font-bold truncate",
-                            conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
-                        )}>
-                            {contactFullName(conv.contact) || conv.name || conv.phone_number}
-                        </p>
+                        <TextoCompleto texto={contactFullName(conv.contact) || conv.name || conv.phone_number}>
+                            <p className={clsx(
+                                "min-w-0 flex-1 text-sm font-bold truncate",
+                                conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
+                            )}>
+                                {contactFullName(conv.contact) || conv.name || conv.phone_number}
+                            </p>
+                        </TextoCompleto>
                         {/* Quién viene atendiendo. «¿Esto lo lleva la IA o mi
                             menú?» no tenía respuesta en ninguna pantalla: había
                             que abrir el chat y mirar burbuja por burbuja.
@@ -978,9 +1010,11 @@ const ConversationItem = memo(({
                             leía como «@JHEYSON: se ve lo lento que está». El
                             nombre del agente ya está en la línea de arriba, en
                             su etiqueta, que es donde no se confunde con nadie. */}
-                        <p className="text-xs text-muted-foreground truncate leading-relaxed">
-                            {conv.last_message || '...'}
-                        </p>
+                        <TextoCompleto texto={conv.last_message ? conv.last_message.slice(0, 600) : null}>
+                            <p className="min-w-0 text-xs text-muted-foreground truncate leading-relaxed">
+                                {conv.last_message || '...'}
+                            </p>
+                        </TextoCompleto>
                     </div>
                 </div>
             </div>
