@@ -279,6 +279,11 @@ function Indice({ guia }) {
     );
 }
 
+// Inertia 3 llama al layout DOS veces: primero con las props de la página
+// (`layout(props)`) para ver si devuelve un elemento, y después con el elemento
+// ya armado. Leer `page.props.slug` a secas reventaba en la primera llamada
+// («Cannot read properties of undefined (reading 'slug')») y la guía no abría.
+// Mismo patrón que Extensions/Show.
 GuiaShow.layout = page => (
-    <AppLayout breadcrumb={['Guías', guiaPorSlug(page.props.slug)?.titulo ?? 'Guía']}>{page}</AppLayout>
+    <AppLayout breadcrumb={['Guías', guiaPorSlug(page?.props?.slug ?? page?.slug)?.titulo ?? 'Guía']}>{page}</AppLayout>
 );
