@@ -31,6 +31,49 @@ class ResumenIaClient
     }
 
     /**
+     * ¿Responde la IA de la plataforma? Un resumen de mentira de dos mensajes.
+     *
+     * Recorre el camino real —CRM → n8n → Ollama— y no una puerta aparte: lo
+     * que se quiere saber es si el resumen funciona, y un «ping» a Ollama
+     * diría que sí aunque n8n estuviera caído. Cuesta una inferencia mínima al
+     * día. Nació el 28-sep-2026: Ollama rechazaba todo por el pago vencido y
+     * se supo porque lo contó un cliente.
+     *
+     * @return array{ok: bool, estado: ?int, detalle: ?string}
+     */
+    public function probar(): array
+    {
+        if (! self::configured()) {
+            return ['ok' => false, 'estado' => null, 'detalle' => 'El servicio de resumen no está configurado.'];
+        }
+
+        try {
+            $respuesta = Http::acceptJson()
+                ->withHeaders(['X-Api-Key' => (string) config('services.resumen.api_key')])
+                ->timeout((int) config('services.resumen.timeout', 30))
+                ->post((string) config('services.resumen.webhook_url'), [
+                    'empresa' => ['id' => 0, 'nombre' => 'Comprobación diaria'],
+                    'conversacion' => ['id' => 0, 'contacto' => 'Prueba'],
+                    'tono' => 'telegrama',
+                    'mensajes' => [
+                        ['de' => 'cliente', 'texto' => 'Hola, ¿ya quedó registrado mi pago?', 'cuando' => now()->toIso8601String()],
+                        ['de' => 'asesor', 'texto' => 'Sí, quedó registrado hoy.', 'cuando' => now()->toIso8601String()],
+                    ],
+                ]);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'estado' => null, 'detalle' => $e->getMessage()];
+        }
+
+        if ($respuesta->failed()) {
+            return ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => mb_substr($respuesta->body(), 0, 300)];
+        }
+
+        return $this->leer($respuesta->json()) !== null
+            ? ['ok' => true, 'estado' => $respuesta->status(), 'detalle' => null]
+            : ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => 'Respondió, pero sin resumen.'];
+    }
+
+    /**
      * @param  list<WhatsAppMessage>  $mensajes  De más antiguo a más reciente.
      * @return array{resumen: string, puntos: list<string>, pendientes: list<string>}|null
      */
