@@ -447,12 +447,14 @@ function TarjetaInstancia({ instance, sync, generando, onEditar, onToken, onDesc
 
                 {/* Los identificadores técnicos, pequeños y copiables: se
                     necesitan para soporte, pero no son lo que el cliente viene a
-                    ver. Una cuenta de Instagram no tiene número ni WABA, y
+                    ver. Instagram y Messenger no tienen número ni WABA, y
                     pintar esas etiquetas vacías lo iba a ver el revisor del App
                     Review en el screencast. */}
                 <dl className="divide-y divide-border/60 rounded-xl border bg-muted/30 text-xs">
                     {instance.channel === 'instagram' ? (
                         <IdCopiable etiqueta="ID de cuenta" valor={instance.external_account_id} />
+                    ) : instance.channel === 'messenger' ? (
+                        <IdCopiable etiqueta="ID de página" valor={instance.external_account_id} />
                     ) : (
                         <>
                             <IdCopiable etiqueta="Phone ID" valor={instance.phone_number_id} />
