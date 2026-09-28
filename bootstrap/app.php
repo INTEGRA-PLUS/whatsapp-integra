@@ -27,6 +27,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'webhooks/whatsapp',
             'webhooks/instagram',
+            // Sin esta línea Meta entregaba los mensajes de Messenger y el CRM
+            // los rechazaba con 419: el 27-sep-2026, el primer mensaje real a la
+            // página Integra rebotó cinco veces sin que llegara ninguno. La
+            // autenticidad la da la firma, que se valida dentro.
+            'webhooks/messenger',
             // OnePay avisa de los pagos por POST, sin sesión. Va con la misma
             // ruta que en Integra 2.0 a propósito: quien configure la pasarela
             // reconoce el patrón.
