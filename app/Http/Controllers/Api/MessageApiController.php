@@ -267,11 +267,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -505,7 +505,7 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             Log::channel('whatsapp')->warning('📄 Documento sin destinatario utilizable', [
@@ -514,7 +514,7 @@ class MessageApiController extends Controller
             ]);
 
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -732,11 +732,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -1006,11 +1006,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
