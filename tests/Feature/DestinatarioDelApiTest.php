@@ -35,6 +35,8 @@ class DestinatarioDelApiTest extends TestCase
             'el mismo pegado dos veces' => ['573004012143573004012143', '573004012143'],
             'el mismo separado por espacio' => ['3004012143 3004012143', '3004012143'],
             'con y sin el 57' => ['3004012143, 573004012143', '573004012143'],
+            'el 57 una vez y el número dos veces' => ['5731365869833136586983', '573136586983'],
+            'el 57 delante del número con 57 repetido' => ['57573169256064573169256064', '573169256064'],
             'dos números distintos' => ['3004012143 3115551234', ''],
             'dos distintos pegados' => ['30040121433115551234', ''],
             'un BSUID pasa intacto' => ['CO.1402615141764490', 'CO.1402615141764490'],

@@ -137,10 +137,24 @@ class WhatsAppConversation extends Model
             return count($colas) === 1 && strlen($trozos[0]) <= self::MAX_DIGITOS_TELEFONO ? $trozos[0] : '';
         }
 
-        // Pegados sin separador: el mismo número dos veces.
-        $mitad = intdiv(strlen($digitos), 2);
-        if (strlen($digitos) % 2 === 0 && substr($digitos, 0, $mitad) === substr($digitos, $mitad)) {
-            return substr($digitos, 0, $mitad);
+        // Pegados sin separador: el mismo número dos veces. También con el
+        // código de país puesto una sola vez delante de los dos
+        // («57» + «3136586983» + «3136586983»), que es como lo mandaba el ERP
+        // de Nova Partners en parte de sus clientes.
+        foreach (['', '57'] as $prefijo) {
+            if ($prefijo !== '' && ! str_starts_with($digitos, $prefijo)) {
+                continue;
+            }
+
+            $resto = substr($digitos, strlen($prefijo));
+            $mitad = intdiv(strlen($resto), 2);
+
+            if (strlen($resto) % 2 === 0 && substr($resto, 0, $mitad) === substr($resto, $mitad)) {
+                $numero = substr($resto, 0, $mitad);
+
+                // Un celular colombiano sin su 57 lo recupera del prefijo.
+                return $prefijo !== '' && strlen($numero) === 10 ? $prefijo.$numero : $numero;
+            }
         }
 
         return '';
