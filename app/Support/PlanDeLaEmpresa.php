@@ -237,11 +237,53 @@ class PlanDeLaEmpresa
     }
 
     /**
-     * Lo que le toca pagar al mes, todo junto.
+     * Lo que paga al mes por el CRM, después de lo que cubre su Integra.
      *
-     * Al cliente de Integra sólo se le cobra el complemento: el CRM va dentro de
-     * lo que ya paga por el ERP. Por eso su precio es cero hasta que contrate la
-     * IA — que es exactamente la venta que se busca.
+     * El paquete de Integra trae el plan **Básico**, no cualquier plan. Hasta el
+     * 29-sep-2026 esto devolvía cero para todo cliente de Integra fuera cual
+     * fuera su plan, y la pantalla de Planes pintaba «Incluido» sobre el Pro y
+     * el Avanzado: un cliente la leyó, pidió el Pro gratis, y tenía razón con lo
+     * que le enseñábamos. Subir de plan se paga, y se paga sólo la diferencia
+     * con el Básico que ya tiene — Pro +30, Avanzado +80.
+     *
+     * Los cuatro que ya estaban en un plan mayor antes de esto (Transinternet,
+     * Comuna13, Megastore y Star NET) lo conservan sin cargo: es lo que se les
+     * vendió. Van marcados con `crm_pactado` y no se deduce de nada, para que
+     * no se lo lleve por delante nadie que «arregle» su plan.
+     */
+    public function precioCrmAPagar(): int
+    {
+        if (! $this->incluidoEnIntegra()) {
+            return $this->precioCrm();
+        }
+
+        return $this->crmPactado() ? 0 : self::precioCrmParaIntegra($this->slug());
+    }
+
+    /**
+     * Lo que le cuesta a un cliente de Integra un plan de CRM: la diferencia
+     * con el que trae su paquete. Estático porque la tabla de Planes lo pide
+     * para cada plan del catálogo, no sólo para el que tiene.
+     */
+    public static function precioCrmParaIntegra(string $slug): int
+    {
+        $incluido = (string) config('planes.plan_incluido_en_integra', 'basico');
+
+        return max(0,
+            (int) config("planes.crm.{$slug}.precio", 0)
+            - (int) config("planes.crm.{$incluido}.precio", 0)
+        );
+    }
+
+    /** ¿Conserva sin cargo un plan mayor que el que trae su Integra? */
+    public function crmPactado(): bool
+    {
+        return $this->incluidoEnIntegra() && (bool) $this->company->crm_pactado;
+    }
+
+    /**
+     * Lo que le toca pagar al mes, todo junto: el CRM que no le cubre su
+     * Integra más el complemento de IA.
      */
     public function precioMensual(): int
     {
@@ -254,9 +296,7 @@ class PlanDeLaEmpresa
             return $this->precioPersonalizado();
         }
 
-        return $this->incluidoEnIntegra()
-            ? $this->precioIa()
-            : $this->precioCrm() + $this->precioIa();
+        return $this->precioCrmAPagar() + $this->precioIa();
     }
 
     /**
@@ -458,14 +498,6 @@ class PlanDeLaEmpresa
     }
 
     /**
-     * ¿Se le factura este mes?
-     *
-     * El cliente de Integra sólo entra en la factura cuando contrata el
-     * complemento de IA: el CRM ya se lo cobró el ERP, pero la IA no. Ése es el
-     * único camino por el que un cliente de Integra empieza a aparecer en la
-     * lista de cobro, y es la venta que se busca.
-     */
-    /**
      * ¿El CRM se lo cubre su paquete de Integra?
      *
      * No es lo mismo que «no se le cobra». Es un cliente que **paga**, sólo que
@@ -475,18 +507,26 @@ class PlanDeLaEmpresa
      * está prestando el servicio, y nosotros no tenemos dónde ver a quién
      * podríamos venderle la IA.
      *
-     * El día que compra el complemento deja de estar cubierto: ahí sí hay un
-     * importe, y ése sí va a la pasarela.
+     * El día que compra el complemento, o sube de plan y paga la diferencia,
+     * deja de estar cubierto: ahí sí hay un importe, y ése sí va a la pasarela.
      */
     public function cubiertoPorIntegra(): bool
     {
-        return $this->incluidoEnIntegra() && ! $this->tieneIa();
+        return $this->incluidoEnIntegra()
+            && ! $this->tieneIa()
+            && $this->precioCrmAPagar() === 0;
     }
 
+    /**
+     * ¿Se le factura este mes?
+     *
+     * Al cliente de Integra, sólo por lo que su paquete no trae: el complemento
+     * de IA o la diferencia de un plan mayor que el Básico.
+     */
     public function seFactura(): bool
     {
         if ($this->incluidoEnIntegra()) {
-            return $this->tieneIa() && ! $this->enMesGratis();
+            return ! $this->cubiertoPorIntegra() && ! $this->enMesGratis();
         }
 
         if (in_array($this->cobro(), ['cortesia', 'prueba'], true)) {
@@ -515,18 +555,20 @@ class PlanDeLaEmpresa
             'cobro' => $this->cobro(),
             'se_factura' => $this->seFactura(),
             'incluido_en_integra' => $this->incluidoEnIntegra(),
+            'crm_pactado' => $this->crmPactado(),
+            'plan_de_integra' => config('planes.plan_incluido_en_integra', 'basico'),
+            'plan_de_integra_nombre' => config('planes.crm.'.config('planes.plan_incluido_en_integra', 'basico').'.nombre'),
             'en_mes_gratis' => $this->enMesGratis(),
             'gratis_hasta' => optional($this->company->gratis_hasta)->toDateString(),
 
             'precio_crm' => $this->precioCrm(),
+            'precio_crm_a_pagar' => $this->precioCrmAPagar(),
             'precio_ia' => $this->precioIa(),
             'precio_usd' => $this->precioMensual(),
             // Para que el panel pueda marcar «a medida» en vez de enseñar un
             // número que no cuadra con ningún plan del catálogo.
             'a_medida' => $this->esAMedida(),
-            'precio_de_catalogo' => $this->incluidoEnIntegra()
-                ? $this->precioIa()
-                : $this->precioCrm() + $this->precioIa(),
+            'precio_de_catalogo' => $this->precioCrmAPagar() + $this->precioIa(),
             'precio_usd_anual' => $this->precioMensualAnual(),
 
             'ciclo' => $this->ciclo(),

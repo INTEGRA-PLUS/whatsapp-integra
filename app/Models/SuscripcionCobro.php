@@ -26,6 +26,7 @@ class SuscripcionCobro extends Model
         'ia',
         'ciclo',
         'crm_incluido',
+        'crm_usd',
         'importe_usd',
         'periodo_desde',
         'periodo_hasta',
@@ -43,6 +44,7 @@ class SuscripcionCobro extends Model
         'pagado_at' => 'datetime',
         'importe_usd' => 'integer',
         'crm_incluido' => 'boolean',
+        'crm_usd' => 'integer',
     ];
 
     public function company(): BelongsTo
@@ -102,11 +104,15 @@ class SuscripcionCobro extends Model
         // es SÓLO el complemento: nombrar los dos hace que los 49 dólares de la
         // IA parezcan el precio del Pro más la IA, y no hay forma de explicar
         // el importe.
-        if ($this->crm_incluido && $ia && ! $this->estaCubierto()) {
+        if ($this->crm_incluido && ! $this->pagaDiferenciaDeCrm() && $ia && ! $this->estaCubierto()) {
             return $ia.' · '.mb_strtolower($ciclo);
         }
 
         $texto = trim($plan.($ia ? ' + '.$ia : '')).' · '.mb_strtolower($ciclo);
+
+        if ($this->pagaDiferenciaDeCrm()) {
+            return $texto.' · el Básico va en tu Integra, pagas la diferencia';
+        }
 
         // Un recibo en cero sin explicación se lee como un error de facturación.
         return $this->estaCubierto()
@@ -134,8 +140,16 @@ class SuscripcionCobro extends Model
 
         $lineas = [[
             'concepto' => 'CRM '.config("planes.crm.{$this->plan}.nombre", $this->plan),
-            'importe' => $this->crm_incluido ? null : $crm,
-            'nota' => $this->crm_incluido ? 'Incluido en tu paquete Integra' : null,
+            'importe' => match (true) {
+                $this->pagaDiferenciaDeCrm() => (int) $this->crm_usd,
+                (bool) $this->crm_incluido => null,
+                default => $crm,
+            },
+            'nota' => match (true) {
+                $this->pagaDiferenciaDeCrm() => 'El Básico va en tu Integra: pagas sólo la diferencia',
+                (bool) $this->crm_incluido => 'Incluido en tu paquete Integra',
+                default => null,
+            },
         ]];
 
         if ($this->ia !== 'ninguno') {
@@ -149,5 +163,16 @@ class SuscripcionCobro extends Model
         $suma = collect($lineas)->sum(fn (array $l) => (int) $l['importe']);
 
         return $suma === (int) $this->importe_usd ? $lineas : [];
+    }
+
+    /**
+     * ¿Es de un cliente de Integra que paga la diferencia de un plan mayor?
+     *
+     * Los recibos anteriores al 29-sep-2026 no tienen `crm_usd` y se leen como
+     * siempre: CRM incluido.
+     */
+    public function pagaDiferenciaDeCrm(): bool
+    {
+        return $this->crm_incluido && (int) $this->crm_usd > 0;
     }
 }

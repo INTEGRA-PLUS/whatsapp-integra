@@ -156,6 +156,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             nota_de_cobro: company.nota_de_cobro ?? '',
             precio_personalizado: company.precio_personalizado ?? '',
             viene_de_integra: !!company.viene_de_integra,
+            crm_pactado: !!p.crm_pactado,
         });
         setPlanCompany(company);
     }
@@ -716,7 +717,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <p className="mt-0.5 text-xs text-muted-foreground">
                                         Se vende aparte del plan y se suma al precio. De las {planes_resumen.total_empresas} empresas,{' '}
                                         <span className="font-semibold text-foreground">{planes_resumen.de_integra}</span> vienen de Integra
-                                        y ya pagan el CRM dentro de su ERP: lo único nuevo que se les puede vender es esto.
+                                        y ya tienen el Básico dentro de su ERP: se les puede vender esto y la diferencia de un plan mayor.
                                     </p>
                                 </div>
                                 {/* Qué trae cada nivel, y no sólo cuánto cuesta.
@@ -998,7 +999,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         {planCompany.plan_resumen?.precio_usd > 0 && (
                             <p className="-mt-2 text-xs text-muted-foreground">
                                 {planCompany.plan_resumen.incluido_en_integra
-                                    ? 'Viene de Integra, así que sólo se le cobra el complemento: '
+                                    ? 'Viene de Integra: el Básico va en su ERP y se le cobra lo demás (diferencia de plan y complemento): '
                                     : 'Le corresponden '}
                                 <span className="font-mono font-semibold text-foreground">
                                     ${planCompany.plan_resumen.precio_usd}
@@ -1034,12 +1035,35 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     Viene de Integra
                                 </span>
                                 <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                                    Se le vendió el ERP con el CRM dentro, así que ya paga. No se le
-                                    factura aquí y no aparece en la lista de cobro. Lo que sí se le
-                                    puede vender es el complemento de IA.
+                                    Se le vendió el ERP con el plan Básico dentro, así que eso ya lo
+                                    paga. Si sube a Pro o Avanzado paga sólo la diferencia, y el
+                                    complemento de IA va aparte.
                                 </span>
                             </span>
                         </label>
+
+                        {/* Sólo para los que ya tenían un plan mayor antes del
+                            29-sep-2026. Sin la casilla visible, alguien «arregla»
+                            su plan y les empieza a cobrar lo que se les vendió. */}
+                        {planForm.viene_de_integra && planForm.plan !== 'basico' && (
+                            <label className="-mt-2 flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                                <input
+                                    type="checkbox"
+                                    checked={planForm.crm_pactado}
+                                    onChange={e => setPlanForm({ ...planForm, crm_pactado: e.target.checked })}
+                                    className="mt-0.5 size-4 shrink-0 accent-primary"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-foreground">
+                                        Plan mayor pactado sin cargo
+                                    </span>
+                                    <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                                        No se le cobra la diferencia sobre el Básico. Es para quien ya
+                                        tenía este plan antes de separar los precios; deja la razón en la nota.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
 
                         <Selector
                             label="Cobro"
@@ -1578,7 +1602,7 @@ function CobroDelMes({ datos }) {
 
 const MOTIVO_FUERA = {
     interna: 'internas nuestras',
-    integra: 'con el CRM dentro de Integra',
+    integra: 'con el Básico dentro de Integra',
     cortesia: 'en cortesía',
     prueba: 'en prueba',
     mes_gratis: 'con mes gratis',
@@ -1645,7 +1669,7 @@ function Suscripcion({ company }) {
             ) : (
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                     No se le factura nada: {plan.incluido_en_integra
-                        ? 'viene de Integra y no tiene complemento de IA contratado.'
+                        ? 'viene de Integra, está en el Básico (o tiene su plan pactado) y no tiene complemento de IA.'
                         : 'está en cortesía o sin plan de pago.'}
                 </p>
             )}
@@ -1716,7 +1740,7 @@ function Suscripcion({ company }) {
 }
 
 const ETIQUETA_COBRO = {
-    integra: 'Integra — el CRM va en su ERP',
+    integra: 'Integra — el Básico va en su ERP',
     cortesia: 'Cortesía — no se factura',
     prueba: 'Prueba',
     activo: 'Activo — se factura',

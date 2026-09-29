@@ -52,6 +52,9 @@ class Suscripcion
             // el Pro más la IA— y una empresa que deje de venir de Integra el
             // año que viene cambiaría lo que dice un recibo de este mes.
             'crm_incluido' => $plan->incluidoEnIntegra(),
+            // Cuánto de la mensualidad es CRM: la diferencia de un plan mayor
+            // que el Básico de Integra, o cero si va incluido o pactado.
+            'crm_usd' => $plan->precioCrmAPagar(),
             'importe_usd' => $cubierto ? 0 : $plan->precioDelCiclo(),
             'periodo_desde' => $desde,
             'periodo_hasta' => $hasta,

@@ -286,7 +286,7 @@ class SuscripcionTest extends TestCase
      */
     public function al_cliente_de_integra_se_le_emite_en_cero_y_cubierto(): void
     {
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
 
         $cobro = Suscripcion::emitir($company);
 
@@ -306,7 +306,7 @@ class SuscripcionTest extends TestCase
      */
     public function el_cubierto_avanza_el_periodo_al_emitirse(): void
     {
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
 
         $cobro = Suscripcion::emitir($company);
 
@@ -317,7 +317,7 @@ class SuscripcionTest extends TestCase
     /** Pagarlo otra vez no alarga nada: ya nació saldado. */
     public function test_un_cubierto_no_se_puede_pagar_dos_veces(): void
     {
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
         $cobro = Suscripcion::emitir($company);
         $hasta = $company->refresh()->suscripcion_hasta;
 
@@ -335,7 +335,7 @@ class SuscripcionTest extends TestCase
      */
     public function cuando_compra_ia_se_le_cobra_solo_la_ia(): void
     {
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'completa']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'completa']);
 
         $cobro = Suscripcion::emitir($company);
 
@@ -375,7 +375,7 @@ class SuscripcionTest extends TestCase
     {
         $this->travelTo('2026-09-18');
 
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
 
         $cobro = Suscripcion::emitir($company);
 
@@ -396,7 +396,7 @@ class SuscripcionTest extends TestCase
     {
         $this->travelTo('2026-09-18');
 
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
 
         Suscripcion::emitir($company);
         $segundo = Suscripcion::emitir($company->refresh());
@@ -417,7 +417,7 @@ class SuscripcionTest extends TestCase
     {
         $this->travelTo('2026-09-15');
 
-        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'pro', 'ia' => 'ninguno']);
+        $company = $this->empresa(['viene_de_integra' => true, 'plan' => 'basico', 'ia' => 'ninguno']);
 
         $cobro = Suscripcion::emitir($company);
 

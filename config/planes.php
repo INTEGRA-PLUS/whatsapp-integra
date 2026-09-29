@@ -85,6 +85,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | El plan que trae el paquete de Integra
+    |--------------------------------------------------------------------------
+    |
+    | El cliente de Integra tiene el Básico dentro de su ERP, y ninguno más.
+    | Subir se paga, y se paga sólo la diferencia: Pro +30, Avanzado +80.
+    |
+    | Hasta el 29-sep-2026 la pantalla de Planes pintaba «Incluido» en los tres
+    | planes y un cliente pidió el Pro gratis con la captura en la mano. Los
+    | cuatro que ya estaban en un plan mayor lo conservan sin cargo: van con
+    | `companies.crm_pactado`.
+    |
+    */
+
+    'plan_incluido_en_integra' => 'basico',
+
+    /*
+    |--------------------------------------------------------------------------
     | El complemento de IA
     |--------------------------------------------------------------------------
     |
@@ -211,7 +228,10 @@ return [
         'Respuestas automáticas y respuestas rápidas',
         'Campañas y plantillas',
         'Reportes de atención',
-        'Agentes y líneas ilimitados',
+        // Decía «Agentes y líneas ilimitados» y contradecía la tabla de al
+        // lado, que da 2, 5 y 10 agentes. No son topes duros —nadie deja de
+        // atender por pasarse—, pero ilimitado no es.
+        'Si te pasas de agentes o contactos no se corta nada: te avisamos para hablar de subir',
         'WhatsApp, Instagram y Facebook Messenger',
     ],
 
