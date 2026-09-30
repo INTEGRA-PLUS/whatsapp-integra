@@ -158,6 +158,40 @@ class PagoDeMetaTest extends TestCase
         $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->refresh()->problema_de_pago);
     }
 
+    /**
+     * JHeda, 30-sep-2026: pago hecho, negocio sin verificar. Es «ya envías, con
+     * tope», no «el pago sigue mal».
+     */
+    public function test_pagada_pero_sin_verificar_dice_el_motivo_real(): void
+    {
+        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA]);
+
+        Http::fake(function ($r) {
+            return str_contains($r->url(), 'currency')
+                ? Http::response(['currency' => 'COP', 'id' => '1'])
+                : Http::response(['id' => '1', 'health_status' => [
+                    'can_send_message' => 'LIMITED',
+                    'entities' => [
+                        ['entity_type' => 'WABA', 'can_send_message' => 'AVAILABLE'],
+                        ['entity_type' => 'BUSINESS', 'can_send_message' => 'LIMITED', 'errors' => [[
+                            'error_code' => 141010,
+                            'error_description' => 'The Business has not passed business verification.',
+                        ]]],
+                    ],
+                ]]);
+        });
+
+        $this->actingAs($admin)
+            ->postJson("/instances/{$instance->id}/comprobar-pago")
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('limitada', true)
+            ->assertJsonPath('guia', '/instances/guia-limites-whatsapp')
+            ->assertJsonPath('mensaje', fn ($m) => str_contains($m, 'verificación'));
+
+        $this->assertNull($instance->refresh()->problema_de_pago);
+    }
+
     public function test_no_se_comprueba_la_linea_de_otra_empresa(): void
     {
         [, $admin] = $this->linea();

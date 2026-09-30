@@ -386,6 +386,12 @@ function estadoDe(instance) {
     if (instance.problema_de_pago) {
         return { clave: 'sin-pago', etiqueta: 'Sin pago en Meta', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
     }
+    // LIMITED envía, con tope: casi siempre es el negocio sin verificar. Como
+    // «No envía» y culpando a la tarjeta, JHeda creyó que el pago seguía mal
+    // cuando ya lo había arreglado (30-sep-2026).
+    if (instance.puede_enviar === 'LIMITED') {
+        return { clave: 'limitada', etiqueta: 'Con límite', pastilla: 'bg-warning/15 text-warning', punto: 'bg-warning', franja: 'bg-warning' };
+    }
     if (instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE') {
         return { clave: 'no-envia', etiqueta: 'No envía', pastilla: 'bg-warning/15 text-warning', punto: 'bg-warning', franja: 'bg-warning' };
     }
@@ -467,6 +473,20 @@ function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando
                         >
                             Arreglarlo paso a paso <ArrowRight className="size-3.5" />
                         </Link>
+                    </Aviso>
+                )}
+
+                {estado.clave === 'limitada' && (
+                    <Aviso tono="warning" titulo="Envía, pero Meta le pone un tope a esta cuenta.">
+                        <p>{instance.puede_enviar_motivo ?? 'Meta no dio un motivo.'}</p>
+                        {/verificaci|verification/i.test(instance.puede_enviar_motivo ?? '') && (
+                            <Link
+                                href="/instances/guia-limites-whatsapp"
+                                className="mt-2 inline-flex items-center gap-1.5 font-semibold underline-offset-2 hover:underline"
+                            >
+                                Verificar el negocio y subir el límite <ArrowRight className="size-3.5" />
+                            </Link>
+                        )}
                     </Aviso>
                 )}
 

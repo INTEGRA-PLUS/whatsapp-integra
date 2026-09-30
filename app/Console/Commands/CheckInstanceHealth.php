@@ -112,7 +112,10 @@ class CheckInstanceHealth extends Command
 
                 if ($esDePago) {
                     FacturacionDeMeta::marcar($instance, FacturacionDeMeta::SIN_METODO);
-                } elseif ($podra['estado'] !== 'AVAILABLE' && $antesPodia !== $podra['estado']) {
+                } elseif ($podra['estado'] === 'BLOCKED' && $antesPodia !== $podra['estado']) {
+                    // Sólo BLOCKED: LIMITED envía con tope (casi siempre el
+                    // negocio sin verificar), y avisar «no está dejando
+                    // enviar» por eso es falso y alarma de más.
                     $bloqueadas++;
                     $this->avisarDelBloqueo($instance, $podra['motivo']);
                 }

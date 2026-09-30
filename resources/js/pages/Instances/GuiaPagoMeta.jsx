@@ -263,7 +263,9 @@ function Comprobar({ linea }) {
         try {
             const { data } = await axios.post(route('instances.comprobar-pago', linea.id));
             setEstado(data);
-            if (data.ok) {
+            // Se recarga para que desaparezca la alerta roja, salvo si hay un
+            // aviso de límite que leer: recargar se lo llevaría por delante.
+            if (data.ok && !data.limitada) {
                 setTimeout(() => window.location.reload(), 2500);
             }
         } catch (e) {
@@ -284,13 +286,31 @@ function Comprobar({ linea }) {
                 {cargando ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 {cargando ? 'Preguntando a Meta…' : `Ya lo hice, comprobar ${linea.nombre}`}
             </Button>
+            {/* Tres tonos y no dos: «pagado pero con tope» en rojo se leyó
+                como que la tarjeta seguía mal (JHeda, 30-sep-2026). */}
             {estado && (
-                <p className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] leading-relaxed ${
-                    estado.ok ? 'border-success/30 bg-success/10 text-success' : 'border-destructive/30 bg-destructive/10 text-destructive'
+                <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] leading-relaxed ${
+                    estado.ok && estado.limitada
+                        ? 'border-warning/40 bg-warning/10 text-foreground'
+                        : estado.ok
+                            ? 'border-success/30 bg-success/10 text-success'
+                            : 'border-destructive/30 bg-destructive/10 text-destructive'
                 }`}>
-                    {estado.ok ? <CircleCheck className="mt-0.5 size-4 shrink-0" /> : <CircleAlert className="mt-0.5 size-4 shrink-0" />}
-                    <span>{estado.mensaje}</span>
-                </p>
+                    {estado.ok
+                        ? <CircleCheck className={`mt-0.5 size-4 shrink-0 ${estado.limitada ? 'text-success' : ''}`} />
+                        : <CircleAlert className="mt-0.5 size-4 shrink-0" />}
+                    <span>
+                        {estado.mensaje}
+                        {estado.guia && (
+                            <>
+                                {' '}
+                                <Link href={estado.guia} className="font-semibold text-primary underline-offset-2 hover:underline">
+                                    Ver cómo verificar el negocio y subir el límite
+                                </Link>
+                            </>
+                        )}
+                    </span>
+                </div>
             )}
         </div>
     );

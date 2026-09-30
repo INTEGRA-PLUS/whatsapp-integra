@@ -174,12 +174,23 @@ class FacturacionDeMeta
             return ['ok' => true, 'mensaje' => 'Listo: Meta ya deja enviar por esta línea. Vuelve a enviar los mensajes que fallaron.'];
         }
 
-        // Bloqueada, pero no por el pago: la alerta de pago se apaga y se dice
-        // que el problema es otro, en vez de mandarle a poner otra tarjeta.
+        // Ya no es el pago, pero Meta limita por otra cosa. Se dice cuál: un
+        // «por otro motivo» a secas se leyó como que la tarjeta seguía mal
+        // (JHeda, 30-sep-2026, con el pago ya hecho y el negocio sin
+        // verificar). LIMITED no es BLOCKED: envía, con tope.
         if ($estado !== null && $motivo === null) {
             self::resolver($instance);
 
-            return ['ok' => false, 'mensaje' => 'El pago ya está en orden, pero Meta sigue limitando esta cuenta por otro motivo. Revisa el estado de la línea en Instancias.'];
+            $otros = self::otrosMotivos($salud['data']['health_status'] ?? []);
+
+            return [
+                'ok' => $estado === 'LIMITED',
+                'limitada' => true,
+                'mensaje' => $estado === 'LIMITED'
+                    ? 'El pago quedó listo y ya puedes enviar. Meta mantiene un límite en tu cuenta: '.$otros['texto']
+                    : 'El pago quedó listo, pero Meta todavía no deja enviar: '.$otros['texto'],
+                'guia' => $otros['guia'],
+            ];
         }
 
         if ($motivo !== null) {
@@ -210,6 +221,40 @@ class FacturacionDeMeta
         }
 
         return null;
+    }
+
+    /**
+     * Lo que limita la cuenta que no es el pago, dicho en español y con la
+     * guía que lo resuelve cuando la hay.
+     *
+     * @return array{texto: string, guia: ?string}
+     */
+    public static function otrosMotivos(array $salud): array
+    {
+        $conocidos = [
+            '141010' => 'tu negocio no ha pasado la verificación de Meta. Mientras tanto solo puedes escribir primero a 250 clientes distintos al día. Verificar el negocio sube ese límite.',
+        ];
+
+        $textos = [];
+        $guia = null;
+
+        foreach ($salud['entities'] ?? [] as $entidad) {
+            foreach ($entidad['errors'] ?? [] as $error) {
+                $codigo = (string) ($error['error_code'] ?? '');
+
+                if (isset($conocidos[$codigo])) {
+                    $textos[] = $conocidos[$codigo];
+                    $guia = '/instances/guia-limites-whatsapp';
+                } elseif ($texto = $error['error_description'] ?? $error['description'] ?? null) {
+                    $textos[] = $texto;
+                }
+            }
+        }
+
+        return [
+            'texto' => $textos === [] ? 'Meta no dio el motivo. Revisa el estado de la línea en Instancias.' : implode(' ', array_unique($textos)),
+            'guia' => $guia,
+        ];
     }
 
     public static function marcar(Instance $instance, string $tipo): void
