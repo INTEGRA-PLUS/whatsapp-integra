@@ -969,6 +969,20 @@ Route::middleware('auth')->group(function () {
         Route::get('/{key}/sync-status', [IntegrationController::class, 'syncStatus'])
             ->middleware('permission:integrations.view');
 
+        // Asistente de Integra (MCP): otra credencial, otra fila y otro ciclo
+        // de vida que los de Integra v1, así que no pasa por el {key} de
+        // arriba. Ninguna de aquéllas casa con estas rutas —todas exigen un
+        // segundo segmento fijo (connect, status, activate…)—, de modo que no
+        // hay ambigüedad ni depende del orden de declaración.
+        Route::get('/mcp', [\App\Http\Controllers\IntegraMcpSettingsController::class, 'show'])
+            ->middleware('permission:integrations.view');
+        Route::post('/mcp', [\App\Http\Controllers\IntegraMcpSettingsController::class, 'store'])
+            ->middleware('permission:integrations.update');
+        Route::post('/mcp/verify', [\App\Http\Controllers\IntegraMcpSettingsController::class, 'verify'])
+            ->middleware('permission:integrations.update');
+        Route::delete('/mcp', [\App\Http\Controllers\IntegraMcpSettingsController::class, 'destroy'])
+            ->middleware('permission:integrations.update');
+
         // Acciones usadas desde el chat por los agentes (solo requieren sesión).
         Route::get('/invoice-payments/clients', [IntegrationController::class, 'searchClients']);
         Route::get('/invoice-payments/invoices', [IntegrationController::class, 'invoices']);

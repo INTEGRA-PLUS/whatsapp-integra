@@ -58,6 +58,33 @@ class CompanyIntegration extends Model
     public const KEY_AI_ASSISTANT = 'ai_assistant';
 
     /**
+     * El "asistente de Integra": el servidor MCP que corre DENTRO de la
+     * instancia de Integra de cada cliente, con sus 39 herramientas.
+     *
+     * Guarda `base_url` (el dominio del cliente + /software/mcp), el token
+     * `itg_` en `access_token` —cifrado y oculto al frontend, como el resto— y
+     * el perfil con el que se emitió en `settings.perfil`.
+     *
+     * Fila propia y NO colgada de las de Integra (invoice_payments,
+     * contacts_sync) porque es otra credencial: otro token, otro perfil, otra
+     * URL y otro ciclo de vida. Por eso tampoco está en Integra::SOURCES —no
+     * puede confundirse con la conexión del API v1 ni revocarla— y por eso
+     * conectar una no conecta la otra.
+     */
+    public const KEY_MCP_INTEGRA = 'mcp_integra';
+
+    /**
+     * Perfiles de token que el panel acepta.
+     *
+     * `nomina` existe en Integra y deliberadamente NO se ofrece: el CRM atiende
+     * a suscriptores, y un token que además abre la nómina de la empresa no
+     * tiene nada que hacer detrás de un modelo que conversa con desconocidos.
+     * Aceptarlo ampliaría el daño de cualquier fallo sin mejorar una sola
+     * respuesta.
+     */
+    public const MCP_PROFILES = ['lectura', 'soporte', 'escritura'];
+
+    /**
      * Qué puede hacer la IA contra Integra, por empresa.
      *
      * Se guardan en `abilities` —la misma columna donde las filas de Integra

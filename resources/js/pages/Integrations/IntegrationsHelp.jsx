@@ -228,6 +228,14 @@ function FromIntegra() {
                 soporte y clientes.
             </p>
 
+            <p className="text-muted-foreground">
+                Y aparte está el <strong className="text-foreground">asistente de Integra</strong>, para que la IA
+                que contesta tus WhatsApp consulte tu Integra por su cuenta. Usa otra llave —un token{' '}
+                <code className="font-mono text-xs">itg_</code> que se emite en tu servidor— y no depende de la
+                conexión de arriba. Dentro de <em>Complementos → Integra</em>, su panel explica paso a paso cómo
+                conectarlo.
+            </p>
+
             <div className="flex gap-2.5 rounded-xl border border-warning/30 bg-warning/10 p-4">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
                 <div className="text-xs text-warning">
