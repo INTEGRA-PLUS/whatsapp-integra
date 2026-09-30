@@ -30,8 +30,13 @@ export default function CabeceraModulo({ icono: Icono, titulo, descripcion, volv
         )}>
             <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-primary/10 blur-3xl" />
 
-            <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
+            {/* Fila que parte, y no columna que pasa a fila en `lg`. Con
+                `lg:flex-row` y los botones en `shrink-0`, el que cedía era el
+                título: en Plantillas, con seis botones, quedó una palabra por
+                línea y el selector de línea encima del icono (30-sep-2026).
+                Ahora el título pide 18rem y, si no caben, los botones bajan. */}
+            <div className="relative flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+                <div className="flex min-w-0 flex-1 basis-72 items-center gap-3">
                     {volver && (
                         <Link
                             href={volver}
@@ -59,7 +64,7 @@ export default function CabeceraModulo({ icono: Icono, titulo, descripcion, volv
                 </div>
 
                 {children && (
-                    <div className={cn('flex flex-wrap items-center gap-2 lg:shrink-0 lg:justify-end', accionesClassName)}>
+                    <div className={cn('flex max-w-full flex-wrap items-center gap-2 lg:justify-end', accionesClassName)}>
                         {children}
                     </div>
                 )}
