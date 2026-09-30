@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\MessengerLoginService;
 use App\Models\Contact;
+use App\Models\Company;
 use App\Models\Instance;
 use App\Services\InstagramLoginService;
 use App\Services\RegistrarLineaEnIntegra;
@@ -13,6 +14,7 @@ use App\Support\IntegrationProvider;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -57,6 +59,10 @@ class InstanceController extends Controller
             // insertado de WhatsApp.
             'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
             'messengerDisponible' => app(\App\Services\MessengerLoginService::class)->estaConfigurado(),
+            // Cuántas líneas de cada canal le deja conectar su plan. La
+            // pantalla lo usa para no abrir la ventana de Meta cuando el
+            // servidor la va a rechazar al volver.
+            'cupos' => $user->company ? PlanDeLaEmpresa::de($user->company)->cupos() : null,
             // Para el recuadro de Integra de cada tarjeta: si hay software
             // conectado y por cuál de las líneas factura.
             'integra' => [
@@ -143,6 +149,18 @@ class InstanceController extends Controller
         }
     }
 
+    /**
+     * Por qué el plan no deja encender una línea más de este canal, o null.
+     *
+     * Se devuelve como aviso (`flash`) y no como error de validación: la
+     * pantalla pinta los avisos, y el mensaje dice qué hacer —desconectar la
+     * actual o subir de plan—, que es lo que el cliente necesita leer.
+     */
+    private function sinCupo(?Company $company, string $canal, ?int $excepto = null): ?string
+    {
+        return $company ? PlanDeLaEmpresa::de($company)->motivoParaNoConectar($canal, $excepto) : null;
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -156,6 +174,10 @@ class InstanceController extends Controller
         $this->assertPhoneNumberIdIsFree($request);
 
         $user = auth()->user();
+
+        if ($motivo = $this->sinCupo($user->company, Instance::CANAL_WHATSAPP)) {
+            return back()->with('error', $motivo);
+        }
 
         $instance = Instance::create([
             'company_id' => $user->company_id,
@@ -204,6 +226,14 @@ class InstanceController extends Controller
 
         if ($request->boolean('active', true)) {
             $this->assertPhoneNumberIdIsFree($request, $instance->id);
+
+            // Reactivar una línea apagada es conectar una más: si no, bastaría
+            // desactivar la vieja, conectar la nueva y volver a encender la
+            // vieja para tener dos en el Básico.
+            if (! $instance->active
+                && ($motivo = $this->sinCupo($user->company, $instance->channel ?? Instance::CANAL_WHATSAPP, $instance->id))) {
+                return back()->with('error', $motivo);
+            }
         }
 
         $cambios = [
@@ -277,6 +307,13 @@ class InstanceController extends Controller
         ]);
 
         $this->assertPhoneNumberIdIsFree($request, $instance->id);
+
+        // Reconectar una línea apagada es encender una más: pasa por el cupo
+        // del plan igual que conectar una nueva.
+        if (! $instance->active
+            && ($motivo = $this->sinCupo($instance->company, $instance->channel ?? Instance::CANAL_WHATSAPP, $instance->id))) {
+            return back()->with('error', $motivo);
+        }
 
         $instance->update(['active' => true]);
 

@@ -79,9 +79,91 @@ class PlanDeLaEmpresa
         return (int) ($this->planCrm()['contactos'] ?? 0);
     }
 
+    /**
+     * Cuántas líneas **de cada canal** incluye el plan.
+     *
+     * Por canal y no en total desde el 30-sep-2026: el Básico es una línea de
+     * WhatsApp, una de Instagram y una de Messenger. Antes se contaban todas
+     * juntas, y un cliente con su WhatsApp y su página de Facebook salía como
+     * «pasado de líneas» teniendo un solo número.
+     */
     public function lineasIncluidas(): int
     {
         return (int) ($this->planCrm()['lineas'] ?? 0);
+    }
+
+    // ─── Cupo de líneas por canal ────────────────────────────────────────────
+
+    /**
+     * Las líneas activas de un canal. Las desactivadas no cuentan: son las que
+     * se apagan para conectar otra, y reactivarlas pasa por el mismo cupo.
+     */
+    public function lineasActivas(string $canal, ?int $excepto = null): int
+    {
+        return Instance::where('company_id', $this->company->id)
+            ->where('active', true)
+            ->when($canal === Instance::CANAL_WHATSAPP,
+                fn ($q) => $q->where(fn ($q) => $q->where('channel', $canal)->orWhereNull('channel')),
+                fn ($q) => $q->where('channel', $canal))
+            ->when($excepto, fn ($q) => $q->where('id', '!=', $excepto))
+            ->count();
+    }
+
+    /**
+     * ¿Se puede conectar una línea más de este canal?
+     *
+     * Es la única regla de plan que **sí bloquea**, y la razón es que no quita
+     * nada: no apaga lo que ya funciona, sólo impide añadir. Quedan fuera las
+     * internas y las de precio a medida, que ya negociaron lo que tienen.
+     */
+    public function puedeConectar(string $canal, ?int $excepto = null): bool
+    {
+        if ($this->company->interna || $this->esAMedida()) {
+            return true;
+        }
+
+        return $this->lineasActivas($canal, $excepto) < $this->lineasIncluidas();
+    }
+
+    /** El mensaje de por qué no, o null si puede. Dice qué hacer, no sólo que no. */
+    public function motivoParaNoConectar(string $canal, ?int $excepto = null): ?string
+    {
+        if ($this->puedeConectar($canal, $excepto)) {
+            return null;
+        }
+
+        $incluidas = $this->lineasIncluidas();
+        $nombreCanal = Instance::NOMBRES_DE_CANAL[$canal] ?? $canal;
+        $linea = $incluidas === 1 ? 'línea' : 'líneas';
+
+        $mayor = collect(config('planes.crm', []))
+            ->first(fn (array $p) => ($p['lineas'] ?? 0) > $incluidas);
+
+        $texto = "Tu plan {$this->nombre()} incluye {$incluidas} {$linea} de {$nombreCanal} y ya "
+            .($incluidas === 1 ? 'la tienes conectada' : 'las tienes conectadas')
+            .'. Para conectar otra, primero desconecta la actual'
+            .($incluidas === 1 ? '' : ' que ya no uses');
+
+        return $mayor
+            ? $texto.", o pásate al plan {$mayor['nombre']}, que incluye {$mayor['lineas']}."
+            : $texto.'.';
+    }
+
+    /**
+     * Cómo va el cupo de cada canal, para la pantalla de Instancias.
+     *
+     * @return array<string, array{usadas: int, incluidas: int, puede: bool, motivo: ?string}>
+     */
+    public function cupos(): array
+    {
+        return collect(Instance::CANALES)
+            ->mapWithKeys(fn (string $canal) => [$canal => [
+                'usadas' => $this->lineasActivas($canal),
+                'incluidas' => $this->lineasIncluidas(),
+                'puede' => $this->puedeConectar($canal),
+                'motivo' => $this->motivoParaNoConectar($canal),
+            ]])
+            ->all();
     }
 
     // ─── El complemento de IA ────────────────────────────────────────────────
@@ -406,9 +488,13 @@ class PlanDeLaEmpresa
         return User::where('company_id', $this->company->id)->where('active', true)->count();
     }
 
+    /**
+     * Las líneas de WhatsApp activas, que es lo que se compara con el plan.
+     * Instagram y Messenger tienen su propio cupo y no suman aquí.
+     */
     public function lineasReales(): int
     {
-        return Instance::where('company_id', $this->company->id)->count();
+        return $this->lineasActivas(Instance::CANAL_WHATSAPP);
     }
 
     /**

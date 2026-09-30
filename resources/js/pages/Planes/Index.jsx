@@ -125,7 +125,7 @@ export default function Planes({ actual, crm, ia, ciclos, nucleo = [] }) {
                             >
                                 <Renglon icono={Users} texto={`${p.agentes} ${p.agentes === 1 ? 'agente' : 'agentes'}`} tuyo={actual.agentes} />
                                 <Renglon icono={Contact} texto={`${p.contactos.toLocaleString('es-CO')} contactos`} tuyo={actual.contactos} />
-                                <Renglon icono={Phone} texto={`${p.lineas} ${p.lineas === 1 ? 'línea' : 'líneas'} de WhatsApp`} tuyo={actual.lineas} />
+                                <Renglon icono={Phone} texto={`${p.lineas} ${p.lineas === 1 ? 'línea' : 'líneas'} de WhatsApp, ${p.lineas} de Instagram y ${p.lineas} de Messenger`} tuyo={actual.lineas} />
                                 {/* Sin el «si tienes el complemento» esto se leía como IA
                                     incluida en el plan, y no lo está. */}
                                 <Renglon icono={Bot} texto={`Hasta ${p.credito_ia.toLocaleString('es-CO')} conversaciones con IA al mes, si tienes el complemento`} />
@@ -250,7 +250,8 @@ function TuPaqueteDeIntegra({ planDeIntegra, crm, ia }) {
                         <Punto>
                             <b>El plan {planDeIntegra?.nombre}</b>: {planDeIntegra?.agentes} agentes,{' '}
                             {planDeIntegra?.contactos.toLocaleString('es-CO')} contactos y{' '}
-                            {planDeIntegra?.lineas} {planDeIntegra?.lineas === 1 ? 'línea' : 'líneas'} de WhatsApp.
+                            {planDeIntegra?.lineas} {planDeIntegra?.lineas === 1 ? 'línea' : 'líneas'} de WhatsApp,
+                            {' '}{planDeIntegra?.lineas} de Instagram y {planDeIntegra?.lineas} de Messenger.
                         </Punto>
                         <Punto>Todo lo de «Esto va en todos», al final de esta página: chat, menús, campañas, plantillas, reportes…</Punto>
                         <Punto>La conexión con tu Integra: los envíos automáticos de facturas y avisos que salen de tu ERP.</Punto>

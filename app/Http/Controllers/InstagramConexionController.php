@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Company;
 use App\Models\Instance;
+use App\Support\PlanDeLaEmpresa;
 use App\Services\InstagramLoginService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -41,6 +43,13 @@ class InstagramConexionController extends Controller
 
         if (! $this->instagram->estaConfigurado()) {
             return back()->with('error', 'Falta configurar la app de Instagram. Avísanos y lo revisamos.');
+        }
+
+        // Antes de mandarlo a Facebook: volver de allí para leer «no puedes»
+        // es hacerle pasar por la autorización entera para nada.
+        if ($request->user()->company
+            && ($motivo = PlanDeLaEmpresa::de($request->user()->company)->motivoParaNoConectar(Instance::CANAL_INSTAGRAM))) {
+            return back()->with('error', $motivo);
         }
 
         $estado = Str::random(40);
@@ -85,6 +94,10 @@ class InstagramConexionController extends Controller
 
         $instancia = $this->conectarCuenta((int) $guardado['empresa'], (string) $request->query('code'));
 
+        if (is_string($instancia)) {
+            return $this->volver($request, $instancia, false);
+        }
+
         if (! $instancia) {
             return $this->volver($request, 'No pudimos completar la conexión con Instagram. Inténtalo de nuevo en un momento.', false);
         }
@@ -99,7 +112,7 @@ class InstagramConexionController extends Controller
      * sólo entonces se toca la base. Guardar la línea antes dejaría cuentas a
      * medio conectar —sin token útil— que la bandeja daría por buenas.
      */
-    private function conectarCuenta(int $empresa, string $codigo): ?Instance
+    private function conectarCuenta(int $empresa, string $codigo): Instance|string|null
     {
         $corto = $this->instagram->canjearCodigo($codigo);
 
@@ -117,6 +130,22 @@ class InstagramConexionController extends Controller
 
         if (! $perfil) {
             return null;
+        }
+
+        // El cupo, ahora que se sabe qué cuenta es: reconectar la que ya tiene
+        // no gasta cupo, conectar una distinta sí. Devuelve el motivo para
+        // que el cliente lea qué hacer y no un «no pudimos conectar».
+        $yaEsSuya = Instance::where('company_id', $empresa)
+            ->where('channel', Instance::CANAL_INSTAGRAM)
+            ->where('external_account_id', $perfil['user_id'])
+            ->where('active', true)
+            ->exists();
+
+        $company = Company::find($empresa);
+
+        if (! $yaEsSuya && $company
+            && ($motivo = PlanDeLaEmpresa::de($company)->motivoParaNoConectar(Instance::CANAL_INSTAGRAM))) {
+            return $motivo;
         }
 
         // updateOrCreate y no create: reconectar una cuenta ya conectada es

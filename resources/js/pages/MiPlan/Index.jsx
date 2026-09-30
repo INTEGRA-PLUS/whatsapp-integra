@@ -108,7 +108,7 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             titulo="Líneas de WhatsApp"
                             usado={plan.lineas_reales}
                             incluido={plan.lineas_incluidas}
-                            pasado={plan.se_paso_de?.includes('líneas')}
+                            pasado={plan.se_paso_de?.includes('lineas')}
                         />
 
                         {/* El crédito de IA, cuando lo hay. Ocupa la fila entera
@@ -668,7 +668,7 @@ function TarjetaDePlan({ p, tieneIa }) {
             <dl className="mt-4 space-y-2">
                 <Renglon termino="Agentes" valor={p.agentes} />
                 <Renglon termino="Contactos" valor={p.contactos.toLocaleString('es-CO')} />
-                <Renglon termino="Líneas" valor={p.lineas} />
+                <Renglon termino="Líneas por canal" valor={p.lineas} />
             </dl>
 
             {/* El crédito de IA, en su propio recuadro a propósito: no es tamaño

@@ -33,9 +33,13 @@ return [
     | Los planes de CRM
     |--------------------------------------------------------------------------
     |
-    | `agentes`, `contactos` y `lineas` son lo que incluye el plan. **No son
-    | límites duros**: nadie deja de atender a un cliente porque la empresa
-    | creció. Sirven para saber cuándo toca hablar de subir de plan, y salen en
+    | `agentes`, `contactos` y `lineas` son lo que incluye el plan. Agentes y
+    | contactos **no son límites duros**: nadie deja de atender a un cliente
+    | porque la empresa creció.
+    |
+    | Las líneas sí, desde el 30-sep-2026, y son **por canal**: el Básico es una
+    | de WhatsApp, una de Instagram y una de Messenger. No se apaga ninguna que
+    | ya funcione; lo que se impide es conectar o reactivar una más. Sirven para saber cuándo toca hablar de subir de plan, y salen en
     | el panel cuando alguien se pasa.
     |
     | Los topes se eligieron contra la base real, no a ojo: con 2 agentes y
