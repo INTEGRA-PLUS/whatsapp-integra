@@ -784,6 +784,18 @@ class MetaWhatsAppService
         return $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'health_status']);
     }
 
+    /**
+     * La moneda en que Meta le cobra a la cuenta: '' si no tiene, null si Meta
+     * no lo dijo. Va sola, sin más campos: si Meta negara éste, la consulta
+     * entera fallaría — como pasó con `tasks` en las páginas de Messenger.
+     */
+    public function monedaDeLaCuenta(string $wabaId, string $accessToken): ?string
+    {
+        $res = $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'currency']);
+
+        return ($res['success'] ?? false) ? (string) ($res['data']['currency'] ?? '') : null;
+    }
+
     public function getPhoneNumber(string $phoneNumberId, string $accessToken)
     {
         return $this->graphGet("/{$phoneNumberId}", $accessToken, [

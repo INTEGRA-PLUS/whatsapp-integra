@@ -165,9 +165,9 @@ class WhatsAppFailureTranslator
             'severity' => 'config',
         ],
         '131042' => [
-            'title'    => 'Hay un problema con el pago de la cuenta de WhatsApp',
-            'detail'   => 'WhatsApp no permite enviar mensajes porque la forma de pago de la cuenta tiene un problema.',
-            'action'   => 'Un administrador debe revisar el método de pago en WhatsApp Business.',
+            'title'    => 'Falta el método de pago en Meta',
+            'detail'   => 'Meta cobra cada plantilla directamente a tu tarjeta, y tu cuenta de WhatsApp Business no tiene tarjeta o moneda configuradas, así que rechaza el envío.',
+            'action'   => 'Quien administra tu negocio en Meta debe asociar una tarjeta: en Instancias → «Arreglarlo paso a paso» está la guía. Después, reenvía este mensaje.',
             'severity' => 'config',
         ],
         '133010' => [
@@ -274,6 +274,7 @@ class WhatsAppFailureTranslator
         'message undeliverable'              => '131026',
         'not a whatsapp user'               => '131026',
         'business eligibility payment issue' => '131042',
+        'currency is not configured'         => '131042',
         'part of an experiment'              => '131050',
         're-engagement message'              => '131047',
         'recipient cannot be sender'         => '131021',

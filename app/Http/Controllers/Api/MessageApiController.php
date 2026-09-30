@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Instance;
+use App\Support\FacturacionDeMeta;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
@@ -594,6 +595,12 @@ class MessageApiController extends Controller
         );
 
         if (! ($result['success'] ?? false)) {
+            FacturacionDeMeta::registrarFallo(
+                $instance,
+                $result['error']['error']['code'] ?? null,
+                $result['error']['error']['message'] ?? null
+            );
+
             return response()->json([
                 'success' => false,
                 'error' => $result['error']['error']['message'] ?? 'Error al enviar el documento a Meta',
@@ -865,6 +872,15 @@ class MessageApiController extends Controller
                 'wamid' => $message->wamid,
             ]);
         }
+
+        // El ERP no guarda la burbuja cuando Meta rechaza, así que el
+        // observer de mensajes no se entera: es justo por donde llegaron las
+        // facturas de JHeda sin moneda configurada (30-sep-2026).
+        FacturacionDeMeta::registrarFallo(
+            $instance,
+            $result['error']['error']['code'] ?? null,
+            $result['error']['error']['message'] ?? null
+        );
 
         return response()->json([
             'success' => false,

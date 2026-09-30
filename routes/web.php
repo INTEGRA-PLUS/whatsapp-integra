@@ -336,6 +336,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/guia-limites-whatsapp', fn () => Inertia::render('Instances/GuiaLimitesWhatsApp'))
         ->name('instances.guia-limites');
 
+    // Activar el pago en Meta, paso a paso, y el botón de comprobarlo. Es
+    // adonde lleva la alerta roja del layout cuando Meta rechaza envíos por
+    // falta de tarjeta o de moneda (JHeda, 30-sep-2026).
+    Route::get('/instances/pago-en-meta', [\App\Http\Controllers\PagoDeMetaController::class, 'guia'])
+        ->name('instances.pago-meta');
+    Route::post('/instances/{instance}/comprobar-pago', [\App\Http\Controllers\PagoDeMetaController::class, 'comprobar'])
+        ->middleware('throttle:10,1')
+        ->name('instances.comprobar-pago');
+
     // Respaldo por consulta del progreso de la importación de coexistencia,
     // para cuando el websocket no conecta. Va antes de nada que capture
     // /instances/{algo} con otro significado.

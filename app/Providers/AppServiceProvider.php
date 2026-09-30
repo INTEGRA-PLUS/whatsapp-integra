@@ -26,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
     {
         \App\Models\Tag::observe(\App\Observers\TagObserver::class);
         \App\Models\Company::observe(\App\Observers\CompanyObserver::class);
+        \App\Models\WhatsAppMessage::observe(\App\Observers\PagoDeMetaObserver::class);
 
         // Super Admin Gate: Si es master, tiene todos los permisos
         Gate::before(function ($user, $ability) {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Instance;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -52,6 +53,24 @@ class HandleInertiaRequests extends Middleware
                     ? PlanDeLaEmpresa::de($request->user()->company)->tieneIa()
                     : false,
             ],
+            // Las líneas a las que Meta no deja enviar por falta de tarjeta o de
+            // moneda. Va en todas las pantallas, en rojo, porque mientras
+            // tanto no sale ni una factura y el cliente sólo ve «Fallido»
+            // mensaje a mensaje (JHeda, 30-sep-2026). Es una consulta por
+            // índice de empresa sobre una tabla de decenas de filas.
+            'alertaPagoMeta' => fn () => $request->user()?->company_id
+                ? Instance::where('company_id', $request->user()->company_id)
+                    ->where('active', true)
+                    ->whereNotNull('problema_de_pago')
+                    ->get(['id', 'name', 'display_phone_number', 'problema_de_pago'])
+                    ->map(fn (Instance $i) => [
+                        'id' => $i->id,
+                        'nombre' => $i->name,
+                        'numero' => $i->display_phone_number,
+                        'problema' => $i->problema_de_pago,
+                    ])
+                    ->values()
+                : [],
             'status' => fn () => session('status'),
             'flash' => [
                 'success' => fn () => session('success'),

@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings, RefreshCw, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings, RefreshCw, Loader2, Lock } from 'lucide-react';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
 import ConectarMessengerButton from '@/components/ConectarMessengerButton';
-import { LogoCanal, EtiquetaCanal } from '@/components/logo-canal';
+import { LogoCanal, EtiquetaCanal, canalDe } from '@/components/logo-canal';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false, integra = null }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false, integra = null, cupos = null }) {
     const permisos = usePage().props.auth?.user?.permissions ?? [];
     const puedeSincronizar = permisos.includes('integrations.create');
     const [showCreate, setShowCreate] = useState(false);
@@ -112,7 +112,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
     const resumen = {
         total: instances.length,
         activas: instances.filter(i => estadoDe(i).clave === 'activa').length,
-        conProblemas: instances.filter(i => ['sin-conexion', 'no-envia'].includes(estadoDe(i).clave)).length,
+        conProblemas: instances.filter(i => ['sin-conexion', 'no-envia', 'sin-pago'].includes(estadoDe(i).clave)).length,
         inactivas: instances.filter(i => !i.active).length,
     };
 
@@ -155,13 +155,29 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                                 </p>
                             </div>
                         </div>
+                        {cupos && <CuposDelPlan cupos={cupos} />}
+
+                        {/* Un canal sin cupo no ofrece su botón: abrir la ventana
+                            de Meta para que al volver el servidor diga «no» es
+                            hacer pasar al cliente por la autorización entera para
+                            nada. En su lugar va el porqué y qué hacer. */}
                         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
-                            <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
-                            <ConectarInstagramButton disponible={instagramDisponible} />
-                            <ConectarMessengerButton disponible={messengerDisponible} />
-                            <Button variant="ghost" onClick={() => setShowCreate(true)} className="gap-2 text-muted-foreground">
-                                <Plus className="size-4" /> Añadir a mano
-                            </Button>
+                            {cupos?.whatsapp?.puede === false ? (
+                                <CanalSinCupo canal="whatsapp" motivo={cupos.whatsapp.motivo} />
+                            ) : (
+                                <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs', 'cupos'] })} />
+                            )}
+                            {cupos?.instagram?.puede === false
+                                ? (instagramDisponible && <CanalSinCupo canal="instagram" motivo={cupos.instagram.motivo} />)
+                                : <ConectarInstagramButton disponible={instagramDisponible} />}
+                            {cupos?.messenger?.puede === false
+                                ? (messengerDisponible && <CanalSinCupo canal="messenger" motivo={cupos.messenger.motivo} />)
+                                : <ConectarMessengerButton disponible={messengerDisponible} />}
+                            {cupos?.whatsapp?.puede !== false && (
+                                <Button variant="ghost" onClick={() => setShowCreate(true)} className="gap-2 text-muted-foreground">
+                                    <Plus className="size-4" /> Añadir a mano
+                                </Button>
+                            )}
                         </div>
                         {/* El tope de 250 mensajes al día es lo que más trae a
                             esta pantalla después de conectar, y el error de Meta
@@ -367,6 +383,9 @@ function estadoDe(instance) {
     if (instance.health_status === 'unreachable') {
         return { clave: 'sin-conexion', etiqueta: 'Sin conexión', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
     }
+    if (instance.problema_de_pago) {
+        return { clave: 'sin-pago', etiqueta: 'Sin pago en Meta', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
+    }
     if (instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE') {
         return { clave: 'no-envia', etiqueta: 'No envía', pastilla: 'bg-warning/15 text-warning', punto: 'bg-warning', franja: 'bg-warning' };
     }
@@ -432,7 +451,26 @@ function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando
                     la que se le venció la tarjeta del portafolio responde a todo
                     y no entrega nada: el CRM no puede leer el medio de pago —Meta
                     se lo niega a quien no es BSP— pero sí la consecuencia. */}
-                {estado.clave === 'no-envia' && (
+                {/* El pago va antes que el aviso genérico de «no envía»: es la
+                    causa más común y la única con una guía que lo resuelve. */}
+                {instance.active && instance.problema_de_pago && (
+                    <Aviso tono="destructive" titulo="Meta rechaza los envíos: falta el método de pago.">
+                        <p>
+                            {instance.problema_de_pago === 'sin_moneda'
+                                ? 'Tu cuenta de WhatsApp Business no tiene moneda ni tarjeta configuradas.'
+                                : 'Tu cuenta de WhatsApp Business no tiene un método de pago válido.'}
+                            {' '}No sale ninguna plantilla (facturas, avisos, campañas) hasta que lo arregles.
+                        </p>
+                        <Link
+                            href={`/instances/pago-en-meta?linea=${instance.id}`}
+                            className="mt-2 inline-flex items-center gap-1.5 font-semibold underline-offset-2 hover:underline"
+                        >
+                            Arreglarlo paso a paso <ArrowRight className="size-3.5" />
+                        </Link>
+                    </Aviso>
+                )}
+
+                {estado.clave === 'no-envia' && !instance.problema_de_pago && (
                     <Aviso tono="warning" titulo="Meta no está dejando enviar por esta cuenta.">
                         <p>{instance.puede_enviar_motivo ?? 'Meta no dio un motivo.'}</p>
                         <p className="mt-1">
@@ -768,3 +806,52 @@ function TokenRecienCreado({ datos, onCerrar }) {
         </div>
     );
 }
+
+const NOMBRE_CANAL = { whatsapp: 'WhatsApp', instagram: 'Instagram', messenger: 'Messenger' };
+
+/**
+ * Cuántas líneas de cada canal lleva su plan y cuántas tiene encendidas.
+ *
+ * Se enseña siempre, no sólo al llegar al tope: saber que el Básico es una de
+ * cada antes de intentarlo evita la sorpresa del bloqueo (30-sep-2026).
+ */
+function CuposDelPlan({ cupos }) {
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold text-muted-foreground">Tu plan incluye:</span>
+            {Object.entries(cupos).map(([canal, c]) => {
+                const { Icono, color } = canalDe({ channel: canal });
+
+                return (
+                <span
+                    key={canal}
+                    className={
+                        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold tabular-nums '
+                        + (c.puede ? 'border-border bg-muted text-foreground' : 'border-warning/40 bg-warning/10 text-warning')
+                    }
+                >
+                    <Icono className="size-3.5" style={{ color }} />
+                    {NOMBRE_CANAL[canal] ?? canal} {c.usadas} de {c.incluidas}
+                </span>
+                );
+            })}
+        </div>
+    );
+}
+
+/** El hueco del botón de un canal que ya no tiene cupo: el porqué y la salida. */
+function CanalSinCupo({ canal, motivo }) {
+    return (
+        <div className="flex max-w-md items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-xs leading-relaxed text-foreground">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <span>
+                <b>No puedes conectar otra línea de {NOMBRE_CANAL[canal] ?? canal}.</b>{' '}
+                {motivo}{' '}
+                <Link href={route('planes')} className="font-semibold text-primary underline-offset-2 hover:underline">
+                    Ver planes
+                </Link>
+            </span>
+        </div>
+    );
+}
+

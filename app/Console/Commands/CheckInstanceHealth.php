@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Instance;
+use App\Support\FacturacionDeMeta;
 use App\Models\User;
 use App\Notifications\SystemNotification;
 use App\Services\MetaWhatsAppService;
@@ -101,7 +102,17 @@ class CheckInstanceHealth extends Command
                 // antes de que existiera esta comprobación es justo la que hay
                 // que descubrir, y exigir un AVAILABLE previo la dejaría muda
                 // para siempre.
-                if ($podra['estado'] !== 'AVAILABLE' && $antesPodia !== $podra['estado']) {
+                // Si lo que bloquea es el cobro, se enciende la alerta roja con
+                // su guía paso a paso, que ya avisa a los admins: el aviso
+                // genérico de bloqueo sería el mismo mensaje dos veces. No se
+                // apaga desde aquí: una cuenta sin moneda puede salir como
+                // disponible y fallar igual en la primera plantilla.
+                $esDePago = $podra['estado'] !== 'AVAILABLE'
+                    && preg_match('/payment|funding|billing|currency|pago/i', (string) $podra['motivo']);
+
+                if ($esDePago) {
+                    FacturacionDeMeta::marcar($instance, FacturacionDeMeta::SIN_METODO);
+                } elseif ($podra['estado'] !== 'AVAILABLE' && $antesPodia !== $podra['estado']) {
                     $bloqueadas++;
                     $this->avisarDelBloqueo($instance, $podra['motivo']);
                 }
