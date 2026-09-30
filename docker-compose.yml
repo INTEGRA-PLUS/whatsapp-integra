@@ -169,6 +169,14 @@ x-app-env: &app-env
   PREDICTIVO_API_KEY: ${PREDICTIVO_API_KEY:-}
   PREDICTIVO_TIMEOUT: ${PREDICTIVO_TIMEOUT:-25}
   SENTIMIENTO_DEBOUNCE: ${SENTIMIENTO_DEBOUNCE:-120}
+  # Pass-through al MCP de Integra. Sin la llave el endpoint responde 404 y el
+  # flujo se queda sin herramientas; el TTL y el timeout llevan default aquí
+  # por lo mismo que los de arriba: vacíos se vuelven 0, y entonces todo
+  # permiso nacería caducado y toda llamada moriría antes de salir.
+  MCP_INTEGRA_KEY: ${MCP_INTEGRA_KEY:-}
+  MCP_INTEGRA_GRANT_TTL: ${MCP_INTEGRA_GRANT_TTL:-15}
+  MCP_INTEGRA_TIMEOUT: ${MCP_INTEGRA_TIMEOUT:-60}
+  MCP_INTEGRA_URL: ${MCP_INTEGRA_URL:-}
 
   # Correo. Lo usa la recuperación de contraseña ("¿Olvidaste tu contraseña?"):
   # con `MAIL_MAILER=log` el enlace no sale del servidor, se escribe en el log,
