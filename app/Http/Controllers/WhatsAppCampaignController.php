@@ -563,7 +563,7 @@ class WhatsAppCampaignController extends Controller
         }
 
         $file = $request->file('file');
-        $result = $this->metaService->uploadMedia($instance->phone_number_id, $file->getRealPath(), $file->getMimeType());
+        $result = $this->metaService->uploadMedia($instance, $file->getRealPath(), $file->getMimeType());
 
         if (! ($result['success'] ?? false)) {
             return response()->json([

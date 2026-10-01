@@ -137,6 +137,26 @@ class SendCampaignMessage implements ShouldQueue
 
             $checked = $guard->check($instance, $campaign->template_name, $campaign->template_language, $components);
 
+            if (!$checked['ok'] && ($checked['code'] ?? null) === 'template_not_approved') {
+                // La plantilla no está aprobada (pausada, deshabilitada, en
+                // revisión): el guard la frena antes de llegar a Meta, así que
+                // aquí nunca aparece el 132015/132016 que pausa la campaña más
+                // abajo. Sin esto cada destinatario quedaba fallido uno a uno y
+                // la lista entera se quemaba con la campaña sin pausar. Este
+                // destinatario no ha salido: vuelve a la cola para cuando se
+                // reanude.
+                $this->pausarPorPlantilla($campaign, $checked['code'], $checked['error']);
+                WhatsAppCampaignRecipient::whereKey($recipient->id)
+                    ->where('status', 'sending')
+                    ->whereNull('wamid')
+                    ->update([
+                        'status'     => 'pending',
+                        'attempts'   => DB::raw('attempts - 1'),
+                        'updated_at' => now(),
+                    ]);
+                return;
+            }
+
             if (!$checked['ok']) {
                 // El código interno va entre paréntesis; el texto que se
                 // entiende, en `error_details`, que es lo que enseña la lista.

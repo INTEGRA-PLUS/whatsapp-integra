@@ -250,8 +250,15 @@ class TemplateParameterGuard
             return $this->ok([]);
         }
 
-        $fresca = $this->definition($instance, $templateName, $language, true);
-        $status = strtoupper((string) ($fresca['status'] ?? $status));
+        // Como mucho una relectura por plantilla cada 90 s: una campaña con la
+        // plantilla pausada llama aquí una vez por destinatario, y sin este
+        // freno eran miles de lecturas del catálogo entero contra el límite de
+        // Graph de la empresa.
+        $relectura = "wa:templates:fresh:{$instance->waba_id}:{$templateName}:{$language}";
+        if (Cache::add($relectura, true, now()->addSeconds(90))) {
+            $fresca = $this->definition($instance, $templateName, $language, true);
+            $status = strtoupper((string) ($fresca['status'] ?? $status));
+        }
 
         if ($status === 'APPROVED') {
             return $this->ok([]);
@@ -541,7 +548,7 @@ class TemplateParameterGuard
         file_put_contents($tmp, $body);
 
         try {
-            $upload = $this->meta->uploadMedia($instance->phone_number_id, $tmp, $mime);
+            $upload = $this->meta->uploadMedia($instance, $tmp, $mime);
         } finally {
             @unlink($tmp);
         }

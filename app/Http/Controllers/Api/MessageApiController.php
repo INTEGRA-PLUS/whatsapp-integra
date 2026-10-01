@@ -422,6 +422,10 @@ class MessageApiController extends Controller
                 ] : null),
             ]);
 
+            // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+            // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+            \App\Services\EstadosDeMensaje::aplicarPendiente($message);
+
             $conversation->update([
                 'last_message' => $messageContent,
                 'last_message_at' => now(),
@@ -647,6 +651,10 @@ class MessageApiController extends Controller
             'template_id' => $request->template_id,
             'metadata' => $this->conMarcaDeIdempotencia($request, $windowClosed ? ['window_guard' => 'shadow_pass'] : null),
         ]);
+
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message' => '📄 '.$guardado['filename'],
@@ -1349,6 +1357,10 @@ class MessageApiController extends Controller
             'template_id' => $request->template_id,
         ]);
 
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
+
         $conversation->update([
             'last_message' => $content,
             'last_message_at' => $sentAt,
@@ -1658,6 +1670,10 @@ class MessageApiController extends Controller
                 'original_text' => $originalText,
             ]),
         ]);
+
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message' => $content,
