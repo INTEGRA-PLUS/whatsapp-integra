@@ -4,6 +4,7 @@ import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import CabeceraModulo from '@/components/cabecera-modulo';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { TabButton, WhatsAppPreview, templateToModel } from './preview';
 import {
     FileText,
@@ -32,6 +33,7 @@ import {
     ArrowRight,
     AlertTriangle,
     Pencil,
+    Trash2,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -56,6 +58,11 @@ const STATUS_STYLES = {
     PAUSED: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
     IN_APPEAL: 'bg-info/15 text-info ring-1 ring-inset ring-info/30',
     DELETED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
+    PENDING_DELETION: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
+    FLAGGED: 'bg-warning/15 text-warning ring-1 ring-inset ring-warning/30',
+    LIMIT_EXCEEDED: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/30',
+    ARCHIVED: 'bg-muted/15 text-muted-foreground ring-1 ring-inset ring-border/30',
+    LOCKED: 'bg-muted/15 text-muted-foreground ring-1 ring-inset ring-border/30',
 };
 
 const STATUS_DOT = {
@@ -66,6 +73,11 @@ const STATUS_DOT = {
     PAUSED: 'bg-warning',
     IN_APPEAL: 'bg-info',
     DELETED: 'bg-destructive',
+    PENDING_DELETION: 'bg-destructive',
+    FLAGGED: 'bg-warning',
+    LIMIT_EXCEEDED: 'bg-destructive',
+    ARCHIVED: 'bg-muted-foreground',
+    LOCKED: 'bg-muted-foreground',
 };
 
 /**
@@ -91,9 +103,67 @@ const ESTADO = {
     PAUSED: { texto: 'En pausa', ayuda: 'Pausada temporalmente por Meta, normalmente por muchos reportes de los destinatarios.' },
     IN_APPEAL: { texto: 'En apelación', ayuda: 'Se pidió a Meta que revisara su decisión. Toca esperar.' },
     DELETED: { texto: 'Eliminada', ayuda: 'Ya no existe en Meta.' },
+    PENDING_DELETION: {
+        texto: 'Borrándose',
+        ayuda: 'Se pidió borrarla y Meta la está eliminando. Ya no se puede enviar, y el nombre no se puede reutilizar por un tiempo.',
+    },
+    FLAGGED: {
+        texto: 'Marcada',
+        ayuda: 'Su calidad bajó mucho: si no mejora en 7 días, Meta la deshabilita. Revisa a quién se envía y con qué frecuencia.',
+    },
+    LIMIT_EXCEEDED: {
+        texto: 'Límite alcanzado',
+        ayuda: 'La cuenta llegó al máximo de plantillas que permite Meta. Borra las que no uses para crear otras.',
+    },
+    ARCHIVED: { texto: 'Archivada', ayuda: 'Está archivada en Meta y no se puede enviar hasta desarchivarla.' },
+    LOCKED: { texto: 'Bloqueada', ayuda: 'Meta la bloqueó y por ahora no se puede editar.' },
 };
 
 const estadoDe = s => ESTADO[s] ?? { texto: s ?? 'Sin estado', ayuda: '' };
+
+/**
+ * La calidad que Meta le pone a cada plantilla según cómo reaccionan los
+ * destinatarios (bloqueos, reportes). Llega como `{ score: 'GREEN', date }`
+ * en el listado; se acepta también un texto suelto por si el backend la
+ * aplana. En amarillo y rojo hay que actuar antes de que Meta la pause.
+ */
+const CALIDAD = {
+    GREEN: { texto: 'Calidad alta', punto: 'bg-success', clase: 'text-success', ayuda: 'Los destinatarios la reciben bien.' },
+    YELLOW: {
+        texto: 'Calidad media',
+        punto: 'bg-warning',
+        clase: 'text-warning',
+        ayuda: 'Hay destinatarios que la bloquean o la reportan. Si sigue bajando, Meta la pausa: revisa a quién se envía y con qué frecuencia.',
+    },
+    RED: {
+        texto: 'Calidad baja',
+        punto: 'bg-destructive',
+        clase: 'text-destructive',
+        ayuda: 'Muchos destinatarios la bloquean o la reportan. Meta la va a pausar o deshabilitar: deja de enviarla a quien no la espera y revisa el texto.',
+    },
+    UNKNOWN: { texto: 'Calidad sin datos', punto: 'bg-muted-foreground/50', clase: 'text-muted-foreground', ayuda: 'Aún no se ha enviado lo suficiente para que Meta la califique.' },
+};
+
+function calidadDe(t) {
+    const q = t?.quality_score;
+    const score = (typeof q === 'string' ? q : q?.score) ?? 'UNKNOWN';
+    return { score, ...(CALIDAD[score] ?? CALIDAD.UNKNOWN) };
+}
+
+const calidadPreocupa = t => ['YELLOW', 'RED'].includes(calidadDe(t).score);
+
+/** Por qué la rechazó Meta, en español y con qué hacer. */
+const MOTIVO_RECHAZO = {
+    INVALID_FORMAT: 'Formato inválido: revisa las variables (sin saltos, sin dos seguidas, ni al principio ni al final) y que los ejemplos estén completos.',
+    TAG_CONTENT_MISMATCH: 'La categoría no coincide con el contenido: por ejemplo, una promoción enviada como utilidad.',
+    ABUSIVE_CONTENT: 'Meta consideró el contenido abusivo o contrario a sus políticas.',
+    INCORRECT_CATEGORY: 'Categoría incorrecta para lo que dice el mensaje.',
+    PROMOTIONAL: 'Tiene contenido promocional y no es una plantilla de marketing.',
+    SCAM: 'Meta la consideró una posible estafa: revisa enlaces, premios o peticiones de datos.',
+    NONE: null,
+};
+const motivoRechazo = r => (r && r !== 'NONE') ? (MOTIVO_RECHAZO[r] ?? r) : null;
+const CATEGORIA_TEXTO = { MARKETING: 'Marketing', UTILITY: 'Utilidad', AUTHENTICATION: 'Autenticación' };
 
 const CATEGORY_STYLES = {
     MARKETING: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 ring-1 ring-inset ring-fuchsia-500/30',
@@ -129,6 +199,27 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
     const [categoryFilter, setCategoryFilter] = useState('');
     const [expanded, setExpanded] = useState(() => new Set());
     const [detail, setDetail] = useState(null);
+    const [borrando, setBorrando] = useState(null); // la plantilla que se va a borrar
+    const [borrandoEnCurso, setBorrandoEnCurso] = useState(false);
+    const [errorBorrar, setErrorBorrar] = useState(null);
+
+    async function confirmarBorrado() {
+        if (!borrando) return;
+        setBorrandoEnCurso(true);
+        setErrorBorrar(null);
+        try {
+            await axios.delete(`/api/templates/${borrando.id}`, { params: { instance_id: instanceId } });
+            setBorrando(null);
+            setDetail(null);
+            load();
+        } catch (err) {
+            const resp = err?.response?.data;
+            setErrorBorrar(resp?.message || resp?.error?.error?.error_user_msg || resp?.error?.message || 'No se pudo borrar la plantilla.');
+            setBorrando(null);
+        } finally {
+            setBorrandoEnCurso(false);
+        }
+    }
 
     function goToCreate() {
         router.visit(route('templates.create', { instance_id: instanceId }));
@@ -153,11 +244,27 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
         setLoading(true);
         setError(null);
         try {
-            const { data } = await axios.get('/api/templates', {
-                params: { instance_id: instanceId, limit: 200 },
-            });
-            setTemplates(data.data || []);
-            setSummary(data.summary || null);
+            // Meta pagina el listado. Sin seguir el cursor, una cuenta con más
+            // plantillas que el tamaño de página veía sólo las primeras, y las
+            // demás «no existían». Se sigue `paging.after` (o el cursor de
+            // Meta, `paging.cursors.after`, mientras haya `next`), con un
+            // tope por si el cursor no avanza.
+            const todas = [];
+            let after = null;
+            let resumen = null;
+            for (let pagina = 0; pagina < 30; pagina++) {
+                const { data } = await axios.get('/api/templates', {
+                    params: { instance_id: instanceId, limit: 200, ...(after ? { after } : {}) },
+                });
+                todas.push(...(data.data || []));
+                resumen = resumen ?? data.summary ?? null;
+                const paging = data.paging ?? {};
+                const siguiente = paging.after ?? (paging.next ? paging.cursors?.after : null) ?? null;
+                if (!siguiente || siguiente === after) break;
+                after = siguiente;
+            }
+            setTemplates(todas);
+            setSummary(resumen);
         } catch (err) {
             setError(err?.response?.data?.message ?? 'No se pudieron cargar las plantillas.');
             setTemplates([]);
@@ -199,10 +306,11 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
     }
 
     const stats = useMemo(() => {
-        const s = { total: templates.length, approved: 0, pending: 0, rejected: 0, families: 0 };
+        const s = { total: templates.length, approved: 0, pending: 0, rejected: 0, families: 0, calidadBaja: [] };
         const names = new Set();
         for (const t of templates) {
             names.add(t.name);
+            if (calidadPreocupa(t)) s.calidadBaja.push(t);
             if (t.status === 'APPROVED') s.approved++;
             else if (t.status === 'PENDING') s.pending++;
             else if (t.status === 'REJECTED') s.rejected++;
@@ -353,6 +461,32 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                     </div>
                 )}
 
+                {/* La calidad baja avisa antes de que Meta pause la plantilla:
+                    una vez pausada, los envíos fallan y ya es tarde. */}
+                {stats.calidadBaja.length > 0 && (
+                    <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3">
+                        <AlertTriangle className="size-4 shrink-0 text-warning mt-0.5" />
+                        <p className="text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground">
+                                {stats.calidadBaja.length === 1
+                                    ? 'Una plantilla tiene la calidad en amarillo o rojo:'
+                                    : `${stats.calidadBaja.length} plantillas tienen la calidad en amarillo o rojo:`}
+                            </span>{' '}
+                            {stats.calidadBaja.slice(0, 5).map(t => `${t.name} (${t.language})`).join(', ')}
+                            {stats.calidadBaja.length > 5 ? '…' : ''}.{' '}
+                            Los destinatarios la están bloqueando o reportando; si sigue así, Meta la pausa y luego
+                            la deshabilita. Envíala sólo a quien la espera y revisa el texto.
+                        </p>
+                    </div>
+                )}
+
+                {errorBorrar && (
+                    <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                        <span>{errorBorrar}</span>
+                        <button type="button" onClick={() => setErrorBorrar(null)} className="shrink-0"><X className="size-4" /></button>
+                    </div>
+                )}
+
                 {/* FILTER BAR */}
                 {instances.length > 0 && (
                     <div className="flex flex-col sm:flex-row gap-2 p-2 rounded-xl border bg-card">
@@ -379,6 +513,11 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                                 <option value="DISABLED">Deshabilitada</option>
                                 <option value="PAUSED">Pausada</option>
                                 <option value="IN_APPEAL">En apelación</option>
+                                <option value="FLAGGED">Marcada</option>
+                                <option value="LIMIT_EXCEEDED">Límite alcanzado</option>
+                                <option value="ARCHIVED">Archivada</option>
+                                <option value="LOCKED">Bloqueada</option>
+                                <option value="PENDING_DELETION">Borrándose</option>
                             </select>
                             <select
                                 value={categoryFilter}
@@ -453,6 +592,8 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                                 onOpenDetail={openDetail}
                                 canCreate={can('templates.create')}
                                 canEdit={can('templates.update')}
+                                canDelete={can('templates.delete')}
+                                onDelete={setBorrando}
                                 instanceId={instanceId}
                                 onAddTranslation={() => goToTranslation(family)}
                             />
@@ -468,10 +609,29 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                     instanceId={instanceId}
                     negocio={negocio}
                     canEdit={can('templates.update')}
+                    canDelete={can('templates.delete')}
+                    onDelete={setBorrando}
                     onClose={() => setDetail(null)}
                     onSelectSibling={(sibling) => setDetail({ id: sibling.id, name: sibling.name })}
                 />
             )}
+
+            {/* Borrar en Meta es real y no se deshace: no hay papelera. Y el
+                nombre queda retenido un tiempo —Meta no deja crear otra con el
+                mismo nombre e idioma mientras tanto—, así que «la borro y la
+                vuelvo a crear» no funciona como se espera. Hay que decirlo
+                antes, no después. */}
+            <ConfirmDialog
+                open={!!borrando}
+                title={borrando ? `¿Borrar ${borrando.name} (${borrando.language})?` : ''}
+                description={borrando
+                    ? `Se borra en Meta la versión en ${LANG_LABELS[borrando.language] ?? borrando.language}; los demás idiomas de la plantilla se quedan. No se puede deshacer, y los envíos que la usen (campañas, facturas, respuestas automáticas) empezarán a fallar.\n\nEl nombre «${borrando.name}» en ese idioma no se puede volver a usar durante un tiempo.`
+                    : ''}
+                confirmLabel="Borrar"
+                loading={borrandoEnCurso}
+                onConfirm={confirmarBorrado}
+                onCancel={() => !borrandoEnCurso && setBorrando(null)}
+            />
 
         </>
     );
@@ -644,7 +804,7 @@ function StatCard({ icon: Icon, label, value, tone }) {
     );
 }
 
-function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, instanceId, onAddTranslation }) {
+function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, canDelete = false, onDelete, instanceId, onAddTranslation }) {
     const CatIcon = CATEGORY_ICONS[family.category] ?? FileText;
     const variantCount = family.variants.length;
     const approvedCount = family.variants.filter(v => v.status === 'APPROVED').length;
@@ -652,6 +812,8 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
     // se envía. Con varios idiomas, el detalle deja saltar a los demás.
     const principal = family.variants.find(v => v.status === 'APPROVED') ?? family.variants[0];
     const editable = principal && ESTADOS_EDITABLES.includes(principal.status);
+    const conCalidadBaja = family.variants.filter(calidadPreocupa);
+    const recategorizadas = family.variants.filter(v => v.previous_category && v.previous_category !== v.category);
 
     return (
         <div className="group rounded-xl border bg-card overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
@@ -735,6 +897,22 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
                     )}
                 </div>
 
+                {conCalidadBaja.length > 0 && (
+                    <p className={`mt-3 flex items-start gap-1.5 text-[11px] ${conCalidadBaja.some(v => calidadDe(v).score === 'RED') ? 'text-destructive' : 'text-warning'}`}>
+                        <AlertTriangle className="size-3 mt-0.5 shrink-0" />
+                        <span>
+                            {conCalidadBaja.map(v => `${v.language}: ${calidadDe(v).texto.toLowerCase()}`).join(' · ')}.{' '}
+                            {calidadDe(conCalidadBaja[0]).ayuda}
+                        </span>
+                    </p>
+                )}
+
+                {recategorizadas.length > 0 && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                        Meta la cambió de categoría: antes era {CATEGORIA_TEXTO[recategorizadas[0].previous_category] ?? recategorizadas[0].previous_category}.
+                    </p>
+                )}
+
                 {isOpen && (
                     <div className="mt-4 pt-4 border-t space-y-1.5">
                         {family.variants.map(v => (
@@ -747,6 +925,10 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
                                     <span className={`size-2 rounded-full ${STATUS_DOT[v.status] ?? 'bg-muted'}`} />
                                     <span className="font-mono text-sm">{v.language}</span>
                                     <span className="text-[10px] text-muted-foreground truncate">id: {v.id}</span>
+                                    <span title={calidadDe(v).ayuda} className={`inline-flex items-center gap-1 text-[10px] ${calidadDe(v).clase}`}>
+                                        <span className={`size-1.5 rounded-full ${calidadDe(v).punto}`} />
+                                        {calidadDe(v).texto}
+                                    </span>
                                 </div>
                                 <span
                                     title={estadoDe(v.status).ayuda}
@@ -793,6 +975,20 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
                             <Pencil className="size-3.5" /> Editar
                         </Button>
                     )}
+                    {/* Con un solo idioma no hay duda de qué se borra; con
+                        varios, se borra desde el detalle de cada idioma. */}
+                    {canDelete && variantCount === 1 && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            title={`Borrar la versión en ${principal.language}`}
+                            onClick={() => onDelete?.(principal)}
+                        >
+                            <Trash2 className="size-3.5" /> Borrar
+                        </Button>
+                    )}
                     {/* El detalle por idioma sólo tiene sentido con varios idiomas;
                         con uno repetía lo que ya dice la tarjeta. */}
                     {variantCount > 1 && (
@@ -814,7 +1010,7 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
 /** Los estados en los que Meta deja editar una plantilla. */
 const ESTADOS_EDITABLES = ['APPROVED', 'REJECTED', 'PAUSED'];
 
-function TemplateDetailModal({ templateId, templateName, instanceId, negocio, canEdit = false, onClose, onSelectSibling }) {
+function TemplateDetailModal({ templateId, templateName, instanceId, negocio, canEdit = false, canDelete = false, onDelete, onClose, onSelectSibling }) {
     const [template, setTemplate] = useState(null);
     const [siblings, setSiblings] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -839,7 +1035,9 @@ function TemplateDetailModal({ templateId, templateName, instanceId, negocio, ca
             .then(([detailRes, famRes]) => {
                 if (cancelled) return;
                 setTemplate(detailRes.data.data);
-                setSiblings(famRes.data.data || []);
+                // Meta filtra `name` por «contiene»: sin esto, `pago` listaba
+                // como traducciones las de `pago_recibido`.
+                setSiblings((famRes.data.data || []).filter(s => s.name === templateName));
             })
             .catch(err => {
                 if (cancelled) return;
@@ -875,6 +1073,17 @@ function TemplateDetailModal({ templateId, templateName, instanceId, negocio, ca
                                 }))}
                             >
                                 <Pencil className="size-3.5" /> Editar
+                            </Button>
+                        )}
+                        {canDelete && template && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                title={`Borrar la versión en ${template.language}`}
+                                onClick={() => onDelete?.({ id: template.id, name: template.name ?? templateName, language: template.language })}
+                            >
+                                <Trash2 className="size-3.5" /> Borrar
                             </Button>
                         )}
                         <Button variant="ghost" size="icon" onClick={onClose}>
@@ -918,7 +1127,7 @@ function TemplateDetailModal({ templateId, templateName, instanceId, negocio, ca
 
                     {!loading && template && tab === 'detail' && (
                         <>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
                                 <Field label="ID" value={template.id} mono />
                                 <Field label="Idioma" value={template.language} mono />
                                 <Field label="Categoría">
@@ -936,11 +1145,36 @@ function TemplateDetailModal({ templateId, templateName, instanceId, negocio, ca
                                         {estadoDe(template.status).texto}
                                     </span>
                                 </Field>
+                                <Field label="Calidad">
+                                    <span title={calidadDe(template).ayuda} className={`inline-flex items-center gap-1.5 text-xs font-medium ${calidadDe(template).clase}`}>
+                                        <span className={`size-2 rounded-full ${calidadDe(template).punto}`} />
+                                        {calidadDe(template).texto}
+                                    </span>
+                                </Field>
                             </div>
 
-                            {template.rejected_reason && template.rejected_reason !== 'NONE' && (
+                            {estadoDe(template.status).ayuda && template.status !== 'APPROVED' && (
+                                <p className="text-xs text-muted-foreground">{estadoDe(template.status).ayuda}</p>
+                            )}
+
+                            {calidadPreocupa(template) && (
+                                <div className={`rounded-md border px-3 py-2 text-xs ${calidadDe(template).score === 'RED' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning'}`}>
+                                    <strong>{calidadDe(template).texto}.</strong> {calidadDe(template).ayuda}
+                                </div>
+                            )}
+
+                            {template.previous_category && template.previous_category !== template.category && (
+                                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                                    Meta la cambió de categoría: antes era{' '}
+                                    <strong className="text-foreground">{CATEGORIA_TEXTO[template.previous_category] ?? template.previous_category}</strong>, ahora es{' '}
+                                    <strong className="text-foreground">{CATEGORIA_TEXTO[template.category] ?? template.category}</strong>.
+                                    {template.category === 'MARKETING' && ' Los mensajes de marketing cuestan más por envío.'}
+                                </div>
+                            )}
+
+                            {motivoRechazo(template.rejected_reason) && (
                                 <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                                    <strong>Motivo de rechazo:</strong> {template.rejected_reason}
+                                    <strong>Motivo de rechazo:</strong> {motivoRechazo(template.rejected_reason)}
                                 </div>
                             )}
 

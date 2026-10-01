@@ -42,8 +42,11 @@ export default function TemplatesDefaults({ instances = [], catalog = {}, negoci
         if (!instanceId) return;
         for (const [key] of entries) {
             try {
-                const res = await axios.get(`/api/templates/family/${key}`, { params: { instance_id: instanceId } });
-                setStatuses(prev => ({ ...prev, [key]: res.data.data || [] }));
+                const res = await axios.get(`/api/templates/family/${encodeURIComponent(key)}`, { params: { instance_id: instanceId } });
+                // Meta filtra `name` por «contiene»: la familia `pago` traía
+                // también `pago_recibido`, y una plantilla sin sincronizar
+                // aparecía como ya creada con los estados de otra.
+                setStatuses(prev => ({ ...prev, [key]: (res.data.data || []).filter(v => v.name === key) }));
             } catch {
                 setStatuses(prev => ({ ...prev, [key]: null }));
             }
