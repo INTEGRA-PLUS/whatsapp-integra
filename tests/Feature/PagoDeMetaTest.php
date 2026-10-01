@@ -62,7 +62,7 @@ class PagoDeMetaTest extends TestCase
                 'template_name' => 'facturacion',
                 'language_code' => 'es',
             ])
-            ->assertStatus(500);
+            ->assertStatus(422);
 
         $instance->refresh();
         $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->problema_de_pago);
