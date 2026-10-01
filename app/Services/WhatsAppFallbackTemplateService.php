@@ -533,9 +533,9 @@ class WhatsAppFallbackTemplateService
     }
 
     /**
-     * Meta rechaza (132007) los parámetros con saltos de línea, tabuladores o
+     * Meta rechaza (132018) los parámetros con saltos de línea, tabuladores o
      * más de cuatro espacios seguidos. El texto del ERP viene multilínea, así
-     * que se aplana: preferimos un aviso en una línea a un 132007.
+     * que se aplana: preferimos un aviso en una línea a un 132018.
      */
     private function sanitize(string $value): string
     {
