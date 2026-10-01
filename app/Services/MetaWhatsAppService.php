@@ -27,7 +27,7 @@ class MetaWhatsAppService
         $this->callingBaseUri = "https://graph.facebook.com/{$callingVersion}";
     }
 
-    public function sendMessage(string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
+    public function sendMessage(Instance|string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -55,7 +55,7 @@ class MetaWhatsAppService
      * quien conoce los límites de cada formato. Aquí sólo se envuelve en el
      * sobre del mensaje, igual que el texto o la plantilla.
      */
-    public function sendInteractive(string $phoneNumberId, string $to, array $interactive, ?string $contextWamid = null)
+    public function sendInteractive(Instance|string $phoneNumberId, string $to, array $interactive, ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -79,7 +79,7 @@ class MetaWhatsAppService
      * sale por el mismo endpoint que el texto. Un `emoji` vacío es la forma
      * documentada de quitar la reacción anterior.
      */
-    public function sendReaction(string $phoneNumberId, string $to, string $targetWamid, string $emoji = '')
+    public function sendReaction(Instance|string $phoneNumberId, string $to, string $targetWamid, string $emoji = '')
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -93,7 +93,7 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function sendImage(string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
+    public function sendImage(Instance|string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -112,7 +112,7 @@ class MetaWhatsAppService
         return $this->sendRequest($phoneNumberId, $payload);
     }
 
-    public function sendAudio(string $phoneNumberId, string $to, string $audioUrl)
+    public function sendAudio(Instance|string $phoneNumberId, string $to, string $audioUrl)
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -124,7 +124,7 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function sendTemplate(string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
+    public function sendTemplate(Instance|string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -141,7 +141,7 @@ class MetaWhatsAppService
     }
 
     public function sendDocument(
-        string $phoneNumberId,
+        Instance|string $phoneNumberId,
         string $to,
         string $documentUrl,
         string $filename = '',
@@ -177,15 +177,16 @@ class MetaWhatsAppService
      * Ese id se referencia en header.parameters[].{image|video|document}.id al enviar
      * una plantilla con encabezado multimedia. Meta aloja el archivo (~30 días).
      */
-    public function uploadMedia(string $phoneNumberId, string $filePath, string $mimeType): array
+    public function uploadMedia(Instance|string $phoneNumberId, string $filePath, string $mimeType): array
     {
         try {
-            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
-            $accessToken = $instance ? $instance->access_token : null;
+            $linea = $this->lineaDeEnvio($phoneNumberId);
 
-            if (! $accessToken) {
-                return ['success' => false, 'error' => 'Access token not found'];
+            if (! $linea['ok']) {
+                return ['success' => false, 'error' => $linea['error']];
             }
+
+            [$phoneNumberId, $accessToken] = [$linea['phone_number_id'], $linea['access_token']];
 
             $url = "{$this->baseUri}/{$phoneNumberId}/media";
 
@@ -498,7 +499,12 @@ class MetaWhatsAppService
     {
         try {
             $url = "{$this->baseUri}/{$mediaId}";
-            $response = Http::withToken($accessToken)->get($url);
+
+            // Con tiempo límite: esto corre después de que Meta aceptó un
+            // envío, dentro de una petición del ERP o de un job. Sin límite, un
+            // CDN lento colgaba la petición hasta que el ERP se cansaba y la
+            // repetía, y la factura salía dos veces.
+            $response = Http::withToken($accessToken)->connectTimeout(5)->timeout(15)->get($url);
 
             if (! $response->successful()) {
                 Log::error('Error getting media URL', [
@@ -513,7 +519,7 @@ class MetaWhatsAppService
             $mediaUrl = $mediaData['url'];
             $mimeType = $mediaData['mime_type'];
 
-            $mediaResponse = Http::withToken($accessToken)->get($mediaUrl);
+            $mediaResponse = Http::withToken($accessToken)->connectTimeout(5)->timeout(30)->get($mediaUrl);
 
             if (! $mediaResponse->successful()) {
                 return null;
@@ -617,19 +623,78 @@ class MetaWhatsAppService
         return $data;
     }
 
-    protected function sendRequest(string $phoneNumberId, array $data)
+    /**
+     * Con qué número y con qué token sale un envío.
+     *
+     * Hasta el 1-oct-2026 todo envío buscaba la instancia por `phone_number_id`
+     * a secas y se quedaba con la primera fila. Pero el índice único es
+     * (company_id, phone_number_id): dos empresas pueden reclamar el mismo
+     * número, y entonces el mensaje de una salía con el token de la otra —o
+     * con el de una fila vieja ya desconectada—, según el orden en que
+     * devolviera la base. Quien llama ya tiene la instancia en la mano: que la
+     * pase. El `string` se mantiene por compatibilidad con los llamadores que
+     * aún no la pasan, pero si el número es ambiguo ya no se elige al azar.
+     *
+     * @return array{ok: true, phone_number_id: string, access_token: string}|array{ok: false, error: mixed}
+     */
+    protected function lineaDeEnvio(Instance|string $linea): array
+    {
+        if ($linea instanceof Instance) {
+            if (empty($linea->access_token) || empty($linea->phone_number_id)) {
+                Log::error('WhatsApp API Error: la instancia no tiene token o número', ['instance_id' => $linea->id]);
+
+                return ['ok' => false, 'error' => 'Access token not found'];
+            }
+
+            return ['ok' => true, 'phone_number_id' => (string) $linea->phone_number_id, 'access_token' => $linea->access_token];
+        }
+
+        $candidatas = Instance::where('phone_number_id', $linea)->orderBy('id')->get();
+
+        // Una fila vieja apagada no compite con la que está en uso.
+        if ($candidatas->count() > 1 && $candidatas->where('active', true)->isNotEmpty()) {
+            $candidatas = $candidatas->where('active', true);
+        }
+
+        $tokens = $candidatas->pluck('access_token')->filter()->unique();
+
+        if ($tokens->isEmpty()) {
+            Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $linea]);
+
+            return ['ok' => false, 'error' => 'Access token not found'];
+        }
+
+        // Si todas las filas llevan el mismo token la petición es idéntica sea
+        // cual sea: no hay nada que elegir. Con tokens distintos, elegir uno es
+        // decidir en nombre de qué empresa sale el mensaje.
+        if ($tokens->count() > 1) {
+            Log::channel('whatsapp')->error('🚨 Envío con phone_number_id ambiguo: varias empresas lo reclaman', [
+                'phone_number_id' => $linea,
+                'instances' => $candidatas->pluck('company_id', 'id'),
+            ]);
+
+            return ['ok' => false, 'error' => ['error' => [
+                'message' => 'Este número de WhatsApp está registrado en más de una empresa y no se sabe con el '
+                    .'token de cuál enviar. Un administrador debe desactivar la instancia duplicada.',
+                'code' => 'ambiguous_instance',
+            ]]];
+        }
+
+        return ['ok' => true, 'phone_number_id' => (string) $linea, 'access_token' => $tokens->first()];
+    }
+
+    protected function sendRequest(Instance|string $phoneNumberId, array $data)
     {
         $data = $this->withRecipient($data);
 
         try {
-            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
-            $accessToken = $instance ? $instance->access_token : null;
+            $linea = $this->lineaDeEnvio($phoneNumberId);
 
-            if (! $accessToken) {
-                Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
-
-                return ['success' => false, 'error' => 'Access token not found'];
+            if (! $linea['ok']) {
+                return ['success' => false, 'error' => $linea['error']];
             }
+
+            [$phoneNumberId, $accessToken] = [$linea['phone_number_id'], $linea['access_token']];
 
             $url = "{$this->baseUri}/{$phoneNumberId}/messages";
 
@@ -651,9 +716,12 @@ class MetaWhatsAppService
                 'response' => $response->json(),
             ]);
 
+            // El estado HTTP distingue un rechazo de Meta (4xx: no salió y
+            // reintentar igual no lo arregla) de una caída suya (5xx).
             return [
                 'success' => false,
                 'error' => $response->json(),
+                'http_status' => $response->status(),
             ];
 
         } catch (\Exception $e) {
