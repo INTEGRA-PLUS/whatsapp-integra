@@ -966,7 +966,7 @@ class ChatController extends Controller
         $newMessages = [];
         if ($request->conversation_id && $sinceTs) {
             $newMessages = WhatsAppMessage::where('conversation_id', $request->conversation_id)
-                ->with('sender:id,name')
+                ->with(['sender:id,name', 'comprobanteDePago'])
                 ->where('created_at', '>', $sinceTs)
                 ->orderBy('created_at', 'asc')
                 ->get();
@@ -1028,7 +1028,7 @@ class ChatController extends Controller
             ));
         }
 
-        $query = $conversation->messages()->with('sender:id,name');
+        $query = $conversation->messages()->with(['sender:id,name', 'comprobanteDePago']);
 
         if ($anteriorA) {
             $corte = $conversation->messages()
@@ -1112,7 +1112,7 @@ class ChatController extends Controller
         $mitad = (int) floor($ventana / 2);
 
         $posteriores = $conversation->messages()
-            ->with('sender:id,name')
+            ->with(['sender:id,name', 'comprobanteDePago'])
             ->where(fn ($q) => $q->where('created_at', '>', $centro->created_at)
                 ->orWhere(fn ($mismo) => $mismo->where('created_at', $centro->created_at)->where('id', '>=', $centro->id)))
             ->orderBy('created_at')->orderBy('id')
@@ -1123,7 +1123,7 @@ class ChatController extends Controller
         $haciaAtras = $ventana - $posteriores->count();
 
         $anteriores = $conversation->messages()
-            ->with('sender:id,name')
+            ->with(['sender:id,name', 'comprobanteDePago'])
             ->where(fn ($q) => $q->where('created_at', '<', $centro->created_at)
                 ->orWhere(fn ($mismo) => $mismo->where('created_at', $centro->created_at)->where('id', '<', $centro->id)))
             ->orderByDesc('created_at')->orderByDesc('id')
@@ -2034,6 +2034,8 @@ class ChatController extends Controller
 
         // Quita relaciones de etiquetas; los mensajes caen por FK onDelete cascade.
         $conversation->tags()->detach();
+        // Los comprobantes no tienen FK (ver su migración): la cascada no los alcanza.
+        \App\Models\ComprobanteDePago::where('conversation_id', $conversation->id)->delete();
         $conversation->delete();
 
         // Y se emite DESPUÉS: si el delete falla, nadie debe haber quitado la

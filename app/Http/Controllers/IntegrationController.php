@@ -59,6 +59,9 @@ class IntegrationController extends Controller
             'emit_electronic_invoice' => (bool) ($i->emit_electronic_invoice ?? false),
             // true / false / null ("no sabemos"): la UI trata cada caso distinto.
             'can_emit_electronic'     => $i?->grantsEmission(),
+            'read_payment_receipts'   => (bool) ($i?->settings['leer_comprobantes'] ?? false),
+            // Sin modelo de visión la casilla no haría nada: la UI lo avisa.
+            'vision_ready'            => \App\Support\Documentos\ImagenDelCliente::configurado(),
             'last_error'      => $i->last_error ?? null,
             'connected_at'    => optional($i->connected_at ?? null)->toIso8601String(),
             'token_expired'   => $i ? $i->tokenExpired() : false,
@@ -274,6 +277,7 @@ class IntegrationController extends Controller
             'trigger_type'    => 'required|in:slash,at',
             'trigger_command' => 'required_if:enabled,true|nullable|alpha_dash|max:64',
             'emit_electronic_invoice' => 'sometimes|boolean',
+            'read_payment_receipts' => 'sometimes|boolean',
         ]);
 
         $integration = $this->find($key);
@@ -297,6 +301,10 @@ class IntegrationController extends Controller
             'trigger_type'    => $data['trigger_type'],
             'trigger_command' => $data['trigger_command'] ? ltrim($data['trigger_command'], '/@') : null,
             'emit_electronic_invoice' => $data['emit_electronic_invoice'] ?? $integration->emit_electronic_invoice,
+            // Sólo tiene sentido en la de pagos: es ahí donde se aprueban.
+            'settings' => $key === CompanyIntegration::KEY_INVOICE_PAYMENTS && array_key_exists('read_payment_receipts', $data)
+                ? array_replace($integration->settings ?? [], ['leer_comprobantes' => (bool) $data['read_payment_receipts']])
+                : $integration->settings,
         ]);
 
         return response()->json($this->present($key, $integration->fresh()));

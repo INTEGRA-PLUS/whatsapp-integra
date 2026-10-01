@@ -74,6 +74,12 @@ class WhatsAppMessage extends Model
         return $this->belongsTo(WhatsAppConversation::class, 'conversation_id');
     }
 
+    /** La captura de pago leída en esta foto, si la hubo. */
+    public function comprobanteDePago()
+    {
+        return $this->hasOne(ComprobanteDePago::class, 'whatsapp_message_id');
+    }
+
     public function sender()
     {
         return $this->belongsTo(User::class, 'sent_by');

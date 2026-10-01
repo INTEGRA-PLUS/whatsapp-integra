@@ -1884,6 +1884,7 @@ function StepActivate({ integration, onUpdated, showToast }) {
         emit_electronic_invoice: integration.can_emit_electronic === false
             ? false
             : (integration.emit_electronic_invoice ?? false),
+        read_payment_receipts: integration.read_payment_receipts ?? false,
     });
     const [errors, setErrors] = useState({});
     const [saving, setSaving] = useState(false);
@@ -2016,6 +2017,33 @@ function StepActivate({ integration, onUpdated, showToast }) {
                             <FileCheck2 className="size-3.5 shrink-0 mt-px" />
                             Cada pago desde el chat emitirá un documento fiscal real. Una factura ya
                             emitida no se puede deshacer desde aquí: se corrige con nota crédito en Integra.
+                        </p>
+                    )}
+                </div>
+
+                <div>
+                    <p className="text-sm font-medium text-foreground mb-2">Comprobantes por WhatsApp</p>
+                    <label className="flex items-start gap-3 rounded-xl border border-border/60 p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={form.read_payment_receipts}
+                            onChange={e => setForm(f => ({ ...f, read_payment_receipts: e.target.checked }))}
+                            className="size-4 mt-0.5 rounded border-input accent-primary"
+                        />
+                        <div>
+                            <p className="text-sm font-medium text-foreground">Leer las capturas de pago que manden los clientes</p>
+                            <p className="text-xs text-muted-foreground">
+                                Cada foto que llegue se revisa con IA. Si es un comprobante, se leen el valor, la fecha y la
+                                referencia, y queda <strong>pendiente de aprobación</strong> en el chat y en «Pagos por aprobar».
+                                El pago sólo se registra cuando alguien con el permiso <code className="font-mono">pagos.aprobar</code> lo aprueba.
+                            </p>
+                        </div>
+                    </label>
+                    {form.read_payment_receipts && integration.vision_ready === false && (
+                        <p className="flex items-start gap-1.5 text-[11px] text-warning mt-2">
+                            <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                            El modelo de visión no está configurado en este servidor (VISION_TOKEN): la casilla
+                            queda guardada pero no se leerá ninguna foto hasta que lo esté.
                         </p>
                     )}
                 </div>

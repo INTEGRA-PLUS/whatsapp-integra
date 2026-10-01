@@ -21,6 +21,7 @@ import {
     Webhook,
     BellRing,
     Contact,
+    Receipt,
     Wand2,
     ListTree,
     Blocks,
@@ -92,6 +93,7 @@ export function AppSidebar() {
                     // pantalla es un tablero kanban y ahora se llama así.
                     { title: 'Tablero Kanban', href: route('chat.kanban'), icon: Layers, show: hasPermission('crm.view') },
                     { title: 'Contactos', href: route('contacts.index'), icon: Contact, show: hasPermission('contacts.view') },
+                    { title: 'Pagos por aprobar', href: route('pagos-por-aprobar.index'), icon: Receipt, show: hasPermission('pagos.aprobar') },
                 ],
             },
             {

@@ -878,6 +878,16 @@ Route::middleware('auth')->group(function () {
         Route::delete('/', [NotificationController::class, 'destroyAll']);
     });
 
+    // Capturas de pago que mandan los clientes, leídas y esperando a que una
+    // persona las apruebe. Aprobar registra el pago en Integra y reconecta al
+    // cliente: por eso tiene permiso propio y no basta la sesión.
+    Route::get('/pagos-por-aprobar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'index'])
+        ->middleware('permission:pagos.aprobar')->name('pagos-por-aprobar.index');
+    Route::prefix('api/comprobantes-de-pago')->middleware('permission:pagos.aprobar')->group(function () {
+        Route::post('/{id}/aprobar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'aprobar'])->whereNumber('id');
+        Route::post('/{id}/rechazar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'rechazar'])->whereNumber('id');
+    });
+
     // System announcements (admin-emitted notifications)
     Route::get('/announcements', [SystemNotificationController::class, 'index'])
         ->middleware('permission:notifications.send')->name('announcements.index');

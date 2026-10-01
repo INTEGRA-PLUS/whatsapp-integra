@@ -105,7 +105,8 @@ import {
     PanelLeftOpen,
     Bot,
     Sparkles,
-    Lightbulb
+    Lightbulb,
+    XCircle
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -1169,8 +1170,186 @@ function ElectronicInvoiceNotice({ fe }) {
     );
 }
 
-function PaymentModal({ integration, conversation, onClose }) {
+// ─── Comprobantes de pago: la captura que manda el cliente ──────────────────
+// La lee el modelo de visión (job LeerComprobanteDePago) y la aprueba una
+// persona con `pagos.aprobar`. Nada de aquí registra un pago por sí solo.
+
+const ESTADO_COMPROBANTE = {
+    pendiente: { label: 'Por aprobar', cls: 'bg-warning/15 text-warning' },
+    aprobando: { label: 'Aprobando…', cls: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
+    revisar:   { label: 'Revisar en Integra', cls: 'bg-destructive/15 text-destructive' },
+    aprobado:  { label: 'Aprobado', cls: 'bg-success/15 text-success' },
+    rechazado: { label: 'Rechazado', cls: 'bg-black/5 dark:bg-white/10 text-muted-foreground' },
+};
+
+/** Lo que leyó el modelo, en filas. Se usa en la tarjeta y en el modal. */
+function DatosDelComprobante({ comprobante }) {
+    const filas = [
+        ['Valor', formatCOP(comprobante.monto)],
+        ['Banco', comprobante.banco],
+        ['Fecha', comprobante.fecha],
+        ['Referencia', comprobante.referencia],
+        ['A nombre de', comprobante.destino],
+    ].filter(([, v]) => v);
+
+    if (filas.length === 0) {
+        return <p className="text-[11px] text-muted-foreground">El modelo no pudo leer los datos: revísalos en la imagen.</p>;
+    }
+
+    return (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11.5px]">
+            {filas.map(([k, v]) => (
+                <div key={k} className="contents">
+                    <dt className="text-muted-foreground">{k}</dt>
+                    <dd className={`text-foreground truncate ${k === 'Referencia' ? 'font-mono' : 'font-medium'}`}>{v}</dd>
+                </div>
+            ))}
+        </dl>
+    );
+}
+
+/** El encabezado del modal cuando se aprueba un comprobante. */
+function LecturaDelComprobante({ comprobante }) {
+    return (
+        <div className="mx-6 mt-5 rounded-xl border border-warning/30 bg-warning/5 p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+                <Receipt className="size-4 text-warning shrink-0" />
+                <p className="text-sm font-semibold text-foreground">Lo que dice la captura</p>
+            </div>
+            <DatosDelComprobante comprobante={comprobante} />
+            {comprobante.duplicado_de_id && (
+                <p className="flex items-start gap-1.5 text-[11px] text-destructive">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                    Esta captura, o su referencia, ya había llegado antes (comprobante #{comprobante.duplicado_de_id}).
+                </p>
+            )}
+            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                <AlertTriangle className="size-3.5 shrink-0 mt-px" />
+                Lo leyó un modelo y una captura se puede editar. Confirma en el banco que el dinero entró antes de aprobar:
+                al aprobar se registra el pago y se reconecta el servicio.
+            </p>
+        </div>
+    );
+}
+
+/**
+ * La tarjeta bajo la foto en el chat.
+ *
+ * Todos la ven —el asesor necesita saber que ese pago está en revisión—, pero
+ * los botones sólo aparecen con `pagos.aprobar`.
+ */
+function ComprobanteCard({ comprobante, puedeAprobar, onRevisar, onActualizado }) {
+    const [rechazando, setRechazando] = useState(false);
+    const [motivo, setMotivo] = useState('');
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState(null);
+
+    const estado = ESTADO_COMPROBANTE[comprobante.estado] ?? ESTADO_COMPROBANTE.pendiente;
+    const abierto = ['pendiente', 'revisar'].includes(comprobante.estado);
+
+    async function rechazar(e) {
+        e.preventDefault();
+        if (!motivo.trim()) { setError('Escribe por qué se rechaza.'); return; }
+        setEnviando(true);
+        setError(null);
+        try {
+            const { data } = await axios.post(`/api/comprobantes-de-pago/${comprobante.id}/rechazar`, { motivo: motivo.trim() });
+            onActualizado?.(data.comprobante, data.nota);
+            setRechazando(false);
+        } catch (err) {
+            if (err?.response?.data?.comprobante) onActualizado?.(err.response.data.comprobante);
+            setError(err?.response?.data?.message ?? 'No se pudo rechazar.');
+        } finally {
+            setEnviando(false);
+        }
+    }
+
+    return (
+        <div className="mb-6 rounded-lg border border-border/60 bg-background/70 p-2.5 space-y-2 text-left" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
+                    <Receipt className="size-3.5 text-muted-foreground" /> Comprobante de pago
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${estado.cls}`}>{estado.label}</span>
+            </div>
+
+            <DatosDelComprobante comprobante={comprobante} />
+
+            {comprobante.duplicado_de_id && abierto && (
+                <p className="flex items-start gap-1.5 text-[11px] text-destructive">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" /> Ya había llegado antes (#{comprobante.duplicado_de_id}).
+                </p>
+            )}
+
+            {comprobante.estado === 'aprobado' && (
+                <p className="text-[11px] text-success">
+                    Registrado {formatCOP(comprobante.monto_aprobado)} en {comprobante.factura_codigo ?? `la factura #${comprobante.factura_id}`}
+                    {comprobante.resultado?.recibo_caja != null && <> · recibo #{comprobante.resultado.recibo_caja}</>}
+                </p>
+            )}
+            {comprobante.estado === 'rechazado' && comprobante.motivo_rechazo && (
+                <p className="text-[11px] text-muted-foreground">Motivo: {comprobante.motivo_rechazo}</p>
+            )}
+            {comprobante.error && abierto && (
+                <p className="flex items-start gap-1.5 text-[11px] text-destructive">
+                    <AlertTriangle className="size-3.5 shrink-0 mt-px" /> {comprobante.error}
+                </p>
+            )}
+
+            {puedeAprobar && abierto && !rechazando && (
+                <div className="flex gap-1.5 pt-0.5">
+                    <button
+                        type="button"
+                        onClick={onRevisar}
+                        className="flex-1 rounded-md bg-primary text-primary-foreground text-[11.5px] font-medium py-1.5 flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity"
+                    >
+                        <CheckCircle2 className="size-3.5" /> Revisar y aprobar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { setRechazando(true); setError(null); }}
+                        className="rounded-md border border-border/70 text-[11.5px] font-medium px-2.5 py-1.5 flex items-center gap-1.5 text-foreground hover:bg-muted/50 transition-colors"
+                    >
+                        <XCircle className="size-3.5" /> Rechazar
+                    </button>
+                </div>
+            )}
+
+            {rechazando && (
+                <form onSubmit={rechazar} className="space-y-1.5">
+                    <input
+                        autoFocus
+                        value={motivo}
+                        maxLength={255}
+                        onChange={e => setMotivo(e.target.value)}
+                        placeholder="Motivo (el cliente no lo ve)"
+                        className="w-full rounded-md border border-border/70 bg-background px-2.5 py-1.5 text-[12px] outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                    <div className="flex gap-1.5">
+                        <button type="button" onClick={() => setRechazando(false)} className="flex-1 rounded-md border border-border/70 text-[11.5px] py-1.5 hover:bg-muted/50">
+                            Cancelar
+                        </button>
+                        <button type="submit" disabled={enviando} className="flex-1 rounded-md bg-destructive text-white text-[11.5px] font-medium py-1.5 flex items-center justify-center gap-1.5 disabled:opacity-60">
+                            {enviando && <Loader2 className="size-3.5 animate-spin" />} Rechazar
+                        </button>
+                    </div>
+                </form>
+            )}
+
+            {error && <p className="text-[11px] text-destructive">{error}</p>}
+        </div>
+    );
+}
+
+/**
+ * Con `comprobante`, el modal no registra un pago cualquiera: aprueba la
+ * captura que mandó el cliente. Llega precargado con lo que leyó el modelo
+ * —monto, fecha, referencia— y guarda contra /api/comprobantes-de-pago, que es
+ * quien impide pagarlo dos veces o por encima del saldo.
+ */
+function PaymentModal({ integration, conversation, onClose, comprobante = null, onResuelto = null }) {
     const initialPhone = normalizePhoneForIntegra(conversation?.phone_number);
+    const esComprobante = Boolean(comprobante);
 
     // Paso 1: búsqueda de cliente
     const [query, setQuery] = useState(initialPhone);
@@ -1193,6 +1372,8 @@ function PaymentModal({ integration, conversation, onClose }) {
     const [metodoPago, setMetodoPago] = useState('');
     const [monto, setMonto] = useState('');
     const [observaciones, setObservaciones] = useState('');
+    const [fecha, setFecha] = useState(comprobante?.fecha ?? '');
+    const [referencia, setReferencia] = useState(comprobante?.referencia ?? '');
     const [saving, setSaving] = useState(false);
     const [payError, setPayError] = useState(null);
     const [success, setSuccess] = useState(null);
@@ -1242,6 +1423,13 @@ function PaymentModal({ integration, conversation, onClose }) {
                 setInvoicesError(data.message ?? 'El cliente no existe en Integra.');
             } else {
                 setInvoices(data);
+                // Una sola factura por exactamente lo que dice el comprobante:
+                // es ésa. Con dos o ninguna, que elija la persona.
+                const lista = data.facturas ?? [];
+                const cuadran = comprobante?.monto
+                    ? lista.filter(f => Number(f.montos?.por_pagar) === Number(comprobante.monto))
+                    : [];
+                if (cuadran.length === 1) selectInvoice(cuadran[0]);
             }
         } catch (err) {
             setInvoicesError(err?.response?.data?.message ?? 'No se pudieron consultar las facturas en Integra.');
@@ -1270,7 +1458,7 @@ function PaymentModal({ integration, conversation, onClose }) {
     async function selectInvoice(f) {
         setInvoice(f);
         setPayError(null);
-        setMonto(String(f.montos?.por_pagar ?? ''));
+        setMonto(String(comprobante?.monto ?? f.montos?.por_pagar ?? ''));
         setObservaciones('');
         // Catálogos del entorno (cuentas y métodos): una sola vez por modal.
         if (!catalogs) {
@@ -1301,6 +1489,20 @@ function PaymentModal({ integration, conversation, onClose }) {
         if (!monto || Number(monto) <= 0) { setPayError('Ingresa un valor mayor a 0.'); return; }
         setSaving(true);
         try {
+            if (esComprobante) {
+                const { data } = await axios.post(`/api/comprobantes-de-pago/${comprobante.id}/aprobar`, {
+                    factura_id: invoice.id,
+                    cuenta: Number(cuenta),
+                    metodo_pago: Number(metodoPago),
+                    monto: Number(monto),
+                    fecha: fecha || null,
+                    referencia: referencia.trim() || null,
+                    observaciones: observaciones.trim() || null,
+                });
+                onResuelto?.(data.comprobante, data.nota);
+                setSuccess(data.result ?? { ok: true });
+                return;
+            }
             const { data } = await axios.post('/api/integrations/invoice-payments/pay', {
                 factura_id: invoice.id,
                 cuenta: Number(cuenta),
@@ -1310,6 +1512,9 @@ function PaymentModal({ integration, conversation, onClose }) {
             });
             setSuccess(data.result ?? { ok: true });
         } catch (err) {
+            // Aunque falle, el comprobante pudo cambiar (a «revisar», o ya lo
+            // aprobó otra persona): la tarjeta del chat tiene que enterarse.
+            if (err?.response?.data?.comprobante) onResuelto?.(err.response.data.comprobante);
             setPayError(err?.response?.data?.message ?? 'No se pudo registrar el pago.');
         } finally {
             setSaving(false);
@@ -1335,6 +1540,8 @@ function PaymentModal({ integration, conversation, onClose }) {
                             <h3 className="font-bold text-lg leading-tight">{integration?.name ?? 'Pagos a facturas'}</h3>
                             <p className="text-xs text-white/80">
                                 {success ? 'Pago registrado en Integra'
+                                    : esComprobante && invoice ? `Aprobar comprobante · Factura ${invoice.codigo ?? invoice.id}`
+                                    : esComprobante ? 'Aprobar comprobante · busca al cliente'
                                     : invoice ? `Registrar pago · Factura ${invoice.codigo ?? invoice.id}`
                                     : selected ? 'Facturas pendientes del cliente'
                                     : 'Busca el cliente por teléfono, cédula o nombre'}
@@ -1344,6 +1551,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                 </div>
 
                 <div className="overflow-y-auto">
+                {esComprobante && !success && <LecturaDelComprobante comprobante={comprobante} />}
                 {success ? (
                     /* ── Éxito ── */
                     <div className="px-6 py-8 text-center space-y-4">
@@ -1370,9 +1578,11 @@ function PaymentModal({ integration, conversation, onClose }) {
 
                         <ElectronicInvoiceNotice fe={success.factura_electronica} />
                         <div className="flex gap-2">
+                            {!esComprobante && (
                             <button onClick={() => backToInvoices({ refresh: true })} className="flex-1 rounded-xl border border-border/70 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40 transition-colors">
                                 Registrar otro pago
                             </button>
+                            )}
                             <button onClick={onClose} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground font-medium py-2.5 transition-colors">
                                 Listo
                             </button>
@@ -1583,10 +1793,43 @@ function PaymentModal({ integration, conversation, onClose }) {
                                     onChange={e => setMonto(e.target.value)}
                                     className="w-full rounded-xl border border-border/70 bg-background/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
                                 />
+                                {esComprobante && Number(monto) > Number(invoice.montos?.por_pagar ?? Infinity) ? (
+                                    <p className="text-[11px] text-destructive mt-1">
+                                        Supera el saldo de esta factura ({formatCOP(invoice.montos?.por_pagar)}). No se puede aprobar así:
+                                        la diferencia se perdería. Registra el saldo y el resto en otra factura.
+                                    </p>
+                                ) : (
                                 <p className="text-[11px] text-muted-foreground mt-1">
                                     Si el valor supera el saldo, Integra lo topa al saldo pendiente. Si cubre el total, la factura se cierra y se reactiva el servicio.
                                 </p>
+                                )}
                             </div>
+
+                            {esComprobante && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground mb-1.5 block">Fecha del pago</label>
+                                        <input
+                                            type="date"
+                                            value={fecha}
+                                            max={new Date().toISOString().slice(0, 10)}
+                                            onChange={e => setFecha(e.target.value)}
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground mb-1.5 block">Referencia</label>
+                                        <input
+                                            type="text"
+                                            value={referencia}
+                                            maxLength={120}
+                                            onChange={e => setReferencia(e.target.value)}
+                                            placeholder="Nº de aprobación"
+                                            className="w-full rounded-xl border border-border/70 bg-background/80 px-3 py-2.5 text-sm font-mono outline-none focus:ring-2 focus:ring-primary/30"
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="text-sm font-medium text-foreground mb-1.5 block">Observaciones <span className="text-xs font-normal text-muted-foreground">· Opcional</span></label>
@@ -1613,7 +1856,7 @@ function PaymentModal({ integration, conversation, onClose }) {
                                 </button>
                                 <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-primary hover:bg-primary text-primary-foreground py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-60">
                                     {saving ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
-                                    Registrar pago
+                                    {esComprobante ? 'Aprobar y registrar' : 'Registrar pago'}
                                 </button>
                             </div>
                         </form>
@@ -1790,6 +2033,15 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     // Internal notes + @mentions
     const [composerMode, setComposerMode] = useState('reply'); // 'reply' | 'note'
     const [paymentModal, setPaymentModal] = useState(null);
+
+    // El comprobante cambió de estado (aprobado, rechazado, «revisar»): se
+    // parchea la tarjeta de su foto y, si hubo nota de rastro, se añade al hilo.
+    const actualizarComprobante = useCallback((messageId, comprobante, nota = null) => {
+        setMessages(prev => {
+            const conTarjeta = prev.map(m => (m.id === messageId ? { ...m, comprobante_de_pago: comprobante } : m));
+            return nota && !conTarjeta.some(m => m.id === nota.id) ? [...conTarjeta, nota] : conTarjeta;
+        });
+    }, []);
     const [noteMentions, setNoteMentions] = useState([]); // [{id, name}]
     // Imagen adjunta a la nota que se está escribiendo: {file, url}. La url es un
     // objectURL solo para la vista previa; se revoca al soltar el adjunto.
@@ -6199,7 +6451,19 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                                 alt="media"
                                                                             />
                                                                         </div>
-                                                                        {msg.content && <p className="text-[12.5px] leading-[17px] mb-6 pr-10">{msg.content}</p>}
+                                                                        {msg.content && <p className={`text-[12.5px] leading-[17px] pr-10 ${msg.comprobante_de_pago ? 'mb-2' : 'mb-6'}`}>{msg.content}</p>}
+                                                                        {msg.comprobante_de_pago && (
+                                                                            <ComprobanteCard
+                                                                                comprobante={msg.comprobante_de_pago}
+                                                                                puedeAprobar={can('pagos.aprobar')}
+                                                                                onRevisar={() => setPaymentModal({
+                                                                                    integration: integrations.find(i => i.key === 'invoice_payments') ?? { name: 'Pagos a facturas' },
+                                                                                    comprobante: msg.comprobante_de_pago,
+                                                                                    messageId: msg.id,
+                                                                                })}
+                                                                                onActualizado={(c, nota) => actualizarComprobante(msg.id, c, nota)}
+                                                                            />
+                                                                        )}
                                                                     </div>
                                                                 )}
                                                                 
@@ -6787,6 +7051,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                     <PaymentModal
                         integration={paymentModal.integration}
                         conversation={selectedConversation}
+                        comprobante={paymentModal.comprobante ?? null}
+                        onResuelto={paymentModal.messageId ? (c, nota) => actualizarComprobante(paymentModal.messageId, c, nota) : null}
                         onClose={() => setPaymentModal(null)}
                     />
                 )}

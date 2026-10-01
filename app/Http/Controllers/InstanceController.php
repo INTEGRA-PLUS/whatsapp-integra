@@ -283,6 +283,9 @@ class InstanceController extends Controller
             'usuario' => $user->email,
         ] + $perdido);
 
+        // Sin FK (ver su migración): la cascada no los alcanza.
+        \App\Models\ComprobanteDePago::where('instance_id', $instance->id)->delete();
+
         $instance->delete();
 
         return redirect()->route('instances.index')
