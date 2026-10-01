@@ -25,8 +25,18 @@ class DeliverWhatsAppMessage implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
+    // Holgura sobre lo que puede tardar de verdad: 30 s de Meta más los 45 s
+    // como mucho de la copia del adjunto (MetaWhatsAppService::downloadMedia).
     public int $timeout = 90;
+
     public int $backoff = 10;
+
+    // Un job que se pasa del tiempo no se reintenta: si el corte llegó con la
+    // llamada a Meta en vuelo no sabemos si el mensaje salió, y reenviarlo a
+    // ciegas es justo lo que dejaba al cliente con dos facturas. Mejor una
+    // burbuja en "fallido" que el agente puede reenviar a mano.
+    public bool $failOnTimeout = true;
 
     public function __construct(public int $messageId) {}
 
@@ -54,7 +64,6 @@ class DeliverWhatsAppMessage implements ShouldQueue
         }
 
         $to = $conversation->recipientId();
-        $phoneNumberId = $instance->phone_number_id;
 
         // Instagram y Messenger salen por otro sitio: otro host, otro token y
         // sin número de por medio. Se cortan aquí y no dentro del `match` de
@@ -87,13 +96,23 @@ class DeliverWhatsAppMessage implements ShouldQueue
                 ->check($instance, $template['name'], $template['language'], $template['components']);
 
             if (! $guard['ok']) {
-                $this->markFailed($message, $guard['error'], null, $guard['code']);
+                // El chat enseña `error_details` como motivo principal: ahí va
+                // el texto que se entiende. Antes iba el código interno y la
+                // burbuja decía «template_body_parameters» y nada más.
+                $this->markFailed(
+                    $message,
+                    "La plantilla se frenó antes de enviarla ({$guard['code']}).",
+                    null,
+                    $guard['error']
+                );
                 return;
             }
 
             $template['components'] = $guard['components'];
         }
 
+        // Se pasa la instancia entera, no su phone_number_id: con el número a
+        // secas el servicio tenía que adivinar de qué empresa era el token.
         $result = match ($message->type) {
             // El prefijo con el nombre del agente era un formato fijo aquí
             // dentro, igual para las cuarenta empresas y sin forma de cambiarlo.
@@ -101,7 +120,7 @@ class DeliverWhatsAppMessage implements ShouldQueue
             // mismo texto de siempre, y la que decida firmar de otra manera lo
             // hace desde sus ajustes en vez de desde este archivo.
             'text' => $metaService->sendMessage(
-                $phoneNumberId,
+                $instance,
                 $to,
                 app(\App\Extensions\ExtensionRunner::class)->outboundText(
                     $message,
@@ -110,19 +129,19 @@ class DeliverWhatsAppMessage implements ShouldQueue
                 $message->reply_to_wamid ?: null
             ),
             'image' => $metaService->sendImage(
-                $phoneNumberId,
+                $instance,
                 $to,
                 $message->media_url,
                 $message->content ?? '',
                 $message->reply_to_wamid ?: null
             ),
             'audio' => $metaService->sendAudio(
-                $phoneNumberId,
+                $instance,
                 $to,
                 $message->media_url
             ),
             'document' => $metaService->sendDocument(
-                $phoneNumberId,
+                $instance,
                 $to,
                 $message->media_url,
                 $message->filename ?: 'documento',
@@ -130,7 +149,7 @@ class DeliverWhatsAppMessage implements ShouldQueue
                 $message->reply_to_wamid ?: null
             ),
             'template' => $metaService->sendTemplate(
-                $phoneNumberId,
+                $instance,
                 $to,
                 $template['name'],
                 $template['language'],
@@ -150,17 +169,40 @@ class DeliverWhatsAppMessage implements ShouldQueue
 
         $wamid = $result['data']['messages'][0]['id'] ?? null;
 
-        // Las plantillas con header multimedia guardan una copia en nuestro S3
-        // para que el archivo quede visible en el chat (no solo el texto).
-        if ($message->type === 'template' && empty($message->media_url)) {
-            $this->attachTemplateHeaderMedia($message, $metaService, $instance->access_token);
-        }
-
+        // Lo primero en cuanto Meta acepta: el wamid. Es lo que hace que un
+        // reintento de este job sepa que el mensaje ya salió (la comprobación
+        // del principio). Antes se guardaba al final, después de copiar el
+        // adjunto de la plantilla a S3: si esa copia se colgaba y el job moría
+        // por tiempo, la fila seguía en "pending" sin wamid y el reintento le
+        // mandaba la factura al cliente otra vez.
         $message->update([
             'wamid'    => $wamid,
             'status'   => 'sent',
             'sent_at'  => $message->sent_at ?: now(),
         ]);
+
+        // TODO(estados-adelantados): Meta puede mandar el webhook de
+        // "delivered"/"read"/"failed" antes de que la línea de arriba guarde el
+        // wamid; ese estado no encuentra la burbuja y se pierde. El arreglo vive
+        // en WhatsAppWebhookController (lo hace otro cambio): cuando exista el
+        // método estático que aplica los estados guardados para un wamid,
+        // llamarlo aquí, justo después de guardar el wamid y antes del broadcast.
+
+        // Las plantillas con header multimedia guardan una copia en nuestro S3
+        // para que el archivo quede visible en el chat (no solo el texto). Va
+        // después y aislada: el mensaje ya salió, y un fallo aquí no puede
+        // convertirlo en "fallido" ni provocar un reenvío.
+        if ($message->type === 'template' && empty($message->media_url)) {
+            try {
+                $this->attachTemplateHeaderMedia($message, $metaService, $instance->access_token);
+                $message->save();
+            } catch (\Throwable $e) {
+                Log::warning('DeliverWhatsAppMessage: no se pudo copiar el adjunto de la plantilla', [
+                    'message_id' => $message->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
 
         // Tiempo real: empuja el saliente ya confirmado a los demás agentes
         // conectados (el emisor ya lo ve optimista; el front deduplica por id).

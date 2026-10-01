@@ -900,7 +900,7 @@ class ChatController extends Controller
 
         $file = $request->file('file');
         $result = $this->metaService->uploadMedia(
-            $instance->phone_number_id,
+            $instance,
             $file->getRealPath(),
             $file->getMimeType()
         );
@@ -2483,7 +2483,7 @@ class ChatController extends Controller
         $emoji = (string) $request->input('emoji');
 
         $result = $this->metaService->sendReaction(
-            $instance->phone_number_id,
+            $instance,
             $conversation->recipientId(),
             $message->wamid,
             $emoji
