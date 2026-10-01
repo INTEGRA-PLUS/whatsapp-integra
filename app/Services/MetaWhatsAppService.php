@@ -555,6 +555,13 @@ class MetaWhatsAppService
      * `downloadMedia()` se trae el archivo entero a S3, que es carísimo cuando lo
      * único que se quiere saber es si el id sigue vivo y de qué tipo es —el caso
      * de validar el encabezado de una plantilla antes de enviarla.
+     *
+     * Tres respuestas, no dos: la ficha, `['missing' => true]` cuando Meta dice
+     * claramente que el id no existe o no es de esta línea (404, o 400 con el
+     * código 100 «Unsupported get request»), y `null` cuando no se sabe
+     * —timeout, 5xx, 429, o un 400 de token caducado (190), que Graph también
+     * devuelve como 400—. Quien la usa no debe tratar un mal minuto de Graph, ni
+     * un token vencido, como un archivo borrado.
      */
     public function mediaInfo(string $mediaId, string $accessToken): ?array
     {
@@ -562,6 +569,11 @@ class MetaWhatsAppService
             $response = Http::withToken($accessToken)
                 ->timeout(15)
                 ->get("{$this->baseUri}/{$mediaId}");
+
+            if ($response->status() === 404
+                || ($response->status() === 400 && (int) $response->json('error.code') === 100)) {
+                return ['missing' => true];
+            }
 
             if (! $response->successful()) {
                 return null;

@@ -27,7 +27,12 @@ import { LogoCanal } from '@/components/logo-canal';
 import {
     templateBodyComponent,
     templateHeaderFormat,
-    buildTemplateHeaderComponent,
+    templateHeaderVarNames,
+    templateDynamicButtons,
+    templateNeedsFill,
+    templateVarNames,
+    buildTemplateComponents,
+    missingTemplateValues,
     countTemplateVars,
     fillTemplate,
     HEADER_MEDIA_ACCEPT,
@@ -2011,6 +2016,11 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const [templatesLoading, setTemplatesLoading] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState(null);
     const [templateVars, setTemplateVars] = useState([]);
+    // Dato del encabezado de texto ({{1}} en «Tu factura de {{1}}») y de los
+    // botones dinámicos (URL con {{1}}, código para copiar), en el orden de
+    // templateHeaderVarNames() / templateDynamicButtons().
+    const [templateHeaderVars, setTemplateHeaderVars] = useState([]);
+    const [templateButtonVars, setTemplateButtonVars] = useState([]);
     // Encabezado multimedia de la plantilla seleccionada al enviar:
     // { format, mediaId, filename, uploading, error, lat, lng, name, address }
     const [templateHeader, setTemplateHeader] = useState(null);
@@ -2249,6 +2259,8 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         const body = templateBodyComponent(t);
         const n = countTemplateVars(body?.text);
         setTemplateVars(Array.from({ length: n }, () => ''));
+        setTemplateHeaderVars(templateHeaderVarNames(t).map(() => ''));
+        setTemplateButtonVars(templateDynamicButtons(t).map(() => ''));
         const fmt = templateHeaderFormat(t);
         setTemplateHeader(fmt
             ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
@@ -2273,9 +2285,11 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const sendNewChatTemplate = useCallback(async () => {
         if (!selectedTemplate || !newChatConv) return;
         const body = templateBodyComponent(selectedTemplate);
-        const n = countTemplateVars(body?.text);
-        if (templateVars.some((v, i) => i < n && !v.trim())) {
-            setNewChatError('Completa todas las variables de la plantilla.');
+        const falta = missingTemplateValues(selectedTemplate, {
+            headerVars: templateHeaderVars, bodyVars: templateVars, buttonVars: templateButtonVars,
+        });
+        if (falta) {
+            setNewChatError(falta);
             return;
         }
         if (templateHeader) {
@@ -2291,12 +2305,12 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         }
         setNewChatError(null);
         setNewChatLoading(true);
-        const components = [];
-        const headerComp = buildTemplateHeaderComponent(templateHeader);
-        if (headerComp) components.push(headerComp);
-        if (n > 0) {
-            components.push({ type: 'body', parameters: templateVars.slice(0, n).map(v => ({ type: 'text', text: v })) });
-        }
+        const components = buildTemplateComponents(selectedTemplate, {
+            header: templateHeader,
+            headerVars: templateHeaderVars,
+            bodyVars: templateVars,
+            buttonVars: templateButtonVars,
+        });
         const preview = fillTemplate(body?.text, templateVars);
         try {
             const res = await axios.post(`/api/chat/conversations/${newChatConv.id}/send-template`, {
@@ -2316,7 +2330,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         } finally {
             setNewChatLoading(false);
         }
-    }, [selectedTemplate, newChatConv, templateVars, templateHeader, closeNewChat]);
+    }, [selectedTemplate, newChatConv, templateVars, templateHeaderVars, templateButtonVars, templateHeader, closeNewChat]);
 
     useEffect(() => {
         loadTags();
@@ -7249,15 +7263,34 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                 </button>
                             </div>
                             <div className="px-4 py-4 space-y-1.5">
-                                <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
-                                    {failedMessage.error_details || failedMessage.error_message || 'No se pudo enviar el mensaje. WhatsApp no reportó un motivo específico.'}
-                                </p>
-                                {(failedMessage.error_details && failedMessage.error_message) || failedMessage.error_code ? (
-                                    <p className="text-xs text-muted-foreground">
-                                        {failedMessage.error_details ? failedMessage.error_message : null}
-                                        {failedMessage.error_code ? ` ${failedMessage.error_details ? '· ' : ''}Código ${failedMessage.error_code}` : ''}
+                                {/* La frase la traduce el servidor (WhatsAppFailureTranslator,
+                                    vía `failure_reason`): antes aquí salía el texto de Meta en
+                                    inglés tal cual. El original sigue debajo, en pequeño, para
+                                    soporte. Un mensaje que llegó por websocket sin el campo
+                                    cae al texto de siempre. */}
+                                {failedMessage.failure_reason ? (
+                                    <>
+                                        <p className="text-sm font-semibold text-foreground">{failedMessage.failure_reason.title}</p>
+                                        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">{failedMessage.failure_reason.detail}</p>
+                                        {failedMessage.failure_reason.action && (
+                                            <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                                                <span className="font-semibold">Qué hacer: </span>{failedMessage.failure_reason.action}
+                                            </p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+                                        {failedMessage.error_details || failedMessage.error_message || 'No se pudo enviar el mensaje. WhatsApp no reportó un motivo específico.'}
                                     </p>
-                                ) : null}
+                                )}
+                                {(() => {
+                                    const tecnico = failedMessage.failure_reason
+                                        ? [failedMessage.error_details, failedMessage.error_message].filter(Boolean).join(' · ')
+                                        : (failedMessage.error_details ? failedMessage.error_message : '');
+                                    const codigo = failedMessage.error_code ? `Código ${failedMessage.error_code}` : '';
+                                    const linea = [tecnico, codigo].filter(Boolean).join(' · ');
+                                    return linea ? <p className="text-xs text-muted-foreground break-words">{linea}</p> : null;
+                                })()}
                             </div>
                         </div>
                     </div>
@@ -7348,7 +7381,9 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                             <div className="min-w-0 text-[12.5px] text-destructive">
                                                 <p className="font-semibold">No se pudo enviar{formatFullDateTime(messageInfo.failed_at) ? ` · ${formatFullDateTime(messageInfo.failed_at)}` : ''}</p>
                                                 <p className="leading-snug break-words">
-                                                    {messageInfo.error_details || messageInfo.error_message || 'WhatsApp no reportó un motivo específico.'}
+                                                    {messageInfo.failure_reason
+                                                        ? `${messageInfo.failure_reason.title}. ${messageInfo.failure_reason.action || ''}`.trim()
+                                                        : (messageInfo.error_details || messageInfo.error_message || 'WhatsApp no reportó un motivo específico.')}
                                                     {messageInfo.error_code ? ` (código ${messageInfo.error_code})` : ''}
                                                 </p>
                                             </div>
@@ -8218,6 +8253,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 </div>
                                             )}
 
+                                            {selectedTemplate && (
+                                                <CamposDeEncabezadoYBotones
+                                                    template={selectedTemplate}
+                                                    headerVars={templateHeaderVars}
+                                                    setHeaderVars={setTemplateHeaderVars}
+                                                    buttonVars={templateButtonVars}
+                                                    setButtonVars={setTemplateButtonVars}
+                                                />
+                                            )}
+
                                             {selectedTemplate && templateVars.length > 0 && (
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
@@ -8226,7 +8271,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                             key={i}
                                                             value={v}
                                                             onChange={e => setTemplateVars(prev => prev.map((x, j) => (j === i ? e.target.value : x)))}
-                                                            placeholder={`Variable {{${i + 1}}}`}
+                                                            placeholder={etiquetaDeVariable(selectedTemplate, i)}
                                                             className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                                         />
                                                     ))}
@@ -8622,6 +8667,81 @@ const RESUME_WINDOW_REASON_SUGGESTIONS = [
     'tu servicio de internet', 'tu instalación', 'tu factura', 'tu soporte técnico', 'tu cotización',
 ];
 
+/**
+ * Cómo se llama el hueco i-ésimo del cuerpo en el formulario. En una plantilla
+ * con nombre se enseña el nombre —«{{numero_factura}}»— y no «Variable {{2}}»,
+ * que no le dice al agente qué escribir.
+ */
+function etiquetaDeVariable(template, i) {
+    const nombre = templateVarNames(templateBodyComponent(template)?.text)[i];
+    return nombre && !/^\d+$/.test(nombre) ? `Dato {{${nombre}}}` : `Variable {{${i + 1}}}`;
+}
+
+/**
+ * Los datos de una plantilla que no están en el cuerpo: la variable del
+ * encabezado de texto y los botones que cambian en cada envío.
+ *
+ * El botón de código de una plantilla de autenticación no se pide aparte: es
+ * el mismo código del cuerpo, y `buildTemplateComponents()` lo copia solo.
+ */
+function CamposDeEncabezadoYBotones({ template, headerVars, setHeaderVars, buttonVars, setButtonVars }) {
+    const headerNames = templateHeaderVarNames(template);
+    const buttons = templateDynamicButtons(template);
+    if (headerNames.length === 0 && buttons.length === 0) return null;
+
+    const inputClass = 'w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30';
+    const headerText = (template?.components || []).find(c => c.type === 'HEADER')?.text || '';
+
+    return (
+        <div className="space-y-3">
+            {headerNames.length > 0 && (
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Encabezado</label>
+                    <p className="text-[11px] text-muted-foreground">{headerText}</p>
+                    {headerNames.map((name, i) => (
+                        <input
+                            key={name}
+                            value={headerVars[i] ?? ''}
+                            onChange={e => setHeaderVars(prev => headerNames.map((_, j) => (j === i ? e.target.value : (prev[j] ?? ''))))}
+                            placeholder={`Dato del encabezado {{${name}}}`}
+                            maxLength={60}
+                            className={inputClass}
+                        />
+                    ))}
+                </div>
+            )}
+
+            {buttons.length > 0 && (
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Botones</label>
+                    {buttons.map((b, i) => (
+                        b.otp ? (
+                            <p key={b.index} className="text-[11px] text-muted-foreground">
+                                El botón «{b.text}» copia el mismo código del mensaje.
+                            </p>
+                        ) : (
+                            <div key={b.index} className="space-y-1">
+                                <p className="text-[11px] text-muted-foreground">
+                                    {b.subType === 'copy_code'
+                                        ? <>Botón «{b.text}»: el código que el cliente copiará.</>
+                                        : <>Botón «{b.text}»: se completa el final del enlace <span className="break-all">{b.url}</span></>}
+                                </p>
+                                <input
+                                    value={buttonVars[i] ?? ''}
+                                    onChange={e => setButtonVars(prev => buttons.map((_, j) => (j === i ? e.target.value : (prev[j] ?? ''))))}
+                                    placeholder={b.subType === 'copy_code' ? 'Código' : 'Final del enlace'}
+                                    maxLength={b.subType === 'copy_code' ? 20 : undefined}
+                                    className={inputClass}
+                                />
+                            </div>
+                        )
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, windowClosedHint = false, contactName = '' }) {
     const [templates, setTemplates] = useState([]);
     const [rawTemplates, setRawTemplates] = useState([]); // sin filtrar por status: para saber si la plantilla de reanudación ya existe y en qué estado
@@ -8631,6 +8751,8 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     const [sending, setSending] = useState(false);
     const [selected, setSelected] = useState(null); // plantilla en modo "completar"
     const [vars, setVars] = useState([]);
+    const [headerVars, setHeaderVars] = useState([]);
+    const [buttonVars, setButtonVars] = useState([]);
     const [header, setHeader] = useState(null);
     const [autoPicked, setAutoPicked] = useState(false);
     const [resumeTemplateConfig, setResumeTemplateConfig] = useState(null); // { name, language } | null
@@ -8723,22 +8845,19 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
             (templateBodyComponent(t)?.text || '').toLowerCase().includes(q));
     }, [templates, search]);
 
-    const needsFill = (t) => {
-        const body = templateBodyComponent(t);
-        return countTemplateVars(body?.text) > 0 || !!templateHeaderFormat(t);
-    };
+    // Antes sólo contaban las variables del cuerpo y el encabezado multimedia:
+    // una plantilla con el encabezado «Tu factura de {{1}}» o con un botón de
+    // URL dinámica se mandaba directa al pulsarla, sin esos datos, y Meta la
+    // rechazaba.
+    const needsFill = (t) => templateNeedsFill(t);
 
-    async function sendTemplate(t, varsArr = [], hdr = null) {
+    async function sendTemplate(t, varsArr = [], hdr = null, hdrVars = [], btnVars = []) {
         setSending(true);
         setError(null);
         const body = templateBodyComponent(t);
-        const n = countTemplateVars(body?.text);
-        const components = [];
-        const headerComp = buildTemplateHeaderComponent(hdr);
-        if (headerComp) components.push(headerComp);
-        if (n > 0) {
-            components.push({ type: 'body', parameters: varsArr.slice(0, n).map(v => ({ type: 'text', text: v })) });
-        }
+        const components = buildTemplateComponents(t, {
+            header: hdr, headerVars: hdrVars, bodyVars: varsArr, buttonVars: btnVars,
+        });
         const preview = fillTemplate(body?.text, varsArr);
         try {
             const res = await axios.post(`/api/chat/conversations/${conversationId}/send-template`, {
@@ -8772,6 +8891,8 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
         // tenemos disponible y no tiene sentido pedírselo de nuevo al agente.
         const knownPrefill = t.name === RESUME_WINDOW_TEMPLATE_NAME ? { 0: contactName || '', ...prefill } : prefill;
         setVars(Array.from({ length: n }, (_, i) => knownPrefill[i] ?? ''));
+        setHeaderVars(templateHeaderVarNames(t).map(() => ''));
+        setButtonVars(templateDynamicButtons(t).map(() => ''));
         const fmt = templateHeaderFormat(t);
         setHeader(fmt
             ? { format: fmt, mediaId: '', filename: '', uploading: false, error: '', lat: '', lng: '', name: '', address: '' }
@@ -8794,15 +8915,14 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
     }
 
     function confirmSend() {
-        const body = templateBodyComponent(selected);
-        const n = countTemplateVars(body?.text);
-        if (vars.some((v, i) => i < n && !v.trim())) { setError('Completa todas las variables de la plantilla.'); return; }
+        const falta = missingTemplateValues(selected, { headerVars, bodyVars: vars, buttonVars });
+        if (falta) { setError(falta); return; }
         if (header) {
             if (header.format === 'LOCATION') {
                 if (!String(header.lat).trim() || !String(header.lng).trim()) { setError('Completa la latitud y longitud del encabezado.'); return; }
             } else if (!header.mediaId) { setError('Sube el archivo del encabezado de la plantilla.'); return; }
         }
-        sendTemplate(selected, vars, header);
+        sendTemplate(selected, vars, header, headerVars, buttonVars);
     }
 
     return (
@@ -9012,6 +9132,14 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                             </div>
                         )}
 
+                        <CamposDeEncabezadoYBotones
+                            template={selected}
+                            headerVars={headerVars}
+                            setHeaderVars={setHeaderVars}
+                            buttonVars={buttonVars}
+                            setButtonVars={setButtonVars}
+                        />
+
                         {vars.length > 0 && (
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block">Variables</label>
@@ -9025,7 +9153,7 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
                                                 placeholder={
                                                     selected?.name === RESUME_WINDOW_TEMPLATE_NAME
                                                         ? (i === 0 ? 'Nombre del cliente' : 'Motivo de la conversación')
-                                                        : `Variable {{${i + 1}}}`
+                                                        : etiquetaDeVariable(selected, i)
                                                 }
                                                 className="w-full rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                                             />
