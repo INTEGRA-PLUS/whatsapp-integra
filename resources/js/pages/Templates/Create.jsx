@@ -37,6 +37,8 @@ const LANGUAGES = [
     { code: 'de', label: 'Alemán' },
 ];
 
+const CATEGORY_LABEL = { MARKETING: 'Marketing', UTILITY: 'Utilidad', AUTHENTICATION: 'Autenticación' };
+
 const NAME_PATTERN = /^[a-z0-9_]+$/;
 const NAMED_VAR_PATTERN = /^[a-z][a-z0-9_]*$/;
 
@@ -54,19 +56,89 @@ const MEDIA_OPTIONS = [
     { value: 'LOCATION', label: 'Ubicación' },
 ];
 const MEDIA_UPLOAD_TYPES = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+// Lo que acepta la subida reanudable de Meta, que es por donde sale la muestra
+// del encabezado: jpeg, png, mp4 y pdf, nada más. Se ofrecía también
+// `video/3gpp`, que el selector dejaba elegir y Meta rechazaba después de
+// subirlo, con un error que no decía por qué.
 const MEDIA_ACCEPT = {
     IMAGE: 'image/jpeg,image/png',
-    VIDEO: 'video/mp4,video/3gpp',
+    VIDEO: 'video/mp4',
     DOCUMENT: 'application/pdf',
 };
+const MEDIA_MIME = {
+    IMAGE: ['image/jpeg', 'image/jpg', 'image/png'],
+    VIDEO: ['video/mp4'],
+    DOCUMENT: ['application/pdf'],
+};
+// Los límites de tamaño de Meta para cada tipo de archivo.
+const MEDIA_MAX_MB = { IMAGE: 5, VIDEO: 16, DOCUMENT: 100 };
+const MEDIA_LABEL = { IMAGE: 'JPG o PNG', VIDEO: 'MP4', DOCUMENT: 'PDF' };
 
 const MAX_BUTTONS = 10;
 const BUTTON_LIMITS = {
     PHONE_NUMBER: 1,
     URL: 2,
     COPY_CODE: 1,
-    OTP: 1,
 };
+
+/**
+ * Una plantilla de autenticación no tiene texto propio.
+ *
+ * Meta escribe el cuerpo («*123456* es tu código de verificación»), el aviso
+ * de seguridad y el pie con la caducidad, cada uno traducido al idioma de la
+ * plantilla. Lo único que se elige es si llevan aviso y caducidad, y cómo se
+ * entrega el código: un botón para copiarlo o el autocompletado en una app
+ * Android. El editor dejaba escribir un cuerpo libre y Meta lo rechazaba.
+ */
+function emptyAuth() {
+    return {
+        add_security_recommendation: true,
+        code_expiration_minutes: '10',
+        otp_type: 'COPY_CODE',
+        text: '',
+        autofill_text: '',
+        supported_apps: [{ package_name: '', signature_hash: '' }],
+        zero_tap_terms_accepted: false,
+    };
+}
+
+function authFromTemplate(template) {
+    const out = emptyAuth();
+    out.code_expiration_minutes = '';
+    out.add_security_recommendation = false;
+    for (const c of template?.components ?? []) {
+        if (c.type === 'BODY') {
+            out.add_security_recommendation = !!c.add_security_recommendation;
+        } else if (c.type === 'FOOTER' && c.code_expiration_minutes) {
+            out.code_expiration_minutes = String(c.code_expiration_minutes);
+        } else if (c.type === 'BUTTONS') {
+            const otp = (c.buttons ?? []).find(b => b.type === 'OTP');
+            if (otp) {
+                out.otp_type = otp.otp_type ?? 'COPY_CODE';
+                out.text = otp.text ?? '';
+                out.autofill_text = otp.autofill_text ?? '';
+                // Las plantillas viejas traían una sola app suelta en el botón.
+                const apps = otp.supported_apps?.length
+                    ? otp.supported_apps
+                    : (otp.package_name ? [{ package_name: otp.package_name, signature_hash: otp.signature_hash ?? '' }] : []);
+                out.supported_apps = apps.length
+                    ? apps.map(a => ({ package_name: a.package_name ?? '', signature_hash: a.signature_hash ?? '' }))
+                    : [{ package_name: '', signature_hash: '' }];
+                out.zero_tap_terms_accepted = !!otp.zero_tap_terms_accepted;
+            }
+        }
+    }
+    return out;
+}
+
+const PACKAGE_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
+const SIGNATURE_HASH_PATTERN = /^[a-zA-Z0-9+/=]{11}$/;
+const MAX_SUPPORTED_APPS = 5;
+
+// Lo que Meta no admite en el encabezado de texto: saltos de línea, emojis y
+// los caracteres de formato de WhatsApp.
+const EMOJI_PATTERN = /\p{Extended_Pictographic}/u;
+const FORMAT_CHARS_PATTERN = /[*_~`]/;
 
 const EMOJIS = [
     '😀', '😁', '😂', '🙂', '😉', '😍', '🤗', '🤔', '👍', '👏',
@@ -193,18 +265,29 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
     const isEdit = prefill.mode === 'edit';
     const familyName = prefill.family ?? '';
 
+    // La instancia sale de la URL. Si no viene, al editar o traducir no se
+    // toma la primera en silencio: una empresa con dos líneas tiene dos
+    // catálogos en Meta, y el id de la plantilla sólo existe en uno. Antes se
+    // caía a `instances[0]` y la plantilla «no cargaba» —o, peor, la traducción
+    // se creaba en la otra línea—. Con una sola instancia no hay duda posible;
+    // al crear, el selector está a la vista y la primera es sólo el punto de
+    // partida.
     const [instanceId, setInstanceId] = useState(() => {
         const fromQuery = parseInt(prefill.instance_id, 10);
-        return Number.isFinite(fromQuery) ? fromQuery : (instances[0]?.id ?? null);
+        if (Number.isFinite(fromQuery) && instances.some(i => i.id === fromQuery)) return fromQuery;
+        if (instances.length === 1) return instances[0].id;
+        if (isEdit || isTranslation) return null;
+        return instances[0]?.id ?? null;
     });
+    const faltaInstancia = (isEdit || isTranslation) && !instanceId;
 
     const [step, setStep] = useState(1);
     const [name, setName] = useState(isTranslation ? familyName : '');
     const [category, setCategory] = useState('UTILITY');
     const [language, setLanguage] = useState('');
-    const [allowCategoryChange, setAllowCategoryChange] = useState(false);
     const [parameterFormat, setParameterFormat] = useState('POSITIONAL');
     const [comps, setComps] = useState(emptyComponents);
+    const [auth, setAuth] = useState(emptyAuth);
     const [headerExamples, setHeaderExamples] = useState({});
     const [bodyExamples, setBodyExamples] = useState({});
     const [errors, setErrors] = useState({});
@@ -213,7 +296,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
     const [created, setCreated] = useState(null);
     const [usedLanguages, setUsedLanguages] = useState(() => new Set());
     const [familyVerifiedName, setFamilyVerifiedName] = useState(null);
-    const [loadingSource, setLoadingSource] = useState(isTranslation || isEdit);
+    const [loadingSource, setLoadingSource] = useState(false);
     // La plantilla tal como está en Meta, al editar. Su estado decide qué se
     // puede tocar: la categoría de una aprobada, por ejemplo, no.
     const [original, setOriginal] = useState(null);
@@ -224,14 +307,17 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
     // En modo traducción cargamos la familia desde Meta para bloquear idiomas
     // usados y prellenar el contenido con la plantilla de origen.
     useEffect(() => {
-        if (!isTranslation || !familyName) return;
+        if (!isTranslation || !familyName || !instanceId) return;
         let cancelled = false;
+        setLoadingSource(true);
         axios.get(`/api/templates/family/${encodeURIComponent(familyName)}`, {
             params: { instance_id: instanceId },
         })
             .then(({ data }) => {
                 if (cancelled) return;
-                const variants = data.data || [];
+                // Meta busca por `name` como «contiene»: pedir `pago` trae
+                // también `pago_recibido`, y sus idiomas se daban por usados.
+                const variants = (data.data || []).filter(v => v.name === familyName);
                 setUsedLanguages(new Set(variants.map(v => v.language)));
                 setFamilyVerifiedName(variants[0]?.verified_name ?? null);
                 const source = variants.find(v => String(v.id) === String(prefill.source_id))
@@ -240,6 +326,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                 if (source) {
                     setCategory(source.category ?? 'UTILITY');
                     setComps(componentsFromTemplate(source));
+                    if (source.category === 'AUTHENTICATION') setAuth(authFromTemplate(source));
                     const bodyText = source.components?.find(c => c.type === 'BODY')?.text ?? '';
                     if (detectVars(bodyText).some(t => !isNumeric(t))) {
                         setParameterFormat('NAMED');
@@ -252,12 +339,13 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             })
             .finally(() => !cancelled && setLoadingSource(false));
         return () => { cancelled = true; };
-    }, []);
+    }, [instanceId]);
 
     // Al editar se carga la plantilla entera, con sus ejemplos y su muestra.
     useEffect(() => {
-        if (!isEdit || !prefill.template_id) return;
+        if (!isEdit || !prefill.template_id || !instanceId) return;
         let cancelled = false;
+        setLoadingSource(true);
         axios.get(`/api/templates/${prefill.template_id}`, { params: { instance_id: instanceId } })
             .then(({ data }) => {
                 if (cancelled) return;
@@ -267,6 +355,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                 setLanguage(tpl.language ?? '');
                 setCategory(tpl.category ?? 'UTILITY');
                 setComps(componentsFromTemplate(tpl, { conservarMuestras: true }));
+                if (tpl.category === 'AUTHENTICATION') setAuth(authFromTemplate(tpl));
                 const textos = (tpl.components ?? []).map(c => c.text ?? '').join(' ');
                 setParameterFormat(
                     tpl.parameter_format
@@ -282,8 +371,9 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             })
             .finally(() => !cancelled && setLoadingSource(false));
         return () => { cancelled = true; };
-    }, []);
+    }, [instanceId]);
 
+    const isAuth = category === 'AUTHENTICATION';
     const editable = !isEdit || ['APPROVED', 'REJECTED', 'PAUSED'].includes(original?.status);
     const categoriaBloqueada = isTranslation || (isEdit && original?.status === 'APPROVED');
 
@@ -301,7 +391,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         ? comps.header.media
         : (comps.header.text.trim() ? 'TEXT' : 'NONE');
 
-    const previewModel = useMemo(() => formStateToModel(
+    const previewModel = useMemo(() => isAuth ? authPreviewModel(auth) : formStateToModel(
         {
             header: { type: headerType, text: comps.header.text },
             body: comps.body,
@@ -310,7 +400,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         },
         headerExamples,
         bodyExamples,
-    ), [comps, headerType, headerExamples, bodyExamples]);
+    ), [isAuth, auth, comps, headerType, headerExamples, bodyExamples]);
 
     function validateVarKind(tokens, fieldLabel) {
         if (parameterFormat === 'NAMED') {
@@ -341,15 +431,61 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         return e;
     }
 
-    function validateStep2() {
+    function validateAuth() {
         const e = {};
-        if (!comps.body.text.trim()) e.body = 'El cuerpo es obligatorio.';
-        if (comps.body.text.length > 1024) e.body = 'Máximo 1024 caracteres.';
+        const min = auth.code_expiration_minutes;
+        if (min !== '' && min !== null) {
+            const n = Number(min);
+            if (!Number.isInteger(n) || n < 1 || n > 90) {
+                e.auth_expiration = 'La caducidad va de 1 a 90 minutos.';
+            }
+        }
+        if (auth.text.length > 25) e.auth_text = 'Máximo 25 caracteres.';
+        if (auth.otp_type !== 'COPY_CODE') {
+            if (auth.autofill_text.length > 25) e.auth_autofill = 'Máximo 25 caracteres.';
+            const apps = auth.supported_apps;
+            if (!apps.length) e.auth_apps = 'Añade al menos una app Android.';
+            if (apps.length > MAX_SUPPORTED_APPS) e.auth_apps = `Meta admite como mucho ${MAX_SUPPORTED_APPS} apps.`;
+            apps.forEach((app, i) => {
+                if (!PACKAGE_NAME_PATTERN.test(app.package_name.trim()) || app.package_name.trim().length > 224) {
+                    e[`auth_app_${i}_package`] = 'Nombre de paquete inválido: al menos dos partes separadas por punto, cada una empezando por letra (com.tuempresa.app).';
+                }
+                if (!SIGNATURE_HASH_PATTERN.test(app.signature_hash.trim())) {
+                    e[`auth_app_${i}_hash`] = 'El hash de firma tiene exactamente 11 caracteres (letras, números, +, / o =).';
+                }
+            });
+            if (auth.otp_type === 'ZERO_TAP' && !auth.zero_tap_terms_accepted) {
+                e.auth_terms = 'Para el autocompletado sin toque hay que aceptar los términos de Meta.';
+            }
+        }
+        return e;
+    }
+
+    /**
+     * Lo que Meta rechaza al revisar la plantilla, comprobado antes de mandarla.
+     *
+     * Cada uno de estos llegaba como un (#100) o un rechazo horas después, con
+     * un mensaje en inglés que no decía qué tocar.
+     */
+    function validateStep2() {
+        if (isAuth) return validateAuth();
+
+        const e = {};
+        const body = comps.body.text;
+        if (!body.trim()) e.body = 'El cuerpo es obligatorio.';
+        if (body.length > 1024) e.body = 'Máximo 1024 caracteres.';
+        if (/^\s*\{\{[^}]*\}\}/.test(body)) e.body = 'El cuerpo no puede empezar con una variable: pon texto antes.';
+        else if (/\{\{[^}]*\}\}\s*$/.test(body)) e.body = 'El cuerpo no puede terminar con una variable: pon texto después (basta un punto).';
+        else if (/\}\}\s*\{\{/.test(body)) e.body = 'Dos variables no pueden ir seguidas: pon al menos una palabra entre ellas.';
         const bodyVarErr = validateVarKind(bodyVars, 'Cuerpo');
         if (bodyVarErr) e.body = bodyVarErr;
 
         if (headerType === 'TEXT') {
-            if (comps.header.text.length > 60) e.header = 'Máximo 60 caracteres.';
+            const ht = comps.header.text;
+            if (ht.length > 60) e.header = 'Máximo 60 caracteres.';
+            if (/[\r\n]/.test(ht)) e.header = 'El título no admite saltos de línea.';
+            else if (EMOJI_PATTERN.test(ht)) e.header = 'El título no admite emojis.';
+            else if (FORMAT_CHARS_PATTERN.test(ht)) e.header = 'El título no admite formato (*, _, ~ ni `).';
             if (headerVars.length > 1) e.header = 'El título admite máximo una variable.';
             const headerVarErr = validateVarKind(headerVars, 'Título');
             if (headerVarErr) e.header = headerVarErr;
@@ -373,14 +509,22 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         if (comps.footer.text.length > 60) e.footer = 'Máximo 60 caracteres.';
         if (comps.footer.text.includes('{{')) e.footer = 'El pie de página no admite variables.';
 
-        const counts = { PHONE_NUMBER: 0, URL: 0, COPY_CODE: 0, OTP: 0, QUICK_REPLY: 0 };
+        const counts = { PHONE_NUMBER: 0, URL: 0, COPY_CODE: 0, QUICK_REPLY: 0 };
         comps.buttons.forEach((b, i) => {
             counts[b.type] = (counts[b.type] ?? 0) + 1;
-            if (b.type !== 'OTP' && !b.text.trim()) e[`btn_${i}_text`] = 'Texto requerido.';
+            if (!b.text.trim()) e[`btn_${i}_text`] = 'Texto requerido.';
             if (b.type === 'URL') {
-                if (!b.url.trim()) e[`btn_${i}_url`] = 'URL requerida.';
-                const urlVars = detectVars(b.url);
-                if (urlVars.length > 1) e[`btn_${i}_url`] = 'La URL admite máximo una variable {{1}} al final.';
+                const url = b.url.trim();
+                if (!url) e[`btn_${i}_url`] = 'URL requerida.';
+                const urlVars = detectVars(url);
+                if (urlVars.length > 1) {
+                    e[`btn_${i}_url`] = 'La URL admite una sola variable, {{1}}, al final.';
+                } else if (urlVars.length === 1 && !/\{\{\s*1\s*\}\}$/.test(url)) {
+                    // Meta sólo deja variable el final de la URL: el dominio y
+                    // la ruta los revisa al aprobar, y no los puede revisar si
+                    // cambian en cada envío.
+                    e[`btn_${i}_url`] = 'La variable de la URL tiene que ser {{1}} y estar al final.';
+                }
                 if (urlVars.length === 1 && !b.url_example?.trim()) {
                     e[`btn_${i}_url_example`] = 'Provee un ejemplo de URL completa.';
                 }
@@ -393,8 +537,13 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                 e._buttons = `Meta solo permite ${max} botón${max > 1 ? 'es' : ''} de tipo ${type}.`;
             }
         });
-        if (category === 'AUTHENTICATION' && counts.OTP === 0) {
-            e._buttons = 'Las plantillas AUTHENTICATION requieren un botón OTP.';
+        // Las respuestas rápidas van juntas: Meta rechaza una lista que las
+        // mezcla con los de llamada a la acción (rápida, enlace, rápida).
+        const tipos = comps.buttons.map(b => b.type === 'QUICK_REPLY');
+        const primera = tipos.indexOf(true);
+        const ultima = tipos.lastIndexOf(true);
+        if (primera !== -1 && tipos.slice(primera, ultima + 1).some(v => !v)) {
+            e._buttons = 'Las respuestas rápidas tienen que ir seguidas, todas antes o todas después de los demás botones.';
         }
         return e;
     }
@@ -405,7 +554,31 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
         if (Object.keys(e).length === 0) setStep(2);
     }
 
+    function buildAuthComponents() {
+        const components = [
+            { type: 'BODY', add_security_recommendation: !!auth.add_security_recommendation },
+        ];
+        if (auth.code_expiration_minutes !== '' && auth.code_expiration_minutes !== null) {
+            components.push({ type: 'FOOTER', code_expiration_minutes: Number(auth.code_expiration_minutes) });
+        }
+        const otp = { type: 'OTP', otp_type: auth.otp_type };
+        if (auth.text.trim()) otp.text = auth.text.trim();
+        if (auth.otp_type !== 'COPY_CODE') {
+            if (auth.autofill_text.trim()) otp.autofill_text = auth.autofill_text.trim();
+            otp.supported_apps = auth.supported_apps.map(a => ({
+                package_name: a.package_name.trim(),
+                signature_hash: a.signature_hash.trim(),
+            }));
+        }
+        if (auth.otp_type === 'ZERO_TAP') otp.zero_tap_terms_accepted = !!auth.zero_tap_terms_accepted;
+        components.push({ type: 'BUTTONS', buttons: [otp] });
+        return components;
+    }
+
     function buildPayload() {
+        if (isAuth) {
+            return { instance_id: instanceId, name, language, category, components: buildAuthComponents() };
+        }
         const components = [];
 
         if (headerType === 'TEXT') {
@@ -442,8 +615,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             components.push({
                 type: 'BUTTONS',
                 buttons: comps.buttons.map(btn => {
-                    const out = { type: btn.type };
-                    if (btn.type !== 'OTP') out.text = btn.text;
+                    const out = { type: btn.type, text: btn.text };
                     if (btn.type === 'URL') {
                         out.url = btn.url;
                         if (detectVars(btn.url).length && btn.url_example?.trim()) {
@@ -453,13 +625,6 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                     if (btn.type === 'PHONE_NUMBER') out.phone_number = btn.phone_number;
                     if (btn.type === 'COPY_CODE' && btn.example?.trim()) {
                         out.example = [btn.example.trim()];
-                    }
-                    if (btn.type === 'OTP') {
-                        out.otp_type = btn.otp_type || 'COPY_CODE';
-                        if (btn.text?.trim()) out.text = btn.text;
-                        if (btn.autofill_text?.trim()) out.autofill_text = btn.autofill_text;
-                        if (btn.package_name?.trim()) out.package_name = btn.package_name;
-                        if (btn.signature_hash?.trim()) out.signature_hash = btn.signature_hash;
                     }
                     return out;
                 }),
@@ -471,7 +636,6 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             name,
             language,
             category,
-            allow_category_change: allowCategoryChange,
             parameter_format: parameterFormat,
             components,
         };
@@ -496,7 +660,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                 ? await axios.post(`/api/templates/${prefill.template_id}`, {
                     instance_id: payload.instance_id,
                     category: payload.category,
-                    parameter_format: payload.parameter_format,
+                    ...(payload.parameter_format ? { parameter_format: payload.parameter_format } : {}),
                     components: payload.components,
                 })
                 : await axios.post('/api/templates', payload);
@@ -506,6 +670,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                 instance: res.data.instance,
                 verified_in_meta: res.data.verified_in_meta,
                 editada: !!res.data.editada,
+                categoria_cambiada: res.data.categoria_cambiada ?? null,
             });
         } catch (err) {
             const resp = err?.response?.data;
@@ -544,6 +709,24 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
 
     async function handleHeaderFile(file) {
         if (!file) return;
+        // Se comprueba aquí y no después de subirlo: un video de 40 MB tardaba
+        // en subir para que Meta lo rechazara al final.
+        const media = comps.header.media;
+        const tipoMal = !(MEDIA_MIME[media] ?? []).includes((file.type || '').toLowerCase());
+        const maxMb = MEDIA_MAX_MB[media];
+        const grande = maxMb && file.size > maxMb * 1024 * 1024;
+        if (tipoMal || grande) {
+            setComps(p => ({
+                ...p,
+                header: {
+                    ...p.header, handle: '', fileName: '', uploading: false,
+                    mediaError: tipoMal
+                        ? `Meta solo acepta ${MEDIA_LABEL[media]} para este encabezado.`
+                        : `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)} MB y Meta admite hasta ${maxMb} MB.`,
+                },
+            }));
+            return;
+        }
         setComps(p => ({ ...p, header: { ...p.header, uploading: true, mediaError: '', handle: '', fileName: file.name } }));
         try {
             const fd = new FormData();
@@ -601,7 +784,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
             ...p,
             buttons: [...p.buttons, {
                 type: 'QUICK_REPLY', text: '', url: '', url_example: '', phone_number: '',
-                example: '', otp_type: 'COPY_CODE', autofill_text: '', package_name: '', signature_hash: '',
+                example: '',
             }],
         }));
     }
@@ -659,6 +842,10 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                                 </div>
                             )}
 
+                            {faltaInstancia && (
+                                <ElegirInstancia instances={instances} onElegir={setInstanceId} isEdit={isEdit} />
+                            )}
+
                             {loadingSource && (
                                 <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">
                                     <Loader2 className="size-4 animate-spin" /> {isEdit ? 'Cargando la plantilla…' : 'Cargando plantilla de origen…'}
@@ -698,7 +885,7 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                                 </div>
                             )}
 
-                            {step === 1 && (
+                            {!faltaInstancia && step === 1 && (
                                 <StepConfig
                                     isTranslation={isTranslation}
                                     isEdit={isEdit}
@@ -713,13 +900,15 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                                     language={language}
                                     setLanguage={setLanguage}
                                     usedLanguages={usedLanguages}
-                                    allowCategoryChange={allowCategoryChange}
-                                    setAllowCategoryChange={setAllowCategoryChange}
                                     errors={errors}
                                 />
                             )}
 
-                            {step === 2 && (
+                            {!faltaInstancia && step === 2 && isAuth && (
+                                <AuthContent auth={auth} setAuth={setAuth} errors={errors} />
+                            )}
+
+                            {!faltaInstancia && step === 2 && !isAuth && (
                                 <StepContent
                                     comps={comps}
                                     setComps={setComps}
@@ -784,9 +973,9 @@ export default function TemplatesCreate({ instances = [], prefill = {} }) {
                                 </Button>
                             )}
                             {step === 1 ? (
-                                <Button type="button" onClick={goNext}>Siguiente</Button>
+                                <Button type="button" onClick={goNext} disabled={faltaInstancia}>Siguiente</Button>
                             ) : (
-                                <Button type="button" onClick={handleSubmit} disabled={submitting || !comps.body.text.trim() || !editable} className="gap-2">
+                                <Button type="button" onClick={handleSubmit} disabled={submitting || (!isAuth && !comps.body.text.trim()) || !editable} className="gap-2">
                                     {submitting && <Loader2 className="size-4 animate-spin" />}
                                     {isEdit ? 'Guardar y enviar a revisión' : 'Enviar para revisión'}
                                 </Button>
@@ -866,7 +1055,7 @@ function CounterInput({ value, onChange, maxLength, placeholder, disabled }) {
 function StepConfig({
     isTranslation, isEdit = false, categoriaBloqueada = false, instances, instanceId, setInstanceId,
     name, setName, category, setCategory, language, setLanguage,
-    usedLanguages, allowCategoryChange, setAllowCategoryChange, errors,
+    usedLanguages, errors,
 }) {
     return (
         <div className="rounded-xl border bg-card p-5 space-y-5">
@@ -966,16 +1155,19 @@ function StepConfig({
                 </div>
             )}
 
+            {/* Antes había aquí una casilla «Permitir que Meta reclasifique la
+                categoría». Desde abril de 2025 Meta ya no la mira: revisa la
+                categoría de todas y la cambia cuando no cuadra con el texto,
+                se marque o no. La casilla prometía un control que no existe. */}
             {!isTranslation && !isEdit && (
-                <label className="flex items-center gap-2 text-sm text-foreground">
-                    <input
-                        type="checkbox"
-                        checked={allowCategoryChange}
-                        onChange={e => setAllowCategoryChange(e.target.checked)}
-                        className="size-4 rounded border-input"
-                    />
-                    Permitir que Meta reclasifique la categoría si no coincide con el contenido
-                </label>
+                <div className="flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <Info className="size-3.5 mt-0.5 shrink-0" />
+                    <span>
+                        Meta revisa la categoría y puede cambiarla si no coincide con el contenido; por ejemplo, un
+                        aviso con tono de promoción pasa a <strong className="text-foreground">Marketing</strong>, que
+                        cuesta más por mensaje. Si lo hace, te lo diremos al enviarla.
+                    </span>
+                </div>
             )}
         </div>
     );
@@ -1044,7 +1236,7 @@ function StepContent({
                 {MEDIA_UPLOAD_TYPES.includes(comps.header.media) && (
                     <div className="space-y-1.5 rounded-md border bg-muted/20 p-3">
                         <p className="text-xs text-muted-foreground">
-                            Sube un archivo de muestra ({comps.header.media === 'IMAGE' ? 'JPG/PNG' : comps.header.media === 'VIDEO' ? 'MP4' : 'PDF'}).
+                            Sube un archivo de muestra ({MEDIA_LABEL[comps.header.media]}, hasta {MEDIA_MAX_MB[comps.header.media]} MB).
                         </p>
                         <input
                             type="file"
@@ -1076,7 +1268,7 @@ function StepContent({
 
                 {/* Título */}
                 <div className="space-y-1.5">
-                    <FieldLabel optional hint="Encabezado de texto del mensaje. Máximo 60 caracteres y una variable. No disponible si elegiste contenido multimedia.">
+                    <FieldLabel optional hint="Encabezado de texto del mensaje. Máximo 60 caracteres y una variable, sin emojis, saltos de línea ni formato. No disponible si elegiste contenido multimedia.">
                         Título
                     </FieldLabel>
                     <CounterInput
@@ -1223,7 +1415,7 @@ function StepContent({
                     <div>
                         <h2 className="text-base font-semibold text-foreground">Botones <span className="text-xs font-normal text-muted-foreground">· Opcional</span></h2>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            Máx. 1 teléfono · 2 URL · 1 copiar código · 1 OTP. AUTHENTICATION requiere OTP.
+                            Máx. 1 teléfono · 2 URL · 1 copiar código. Las respuestas rápidas van seguidas.
                         </p>
                     </div>
                     <Button type="button" variant="outline" size="sm" onClick={addButton} disabled={comps.buttons.length >= MAX_BUTTONS} className="gap-1">
@@ -1252,29 +1444,15 @@ function StepContent({
                                     <option value="URL">Ir al sitio web</option>
                                     <option value="PHONE_NUMBER">Llamar</option>
                                     <option value="COPY_CODE">Copiar código</option>
-                                    <option value="OTP">OTP (autenticación)</option>
                                 </select>
-                                {btn.type !== 'OTP' && (
-                                    <input
-                                        type="text"
-                                        value={btn.text}
-                                        onChange={e => updateButton(i, { text: e.target.value })}
-                                        placeholder="Texto del botón"
-                                        maxLength={25}
-                                        className="flex-1 h-8 rounded-md border border-input bg-card px-2 text-xs"
-                                    />
-                                )}
-                                {btn.type === 'OTP' && (
-                                    <select
-                                        value={btn.otp_type || 'COPY_CODE'}
-                                        onChange={e => updateButton(i, { otp_type: e.target.value })}
-                                        className="flex-1 h-8 rounded-md border border-input bg-card px-2 text-xs"
-                                    >
-                                        <option value="COPY_CODE">COPY_CODE</option>
-                                        <option value="ONE_TAP">ONE_TAP</option>
-                                        <option value="ZERO_TAP">ZERO_TAP</option>
-                                    </select>
-                                )}
+                                <input
+                                    type="text"
+                                    value={btn.text}
+                                    onChange={e => updateButton(i, { text: e.target.value })}
+                                    placeholder="Texto del botón"
+                                    maxLength={25}
+                                    className="flex-1 h-8 rounded-md border border-input bg-card px-2 text-xs"
+                                />
                                 <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(i)} className="text-destructive hover:bg-destructive/10">
                                     <Trash2 className="size-3.5" />
                                 </Button>
@@ -1333,35 +1511,261 @@ function StepContent({
                                 </>
                             )}
 
-                            {btn.type === 'OTP' && (btn.otp_type === 'ONE_TAP' || btn.otp_type === 'ZERO_TAP') && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    <input
-                                        type="text"
-                                        value={btn.package_name || ''}
-                                        onChange={e => updateButton(i, { package_name: e.target.value })}
-                                        placeholder="package_name (com.tu.app)"
-                                        className="h-8 rounded-md border border-input bg-card px-2 text-xs"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={btn.signature_hash || ''}
-                                        onChange={e => updateButton(i, { signature_hash: e.target.value })}
-                                        placeholder="signature_hash"
-                                        className="h-8 rounded-md border border-input bg-card px-2 text-xs"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={btn.autofill_text || ''}
-                                        onChange={e => updateButton(i, { autofill_text: e.target.value })}
-                                        placeholder="autofill_text (opcional)"
-                                        maxLength={25}
-                                        className="h-8 rounded-md border border-input bg-card px-2 text-xs sm:col-span-2"
-                                    />
-                                </div>
-                            )}
                         </div>
                     );
                 })}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Lo que verá el cliente, aproximado: Meta pone el texto en el idioma de la
+ * plantilla, así que esto es la versión en español.
+ */
+function authPreviewModel(auth) {
+    let body = '*123456* es tu código de verificación.';
+    if (auth.add_security_recommendation) body += ' Por tu seguridad, no lo compartas.';
+    const min = Number(auth.code_expiration_minutes);
+    const label = auth.otp_type === 'COPY_CODE'
+        ? (auth.text.trim() || 'Copiar código')
+        : (auth.autofill_text.trim() || 'Autocompletar');
+    return {
+        header: null,
+        body: { text: body },
+        footer: auth.code_expiration_minutes !== '' && Number.isInteger(min) && min > 0
+            ? { text: `Este código caduca en ${min} ${min === 1 ? 'minuto' : 'minutos'}.` }
+            : null,
+        buttons: [{ type: 'COPY_CODE', text: label }],
+    };
+}
+
+/**
+ * La instancia, cuando la URL no la dice y hay más de una.
+ *
+ * El id de una plantilla sólo existe en el catálogo de su línea: buscarlo en
+ * otra devuelve «no existe» y parecía que la plantilla se había perdido.
+ */
+function ElegirInstancia({ instances, onElegir, isEdit }) {
+    const [elegida, setElegida] = useState(instances[0]?.id ?? null);
+    return (
+        <div className="rounded-xl border bg-card p-5 space-y-3">
+            <div>
+                <h2 className="text-base font-semibold text-foreground">¿En qué línea está la plantilla?</h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                    {isEdit
+                        ? 'Cada línea tiene su propio catálogo en Meta. Elige la línea donde está la plantilla que quieres editar.'
+                        : 'Cada línea tiene su propio catálogo en Meta. Elige la línea donde está la plantilla que quieres traducir.'}
+                </p>
+            </div>
+            <select
+                value={elegida ?? ''}
+                onChange={e => setElegida(Number(e.target.value) || null)}
+                className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
+            >
+                {instances.map(i => (
+                    <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                ))}
+            </select>
+            <div className="flex justify-end">
+                <Button type="button" onClick={() => elegida && onElegir(elegida)} disabled={!elegida}>
+                    Continuar
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+const OTP_TYPES = [
+    {
+        value: 'COPY_CODE',
+        label: 'Copiar código',
+        desc: 'El mensaje trae un botón que copia el código; el cliente lo pega en tu web o app.',
+    },
+    {
+        value: 'ONE_TAP',
+        label: 'Autocompletar con un toque',
+        desc: 'En Android, el botón rellena el código en tu app. Necesita el paquete y el hash de firma de la app.',
+    },
+    {
+        value: 'ZERO_TAP',
+        label: 'Autocompletar sin toque',
+        desc: 'En Android, la app recibe el código sola, sin que el cliente toque nada. Si no puede, cae en un toque o en copiar.',
+    },
+];
+
+function AuthContent({ auth, setAuth, errors }) {
+    const set = patch => setAuth(p => ({ ...p, ...patch }));
+    const setApp = (i, patch) => setAuth(p => ({
+        ...p,
+        supported_apps: p.supported_apps.map((a, idx) => idx === i ? { ...a, ...patch } : a),
+    }));
+    const conApp = auth.otp_type !== 'COPY_CODE';
+
+    return (
+        <div className="space-y-5">
+            <div className="rounded-xl border bg-card p-5 space-y-5">
+                <div>
+                    <h2 className="text-base font-semibold text-foreground">Contenido del código</h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        En las plantillas de autenticación el texto lo pone Meta, traducido al idioma de la plantilla:
+                        «<span className="text-foreground">*123456* es tu código de verificación.</span>» No lleva
+                        encabezado ni otros botones. Aquí se elige lo que se le añade y cómo se entrega el código.
+                    </p>
+                </div>
+
+                <label className="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                        type="checkbox"
+                        checked={auth.add_security_recommendation}
+                        onChange={e => set({ add_security_recommendation: e.target.checked })}
+                        className="mt-0.5 size-4 rounded border-input"
+                    />
+                    <span>
+                        Añadir el aviso de seguridad
+                        <span className="block text-xs text-muted-foreground">«Por tu seguridad, no lo compartas.»</span>
+                    </span>
+                </label>
+
+                <div className="space-y-1.5 max-w-xs">
+                    <FieldLabel optional hint="Meta añade un pie con «Este código caduca en N minutos». Entre 1 y 90. Vacío, sin pie.">
+                        Caducidad del código (minutos)
+                    </FieldLabel>
+                    <input
+                        type="number"
+                        min={1}
+                        max={90}
+                        value={auth.code_expiration_minutes}
+                        onChange={e => set({ code_expiration_minutes: e.target.value })}
+                        placeholder="10"
+                        className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    />
+                    {errors.auth_expiration && <p className="text-xs text-destructive">{errors.auth_expiration}</p>}
+                </div>
+            </div>
+
+            <div className="rounded-xl border bg-card p-5 space-y-4">
+                <div>
+                    <h2 className="text-base font-semibold text-foreground">Botón del código</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">Meta admite un único botón de código.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {OTP_TYPES.map(t => {
+                        const active = auth.otp_type === t.value;
+                        return (
+                            <button
+                                key={t.value}
+                                type="button"
+                                onClick={() => set({ otp_type: t.value })}
+                                className={`rounded-lg border p-3 text-left transition-colors ${
+                                    active ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:border-primary/40'
+                                }`}
+                            >
+                                <div className="text-sm font-medium text-foreground">{t.label}</div>
+                                <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{t.desc}</div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                        <FieldLabel optional hint="Si lo dejas vacío, Meta pone «Copiar código» en el idioma de la plantilla.">
+                            Texto del botón de copiar
+                        </FieldLabel>
+                        <CounterInput value={auth.text} onChange={e => set({ text: e.target.value })} maxLength={25} placeholder="Copiar código" />
+                        {errors.auth_text && <p className="text-xs text-destructive">{errors.auth_text}</p>}
+                    </div>
+                    {conApp && (
+                        <div className="space-y-1.5">
+                            <FieldLabel optional hint="Si lo dejas vacío, Meta pone «Autocompletar» en el idioma de la plantilla.">
+                                Texto del botón de autocompletar
+                            </FieldLabel>
+                            <CounterInput value={auth.autofill_text} onChange={e => set({ autofill_text: e.target.value })} maxLength={25} placeholder="Autocompletar" />
+                            {errors.auth_autofill && <p className="text-xs text-destructive">{errors.auth_autofill}</p>}
+                        </div>
+                    )}
+                </div>
+
+                {conApp && (
+                    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                            <div>
+                                <p className="text-xs font-medium text-foreground">Apps Android que reciben el código</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                    El paquete (com.tuempresa.app) y el hash de firma de 11 caracteres. Hasta {MAX_SUPPORTED_APPS} apps.
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1 shrink-0"
+                                disabled={auth.supported_apps.length >= MAX_SUPPORTED_APPS}
+                                onClick={() => set({ supported_apps: [...auth.supported_apps, { package_name: '', signature_hash: '' }] })}
+                            >
+                                <Plus className="size-3.5" /> App
+                            </Button>
+                        </div>
+                        {auth.supported_apps.map((app, i) => (
+                            <div key={i} className="space-y-1">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={app.package_name}
+                                        onChange={e => setApp(i, { package_name: e.target.value })}
+                                        placeholder="com.tuempresa.app"
+                                        maxLength={224}
+                                        className="flex-1 h-8 rounded-md border border-input bg-card px-2 text-xs font-mono"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={app.signature_hash}
+                                        onChange={e => setApp(i, { signature_hash: e.target.value })}
+                                        placeholder="K8a/AINcGX7"
+                                        maxLength={11}
+                                        className="w-36 h-8 rounded-md border border-input bg-card px-2 text-xs font-mono"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        disabled={auth.supported_apps.length <= 1}
+                                        onClick={() => set({ supported_apps: auth.supported_apps.filter((_, idx) => idx !== i) })}
+                                        className="text-destructive hover:bg-destructive/10"
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </Button>
+                                </div>
+                                {errors[`auth_app_${i}_package`] && <p className="text-xs text-destructive">{errors[`auth_app_${i}_package`]}</p>}
+                                {errors[`auth_app_${i}_hash`] && <p className="text-xs text-destructive">{errors[`auth_app_${i}_hash`]}</p>}
+                            </div>
+                        ))}
+                        {errors.auth_apps && <p className="text-xs text-destructive">{errors.auth_apps}</p>}
+                    </div>
+                )}
+
+                {auth.otp_type === 'ZERO_TAP' && (
+                    <div className="space-y-1">
+                        <label className="flex items-start gap-2 text-sm text-foreground">
+                            <input
+                                type="checkbox"
+                                checked={auth.zero_tap_terms_accepted}
+                                onChange={e => set({ zero_tap_terms_accepted: e.target.checked })}
+                                className="mt-0.5 size-4 rounded border-input"
+                            />
+                            <span>
+                                Acepto los términos de Meta para el autocompletado sin toque
+                                <span className="block text-xs text-muted-foreground">
+                                    El cliente no ve el mensaje antes de que la app use el código: la empresa se hace
+                                    responsable de que sepa que lo va a recibir así.
+                                </span>
+                            </span>
+                        </label>
+                        {errors.auth_terms && <p className="text-xs text-destructive">{errors.auth_terms}</p>}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -1406,6 +1810,32 @@ function CreatedScreen({ created }) {
                             </p>
                         </div>
                     </div>
+
+                    {/* Meta decide la categoría por su cuenta y la cambia sin
+                        preguntar. Si la sube a marketing, cada envío cuesta más
+                        —y en una plantilla de facturas, que sale a diario, se
+                        nota en la factura de Meta antes que en ningún otro
+                        sitio—. Hay que decirlo aquí, que es el único momento en
+                        que alguien está mirando. */}
+                    {created.categoria_cambiada && (
+                        <div className="flex gap-2.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs">
+                            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" />
+                            <div className="space-y-1 text-muted-foreground">
+                                <p className="font-semibold text-foreground">
+                                    Meta la puso en otra categoría: pediste {CATEGORY_LABEL[created.categoria_cambiada.pedida] ?? created.categoria_cambiada.pedida} y
+                                    la dejó como {CATEGORY_LABEL[created.categoria_cambiada.asignada] ?? created.categoria_cambiada.asignada}.
+                                </p>
+                                {created.categoria_cambiada.asignada === 'MARKETING' ? (
+                                    <p>
+                                        Los mensajes de marketing <strong className="text-foreground">cuestan más</strong> que los de
+                                        utilidad. Si es un aviso de cuenta, quita del texto lo que suene a promoción y créala de nuevo.
+                                    </p>
+                                ) : (
+                                    <p>Se cobrará y revisará con la categoría que puso Meta.</p>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
                         <div className="flex justify-between gap-3">
