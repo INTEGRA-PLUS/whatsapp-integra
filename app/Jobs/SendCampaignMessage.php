@@ -245,9 +245,10 @@ class SendCampaignMessage implements ShouldQueue
             'error_details'   => null,
         ]);
 
-        // TODO(estados-adelantados): igual que en DeliverWhatsAppMessage, aquí
-        // engancha el método estático de WhatsAppWebhookController que aplica
-        // los acuses que llegaron antes que este wamid (otro cambio).
+        // Meta puede mandar el "delivered"/"read"/"failed" antes de que se
+        // guarde el wamid: el webhook lo deja aparcado (EstadosDeMensaje) y se
+        // aplica aquí, ya con la burbuja en "sent", para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message'    => $content,

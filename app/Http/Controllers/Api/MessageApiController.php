@@ -875,9 +875,10 @@ class MessageApiController extends Controller
                 'template_id' => $request->template_id,
             ]);
 
-            // TODO(estados-adelantados): aquí, justo tras guardar el wamid, va
-            // la llamada al método estático de WhatsAppWebhookController que
-            // aplica los acuses llegados antes que la burbuja (otro cambio).
+            // Meta puede mandar el "delivered"/"read"/"failed" antes de que se
+            // guarde el wamid: el webhook lo deja aparcado (EstadosDeMensaje) y se
+            // aplica aquí, ya con la burbuja en "sent", para que no se pierda.
+            \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
             $conversation->update([
                 'last_message' => $preview ?? "[Plantilla: $templateName]",

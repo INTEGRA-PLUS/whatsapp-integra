@@ -181,12 +181,10 @@ class DeliverWhatsAppMessage implements ShouldQueue
             'sent_at'  => $message->sent_at ?: now(),
         ]);
 
-        // TODO(estados-adelantados): Meta puede mandar el webhook de
-        // "delivered"/"read"/"failed" antes de que la línea de arriba guarde el
-        // wamid; ese estado no encuentra la burbuja y se pierde. El arreglo vive
-        // en WhatsAppWebhookController (lo hace otro cambio): cuando exista el
-        // método estático que aplica los estados guardados para un wamid,
-        // llamarlo aquí, justo después de guardar el wamid y antes del broadcast.
+        // Meta puede mandar el "delivered"/"read"/"failed" antes de que se
+        // guarde el wamid: el webhook lo deja aparcado (EstadosDeMensaje) y se
+        // aplica aquí, ya con la burbuja en "sent", para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         // Las plantillas con header multimedia guardan una copia en nuestro S3
         // para que el archivo quede visible en el chat (no solo el texto). Va
