@@ -509,7 +509,9 @@ class WhatsAppCampaignController extends Controller
             return response()->json(['templates' => [], 'error' => 'La línea no tiene WhatsApp Business conectado.']);
         }
 
-        $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, ['limit' => 200]);
+        // Todas las páginas: con sólo la primera, una plantilla aprobada de
+        // la segunda no se podía elegir para la campaña.
+        $result = $this->metaService->listAllTemplates($instance->waba_id, $instance->access_token, ['limit' => 200]);
 
         if (! ($result['success'] ?? false)) {
             return response()->json([

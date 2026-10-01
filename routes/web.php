@@ -452,8 +452,10 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.view');
         Route::get('/analytics/conversations', [TemplateController::class, 'conversationAnalytics'])
             ->middleware('permission:templates.view');
+        // Cambia la configuración del WABA en Meta (`is_enabled_for_insights`):
+        // es una escritura, no se puede colgar del permiso de ver.
         Route::post('/analytics/enable', [TemplateController::class, 'enableInsights'])
-            ->middleware('permission:templates.view');
+            ->middleware('permission:templates.update');
         Route::get('/defaults', [TemplateController::class, 'defaults'])
             ->middleware('permission:templates.view');
         Route::post('/defaults/{key}/sync', [TemplateController::class, 'syncDefault'])
@@ -468,6 +470,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/{templateId}', [TemplateController::class, 'update'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.update');
+        Route::delete('/{templateId}', [TemplateController::class, 'destroy'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.delete');
         Route::post('/upload-media', [TemplateController::class, 'uploadMedia'])
             ->middleware('permission:templates.create');
         Route::post('/', [TemplateController::class, 'store'])
