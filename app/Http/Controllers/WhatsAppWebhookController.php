@@ -887,6 +887,13 @@ class WhatsAppWebhookController extends Controller
             $this->applyCustomerNumberChange($instance, $conversation, $message['system'] ?? []);
         }
 
+        // La captura de un pago queda leída y pendiente de que un asesor la
+        // apruebe. Aquí sólo se encola: la visión tarda segundos y el webhook
+        // tiene que contestarle a Meta ya.
+        if (\App\Jobs\LeerComprobanteDePago::aplica($savedMessage, $instance->company_id)) {
+            \App\Jobs\LeerComprobanteDePago::dispatch($savedMessage->id);
+        }
+
         // Tiempo real: empuja el mensaje entrante a los agentes conectados. Si
         // Reverb no responde el mensaje ya está guardado, así que solo se avisa
         // (el poll del chat lo recogerá igual).

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\IntegraClient;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -11,6 +12,7 @@ class CompanyIntegration extends Model
     use HasFactory;
 
     public const KEY_INVOICE_PAYMENTS = 'invoice_payments';
+
     public const KEY_CONTACTS_SYNC = 'contacts_sync';
 
     /**
@@ -73,7 +75,9 @@ class CompanyIntegration extends Model
      * de lo que la plataforma permite.
      */
     public const AI_READ = 'leer';
+
     public const AI_TICKETS = 'radicados';
+
     public const AI_PAYMENTS = 'pagos';
 
     public const AI_PERMISSIONS = [self::AI_READ, self::AI_TICKETS, self::AI_PAYMENTS];
@@ -107,16 +111,16 @@ class CompanyIntegration extends Model
     ];
 
     protected $casts = [
-        'account'          => 'array',
-        'abilities'        => 'array',
-        'settings'         => 'array',
-        'enabled'          => 'boolean',
+        'account' => 'array',
+        'abilities' => 'array',
+        'settings' => 'array',
+        'enabled' => 'boolean',
         'emit_electronic_invoice' => 'boolean',
-        'access_token'     => 'encrypted',
+        'access_token' => 'encrypted',
         'token_expires_at' => 'datetime',
-        'connected_at'     => 'datetime',
-        'last_synced_at'   => 'datetime',
-        'sync_status'      => 'array',
+        'connected_at' => 'datetime',
+        'last_synced_at' => 'datetime',
+        'sync_status' => 'array',
     ];
 
     // Nunca exponer el token al frontend.
@@ -162,6 +166,29 @@ class CompanyIntegration extends Model
     }
 
     /**
+     * ¿Se leen las capturas de pago que lleguen por WhatsApp?
+     *
+     * Vive en `settings` de la fila de pagos porque sin esa integración no hay
+     * dónde aprobarlas. Nace apagado: cada foto que entra cuesta una llamada al
+     * modelo de visión, sea o no un comprobante.
+     */
+    public function leeComprobantes(): bool
+    {
+        return $this->key === self::KEY_INVOICE_PAYMENTS
+            && $this->enabled
+            && $this->isConnected()
+            && (bool) ($this->settings['leer_comprobantes'] ?? false);
+    }
+
+    public static function leeComprobantesDe(int $companyId): bool
+    {
+        return (bool) self::where('company_id', $companyId)
+            ->where('key', self::KEY_INVOICE_PAYMENTS)
+            ->first()
+            ?->leeComprobantes();
+    }
+
+    /**
      * El token descifrado, o null si esta fila ya no se puede leer.
      *
      * El cast `encrypted` lanza `DecryptException` cuando la fila se cifró con
@@ -179,7 +206,7 @@ class CompanyIntegration extends Model
     {
         try {
             return $this->access_token;
-        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+        } catch (DecryptException $e) {
             return null;
         }
     }
@@ -227,7 +254,8 @@ class CompanyIntegration extends Model
         if (! $this->trigger_command) {
             return null;
         }
-        return $this->triggerPrefix() . $this->trigger_command;
+
+        return $this->triggerPrefix().$this->trigger_command;
     }
 
     /** ¿Esta empresa tiene la IA encendida? */

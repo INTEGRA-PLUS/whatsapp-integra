@@ -781,12 +781,12 @@ class IntegraClient
      * @return array { ingreso_id, recibo_caja, monto_aplicado, factura_estado, factura_por_pagar }
      * @throws \RuntimeException
      */
-    public function registerPayment(int $facturaId, array $payload): array
+    public function registerPayment(int $facturaId, array $payload, ?int $timeout = null): array
     {
         $res = $this->call('post', "/api/v1/facturas/{$facturaId}/pagos", array_filter(
             $payload,
             fn ($v) => $v !== null && $v !== ''
-        ));
+        ), $timeout);
 
         return $res->json('data') ?? [];
     }

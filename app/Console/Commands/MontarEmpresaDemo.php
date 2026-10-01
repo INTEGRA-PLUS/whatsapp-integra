@@ -945,6 +945,7 @@ class MontarEmpresaDemo extends Command
                 ->whereIn('whatsapp_conversation_id', $conversaciones)
                 ->delete();
 
+            \App\Models\ComprobanteDePago::whereIn('conversation_id', $conversaciones)->delete();
             WhatsAppConversation::whereIn('id', $conversaciones)->delete();
 
             $campanas = WhatsAppCampaign::where('company_id', $company->id)->pluck('id');

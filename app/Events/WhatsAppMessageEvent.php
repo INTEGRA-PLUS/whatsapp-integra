@@ -90,6 +90,11 @@ class WhatsAppMessageEvent implements ShouldBroadcastNow
                 'sent_by' => $m->sent_by,
                 'sender' => $m->sender ? ['id' => $m->sender->id, 'name' => $m->sender->name] : null,
                 'created_at' => $m->created_at?->toIso8601String(),
+                // Sólo cuando se cargó: un "edited" sin la relación no debe
+                // borrar la tarjeta del comprobante que ya está en pantalla.
+                ...($m->relationLoaded('comprobanteDePago')
+                    ? ['comprobante_de_pago' => $m->comprobanteDePago?->toArray()]
+                    : []),
             ],
         ];
     }
