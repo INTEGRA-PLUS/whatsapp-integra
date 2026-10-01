@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     BarChart3,
     Send,
@@ -11,7 +12,6 @@ import {
     MousePointerClick,
     Loader2,
     RefreshCw,
-    ArrowLeft,
     Inbox,
     AlertTriangle,
     Calendar,
@@ -149,47 +149,28 @@ export default function TemplatesAnalytics({ instances = [] }) {
         <>
             <Head title="Analítica de plantillas" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                {/* HERO */}
-                <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 lg:p-8">
-                    <div className="absolute -top-12 -right-12 size-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-                    <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                        <div className="flex items-center gap-4">
-                            <div className="size-14 rounded-2xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
-                                <BarChart3 className="size-7" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl lg:text-3xl font-semibold text-foreground tracking-tight">
-                                    Analítica de plantillas
-                                </h1>
-                                <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-                                    Mide envíos, entregas, lecturas y clics por plantilla en el período seleccionado.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Link href={route('templates.index')}>
-                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
-                                    <ArrowLeft className="size-4" /> Volver
-                                </Button>
-                            </Link>
-                            {instances.length > 1 && (
-                                <select
-                                    value={instanceId ?? ''}
-                                    onChange={e => setInstanceId(Number(e.target.value) || null)}
-                                    className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                >
-                                    {instances.map(i => (
-                                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
-                                    ))}
-                                </select>
-                            )}
-                            <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
-                                {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                                Actualizar
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={BarChart3}
+                    volver={route('templates.index')}
+                    titulo="Analítica de plantillas"
+                    descripcion="Mide envíos, entregas, lecturas y clics por plantilla en el período seleccionado."
+                >
+                    {instances.length > 1 && (
+                        <select
+                            value={instanceId ?? ''}
+                            onChange={e => setInstanceId(Number(e.target.value) || null)}
+                            className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        >
+                            {instances.map(i => (
+                                <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                            ))}
+                        </select>
+                    )}
+                    <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
+                        {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Actualizar
+                    </Button>
+                </CabeceraModulo>
 
                 {/* Top tabs */}
                 <div className="flex gap-1 border-b">

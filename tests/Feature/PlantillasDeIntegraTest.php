@@ -185,6 +185,72 @@ class PlantillasDeIntegraTest extends TestCase
             ->assertStatus(404);
     }
 
+    /**
+     * La vista previa saluda con el nombre de quien mira.
+     *
+     * `example.body_text` es lo que se le manda a Meta para que revise la
+     * plantilla, y ahí hay un valor fijo —«MEGASTORE»—. La pantalla leía ese
+     * mismo ejemplo, así que toda empresa abría «Plantillas por defecto» y veía
+     * un mensaje que saludaba a otra, bajo un encabezado que decía «Tu negocio».
+     *
+     * @test
+     */
+    public function la_vista_previa_usa_el_nombre_de_la_empresa(): void
+    {
+        $user = $this->admin();
+        $this->conIntegra($user->company_id);
+
+        $respuesta = $this->actingAs($user)->getJson('/api/templates/defaults')->assertOk();
+
+        $respuesta->assertJsonPath('negocio', $user->company->name);
+
+        $cuerpo = collect($respuesta->json('data.facturacion.components'))->firstWhere('type', 'BODY');
+
+        $this->assertSame(
+            $user->company->name,
+            $cuerpo['example']['body_text'][0][1],
+            'El {{2}} de facturación es el negocio: tiene que ser el suyo.'
+        );
+    }
+
+    /**
+     * Pero a Meta se le sigue mandando el ejemplo del catálogo.
+     *
+     * Cambiarlo empresa por empresa sería cambiar la plantilla que se crea, y el
+     * ejemplo existe para que Meta la revise, no para que la lea el cliente.
+     *
+     * @test
+     */
+    public function a_meta_se_le_manda_el_ejemplo_del_catalogo(): void
+    {
+        $user = $this->admin();
+        $this->conIntegra($user->company_id);
+        $instancia = $this->instancia($user->company_id);
+
+        Http::fake([
+            '*/debug_token*' => Http::response(['data' => ['app_id' => '865904982715022']], 200),
+            '*/uploads*' => Http::response(['id' => 'upload:123'], 200),
+            '*upload:123*' => Http::response(['h' => 'HANDLE'], 200),
+            '*/message_templates*' => Http::response(['id' => '999', 'status' => 'PENDING'], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/templates/defaults/facturacion/sync', ['instance_id' => $instancia->id])
+            ->assertStatus(201);
+
+        $delCatalogo = config('whatsapp_default_templates.facturacion.components.1.example.body_text.0.1');
+
+        Http::assertSent(function ($request) use ($delCatalogo) {
+            if (! str_contains($request->url(), 'message_templates')) {
+                return false;
+            }
+
+            $cuerpo = collect($request['components'])->firstWhere('type', 'BODY');
+
+            return ($cuerpo['example']['body_text'][0][1] ?? null) === $delCatalogo;
+        });
+    }
+
     private function conIntegra(int $companyId): void
     {
         CompanyIntegration::create([

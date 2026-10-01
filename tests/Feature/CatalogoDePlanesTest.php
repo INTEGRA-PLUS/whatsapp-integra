@@ -41,10 +41,8 @@ class CatalogoDePlanesTest extends TestCase
     }
 
     /**
-     * Al cliente de Integra se le dice que su CRM ya está pagado.
-     *
-     * Sin eso, ver «Pro $59» cuando llevas dos años sin pagarlo se lee como una
-     * subida de precio.
+     * Al cliente de Integra se le dice que su Básico ya está pagado. Lo que le
+     * costaría subir lo cubre `PlanIncluidoEnIntegraTest`.
      *
      * @test
      */

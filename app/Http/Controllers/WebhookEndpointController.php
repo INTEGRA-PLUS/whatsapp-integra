@@ -3,12 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\DeliverWebhook;
-use App\Models\WebhookEndpoint;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
+use App\Models\Company;
 use App\Models\CompanyIntegration;
 use App\Models\Instance;
+use App\Services\LineaDeEnvioEnIntegra;
+use App\Models\WebhookEndpoint;
+use App\Services\IntegraClient;
+use App\Services\MetaWhatsAppService;
 use App\Support\IntegrationProvider;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class WebhookEndpointController extends Controller
@@ -27,14 +32,55 @@ class WebhookEndpointController extends Controller
     public function index()
     {
         return Inertia::render('Integrations/Index', [
-            'webhooks'      => $this->companyWebhooks()->get(),
-            'eventCatalog'  => config('webhooks.events', []),
+            'webhooks' => $this->companyWebhooks()->get(),
+            'eventCatalog' => config('webhooks.events', []),
             // El catálogo de proveedores conectables. Viaja desde el backend
             // para que añadir uno nuevo no exija tocar también el frontend.
-            'providers'     => IntegrationProvider::forDisplay(),
-            'lineasDelErp'  => $this->lineasDelErp(),
-            'lineaElegida'  => auth()->user()->company->tieneLineaDelErpElegida(),
+            'providers' => IntegrationProvider::forDisplay(),
+            'lineasDelErp' => $this->lineasDelErp(),
+            'lineaElegida' => auth()->user()->company->tieneLineaDelErpElegida(),
+            'credencialApagada' => $this->credencialApagada(),
         ]);
+    }
+
+    /**
+     * La última línea por la que entró el ERP, si hoy está apagada.
+     *
+     * Elegir la línea aquí vale «aunque el software siga entrando con la
+     * credencial de siempre»… mientras esa credencial sea de una instancia
+     * activa. El API sólo acepta activas, así que si se apaga la instancia con
+     * la que el ERP se autentica, cada factura recibe un 401 y el panel seguía
+     * prometiendo que no había que tocar nada del otro lado.
+     *
+     * Pasó con Nac Technology el 23-sep-2026: al reconectar el número, Meta le
+     * dio un `phone_number_id` y un WABA nuevos, la instancia vieja quedó
+     * apagada doce segundos después de su último uso, y el ERP seguía
+     * configurado con el identificador viejo. La lista de líneas sólo enseña
+     * las activas, así que la credencial del ERP no aparecía en ninguna parte.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function credencialApagada(): ?array
+    {
+        $ultima = Instance::where('company_id', auth()->user()->company_id)
+            ->whereNotNull('api_last_seen_at')
+            ->orderByDesc('api_last_seen_at')
+            ->first(['id', 'name', 'active', 'phone_number_id', 'display_phone_number', 'api_last_seen_at', 'api_last_seen_via', 'updated_at']);
+
+        if (! $ultima || $ultima->active) {
+            return null;
+        }
+
+        return [
+            'nombre' => $ultima->name,
+            'numero' => $ultima->display_phone_number,
+            'phone_number_id' => $ultima->phone_number_id,
+            'ultima_vez' => $ultima->api_last_seen_at->toIso8601String(),
+            'credencial' => $ultima->api_last_seen_via,
+            // Aproximado: `updated_at` es el último cambio de la instancia, y
+            // apagarla suele ser el último. Basta para saber desde cuándo.
+            'apagada_desde' => $ultima->updated_at?->toIso8601String(),
+        ];
     }
 
     /**
@@ -69,6 +115,12 @@ class WebhookEndpointController extends Controller
             'plantilla_factura_id' => 'nullable|integer',
             'plantilla_tirilla_id' => 'nullable|integer',
             'plantilla_contrato_id' => 'nullable|integer',
+            // Elegir una plantilla aprobada en Meta que Integra aún no conoce:
+            // se registra allí primero y se elige con el id que devuelva.
+            'registrar' => 'nullable|array',
+            'registrar.uso' => 'required_with:registrar|in:factura,tirilla,contrato',
+            'registrar.nombre' => 'required_with:registrar|string|max:512',
+            'registrar.idioma' => 'required_with:registrar|string|max:20',
         ]);
 
         $cliente = $this->clienteDeIntegra();
@@ -77,13 +129,50 @@ class WebhookEndpointController extends Controller
             return response()->json(['message' => 'Integra no está conectado.'], 422);
         }
 
+        $registrada = null;
+
+        if (! empty($validado['registrar'])) {
+            $pedida = $validado['registrar'];
+            unset($validado['registrar']);
+
+            // El contenido se toma de Meta, no del navegador: lo que se registra
+            // en Integra tiene que ser exactamente lo que Meta aprobó, o el
+            // número de variables no cuadra y Meta rechaza cada envío.
+            $linea = auth()->user()->company->instanciaDelErp();
+            $catalogo = $linea ? $this->catalogoAprobadoDe($linea) : null;
+
+            if ($catalogo === null) {
+                return response()->json(['message' => 'No se pudo leer el catálogo de Meta de la línea. Inténtalo en un minuto.'], 502);
+            }
+
+            $plantilla = collect($catalogo)->first(fn ($p) => ($p['name'] ?? '') === $pedida['nombre']
+                && ($p['language'] ?? '') === $pedida['idioma']);
+
+            if (! $plantilla) {
+                return response()->json(['message' => "{$pedida['nombre']} ({$pedida['idioma']}) no está aprobada en la línea por la que envía Integra."], 422);
+            }
+
+            $alta = $cliente->registrarPlantilla($this->paraRegistrar($plantilla));
+
+            if (! $alta['ok']) {
+                return response()->json(['message' => $this->avisoDeAjustes($alta)], 422);
+            }
+
+            $registrada = (int) $alta['datos']['id'];
+            $validado["plantilla_{$pedida['uso']}_id"] = $registrada;
+        }
+
         $res = $cliente->guardarAjustesDeEnvio($validado);
 
         if (! $res['ok']) {
             return response()->json(['message' => $this->avisoDeAjustes($res)], 422);
         }
 
-        return response()->json(['ok' => true] + $this->contrastadoConLaLinea($res['datos']));
+        // Guardar no devuelve la lista de disponibles; tras registrar una
+        // plantilla nueva se vuelve a leer para que aparezca en el desplegable.
+        $datos = $registrada ? (($cliente->ajustesDeEnvio()['datos'] ?? null) ?: $res['datos']) : $res['datos'];
+
+        return response()->json(['ok' => true, 'registrada' => $registrada] + $this->contrastadoConLaLinea($datos));
     }
 
     /**
@@ -159,7 +248,7 @@ class WebhookEndpointController extends Controller
             return null;
         }
 
-        $res = app(\App\Services\MetaWhatsAppService::class)
+        $res = app(MetaWhatsAppService::class)
             ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
 
         if (! ($res['success'] ?? false)) {
@@ -210,7 +299,7 @@ class WebhookEndpointController extends Controller
     }
 
     /** La conexión con Integra de esta empresa, si está conectada. */
-    private function clienteDeIntegra(): ?\App\Services\IntegraClient
+    private function clienteDeIntegra(): ?IntegraClient
     {
         $integracion = CompanyIntegration::where('company_id', auth()->user()->company_id)
             ->whereIn('key', IntegrationProvider::find(IntegrationProvider::INTEGRA)['legacy_keys'] ?? [])
@@ -233,7 +322,7 @@ class WebhookEndpointController extends Controller
      *
      * @return list<string>
      */
-    private function plantillasQueFaltan(\App\Models\Company $company, int $nuevaId): array
+    private function plantillasQueFaltan(Company $company, int $nuevaId): array
     {
         $actual = $company->instanciaDelErp();
         $nueva = Instance::find($nuevaId);
@@ -265,11 +354,27 @@ class WebhookEndpointController extends Controller
      */
     private function aprobadasDe(Instance $linea): ?array
     {
+        $catalogo = $this->catalogoAprobadoDe($linea);
+
+        if ($catalogo === null) {
+            return null;
+        }
+
+        return array_map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''], $catalogo);
+    }
+
+    /**
+     * Las plantillas aprobadas de una línea, tal cual las devuelve Meta.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function catalogoAprobadoDe(Instance $linea): ?array
+    {
         if (empty($linea->waba_id) || empty($linea->access_token)) {
             return null;
         }
 
-        $res = app(\App\Services\MetaWhatsAppService::class)
+        $res = app(MetaWhatsAppService::class)
             ->listTemplates($linea->waba_id, $linea->access_token, ['limit' => 200]);
 
         if (! ($res['success'] ?? false)) {
@@ -279,9 +384,30 @@ class WebhookEndpointController extends Controller
         return collect($res['data']['data'] ?? [])
             ->where('status', 'APPROVED')
             ->reject(fn ($p) => in_array($p['name'] ?? '', self::PLANTILLAS_DE_MUESTRA, true))
-            ->map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''])
             ->values()
             ->all();
+    }
+
+    /**
+     * Lo que Integra necesita para dar de alta una plantilla aprobada en Meta.
+     *
+     * @param  array<string, mixed>  $plantilla
+     * @return array{nombre: string, idioma: string, categoria: string, con_documento: bool, encabezado: ?string, texto: string}
+     */
+    private function paraRegistrar(array $plantilla): array
+    {
+        $componentes = collect($plantilla['components'] ?? []);
+        $encabezado = $componentes->first(fn ($c) => strtoupper($c['type'] ?? '') === 'HEADER');
+        $formato = $encabezado ? strtoupper($encabezado['format'] ?? 'TEXT') : null;
+
+        return [
+            'nombre' => $plantilla['name'] ?? '',
+            'idioma' => $plantilla['language'] ?? '',
+            'categoria' => $plantilla['category'] ?? 'UTILITY',
+            'con_documento' => $formato === 'DOCUMENT',
+            'encabezado' => $formato,
+            'texto' => $componentes->first(fn ($c) => strtoupper($c['type'] ?? '') === 'BODY')['text'] ?? '',
+        ];
     }
 
     /**
@@ -316,11 +442,13 @@ class WebhookEndpointController extends Controller
             'numero' => $linea->display_phone_number,
         ];
 
-        $aprobadas = $this->aprobadasDe($linea);
+        $catalogo = $this->catalogoAprobadoDe($linea);
 
-        if ($aprobadas === null || ! isset($datos['disponibles'])) {
+        if ($catalogo === null || ! isset($datos['disponibles'])) {
             return $datos;
         }
+
+        $aprobadas = array_map(fn ($p) => ['nombre' => $p['name'] ?? '', 'idioma' => $p['language'] ?? ''], $catalogo);
 
         $datos['disponibles'] = array_map(function ($plantilla) use ($aprobadas) {
             $nombre = $plantilla['title'] ?? '';
@@ -334,6 +462,23 @@ class WebhookEndpointController extends Controller
 
             return $plantilla;
         }, $datos['disponibles']);
+
+        // Y al revés: lo que la línea tiene aprobado e Integra no conoce. El
+        // desplegable sólo ofrecía lo registrado en Integra, así que una
+        // plantilla aprobada en Meta con otro nombre —`facturacion` donde
+        // Integra tenía `facturas`— no se podía elegir desde ninguna parte, y
+        // la pantalla de Plantillas la enseñaba aprobada. Nac Technology,
+        // 24-sep-2026. Se ofrecen aquí y se registran en Integra al elegirlas.
+        $enIntegra = collect($datos['disponibles'])
+            ->map(fn ($p) => ($p['title'] ?? '').'|'.($p['language'] ?? ''))
+            ->all();
+
+        $datos['solo_en_meta'] = collect($catalogo)
+            ->reject(fn ($p) => in_array(($p['name'] ?? '').'|'.($p['language'] ?? ''), $enIntegra, true))
+            ->map(fn ($p) => $this->paraRegistrar($p))
+            ->sortBy('nombre')
+            ->values()
+            ->all();
 
         return $datos;
     }
@@ -447,6 +592,14 @@ class WebhookEndpointController extends Controller
             ? 'Listo: el ERP enviará por esa línea a partir del próximo envío.'
             : 'Se quitó la elección: el ERP volverá a usar la primera línea activa.';
 
+        // La elección también se escribe en Integra. Guardarla sólo aquí servía
+        // mientras el ERP entrara con la credencial de una línea viva; si esa
+        // línea se apagaba, cada factura recibía un 401 y había que ir a pegar
+        // la credencial nueva a mano (Nac Technology, 23-sep-2026).
+        if ($instanceId !== null && ($sincronia = $this->sincronizarLineaEnIntegra($instanceId)) !== null) {
+            $aviso .= ' '.$sincronia;
+        }
+
         if ($request->expectsJson()) {
             return response()->json(['ok' => true, 'message' => $aviso]);
         }
@@ -467,6 +620,34 @@ class WebhookEndpointController extends Controller
      *
      * @param  list<string>  $faltan
      */
+    /**
+     * Deja en Integra la línea elegida como la que envía. Devuelve la frase que
+     * se suma al aviso, o null si no hay Integra conectado (no es un error: es
+     * una empresa que no lo usa).
+     */
+    private function sincronizarLineaEnIntegra(int $instanceId): ?string
+    {
+        $linea = Instance::where('id', $instanceId)
+            ->where('company_id', auth()->user()->company_id)
+            ->first();
+
+        if (! $linea) {
+            return null;
+        }
+
+        $res = app(LineaDeEnvioEnIntegra::class)($linea);
+
+        if ($res['sin_conexion'] ?? false) {
+            return null;
+        }
+
+        // Va detrás de «Listo: el ERP enviará por esa línea…», así que el fallo
+        // se dice como un «pero» y no como una frase suelta.
+        return $res['ok']
+            ? 'Integra ya quedó configurado para enviar por ella.'
+            : 'Pero '.lcfirst($res['mensaje']);
+    }
+
     private function rechazarLinea(Request $request, string $motivo, array $faltan = [])
     {
         if ($request->expectsJson()) {
@@ -489,11 +670,11 @@ class WebhookEndpointController extends Controller
 
         $webhook = WebhookEndpoint::create([
             'company_id' => $companyId,
-            'name'       => $validated['name'],
-            'url'        => $validated['url'],
-            'events'     => $validated['events'],
-            'headers'    => $validated['headers'] ?? null,
-            'active'     => $validated['active'] ?? true,
+            'name' => $validated['name'],
+            'url' => $validated['url'],
+            'events' => $validated['events'],
+            'headers' => $validated['headers'] ?? null,
+            'active' => $validated['active'] ?? true,
             'created_by' => auth()->id(),
         ]);
 
@@ -527,10 +708,10 @@ class WebhookEndpointController extends Controller
         $this->authorizeOwnership($webhook);
 
         DeliverWebhook::dispatch($webhook->id, 'webhook.test', [
-            'event'      => 'webhook.test',
+            'event' => 'webhook.test',
             'company_id' => $webhook->company_id,
-            'sent_at'    => now()->toIso8601String(),
-            'data'       => [
+            'sent_at' => now()->toIso8601String(),
+            'data' => [
                 'message' => 'Este es un evento de prueba desde tu plataforma WhatsApp.',
             ],
         ]);
@@ -591,8 +772,8 @@ class WebhookEndpointController extends Controller
                 'ok' => $response->successful(),
                 'status_code' => $code,
                 'says' => $response->successful()
-                    ? 'Tu servidor recibió el evento de prueba (HTTP ' . $code . ').'
-                    : 'Tu servidor respondió HTTP ' . $code . ' y no aceptó el evento.',
+                    ? 'Tu servidor recibió el evento de prueba (HTTP '.$code.').'
+                    : 'Tu servidor respondió HTTP '.$code.' y no aceptó el evento.',
                 'fix' => $response->successful() ? null : WebhookEndpoint::hintForStatus($code),
             ]);
         } catch (\Throwable $e) {
@@ -617,12 +798,12 @@ class WebhookEndpointController extends Controller
         $validEvents = array_keys(config('webhooks.events', []));
 
         return $request->validate([
-            'name'       => "$rule|string|max:100",
-            'url'        => "$rule|url|max:2048",
-            'events'     => "$rule|array|min:1",
-            'events.*'   => 'string|in:' . implode(',', $validEvents),
-            'headers'    => 'nullable|array',
-            'active'     => 'boolean',
+            'name' => "$rule|string|max:100",
+            'url' => "$rule|url|max:2048",
+            'events' => "$rule|array|min:1",
+            'events.*' => 'string|in:'.implode(',', $validEvents),
+            'headers' => 'nullable|array',
+            'active' => 'boolean',
         ]);
     }
 

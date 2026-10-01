@@ -38,7 +38,7 @@ class CobrarDelMes extends Command
             $this->warn('No hay a quién cobrarle este mes.');
             $this->line('Es lo esperado: casi toda la base llegó con Integra y el CRM va dentro');
             $this->line('de lo que ya paga por el ERP. Empiezan a aparecer aquí el día que');
-            $this->line('contratan el complemento de IA, que es la venta que se busca.');
+            $this->line('contratan el complemento de IA o suben del Básico, que es la venta que se busca.');
         } else {
             $this->table(
                 ['Empresa', 'Plan CRM', 'IA', 'Concepto', 'Contactos', 'Agentes', 'USD/mes', 'Aviso'],
@@ -49,7 +49,11 @@ class CobrarDelMes extends Command
                     // Decirlo aquí evita que quien factura se pregunte por qué
                     // este cliente paga menos que el de al lado: su CRM va
                     // dentro del ERP y aquí sólo se le cobra el complemento.
-                    $f['solo_ia'] ? 'sólo IA' : 'CRM + IA',
+                    match (true) {
+                        $f['solo_ia'] => 'sólo IA',
+                        ($f['diferencia_crm'] ?? 0) > 0 => 'diferencia de plan',
+                        default => 'CRM + IA',
+                    },
                     number_format($f['contactos_reales']),
                     $f['agentes_reales'],
                     $f['usd'] ? '$'.$f['usd'] : 'sin plan',

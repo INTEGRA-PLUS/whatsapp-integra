@@ -176,6 +176,118 @@ class InstanceHealthCheckTest extends TestCase
         $this->assertStringContainsString('Instagram', (string) $instance->health_error);
     }
 
+    /**
+     * Conectado no es lo mismo que poder enviar.
+     *
+     * Una cuenta sana a la que se le venció la tarjeta del portafolio responde
+     * a todo y no entrega nada. El medio de pago no se puede leer —Meta le
+     * niega `primary_funding_id` a quien no es BSP— pero sí la consecuencia, y
+     * llega antes de que empiecen a rebotar las facturas.
+     *
+     * @test
+     */
+    public function una_cuenta_bloqueada_para_enviar_se_marca_y_dice_quien_falla(): void
+    {
+        $this->fakeConSalud('BLOCKED', [
+            ['entity_type' => 'WABA', 'can_send_message' => 'AVAILABLE'],
+            ['entity_type' => 'BUSINESS', 'can_send_message' => 'BLOCKED', 'errors' => [
+                ['description' => 'El método de pago no es válido'],
+            ]],
+        ]);
+
+        $instance = $this->instancia();
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $instance->refresh();
+
+        $this->assertSame('ok', $instance->health_status, 'La conexión está bien: lo que falla es el envío.');
+        $this->assertSame('BLOCKED', $instance->puede_enviar);
+        $this->assertStringContainsString('El portafolio del negocio', $instance->puede_enviar_motivo);
+        $this->assertStringContainsString('método de pago', $instance->puede_enviar_motivo);
+        $this->assertNotNull($instance->puede_enviar_visto_at);
+    }
+
+    /** Y cuando todo está disponible, queda dicho que sí puede. */
+    public function test_una_cuenta_sana_queda_marcada_como_que_puede_enviar(): void
+    {
+        $this->fakeConSalud('AVAILABLE', [
+            ['entity_type' => 'WABA', 'can_send_message' => 'AVAILABLE'],
+            ['entity_type' => 'BUSINESS', 'can_send_message' => 'AVAILABLE'],
+        ]);
+
+        $instance = $this->instancia();
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $this->assertSame('AVAILABLE', $instance->refresh()->puede_enviar);
+        $this->assertNull($instance->puede_enviar_motivo);
+    }
+
+    /**
+     * El aviso de bloqueo tampoco se repite cada día.
+     *
+     * Es la misma razón que el de caída: una alarma diaria por algo que ya se
+     * sabe se aprende a ignorar, y con ella se ignoran las que sí son nuevas.
+     *
+     * @test
+     */
+    public function el_aviso_de_bloqueo_no_se_repite(): void
+    {
+        Notification::fake();
+
+        $this->fakeConSalud('BLOCKED', [
+            ['entity_type' => 'BUSINESS', 'can_send_message' => 'BLOCKED'],
+        ]);
+
+        $instance = $this->instancia();
+        $this->admin($instance->company_id);
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+        Notification::assertSentTimes(SystemNotification::class, 1);
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+        Notification::assertSentTimes(SystemNotification::class, 1);
+    }
+
+    /**
+     * Si Meta no contesta por la salud, no se inventa un bloqueo.
+     *
+     * Pintar «no puede enviar» porque una consulta falló sería mandar a un
+     * cliente a revisar su tarjeta por nada.
+     *
+     * @test
+     */
+    public function sin_respuesta_de_meta_no_se_inventa_un_bloqueo(): void
+    {
+        Http::fake([
+            '*health_status*' => Http::response(['error' => ['message' => 'nope']], 400),
+            '*' => Http::response(['id' => '123'], 200),
+        ]);
+
+        $instance = $this->instancia();
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $this->assertSame('ok', $instance->refresh()->health_status);
+        $this->assertNull($instance->puede_enviar);
+    }
+
+    /** Respuestas de Meta: el número vivo y la salud que se le pida. */
+    private function fakeConSalud(string $general, array $entidades): void
+    {
+        Http::fake(function ($request) use ($general, $entidades) {
+            if (str_contains(urldecode($request->url()), 'health_status')) {
+                return Http::response(['health_status' => [
+                    'can_send_message' => $general,
+                    'entities' => $entidades,
+                ]], 200);
+            }
+
+            return Http::response(['id' => '123', 'display_phone_number' => '+57 300'], 200);
+        });
+    }
+
     private function instanciaDeInstagram(array $extra = []): Instance
     {
         return $this->instancia(array_merge([

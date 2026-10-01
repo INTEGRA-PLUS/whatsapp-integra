@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wifi, AlertTriangle, PowerOff, Power, KeyRound, Copy, Check, Gauge, Layers, CheckCircle2, Link2, ArrowRight, X, Settings, RefreshCw, Loader2, Lock } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import axios from 'axios';
 import EmbeddedSignupButton from '@/components/EmbeddedSignupButton';
 import ConectarInstagramButton from '@/components/ConectarInstagramButton';
 import ConectarMessengerButton from '@/components/ConectarMessengerButton';
-import { LogoCanal, EtiquetaCanal } from '@/components/logo-canal';
+import { LogoCanal, EtiquetaCanal, canalDe } from '@/components/logo-canal';
 import CoexistenceSyncCard from '@/components/CoexistenceSyncCard';
 
-export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false }) {
+export default function InstancesIndex({ instances, coexistenceSyncs = [], instagramDisponible = false, messengerDisponible = false, integra = null, cupos = null }) {
+    const permisos = usePage().props.auth?.user?.permissions ?? [];
+    const puedeSincronizar = permisos.includes('integrations.create');
     const [showCreate, setShowCreate] = useState(false);
     const [editingInstance, setEditingInstance] = useState(null);
     // El token recién creado. Vive sólo en memoria y sólo hasta cerrar el aviso:
@@ -106,14 +109,76 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
         setEditingInstance(instance);
     }
 
+    const resumen = {
+        total: instances.length,
+        activas: instances.filter(i => estadoDe(i).clave === 'activa').length,
+        conProblemas: instances.filter(i => ['sin-conexion', 'no-envia', 'sin-pago'].includes(estadoDe(i).clave)).length,
+        inactivas: instances.filter(i => !i.active).length,
+    };
+
     return (
         <>
             <Head title="Instancias" />
-            <div className="flex flex-col gap-6 p-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Instancias</h1>
-                        <p className="text-sm text-muted-foreground mt-1">Gestiona tus conexiones con la API de Meta</p>
+            <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 p-4 sm:p-6">
+                <CabeceraModulo
+                    icono={Settings}
+                    titulo="Instancias"
+                    descripcion="Tus números de WhatsApp y cuentas de Instagram y Messenger conectados al CRM."
+                />
+
+                {instances.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <Cifra icono={Layers} etiqueta="Conectadas" valor={resumen.total} />
+                        <Cifra icono={CheckCircle2} etiqueta="Funcionando" valor={resumen.activas} tono="success" />
+                        <Cifra icono={AlertTriangle} etiqueta="Con problemas" valor={resumen.conProblemas} tono={resumen.conProblemas > 0 ? 'warning' : null} />
+                        <Cifra icono={PowerOff} etiqueta="Desconectadas" valor={resumen.inactivas} />
+                    </div>
+                )}
+
+                {/* Conectar con Facebook es el camino normal; "Nueva
+                    Instancia" queda como respaldo para pegar los datos a
+                    mano si la ventana de Meta falla o el entorno no la
+                    tiene configurada. Van en su propio panel y no en la
+                    cabecera: en fila junto al título eran seis botones que no
+                    partían línea y en el móvil se salían de la pantalla. */}
+                <section className="relative overflow-hidden rounded-2xl border bg-card p-4 shadow-xs sm:p-5">
+                    <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-primary/15 blur-3xl" />
+                    <div className="relative flex flex-col gap-4">
+                        <div className="flex items-start gap-3">
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                                <Link2 className="size-5" />
+                            </span>
+                            <div className="min-w-0">
+                                <h2 className="text-base font-bold text-foreground">Conectar un canal</h2>
+                                <p className="text-sm text-muted-foreground">
+                                    Inicia sesión con Meta y el número queda listo para enviar y recibir.
+                                </p>
+                            </div>
+                        </div>
+                        {cupos && <CuposDelPlan cupos={cupos} />}
+
+                        {/* Un canal sin cupo no ofrece su botón: abrir la ventana
+                            de Meta para que al volver el servidor diga «no» es
+                            hacer pasar al cliente por la autorización entera para
+                            nada. En su lugar va el porqué y qué hacer. */}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
+                            {cupos?.whatsapp?.puede === false ? (
+                                <CanalSinCupo canal="whatsapp" motivo={cupos.whatsapp.motivo} />
+                            ) : (
+                                <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs', 'cupos'] })} />
+                            )}
+                            {cupos?.instagram?.puede === false
+                                ? (instagramDisponible && <CanalSinCupo canal="instagram" motivo={cupos.instagram.motivo} />)
+                                : <ConectarInstagramButton disponible={instagramDisponible} />}
+                            {cupos?.messenger?.puede === false
+                                ? (messengerDisponible && <CanalSinCupo canal="messenger" motivo={cupos.messenger.motivo} />)
+                                : <ConectarMessengerButton disponible={messengerDisponible} />}
+                            {cupos?.whatsapp?.puede !== false && (
+                                <Button variant="ghost" onClick={() => setShowCreate(true)} className="gap-2 text-muted-foreground">
+                                    <Plus className="size-4" /> Añadir a mano
+                                </Button>
+                            )}
+                        </div>
                         {/* El tope de 250 mensajes al día es lo que más trae a
                             esta pantalla después de conectar, y el error de Meta
                             —«Spam Rate limit hit»— manda a buscar por el lado
@@ -121,163 +186,44 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                             de que llamen. */}
                         <Link
                             href="/instances/guia-limites-whatsapp"
-                            className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-foreground hover:underline"
+                            className="group flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm transition-colors hover:bg-warning/15"
                         >
-                            <Gauge className="size-3.5" />
-                            ¿Tus mensajes salen como «Fallido»? Sube el límite de WhatsApp
+                            <Gauge className="size-4 shrink-0 text-warning" />
+                            <span className="min-w-0 flex-1 text-foreground">
+                                <span className="font-semibold">¿Tus mensajes salen como «Fallido»?</span>{' '}
+                                <span className="text-muted-foreground">Así se sube el límite diario de WhatsApp.</span>
+                            </span>
+                            <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                         </Link>
                     </div>
-                    {/* Conectar con Facebook es el camino normal; "Nueva
-                        Instancia" queda como respaldo para pegar los datos a
-                        mano si la ventana de Meta falla o el entorno no la
-                        tiene configurada. */}
-                    <div className="flex items-center gap-2">
-                        <EmbeddedSignupButton onConnected={() => router.reload({ only: ['instances', 'coexistenceSyncs'] })} />
-                        <ConectarInstagramButton disponible={instagramDisponible} />
-                        <ConectarMessengerButton disponible={messengerDisponible} />
-                        <Button variant="outline" onClick={() => setShowCreate(true)} className="gap-2">
-                            <Plus className="size-4" /> Nueva Instancia
-                        </Button>
-                    </div>
-                </div>
+                </section>
 
-                {/* Grid de instancias */}
                 {instances.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-                        <Wifi className="size-12 text-muted-foreground/40 mb-4" />
-                        <p className="text-lg font-medium text-foreground">No hay instancias configuradas</p>
-                        <p className="text-sm text-muted-foreground mt-1">Crea tu primera conexión con WhatsApp Business</p>
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed bg-card/50 px-6 py-16 text-center">
+                        <span className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+                            <Wifi className="size-7" />
+                        </span>
+                        <p className="text-lg font-bold text-foreground">Aún no hay canales conectados</p>
+                        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                            Conecta tu primer número de WhatsApp Business con los botones de arriba.
+                        </p>
                     </div>
                 ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                         {instances.map(instance => (
-                            <div key={instance.id} className="rounded-xl border bg-card p-5 shadow-xs flex flex-col gap-4">
-                                {/* El logo de la plataforma en vez del icono de wifi que
-                                    llevaban todas: con WhatsApp e Instagram en la misma
-                                    pantalla no se distinguía cuál era cuál sin leer la
-                                    letra pequeña. El estado de la conexión se dice
-                                    aparte, en la pastilla de la derecha. */}
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex min-w-0 items-center gap-3">
-                                        <LogoCanal
-                                            instancia={instance}
-                                            apagado={!instance.active || instance.health_status === 'unreachable'}
-                                        />
-                                        <div className="min-w-0">
-                                            <p className="truncate font-semibold text-foreground text-sm">{instance.name ?? 'Sin nombre'}</p>
-                                            <div className="mt-0.5 flex items-center gap-2">
-                                                <EtiquetaCanal instancia={instance} />
-                                                {/* La identidad del canal: el número en
-                                                    WhatsApp, y nada en Instagram, donde el
-                                                    nombre de la línea YA es la cuenta y
-                                                    repetirlo sólo hace ruido. */}
-                                                {instance.channel !== 'instagram' && instance.display_phone_number && (
-                                                    <span className="truncate text-xs text-muted-foreground">{instance.display_phone_number}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {/* "Activa" es una casilla nuestra; la salud es lo que
-                                        dice Meta. Mostrar solo la primera fue lo que dejó
-                                        cinco empresas en verde durante meses sin recibir
-                                        un mensaje. */}
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                                        !instance.active ? 'bg-muted text-muted-foreground'
-                                            : instance.health_status === 'unreachable' ? 'bg-destructive/10 text-destructive'
-                                            : 'bg-success/15 text-success'
-                                    }`}>
-                                        {!instance.active ? 'Inactiva'
-                                            : instance.health_status === 'unreachable' ? 'Sin conexión'
-                                            : 'Activa'}
-                                    </span>
-                                </div>
-                                {/* Importación de contactos e historial. Sólo
-                                    aparece en números que vinieron de la app del
-                                    celular; en un registro normal no hay nada que
-                                    importar y el componente no pinta nada. */}
-                                <CoexistenceSyncCard
-                                    instanceId={instance.id}
-                                    initial={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
-                                />
-                                {instance.active && instance.health_status === 'unreachable' && (
-                                    <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                                        <p className="font-medium">Meta no responde por esta cuenta.</p>
-                                        <p className="opacity-90 mt-0.5">
-                                            {instance.health_error ?? 'El token o el número ya no existen.'}
-                                        </p>
-                                        <p className="opacity-90 mt-1">
-                                            No entran ni salen mensajes. Reconéctala con el botón de arriba.
-                                        </p>
-                                    </div>
-                                )}
-
-                                {/* Cada canal enseña lo suyo. Una cuenta de Instagram no
-                                    tiene número ni WABA, así que pintar esas dos
-                                    etiquetas vacías dejaba la tarjeta diciendo
-                                    «Phone ID:» seguido de nada — y eso lo iba a ver el
-                                    revisor del App Review en el screencast. */}
-                                {/* Los identificadores técnicos, en gris y pequeños: se
-                                    necesitan para soporte, pero no son lo que el cliente
-                                    viene a ver. Cada canal enseña los suyos, y una cuenta
-                                    de Instagram no tiene número ni WABA. */}
-                                <dl className="rounded-lg bg-muted/40 px-3 py-2 text-[11px] font-mono leading-relaxed">
-                                    {instance.channel === 'instagram' ? (
-                                        <div className="flex gap-2">
-                                            <dt className="shrink-0 text-muted-foreground">ID de cuenta</dt>
-                                            <dd className="truncate text-foreground">{instance.external_account_id ?? '—'}</dd>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="flex gap-2">
-                                                <dt className="shrink-0 text-muted-foreground">Phone ID</dt>
-                                                <dd className="truncate text-foreground">{instance.phone_number_id ?? '—'}</dd>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <dt className="shrink-0 text-muted-foreground">WABA ID</dt>
-                                                <dd className="truncate text-foreground">{instance.waba_id ?? '—'}</dd>
-                                            </div>
-                                        </>
-                                    )}
-                                </dl>
-                                {/* `flex-wrap` y un ancho mínimo por botón: sin envolver,
-                                    los cuatro se salían de la tarjeta —el de eliminar
-                                    quedaba fuera del borde, flotando sobre la tarjeta de
-                                    al lado— porque el texto no parte y «Desconectar» y
-                                    «Rotar token» no caben en una columna estrecha. */}
-                                <div className="flex flex-wrap items-center gap-2 pt-1">
-                                    <Button variant="outline" size="sm" className="flex-1 min-w-[6rem] gap-1.5" onClick={() => openEdit(instance)}>
-                                        <Pencil className="size-3.5" /> Editar
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="flex-1 min-w-[7.5rem] gap-1.5"
-                                        disabled={generando === instance.id}
-                                        title={instance.api_token_created_at
-                                            ? 'Generar un token nuevo (el actual dejará de servir)'
-                                            : 'Generar el token de la API'}
-                                        onClick={() => generarToken(instance)}
-                                    >
-                                        <KeyRound className="size-3.5" />
-                                        {instance.api_token_created_at ? 'Rotar token' : 'Token API'}
-                                    </Button>
-                                    {instance.active ? (
-                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleDesconectar(instance)} title="Deja de enviar y recibir, sin borrar nada">
-                                            <PowerOff className="size-3.5" /> Desconectar
-                                        </Button>
-                                    ) : (
-                                        <Button variant="outline" size="sm" className="flex-1 min-w-[8rem] gap-1.5" onClick={() => handleReconectar(instance)} title="Volver a activarla">
-                                            <Power className="size-3.5" /> Reconectar
-                                        </Button>
-                                    )}
-                                    {/* El de eliminar no se estira ni se encoge: es el
-                                        único destructivo de la fila y conviene que tenga
-                                        siempre el mismo tamaño y el mismo sitio. */}
-                                    <Button variant="outline" size="sm" className="shrink-0 px-2.5 text-destructive hover:bg-destructive/10" onClick={() => openDelete(instance)} title="Eliminar definitivamente">
-                                        <Trash2 className="size-3.5" />
-                                    </Button>
-                                </div>
-                            </div>
+                            <TarjetaInstancia
+                                key={instance.id}
+                                instance={instance}
+                                sync={coexistenceSyncs.find(s => s.instance_id === instance.id) ?? null}
+                                integra={integra}
+                                puedeSincronizar={puedeSincronizar}
+                                generando={generando === instance.id}
+                                onEditar={() => openEdit(instance)}
+                                onToken={() => generarToken(instance)}
+                                onDesconectar={() => handleDesconectar(instance)}
+                                onReconectar={() => handleReconectar(instance)}
+                                onEliminar={() => openDelete(instance)}
+                            />
                         ))}
                     </div>
                 )}
@@ -301,7 +247,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                         <Field label="WABA ID" value={createForm.waba_id} onChange={v => setCreateForm(f => ({ ...f, waba_id: v }))} required />
                         <Field label="Número de Teléfono" value={createForm.display_phone_number} onChange={v => setCreateForm(f => ({ ...f, display_phone_number: v }))} placeholder="+57 318..." />
                         <Field label="Access Token" value={createForm.access_token} onChange={v => setCreateForm(f => ({ ...f, access_token: v }))} placeholder="EAAI..." />
-                        <div className="flex gap-2 pt-2">
+                        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
                             <Button type="submit" className="flex-1">Crear Instancia</Button>
                             <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancelar</Button>
                         </div>
@@ -321,7 +267,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
                             <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} className="rounded border-input size-4 accent-primary" />
                             <span className="text-sm text-foreground">Instancia Activa</span>
                         </label>
-                        <div className="flex gap-2 pt-2">
+                        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
                             <Button type="submit" className="flex-1">Guardar Cambios</Button>
                             <Button type="button" variant="outline" onClick={() => setEditingInstance(null)}>Cancelar</Button>
                         </div>
@@ -398,7 +344,7 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
 
                         {deleteError && <p className="text-sm font-medium text-destructive">{deleteError}</p>}
 
-                        <div className="flex gap-2 pt-2">
+                        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
                             <Button
                                 type="submit"
                                 variant="destructive"
@@ -422,15 +368,383 @@ export default function InstancesIndex({ instances, coexistenceSyncs = [], insta
     );
 }
 
+/**
+ * El estado de una línea, de un solo sitio para la pastilla, la franja de color
+ * y las cifras de arriba.
+ *
+ * "Activa" es una casilla nuestra; la salud es lo que dice Meta. Mostrar solo la
+ * primera fue lo que dejó cinco empresas en verde durante meses sin recibir un
+ * mensaje.
+ */
+function estadoDe(instance) {
+    if (!instance.active) {
+        return { clave: 'inactiva', etiqueta: 'Desconectada', pastilla: 'bg-muted text-muted-foreground', punto: 'bg-muted-foreground', franja: 'bg-border' };
+    }
+    if (instance.health_status === 'unreachable') {
+        return { clave: 'sin-conexion', etiqueta: 'Sin conexión', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
+    }
+    if (instance.problema_de_pago) {
+        return { clave: 'sin-pago', etiqueta: 'Sin pago en Meta', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
+    }
+    // LIMITED envía, con tope: casi siempre es el negocio sin verificar. Como
+    // «No envía» y culpando a la tarjeta, JHeda creyó que el pago seguía mal
+    // cuando ya lo había arreglado (30-sep-2026).
+    if (instance.puede_enviar === 'LIMITED') {
+        return { clave: 'limitada', etiqueta: 'Con límite', pastilla: 'bg-warning/15 text-warning', punto: 'bg-warning', franja: 'bg-warning' };
+    }
+    if (instance.puede_enviar && instance.puede_enviar !== 'AVAILABLE') {
+        return { clave: 'no-envia', etiqueta: 'No envía', pastilla: 'bg-warning/15 text-warning', punto: 'bg-warning', franja: 'bg-warning' };
+    }
+    return { clave: 'activa', etiqueta: 'Activa', pastilla: 'bg-success/15 text-success', punto: 'bg-success animate-pulse', franja: 'bg-primary' };
+}
+
+function Cifra({ icono: Icono, etiqueta, valor, tono = null }) {
+    const color = { success: 'text-success', warning: 'text-warning' }[tono] ?? 'text-muted-foreground';
+
+    return (
+        <div className={`rounded-xl border bg-card p-3 shadow-xs sm:p-4 ${tono === 'warning' ? 'border-warning/40' : ''}`}>
+            <div className="flex items-center gap-2">
+                <Icono className={`size-4 ${color}`} />
+                <p className="truncate text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:text-[11px] sm:tracking-widest">{etiqueta}</p>
+            </div>
+            <p className="mt-1.5 text-2xl font-black tracking-tight text-foreground tabular-nums sm:text-3xl">{valor}</p>
+        </div>
+    );
+}
+
+function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando, onEditar, onToken, onDesconectar, onReconectar, onEliminar }) {
+    const estado = estadoDe(instance);
+
+    return (
+        <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs transition-shadow hover:shadow-md">
+            <div className={`h-1 ${estado.franja}`} />
+
+            <div className="flex flex-1 flex-col gap-4 p-4 sm:p-5">
+                {/* El logo de la plataforma en vez del icono de wifi que
+                    llevaban todas: con WhatsApp e Instagram en la misma
+                    pantalla no se distinguía cuál era cuál sin leer la letra
+                    pequeña. */}
+                <div className="flex items-start gap-3">
+                    <LogoCanal
+                        instancia={instance}
+                        apagado={estado.clave === 'inactiva' || estado.clave === 'sin-conexion'}
+                        className="size-12"
+                    />
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                            <p className="line-clamp-2 break-words text-base font-bold leading-snug text-foreground" title={instance.name ?? undefined}>{instance.name ?? 'Sin nombre'}</p>
+                            <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${estado.pastilla}`}>
+                                <span className={`size-1.5 rounded-full ${estado.punto}`} />
+                                {estado.etiqueta}
+                            </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <EtiquetaCanal instancia={instance} />
+                            {/* El número en WhatsApp, y nada en Instagram, donde
+                                el nombre de la línea YA es la cuenta. */}
+                            {instance.channel !== 'instagram' && instance.display_phone_number && (
+                                <span className="text-sm font-medium tabular-nums text-foreground/80">{instance.display_phone_number}</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Importación de contactos e historial. Sólo aparece en
+                    números que vinieron de la app del celular. */}
+                <CoexistenceSyncCard instanceId={instance.id} initial={sync} />
+
+                {/* Conectado no es lo mismo que poder enviar. Una cuenta sana a
+                    la que se le venció la tarjeta del portafolio responde a todo
+                    y no entrega nada: el CRM no puede leer el medio de pago —Meta
+                    se lo niega a quien no es BSP— pero sí la consecuencia. */}
+                {/* El pago va antes que el aviso genérico de «no envía»: es la
+                    causa más común y la única con una guía que lo resuelve. */}
+                {instance.active && instance.problema_de_pago && (
+                    <Aviso tono="destructive" titulo="Meta rechaza los envíos: falta el método de pago.">
+                        <p>
+                            {instance.problema_de_pago === 'sin_moneda'
+                                ? 'Tu cuenta de WhatsApp Business no tiene moneda ni tarjeta configuradas.'
+                                : 'Tu cuenta de WhatsApp Business no tiene un método de pago válido.'}
+                            {' '}No sale ninguna plantilla (facturas, avisos, campañas) hasta que lo arregles.
+                        </p>
+                        <Link
+                            href={`/instances/pago-en-meta?linea=${instance.id}`}
+                            className="mt-2 inline-flex items-center gap-1.5 font-semibold underline-offset-2 hover:underline"
+                        >
+                            Arreglarlo paso a paso <ArrowRight className="size-3.5" />
+                        </Link>
+                    </Aviso>
+                )}
+
+                {estado.clave === 'limitada' && (
+                    <Aviso tono="warning" titulo="Envía, pero Meta le pone un tope a esta cuenta.">
+                        <p>{instance.puede_enviar_motivo ?? 'Meta no dio un motivo.'}</p>
+                        {/verificaci|verification/i.test(instance.puede_enviar_motivo ?? '') && (
+                            <Link
+                                href="/instances/guia-limites-whatsapp"
+                                className="mt-2 inline-flex items-center gap-1.5 font-semibold underline-offset-2 hover:underline"
+                            >
+                                Verificar el negocio y subir el límite <ArrowRight className="size-3.5" />
+                            </Link>
+                        )}
+                    </Aviso>
+                )}
+
+                {estado.clave === 'no-envia' && !instance.problema_de_pago && (
+                    <Aviso tono="warning" titulo="Meta no está dejando enviar por esta cuenta.">
+                        <p>{instance.puede_enviar_motivo ?? 'Meta no dio un motivo.'}</p>
+                        <p className="mt-1">
+                            La causa más común es el medio de pago del portafolio. Revísalo en el
+                            Administrador comercial de Meta.
+                        </p>
+                    </Aviso>
+                )}
+
+                {estado.clave === 'sin-conexion' && (
+                    <Aviso tono="destructive" titulo="Meta no responde por esta cuenta.">
+                        <p>{instance.health_error ?? 'El token o el número ya no existen.'}</p>
+                        <p className="mt-1">No entran ni salen mensajes. Vuelve a conectarla desde «Conectar un canal».</p>
+                    </Aviso>
+                )}
+
+                {/* Los identificadores técnicos, pequeños y copiables: se
+                    necesitan para soporte, pero no son lo que el cliente viene a
+                    ver. Instagram y Messenger no tienen número ni WABA, y
+                    pintar esas etiquetas vacías lo iba a ver el revisor del App
+                    Review en el screencast. */}
+                <dl className="divide-y divide-border/60 rounded-xl border bg-muted/30 text-xs">
+                    {instance.channel === 'instagram' ? (
+                        <IdCopiable etiqueta="ID de cuenta" valor={instance.external_account_id} />
+                    ) : instance.channel === 'messenger' ? (
+                        <IdCopiable etiqueta="ID de página" valor={instance.external_account_id} />
+                    ) : (
+                        <>
+                            <IdCopiable etiqueta="Phone ID" valor={instance.phone_number_id} />
+                            <IdCopiable etiqueta="WABA ID" valor={instance.waba_id} />
+                        </>
+                    )}
+                    <div className="flex items-center justify-between gap-3 px-3 py-2">
+                        <dt className="shrink-0 text-muted-foreground">Token API</dt>
+                        <dd className={`truncate font-medium ${instance.api_token_created_at ? 'text-success' : 'text-muted-foreground'}`}>
+                            {instance.api_token_created_at
+                                ? `Generado el ${new Date(instance.api_token_created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                : 'Sin generar'}
+                        </dd>
+                    </div>
+                </dl>
+
+                {integra?.conectado && instance.active && (instance.channel ?? 'whatsapp') === 'whatsapp' && (
+                    <RecuadroIntegra
+                        instance={instance}
+                        esLaDeEnvio={integra.linea_de_envio === instance.id}
+                        puedeSincronizar={puedeSincronizar}
+                    />
+                )}
+            </div>
+
+            {/* `flex-wrap` y un ancho mínimo por botón: sin envolver, los
+                cuatro se salían de la tarjeta —el de eliminar quedaba fuera del
+                borde, flotando sobre la tarjeta de al lado— porque el texto no
+                parte y «Desconectar» y «Rotar token» no caben en una columna
+                estrecha. */}
+            <footer className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-4 py-3 sm:px-5">
+                <Button variant="outline" size="sm" className="min-w-[6rem] flex-1 gap-1.5" onClick={onEditar}>
+                    <Pencil className="size-3.5" /> Editar
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-w-[7.5rem] flex-1 gap-1.5"
+                    disabled={generando}
+                    title={instance.api_token_created_at
+                        ? 'Generar un token nuevo (el actual dejará de servir)'
+                        : 'Generar el token de la API'}
+                    onClick={onToken}
+                >
+                    <KeyRound className="size-3.5" />
+                    {instance.api_token_created_at ? 'Rotar token' : 'Token API'}
+                </Button>
+                {instance.active ? (
+                    <Button variant="outline" size="sm" className="min-w-[8rem] flex-1 gap-1.5" onClick={onDesconectar} title="Deja de enviar y recibir, sin borrar nada">
+                        <PowerOff className="size-3.5" /> Desconectar
+                    </Button>
+                ) : (
+                    <Button size="sm" className="min-w-[8rem] flex-1 gap-1.5" onClick={onReconectar} title="Volver a activarla">
+                        <Power className="size-3.5" /> Reconectar
+                    </Button>
+                )}
+                {/* El de eliminar no se estira ni se encoge: es el único
+                    destructivo de la fila y conviene que tenga siempre el mismo
+                    tamaño y el mismo sitio. */}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 px-2.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={onEliminar}
+                    title="Eliminar definitivamente"
+                    aria-label="Eliminar definitivamente"
+                >
+                    <Trash2 className="size-3.5" />
+                </Button>
+            </footer>
+        </article>
+    );
+}
+
+/**
+ * Integra y esta línea: si es la que envía las facturas y un botón para dejar
+ * las dos puntas de acuerdo.
+ *
+ * El botón existe por Nova Partners (24-sep-2026): el número se conectó antes
+ * que Integra, el alta automática no llegó, y el software facturaba contra una
+ * línea que el CRM no conocía. «Instancia no válida o token ausente» en cada
+ * factura y ningún sitio donde arreglarlo sin tocar la base de datos.
+ *
+ * Sólo en la línea de envío: pasar las facturas a otra línea comprueba antes
+ * que tenga las plantillas, y eso se decide en Integraciones.
+ */
+function RecuadroIntegra({ instance, esLaDeEnvio, puedeSincronizar }) {
+    const [sincronizando, setSincronizando] = useState(false);
+    const [resultado, setResultado] = useState(null);
+
+    async function sincronizar() {
+        setSincronizando(true);
+        setResultado(null);
+        try {
+            const { data } = await axios.post(route('instances.sincronizar-integra', instance.id));
+            setResultado({ ok: true, texto: data.message });
+        } catch (e) {
+            setResultado({ ok: false, texto: e.response?.data?.message ?? 'No se pudo sincronizar con Integra.' });
+        } finally {
+            setSincronizando(false);
+        }
+    }
+
+    if (!esLaDeEnvio) {
+        return (
+            <p className="rounded-xl border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                Integra no envía las facturas por esta línea.{' '}
+                <Link href={route('integrations.index')} className="font-medium text-foreground underline underline-offset-2">
+                    Cambiarla en Integraciones
+                </Link>
+            </p>
+        );
+    }
+
+    return (
+        <div className="rounded-xl border bg-muted/30 px-3 py-2.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 font-medium text-foreground">
+                    <CheckCircle2 className="size-3.5 text-success" /> Integra envía las facturas por esta línea
+                </p>
+                {puedeSincronizar && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2.5 text-[11px]"
+                        disabled={sincronizando}
+                        onClick={sincronizar}
+                        title="Dejar esta línea como la de envío también en Integra"
+                    >
+                        {sincronizando ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                        Sincronizar con Integra
+                    </Button>
+                )}
+            </div>
+            {resultado && (
+                <p className={`mt-1.5 ${resultado.ok ? 'text-success' : 'text-destructive'}`}>{resultado.texto}</p>
+            )}
+            {!resultado && (
+                <p className="mt-1 text-muted-foreground">
+                    Si tu software responde «Instancia no válida o token ausente», sincroniza.
+                </p>
+            )}
+        </div>
+    );
+}
+
+function Aviso({ tono, titulo, children }) {
+    const clases = tono === 'destructive'
+        ? 'border-destructive/30 bg-destructive/10 text-destructive'
+        : 'border-warning/40 bg-warning/10 text-warning';
+
+    return (
+        <div className={`flex gap-2.5 rounded-xl border px-3 py-2.5 text-xs ${clases}`}>
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div className="min-w-0">
+                <p className="font-semibold">{titulo}</p>
+                <div className="mt-0.5 opacity-90">{children}</div>
+            </div>
+        </div>
+    );
+}
+
+function IdCopiable({ etiqueta, valor }) {
+    const [copiado, setCopiado] = useState(false);
+
+    async function copiar() {
+        try {
+            await navigator.clipboard.writeText(valor);
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 1500);
+        } catch {
+            // Sin permiso de portapapeles queda seleccionarlo a mano.
+        }
+    }
+
+    return (
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+            <dt className="shrink-0 text-muted-foreground">{etiqueta}</dt>
+            <dd className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate font-mono text-foreground select-all">{valor ?? '—'}</span>
+                {valor && (
+                    <button
+                        type="button"
+                        onClick={copiar}
+                        title="Copiar"
+                        aria-label={`Copiar ${etiqueta}`}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                        {copiado ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                    </button>
+                )}
+            </dd>
+        </div>
+    );
+}
+
+/**
+ * En el móvil sale desde abajo y a lo ancho; en pantalla grande, centrado. El
+ * alto va topado y con scroll: el de borrar trae cuatro bloques de aviso y en
+ * un teléfono dejaba el botón de confirmar fuera de la pantalla, sin forma de
+ * llegar a él.
+ */
 function Modal({ title, description, onClose, children }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="w-full max-w-md rounded-xl border bg-card shadow-2xl p-6" onClick={e => e.stopPropagation()}>
-                <div className="mb-5">
-                    <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-                    {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
+            <div
+                className="flex max-h-[92dvh] w-full flex-col rounded-t-2xl border bg-card shadow-2xl sm:max-w-md sm:rounded-2xl"
+                onClick={e => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+            >
+                <div className="flex items-start justify-between gap-3 border-b px-5 py-4 sm:px-6">
+                    <div className="min-w-0">
+                        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+                        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Cerrar"
+                        className="-mr-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                        <X className="size-5" />
+                    </button>
                 </div>
-                {children}
+                <div className="overflow-y-auto px-5 py-5 sm:px-6">
+                    {children}
+                </div>
             </div>
         </div>
     );
@@ -512,3 +826,52 @@ function TokenRecienCreado({ datos, onCerrar }) {
         </div>
     );
 }
+
+const NOMBRE_CANAL = { whatsapp: 'WhatsApp', instagram: 'Instagram', messenger: 'Messenger' };
+
+/**
+ * Cuántas líneas de cada canal lleva su plan y cuántas tiene encendidas.
+ *
+ * Se enseña siempre, no sólo al llegar al tope: saber que el Básico es una de
+ * cada antes de intentarlo evita la sorpresa del bloqueo (30-sep-2026).
+ */
+function CuposDelPlan({ cupos }) {
+    return (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold text-muted-foreground">Tu plan incluye:</span>
+            {Object.entries(cupos).map(([canal, c]) => {
+                const { Icono, color } = canalDe({ channel: canal });
+
+                return (
+                <span
+                    key={canal}
+                    className={
+                        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold tabular-nums '
+                        + (c.puede ? 'border-border bg-muted text-foreground' : 'border-warning/40 bg-warning/10 text-warning')
+                    }
+                >
+                    <Icono className="size-3.5" style={{ color }} />
+                    {NOMBRE_CANAL[canal] ?? canal} {c.usadas} de {c.incluidas}
+                </span>
+                );
+            })}
+        </div>
+    );
+}
+
+/** El hueco del botón de un canal que ya no tiene cupo: el porqué y la salida. */
+function CanalSinCupo({ canal, motivo }) {
+    return (
+        <div className="flex max-w-md items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-xs leading-relaxed text-foreground">
+            <Lock className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <span>
+                <b>No puedes conectar otra línea de {NOMBRE_CANAL[canal] ?? canal}.</b>{' '}
+                {motivo}{' '}
+                <Link href={route('planes')} className="font-semibold text-primary underline-offset-2 hover:underline">
+                    Ver planes
+                </Link>
+            </span>
+        </div>
+    );
+}
+

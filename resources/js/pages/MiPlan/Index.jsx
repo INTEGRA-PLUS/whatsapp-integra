@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { iconFor } from '@/pages/Extensions/icons';
 import { ListaConChecks, Pastilla, Titulo } from '@/components/seccion';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 /**
  * «Mi plan», tal y como lo ve el cliente.
@@ -60,19 +61,11 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
 
             <div className="mx-auto flex max-w-6xl flex-col gap-9 p-6 lg:p-8">
 
-                <header className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                        <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-accent-foreground">
-                            <BadgeCheck className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Mi plan</h1>
-                            <p className="mt-0.5 text-sm text-muted-foreground">
-                                Lo que tienes contratado, cuánto llevas usado y qué puedes activar.
-                            </p>
-                        </div>
-                    </div>
-
+                <CabeceraModulo
+                    icono={BadgeCheck}
+                    titulo="Mi plan"
+                    descripcion="Lo que tienes contratado, cuánto llevas usado y qué puedes activar."
+                >
                     {/* Siempre visible. El cliente que más puede crecer es el que
                         ya lo tiene todo encendido, y a ése la pantalla no le
                         ofrecía ningún sitio donde preguntar. */}
@@ -81,7 +74,7 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             Hablar con nosotros <ArrowRight className="size-4" />
                         </a>
                     </Button>
-                </header>
+                </CabeceraModulo>
 
                 <Carne plan={plan} periodo={periodo} porPagar={por_pagar} />
 
@@ -115,7 +108,7 @@ export default function MiPlan({ plan, uso_ia, extensiones, planes, complementos
                             titulo="Líneas de WhatsApp"
                             usado={plan.lineas_reales}
                             incluido={plan.lineas_incluidas}
-                            pasado={plan.se_paso_de?.includes('líneas')}
+                            pasado={plan.se_paso_de?.includes('lineas')}
                         />
 
                         {/* El crédito de IA, cuando lo hay. Ocupa la fila entera
@@ -347,13 +340,14 @@ function Carne({ plan, periodo, porPagar }) {
                         </span>
 
                         {/* «Incluido con tu Integra», a secas y al lado de «IA
-                            Completa», se leía como que la IA viene incluida. No:
-                            Integra cubre el CRM, y la IA es justo lo único que sí
-                            se le factura a un cliente de Integra. Se dice qué
-                            cubre, no que cubre. */}
+                            Completa», se leía como que la IA viene incluida; y
+                            «CRM incluido», como que cualquier plan lo está. El
+                            paquete trae el Básico: se dice eso y nada más. */}
                         {plan.incluido_en_integra && (
                             <Insignia icono={ShieldCheck}>
-                                {plan.tiene_ia ? 'CRM incluido con tu Integra' : 'Incluido con tu Integra'}
+                                {plan.crm_pactado
+                                    ? `${plan.plan_nombre} sin cargo · condición pactada contigo`
+                                    : `${plan.plan_de_integra_nombre} incluido con tu Integra`}
                             </Insignia>
                         )}
                         {plan.en_mes_gratis && (
@@ -390,7 +384,10 @@ function datosCobertura(plan, periodo, porPagar) {
         porPagar,
         hasta,
         desde: periodo?.desde ?? null,
-        integra: periodo ? periodo.cubierto_por_integra : plan.incluido_en_integra,
+        // Siempre que venga de Integra, esté o no cubierto este periodo: al que
+        // paga la diferencia o la IA es al que más falta le hace saber qué le
+        // cubre su paquete y qué se le cobra.
+        integra: plan.incluido_en_integra,
         vencido: periodo ? !periodo.vigente : plan.suscripcion_vigente === false,
         dias: periodo?.dias ?? plan.dias_para_renovar,
     };
@@ -415,8 +412,8 @@ function Cobertura({ plan, porPagar, hasta, desde, integra, vencido, dias }) {
 
             <p className="mt-2 text-sm font-semibold text-sidebar-foreground">
                 {integra
-                    ? (plan.tiene_ia
-                        ? 'Tu paquete de Integra cubre el CRM'
+                    ? (plan.precio_usd > 0
+                        ? `Tu paquete de Integra cubre el plan ${plan.plan_de_integra_nombre}`
                         : 'Tu paquete de Integra cubre este servicio')
                     : 'Tu plan está activo'}
             </p>
@@ -452,13 +449,7 @@ function Cobertura({ plan, porPagar, hasta, desde, integra, vencido, dias }) {
                 el CRM va dentro de Integra, pero la IA se cobra. Y lo contradecía
                 la propia pantalla, que debajo enseñaba un cobro emitido y
                 pendiente. */}
-            {integra && (
-                <p className="mt-3 text-xs leading-relaxed text-sidebar-foreground/60">
-                    {plan.tiene_ia
-                        ? <>El CRM va dentro de lo que ya pagas por Integra. <span className="text-sidebar-foreground/90">{plan.ia_nombre} se factura aparte</span>, y es lo que se cobra en este periodo.</>
-                        : 'No se te factura aparte: va dentro de lo que ya pagas por Integra.'}
-                </p>
-            )}
+            {integra && <QueTeCobramosAparte plan={plan} />}
 
             {porPagar && (
                 <p className="mt-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/15 px-3 py-2.5 text-xs leading-relaxed text-sidebar-foreground">
@@ -470,6 +461,34 @@ function Cobertura({ plan, porPagar, hasta, desde, integra, vencido, dias }) {
                 </p>
             )}
         </div>
+    );
+}
+
+/**
+ * Qué le cubre su Integra y qué se le factura aparte, en una frase.
+ *
+ * Antes decía «el CRM va dentro de lo que ya pagas» fuera cual fuera el plan, y
+ * así fue como un cliente entendió que el Pro también le salía gratis. Ahora
+ * dice el plan que cubre y nombra, con su importe, cada cosa que se cobra.
+ */
+function QueTeCobramosAparte({ plan }) {
+    const aparte = [
+        plan.precio_crm_a_pagar > 0 && `la diferencia del ${plan.plan_nombre} ($${plan.precio_crm_a_pagar}/mes)`,
+        plan.tiene_ia && `${plan.ia_nombre} ($${plan.precio_ia}/mes)`,
+    ].filter(Boolean);
+
+    const cubre = plan.crm_pactado
+        ? `Tu ${plan.plan_nombre} va sin cargo por una condición pactada contigo.`
+        : `El plan ${plan.plan_de_integra_nombre} va dentro de lo que ya pagas por Integra.`;
+
+    return (
+        <p className="mt-3 text-xs leading-relaxed text-sidebar-foreground/60">
+            {cubre}{' '}
+            {aparte.length > 0
+                ? <>Se te factura aparte <span className="text-sidebar-foreground/90">{aparte.join(' y ')}</span>.</>
+                : 'No se te factura nada aparte.'}
+            {' '}Lo que cobra Meta por conversación lo pagas directo a Meta.
+        </p>
     );
 }
 
@@ -649,7 +668,7 @@ function TarjetaDePlan({ p, tieneIa }) {
             <dl className="mt-4 space-y-2">
                 <Renglon termino="Agentes" valor={p.agentes} />
                 <Renglon termino="Contactos" valor={p.contactos.toLocaleString('es-CO')} />
-                <Renglon termino="Líneas" valor={p.lineas} />
+                <Renglon termino="Líneas por canal" valor={p.lineas} />
             </dl>
 
             {/* El crédito de IA, en su propio recuadro a propósito: no es tamaño

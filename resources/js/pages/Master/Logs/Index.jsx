@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { FileText, Eye, Trash2, RefreshCw, AlertTriangle, Eraser } from 'lucide-react';
 
 export default function LogsIndex({ logs }) {
@@ -26,30 +27,25 @@ export default function LogsIndex({ logs }) {
         <>
             <Head title="Logs · Master" />
             <div className="flex flex-col min-h-screen bg-muted/10">
-                <div className="bg-card/40 backdrop-blur-3xl px-8 py-8 sticky top-0 z-40 border-b border-border/20 shadow-sm">
-                    <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-6">
-                        <div className="flex items-center gap-6">
-                            <div className="size-14 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/20">
-                                <FileText className="size-7" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-3">
-                                    Logs del Sistema
-                                    <span className="text-[10px] font-black bg-primary/10 text-accent-foreground px-2 py-0.5 rounded-full border border-primary/20 tracking-widest hidden sm:inline-block">MASTER</span>
-                                </h1>
-                                <p className="text-sm font-medium text-muted-foreground mt-1">
-                                    {logs.length} {logs.length === 1 ? 'archivo' : 'archivos'} de log en <code className="text-xs">storage/logs</code>
-                                </p>
-                            </div>
-                        </div>
-                        <Button
-                            onClick={() => router.reload({ only: ['logs'] })}
-                            variant="ghost"
-                            className="rounded-xl h-11 px-5 font-black uppercase tracking-widest text-[10px] gap-2"
-                        >
+                <div className="mx-auto w-full max-w-[1700px] px-4 pt-4 sm:px-8 sm:pt-6">
+                    <CabeceraModulo
+                        icono={FileText}
+                        titulo={
+                            <span className="flex flex-wrap items-center gap-2">
+                                Logs del Sistema
+                                <span className="text-[10px] font-black bg-primary/10 text-accent-foreground px-2 py-0.5 rounded-full border border-primary/20 tracking-widest hidden sm:inline-block">MASTER</span>
+                            </span>
+                        }
+                        descripcion={
+                            <>
+                                {logs.length} {logs.length === 1 ? 'archivo' : 'archivos'} de log en <code className="text-xs">storage/logs</code>
+                            </>
+                        }
+                    >
+                        <Button onClick={() => router.reload({ only: ['logs'] })} variant="outline" size="sm" className="gap-2">
                             <RefreshCw className="size-4" /> Refrescar
                         </Button>
-                    </div>
+                    </CabeceraModulo>
                 </div>
 
                 <div className="p-8 max-w-[1700px] mx-auto w-full">

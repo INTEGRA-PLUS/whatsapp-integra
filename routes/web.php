@@ -336,6 +336,15 @@ Route::middleware('auth')->group(function () {
     Route::get('/instances/guia-limites-whatsapp', fn () => Inertia::render('Instances/GuiaLimitesWhatsApp'))
         ->name('instances.guia-limites');
 
+    // Activar el pago en Meta, paso a paso, y el botón de comprobarlo. Es
+    // adonde lleva la alerta roja del layout cuando Meta rechaza envíos por
+    // falta de tarjeta o de moneda (JHeda, 30-sep-2026).
+    Route::get('/instances/pago-en-meta', [\App\Http\Controllers\PagoDeMetaController::class, 'guia'])
+        ->name('instances.pago-meta');
+    Route::post('/instances/{instance}/comprobar-pago', [\App\Http\Controllers\PagoDeMetaController::class, 'comprobar'])
+        ->middleware('throttle:10,1')
+        ->name('instances.comprobar-pago');
+
     // Respaldo por consulta del progreso de la importación de coexistencia,
     // para cuando el websocket no conecta. Va antes de nada que capture
     // /instances/{algo} con otro significado.
@@ -353,6 +362,12 @@ Route::middleware('auth')->group(function () {
         ->middleware('permission:instances.update')->name('instances.desconectar');
     Route::post('/instances/{instance}/reconectar', [InstanceController::class, 'reconectar'])
         ->middleware('permission:instances.update')->name('instances.reconectar');
+
+    // Dejar en Integra esta línea como la que envía las facturas. Con el
+    // permiso de integraciones y no el de instancias: lo que cambia es el
+    // software administrativo, no el número.
+    Route::post('/instances/{instance}/sincronizar-integra', [InstanceController::class, 'sincronizarConIntegra'])
+        ->middleware('permission:integrations.create')->name('instances.sincronizar-integra');
 
     // Lo que se perdería al borrarla, para poder decirlo en el diálogo con
     // números en vez de con un "¿estás seguro?".
@@ -421,6 +436,9 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:templates.create')->name('create');
         Route::get('/defaults', [TemplateController::class, 'defaultsIndex'])
             ->middleware('permission:templates.view')->name('defaults');
+        Route::get('/{templateId}/edit', [TemplateController::class, 'edit'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.update')->name('edit');
     });
 
     Route::prefix('api/templates')->group(function () {
@@ -447,6 +465,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/{templateId}', [TemplateController::class, 'show'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.view');
+        Route::post('/{templateId}', [TemplateController::class, 'update'])
+            ->where('templateId', '[0-9]+')
+            ->middleware('permission:templates.update');
         Route::post('/upload-media', [TemplateController::class, 'uploadMedia'])
             ->middleware('permission:templates.create');
         Route::post('/', [TemplateController::class, 'store'])
@@ -527,6 +548,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/contactos', [ContactController::class, 'index'])
         ->middleware('permission:contacts.view')
         ->name('contacts.index');
+
+    // Guías paso a paso de lo que más se pregunta. Sin permiso: son ayuda, y
+    // quien no puede crear plantillas también necesita saber cuánto tarda Meta
+    // en aprobarlas para contestárselo a un cliente. El contenido vive en
+    // `resources/js/pages/Guias/contenido.jsx`, junto a las pantallas que
+    // describe; la ruta sólo lleva el slug.
+    Route::inertia('/guias', 'Guias/Index')->name('guias.index');
+    Route::get('/guias/{guia}', fn (string $guia) => Inertia::render('Guias/Show', ['slug' => $guia]))
+        ->where('guia', '[a-z0-9-]+')
+        ->name('guias.show');
 
     // «Mi plan» — lo mismo que ve el master, contado desde el lado del cliente.
     // Sin permiso propio a propósito: cualquiera que pueda mirar las extensiones

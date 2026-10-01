@@ -153,10 +153,33 @@ class TemplateParameterGuard
         $index = $this->componentIndex($components, 'header');
         $parameter = $index === null ? null : ($components[$index]['parameters'][0] ?? null);
 
-        // Plantilla sin encabezado, o con encabezado de texto: no hay archivo que
-        // validar. El desajuste de variables de texto lo cubre Meta con un 132000
-        // y no merece bloquear aquí.
         if (!in_array($expected, self::MEDIA_FORMATS, true)) {
+            // Al revés que el caso de abajo: la plantilla NO lleva archivo y el
+            // envío manda uno. Meta lo rechaza con un 132018 —«Template does not
+            // contain title component»— y eso llega al operador como «no se pudo
+            // enviar la factura», sin decirle qué mirar.
+            //
+            // Le pasó a Enternet el 22-sep-2026 con la plantilla `tirillas`:
+            // marcada en Integra como «con documento» y aprobada en Meta sin
+            // encabezado. Son dos sistemas y sólo uno de los dos lo sabía.
+            $sobra = $this->formatoDelParametro($parameter);
+
+            if ($sobra !== null) {
+                $comoEsta = $expected === null
+                    ? 'no tiene encabezado'
+                    : 'tiene el encabezado de texto';
+
+                return $this->fail(
+                    'template_header_not_expected',
+                    "La plantilla «{$definition['name']}» {$comoEsta}, pero el envío le adjunta "
+                    . self::LABELS[$sobra] . '. Quita el archivo del envío, o añádele el encabezado '
+                    . 'a la plantilla en Meta y espera a que la aprueben.'
+                );
+            }
+
+            // Encabezado de texto, o ninguno de los dos lados: no hay archivo que
+            // validar. El desajuste de variables de texto lo cubre Meta con un
+            // 132000 y no merece bloquear aquí.
             return $this->ok($components);
         }
 
@@ -536,6 +559,23 @@ class TemplateParameterGuard
         }
 
         return $matches[0];
+    }
+
+    /**
+     * Qué tipo de archivo trae este parámetro de encabezado, si trae alguno.
+     *
+     * `null` cuando es texto o cuando no hay parámetro: lo que interesa es
+     * distinguir «viene un archivo» de «no viene», no validar el texto.
+     */
+    private function formatoDelParametro(?array $parameter): ?string
+    {
+        if (!$parameter) {
+            return null;
+        }
+
+        $tipo = strtoupper((string) ($parameter['type'] ?? ''));
+
+        return in_array($tipo, self::MEDIA_FORMATS, true) ? $tipo : null;
     }
 
     private function headerFormat(array $definition): ?string

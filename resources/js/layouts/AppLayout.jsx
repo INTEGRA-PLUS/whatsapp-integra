@@ -6,6 +6,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/s
 import NotificationBell from '@/components/notification-bell';
 import AvisoNuevaVersion from '@/components/aviso-nueva-version';
 import { AvisosProvider, useAviso } from '@/components/ui/toast';
+import AlertaPagoMeta from '@/components/alerta-pago-meta';
 
 function getDefaultOpen() {
     if (typeof document === 'undefined') return true;
@@ -120,6 +121,8 @@ export default function AppLayout({ children, breadcrumb }) {
                 </header>
 
                 <FlashComoAviso flash={flash} />
+
+                <AlertaPagoMeta />
 
                 {children}
                 <AvisoNuevaVersion />

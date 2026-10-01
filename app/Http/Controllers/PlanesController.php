@@ -31,9 +31,10 @@ use Inertia\Inertia;
  * lista, se lee como tal, y sin él nadie puede comparar nada — que es justo lo
  * que se pide al entrar aquí.
  *
- * Al cliente de Integra se le dice en la propia tabla que su CRM ya está pagado
- * y que lo único que sumaría es el complemento. Sin eso, ver «Pro $59» cuando
- * llevas dos años sin pagarlo se lee como una subida de precio.
+ * Al cliente de Integra se le dice en la propia tabla que el Básico ya lo tiene
+ * pagado y cuánto le costaría subir: sólo la diferencia. Hasta el 29-sep-2026
+ * la tabla decía «Incluido» en los tres planes y un cliente pidió el Pro gratis
+ * con la captura en la mano — con razón, era lo que le enseñábamos.
  *
  * ## Cambiar de plan es pedirlo, no pulsarlo
  *
@@ -57,6 +58,11 @@ class PlanesController extends Controller
                 'ia' => $plan->slugIa(),
                 'ciclo' => $plan->ciclo(),
                 'incluido_en_integra' => $plan->incluidoEnIntegra(),
+                // Los que ya tenían un plan mayor antes del 29-sep-2026 y lo
+                // conservan sin cargo. Sin esto la tabla les diría «+30» sobre
+                // el plan que tienen y no pagan.
+                'crm_pactado' => $plan->crmPactado(),
+                'plan_de_integra' => config('planes.plan_incluido_en_integra', 'basico'),
                 'sugerido' => $plan->planSugerido() !== $plan->slug() ? $plan->planSugerido() : null,
                 // Qué le aprieta hoy: es lo que convierte la tabla en una
                 // decisión en vez de una lista de precios.
@@ -71,6 +77,9 @@ class PlanesController extends Controller
                     'slug' => $slug,
                     'nombre' => $p['nombre'],
                     'precio' => $p['precio'],
+                    // Lo que le cuesta a un cliente de Integra: la diferencia
+                    // con el Básico que trae su paquete. Cero en el Básico.
+                    'precio_integra' => PlanDeLaEmpresa::precioCrmParaIntegra($slug),
                     'agentes' => $p['agentes'],
                     'contactos' => $p['contactos'],
                     'lineas' => $p['lineas'],

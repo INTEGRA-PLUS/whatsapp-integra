@@ -437,6 +437,42 @@ class IntegraClient
     }
 
     /**
+     * Dejar en Integra esta línea como la que envía facturas y recibos.
+     *
+     * Integra se autentica aquí con el `phone_number_id` de su instancia activa.
+     * Cuando un número se reconecta en Meta la línea cambia de identificador, la
+     * vieja se apaga aquí y allá seguía activa: cada factura recibía un 401 y la
+     * única salida era pegar a mano la credencial nueva en Integra (Nac
+     * Technology, 23-sep-2026). Así se cambia desde aquí y quedan sincronizados.
+     *
+     * @return array{ok: bool, cambiada?: bool, anterior?: ?string, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function usarLineaParaEnvios(array $linea): array
+    {
+        try {
+            $res = $this->call('put', '/api/v1/whatsapp/linea-envio', array_filter(
+                $linea,
+                fn ($v) => $v !== null && $v !== ''
+            ));
+
+            return [
+                'ok' => true,
+                'cambiada' => (bool) $res->json('data.cambiada'),
+                'anterior' => $res->json('data.anterior'),
+            ];
+        } catch (\RuntimeException $e) {
+            $codigo = $e->getCode();
+
+            return [
+                'ok' => false,
+                'sin_permiso' => $codigo === 403,
+                'sin_endpoint' => $codigo === self::CODE_ENDPOINT_MISSING,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Los ajustes de envío por WhatsApp que vive el ERP.
      *
      * No se guardan aquí: se leen y se escriben allí. Copiar la configuración a
@@ -464,6 +500,33 @@ class IntegraClient
     {
         try {
             $res = $this->call('put', '/api/v1/whatsapp/ajustes', $cambios);
+
+            return ['ok' => true, 'datos' => $res->json('data') ?? []];
+        } catch (\RuntimeException $e) {
+            return $this->falloDeAjustes($e);
+        }
+    }
+
+    /**
+     * Da de alta en Integra una plantilla aprobada en Meta.
+     *
+     * Integra sólo puede enviar plantillas que tiene registradas, y hasta ahora
+     * se registraban a mano allí con el nombre y el idioma exactos. Si ya está,
+     * Integra devuelve la que tiene en vez de duplicarla.
+     *
+     * @param  array{nombre: string, idioma: string, categoria?: string, encabezado: ?string, texto: string}  $plantilla
+     * @return array{ok: bool, datos?: array<string, mixed>, error?: string, sin_permiso?: bool, sin_endpoint?: bool}
+     */
+    public function registrarPlantilla(array $plantilla): array
+    {
+        try {
+            $res = $this->call('post', '/api/v1/whatsapp/plantillas', [
+                'title' => $plantilla['nombre'],
+                'language' => $plantilla['idioma'],
+                'body_header' => $plantilla['encabezado'],
+                'contenido' => $plantilla['texto'],
+                'clasificacion' => $plantilla['categoria'] ?? 'UTILITY',
+            ]);
 
             return ['ok' => true, 'datos' => $res->json('data') ?? []];
         } catch (\RuntimeException $e) {

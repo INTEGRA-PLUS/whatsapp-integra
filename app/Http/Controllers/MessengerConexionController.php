@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Company;
 use App\Models\Instance;
+use App\Support\PlanDeLaEmpresa;
 use App\Services\MessengerLoginService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -33,6 +35,13 @@ class MessengerConexionController extends Controller
     {
         if (! $this->messenger->estaConfigurado()) {
             return back()->with('error', 'Falta configurar Messenger. Avísanos y lo revisamos.');
+        }
+
+        // Antes de mandarlo a Facebook: volver de allí para leer «no puedes»
+        // es hacerle pasar por la autorización entera para nada.
+        if ($request->user()->company
+            && ($motivo = PlanDeLaEmpresa::de($request->user()->company)->motivoParaNoConectar(Instance::CANAL_MESSENGER))) {
+            return back()->with('error', $motivo);
         }
 
         $estado = Str::random(40);
@@ -83,9 +92,16 @@ class MessengerConexionController extends Controller
         $paginas = $this->messenger->paginas($token);
 
         if ($paginas === []) {
+            // Qué concedió Facebook de verdad. El 27-sep-2026 este mensaje salió
+            // tres veces seguidas con la página bien marcada en el diálogo, y sin
+            // esto no había forma de saber si faltaba un permiso o la página.
+            Log::channel('messenger')->warning('⚠️ Facebook no devolvió páginas utilizables', [
+                'empresa' => (int) $guardado['empresa'],
+            ] + $this->messenger->diagnosticoSinPaginas($token));
+
             return $this->volver(
                 $request,
-                'Esa cuenta de Facebook no administra ninguna página. Messenger se conecta a una página, no a un perfil personal.',
+                'Facebook no nos dio acceso a ninguna página. En la ventana de Facebook elige «Editar configuración», marca la página que quieres conectar y acepta todos los permisos. Messenger se conecta a una página, no a un perfil personal.',
                 false
             );
         }
@@ -147,6 +163,21 @@ class MessengerConexionController extends Controller
             return back()->with('error',
                 'En esa página no tienes permiso para responder mensajes. Pídele al administrador '
                 .'que te dé el rol de mensajería y vuelve a intentarlo.');
+        }
+
+        // Otra vez el cupo, ahora que se sabe qué página es: reconectar la que
+        // ya tiene no gasta cupo, conectar una distinta sí.
+        $yaEsSuya = Instance::where('company_id', (int) $guardado['empresa'])
+            ->where('channel', Instance::CANAL_MESSENGER)
+            ->where('external_account_id', $pagina['id'])
+            ->where('active', true)
+            ->exists();
+
+        $empresa = Company::find((int) $guardado['empresa']);
+
+        if (! $yaEsSuya && $empresa
+            && ($motivo = PlanDeLaEmpresa::de($empresa)->motivoParaNoConectar(Instance::CANAL_MESSENGER))) {
+            return redirect()->route('instances.index')->with('error', $motivo);
         }
 
         // Primero se suscribe y sólo después se guarda la línea. Al revés

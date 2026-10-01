@@ -12,8 +12,9 @@ import {
     Loader2, RefreshCw, Sparkles, Webhook, BarChart3, BadgeCheck,
     Building2, Image as ImageIcon, Phone as PhoneIcon, MapPin, FileText,
     Camera, ListChecks, CalendarClock, Plus, Trash2, Pencil,
-    PhoneCall, MessageCircle, ShieldAlert, ChevronDown,
+    PhoneCall, MessageCircle, ShieldAlert, ChevronDown, Settings,
 } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
 
 const TABS = [
     { id: 'perfil',      label: 'Perfil',                   Icon: User },
@@ -2445,11 +2446,11 @@ export default function SettingsIndex({ sessions = [] }) {
         <AppLayout breadcrumb={['Configuración']}>
             <Head title="Configuración" />
             <div className="flex flex-col gap-8 p-6 lg:p-8">
-                {/* Header */}
-                <div>
-                    <h1 className="text-2xl font-bold text-foreground tracking-tight">Configuración</h1>
-                    <p className="text-sm text-muted-foreground mt-1.5">Gestiona tu perfil, seguridad y preferencias de la cuenta</p>
-                </div>
+                <CabeceraModulo
+                    icono={Settings}
+                    titulo="Configuración"
+                    descripcion="Gestiona tu perfil, seguridad y preferencias de la cuenta"
+                />
 
                 <div className="flex flex-col lg:flex-row gap-8 min-h-0">
                     {/* Sidebar nav */}

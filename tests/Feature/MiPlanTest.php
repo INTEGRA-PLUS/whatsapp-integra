@@ -225,7 +225,7 @@ class MiPlanTest extends TestCase
      */
     public function el_cliente_de_integra_ve_el_periodo_que_tiene_cubierto(): void
     {
-        $company = $this->empresa(['plan' => 'pro', 'viene_de_integra' => true]);
+        $company = $this->empresa(['plan' => 'basico', 'viene_de_integra' => true]);
         $cobro = Suscripcion::emitir($company);
 
         $this->actingAs($this->admin($company))
@@ -302,7 +302,7 @@ class MiPlanTest extends TestCase
      */
     public function el_cliente_ve_sus_recibos(): void
     {
-        $company = $this->empresa(['plan' => 'pro', 'viene_de_integra' => true]);
+        $company = $this->empresa(['plan' => 'basico', 'viene_de_integra' => true]);
         $cobro = Suscripcion::emitir($company);
 
         $this->actingAs($this->admin($company))
@@ -344,7 +344,7 @@ class MiPlanTest extends TestCase
     public function test_el_de_integra_con_ia_sabe_que_se_le_factura(): void
     {
         $company = $this->empresa([
-            'plan' => 'pro',
+            'plan' => 'basico',
             'ia' => 'completa',
             'viene_de_integra' => true,
             'cobro' => 'integra',

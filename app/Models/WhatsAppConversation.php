@@ -90,6 +90,90 @@ class WhatsAppConversation extends Model
         return self::isBsuid($value) ? $value : self::normalizePhone($value);
     }
 
+    /** Un teléfono no pasa de 15 dígitos con el código de país (E.164). */
+    public const MAX_DIGITOS_TELEFONO = 15;
+
+    /**
+     * El destinatario que manda un sistema externo por el API, ya utilizable, o
+     * cadena vacía si no se puede saber a quién es.
+     *
+     * `normalizeRecipient` se queda con los dígitos, y cuando el ERP manda los
+     * dos teléfonos del cliente en el mismo campo —«3004012143 3004012143»— los
+     * pega en un número de 24 cifras. Nova Partners, 28-sep-2026: 39 facturas
+     * rechazadas por Meta con «(#131009) Parameter value is not valid» y 39
+     * conversaciones vacías, porque la conversación se creaba antes de enviar.
+     *
+     * Si todo lo que viene es el mismo número (repetido, con o sin el 57
+     * delante) se usa una vez. Si son números distintos, no se adivina cuál
+     * es el bueno: se devuelve vacío para que el API lo rechace antes de crear
+     * nada. `motivoDestinatarioInvalido()` dice por qué.
+     */
+    public static function destinatarioDelApi(?string $valor): string
+    {
+        $valor = trim((string) $valor);
+
+        if (self::isBsuid($valor)) {
+            return $valor;
+        }
+
+        $digitos = self::normalizePhone($valor);
+
+        if (strlen($digitos) <= self::MAX_DIGITOS_TELEFONO) {
+            return $digitos;
+        }
+
+        // Separados por algo: cada trozo es un número. Sirve si todos son el
+        // mismo (comparando los últimos 10 dígitos, para que «3004012143» y
+        // «573004012143» cuenten igual); se usa el más completo.
+        $trozos = array_values(array_filter(
+            array_map([self::class, 'normalizePhone'], preg_split('/[^\d+]+/', $valor)),
+            fn ($t) => strlen($t) >= 7
+        ));
+
+        if (count($trozos) >= 2) {
+            $colas = array_unique(array_map(fn ($t) => substr($t, -10), $trozos));
+            usort($trozos, fn ($a, $b) => strlen($b) <=> strlen($a));
+
+            return count($colas) === 1 && strlen($trozos[0]) <= self::MAX_DIGITOS_TELEFONO ? $trozos[0] : '';
+        }
+
+        // Pegados sin separador: el mismo número dos veces. También con el
+        // código de país puesto una sola vez delante de los dos
+        // («57» + «3136586983» + «3136586983»), que es como lo mandaba el ERP
+        // de Nova Partners en parte de sus clientes.
+        foreach (['', '57'] as $prefijo) {
+            if ($prefijo !== '' && ! str_starts_with($digitos, $prefijo)) {
+                continue;
+            }
+
+            $resto = substr($digitos, strlen($prefijo));
+            $mitad = intdiv(strlen($resto), 2);
+
+            if (strlen($resto) % 2 === 0 && substr($resto, 0, $mitad) === substr($resto, $mitad)) {
+                $numero = substr($resto, 0, $mitad);
+
+                // Un celular colombiano sin su 57 lo recupera del prefijo.
+                return $prefijo !== '' && strlen($numero) === 10 ? $prefijo.$numero : $numero;
+            }
+        }
+
+        return '';
+    }
+
+    /** Por qué `destinatarioDelApi()` no pudo sacar un destinatario, dicho para quien integra. */
+    public static function motivoDestinatarioInvalido(?string $valor): string
+    {
+        $digitos = self::normalizePhone($valor);
+
+        if (strlen($digitos) > self::MAX_DIGITOS_TELEFONO) {
+            return 'El teléfono «'.trim((string) $valor).'» tiene '.strlen($digitos).' dígitos y un número no pasa de '
+                .self::MAX_DIGITOS_TELEFONO.': parecen dos teléfonos distintos en el mismo campo. '
+                .'Deja uno solo en el celular del cliente.';
+        }
+
+        return 'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).';
+    }
+
     /**
      * ¿Es un BSUID (Business-Scoped User ID) en vez de un teléfono?
      *

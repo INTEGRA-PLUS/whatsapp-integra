@@ -79,6 +79,11 @@ return [
             '1' => 'Nombre del negocio que envía el aviso',
             '2' => 'Texto del aviso generado por el sistema externo',
         ],
+        // Cuál de las variables es el nombre del negocio. Sólo lo usa la vista
+        // previa, para enseñarle a cada empresa su propio nombre en vez del del
+        // ejemplo: en la pantalla de plantillas por defecto todas leían
+        // «MEGASTORE», que es el ejemplo que se le manda a Meta.
+        'variable_negocio' => 1,
         'auto_fill' => ['business_name', 'message'],
     ],
 
@@ -176,6 +181,7 @@ return [
             '3' => 'Valor de la factura',
             '4' => 'Plazo de pago (ej. «antes del 25 de septiembre»)',
         ],
+        'variable_negocio' => 2,
     ],
 
     'tirilla' => [
@@ -204,5 +210,6 @@ return [
             '2' => 'Nombre del negocio que recibe el pago',
             '3' => 'Valor pagado',
         ],
+        'variable_negocio' => 2,
     ],
 ];

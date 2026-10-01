@@ -72,6 +72,62 @@ class TemplateParameterGuardTest extends TestCase
         return app(TemplateParameterGuard::class);
     }
 
+    /**
+     * Y al revés: la plantilla no lleva archivo y el envío le adjunta uno.
+     *
+     * Meta lo rechaza con un 132018 —«Template does not contain title
+     * component»— y eso llega al operador como «no se pudo enviar la factura»,
+     * sin decirle qué mirar. Le pasó a Enternet el 22-sep-2026 con su plantilla
+     * de tirillas: marcada en Integra como «con documento» y aprobada en Meta
+     * sin encabezado. Son dos sistemas y sólo uno de los dos lo sabía.
+     *
+     * @test
+     */
+    public function un_archivo_en_una_plantilla_sin_encabezado_no_llega_a_meta(): void
+    {
+        // Una plantilla sin componente HEADER: sólo cuerpo.
+        $this->fakeGraph([[
+            'id' => 'tpl-2',
+            'name' => 'tirillas',
+            'language' => 'es_CO',
+            'status' => 'APPROVED',
+            'category' => 'UTILITY',
+            'components' => [['type' => 'BODY', 'text' => 'Gracias por tu pago.']],
+        ]]);
+
+        $resultado = $this->guard()->check($this->instancia(), 'tirillas', 'es_CO', [
+            ['type' => 'header', 'parameters' => [[
+                'type' => 'document',
+                'document' => ['link' => 'https://s3.test/Recibo_1.pdf', 'filename' => 'Recibo_1.pdf'],
+            ]]],
+        ]);
+
+        $this->assertFalse($resultado['ok']);
+        $this->assertSame('template_header_not_expected', $resultado['code']);
+        $this->assertStringContainsString('no tiene encabezado', $resultado['error']);
+        $this->assertStringContainsString('un documento', $resultado['error']);
+    }
+
+    /**
+     * Pero un encabezado de TEXTO no se toca.
+     *
+     * Ahí no hay archivo de más: el desajuste de variables de texto lo cubre
+     * Meta con un 132000 y bloquear aquí sería frenar envíos que sí salen.
+     *
+     * @test
+     */
+    public function un_encabezado_de_texto_sigue_pasando(): void
+    {
+        $this->fakeGraph($this->catalogo('TEXT'));
+
+        $resultado = $this->guard()->check($this->instancia(), 'aviso_pago', 'es', [
+            ['type' => 'header', 'parameters' => [['type' => 'text', 'text' => 'Septiembre']]],
+            ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => 'Daniela']]],
+        ]);
+
+        $this->assertTrue($resultado['ok']);
+    }
+
     public function test_un_encabezado_de_imagen_ausente_no_llega_a_meta(): void
     {
         $this->fakeGraph($this->catalogo());

@@ -420,14 +420,14 @@ class PlanesTest extends TestCase
     public function test_al_de_integra_solo_se_le_cobra_el_complemento(): void
     {
         $sinIa = PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'avanzado', 'viene_de_integra' => true, 'cobro' => 'integra',
+            'plan' => 'basico', 'viene_de_integra' => true, 'cobro' => 'integra',
         ]));
 
         $this->assertSame(0, $sinIa->precioMensual());
         $this->assertFalse($sinIa->seFactura());
 
         $conIa = PlanDeLaEmpresa::de($this->empresa([
-            'plan' => 'avanzado', 'ia' => 'esencial',
+            'plan' => 'basico', 'ia' => 'esencial',
             'viene_de_integra' => true, 'cobro' => 'integra',
         ]));
 

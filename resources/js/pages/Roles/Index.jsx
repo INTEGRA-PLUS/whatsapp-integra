@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { clsx } from 'clsx';
 import { colorPorIndice } from '@/lib/paleta';
 import {
@@ -48,31 +49,19 @@ export default function RolesIndex({ roles, modulos = [] }) {
         <>
             <Head title="Roles y Permisos" />
             <div className="flex flex-col h-full">
-                {/* Header */}
-                {/* La banda era `bg-white dark:bg-black`: en oscuro, negro puro
-                    contra el navy de la marca, que no se parecen en nada. Ahora
-                    es la superficie elevada del tema con un lavado del verde,
-                    que funciona igual en los dos temas. */}
-                <div className="relative overflow-hidden border-b border-border bg-card">
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/[0.09] via-primary/[0.02] to-transparent" />
-                    <div className="max-w-7xl mx-auto px-6 py-8 relative">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                            <div>
-                                <h1 className="text-4xl font-black tracking-tight text-foreground flex items-center gap-4">
-                                    <div className="size-12 bg-primary text-primary-foreground rounded-2xl flex items-center justify-center rotate-3">
-                                        <ShieldCheck className="size-7" />
-                                    </div>
-                                    Roles y Permisos
-                                </h1>
-                                <p className="text-muted-foreground mt-2 text-lg">Define a qué parte del sistema entra cada persona del equipo.</p>
-                            </div>
-                            <Button asChild size="lg" className="gap-2 shadow-xl shadow-primary/20 h-12 px-8 rounded-xl transition-all hover:scale-105 active:scale-95">
-                                <Link href={route('roles.create')}>
-                                    <Plus className="size-5" /> Crear Nuevo Rol
-                                </Link>
-                            </Button>
-                        </div>
-                    </div>
+                <div className="px-6 pt-6 lg:px-10 lg:pt-8">
+                    <CabeceraModulo
+                        icono={ShieldCheck}
+                        titulo="Roles y Permisos"
+                        descripcion="Define a qué parte del sistema entra cada persona del equipo."
+                        className="max-w-7xl mx-auto"
+                    >
+                        <Button asChild className="gap-2">
+                            <Link href={route('roles.create')}>
+                                <Plus className="size-4" /> Crear Nuevo Rol
+                            </Link>
+                        </Button>
+                    </CabeceraModulo>
                 </div>
 
                 {/* Content */}

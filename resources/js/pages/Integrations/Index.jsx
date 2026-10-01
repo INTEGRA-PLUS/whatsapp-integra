@@ -7,6 +7,7 @@ import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderCon
 import IntegrationsHelp from './IntegrationsHelp';
 import { WhatsAppPreview } from '../Templates/preview';
 import { cn } from '@/lib/utils';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
@@ -33,23 +34,15 @@ export default function IntegrationsIndex({ webhooks, eventCatalog }) {
         <>
             <Head title="Integraciones" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Plug className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Integraciones</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Conecta tu WhatsApp con sistemas externos y úsalos desde el chat.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={Webhook}
+                    titulo="Integraciones"
+                    descripcion="Conecta tu WhatsApp con sistemas externos y úsalos desde el chat."
+                >
                     <Button variant="outline" onClick={() => setShowHelp(true)} className="gap-2">
                         <HelpCircle className="size-4" /> ¿Cómo funciona?
                     </Button>
-                </div>
+                </CabeceraModulo>
 
                 {/* Sub-nav */}
                 <div className="flex gap-1 border-b">
@@ -785,7 +778,14 @@ function ProviderSection({ can, onBack }) {
                         <ProviderConnectForm
                             integrationKey="invoice_payments"
                             initialBaseUrl={payments?.base_url ?? ''}
-                            onConnected={() => { showToast('Conexión establecida con Integra.'); load(); }}
+                            onConnected={data => {
+                                // Al conectar se le llevan a Integra las líneas que ya había y se
+                                // deja la de facturación como la de envío: se dice cómo fue.
+                                const envio = data?.lineas_en_integra?.envio;
+                                showToast(envio ? `Conexión establecida con Integra. ${envio}` : 'Conexión establecida con Integra.');
+                                load();
+                                router.reload({ only: ['lineasDelErp', 'lineaElegida', 'credencialApagada'], preserveScroll: true });
+                            }}
                             onError={message => showToast(message, 'error')}
                         />
                     </div>
@@ -837,6 +837,8 @@ function ProviderSection({ can, onBack }) {
  * que no existan dos copias de la misma configuración: el problema con el que
  * empezó todo este trabajo.
  */
+const etiquetaDeUso = { factura: 'facturas', tirilla: 'recibos de pago', contrato: 'contratos' };
+
 function AjustesDeEnvio({ showToast, canManage }) {
     const { lineasDelErp = [] } = usePage().props;
     // Por qué línea envía Integra ahora mismo. Estas plantillas se eligen en
@@ -874,7 +876,16 @@ function AjustesDeEnvio({ showToast, canManage }) {
         try {
             const { data } = await axios.put('/integrations/ajustes-envio', cambios);
             setEstado(e => ({ ...e, ...data }));
-            showToast('Guardado en Integra.');
+
+            // Recién registrada en Integra no tiene dicho qué dato va en cada
+            // variable, y sin eso la factura sale con los huecos vacíos: se
+            // abre el editor directamente en vez de confiar en que lo pulsen.
+            if (data.registrada) {
+                showToast('Registrada en Integra y elegida. Ahora di qué dato va en cada variable.');
+                setParametrizando({ id: data.registrada, uso: etiquetaDeUso[cambios.registrar?.uso] ?? 'plantilla' });
+            } else {
+                showToast('Guardado en Integra.');
+            }
         } catch (e) {
             showToast(e.response?.data?.message ?? 'No se pudo guardar en Integra.', 'error');
             cargar();
@@ -905,7 +916,35 @@ function AjustesDeEnvio({ showToast, canManage }) {
         );
     }
 
-    const conDocumento = (estado.disponibles ?? []).filter(p => p.con_documento);
+    const soloEnMeta = estado.solo_en_meta ?? [];
+
+    // Sólo lo que se puede enviar por el número de hoy: lo aprobado en él, esté
+    // ya registrado en Integra (un id) o no todavía (`meta:`, se registra al
+    // elegirlo). Antes salía todo lo que Integra tenía guardado para la empresa
+    // —diecinueve plantillas, catorce marcadas «no está en esta línea»— y con
+    // cinco aprobadas en el número no había forma de ver cuáles servían.
+    // Si Meta no contestó, `en_la_linea` no viene y se ofrece todo: no saber no
+    // es saber que falta.
+    const opciones = [
+        ...(estado.disponibles ?? [])
+            .filter(p => p.en_la_linea !== false)
+            .map(p => ({ valor: String(p.id), nombre: p.title, idioma: p.language, con_documento: p.con_documento })),
+        ...soloEnMeta.map((p, i) => ({ valor: `meta:${i}`, nombre: p.nombre, idioma: p.idioma, con_documento: p.con_documento })),
+    ].sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const conDocumento = opciones.filter(p => p.con_documento);
+
+    // Una opción del desplegable es un id de Integra o, si empieza por
+    // `meta:`, una plantilla aprobada en la línea que Integra todavía no conoce.
+    const elegir = (clave, campo, valor) => {
+        if (valor.startsWith('meta:')) {
+            const p = soloEnMeta[Number(valor.slice(5))];
+            if (p) guardar({ registrar: { uso: clave, nombre: p.nombre, idioma: p.idioma } }, clave);
+            return;
+        }
+
+        guardar({ [campo]: valor ? Number(valor) : null }, clave);
+    };
 
     return (
         <Panel title="Envíos automáticos" Icon={Send} does="Qué manda Integra por WhatsApp y con qué plantilla.">
@@ -946,8 +985,8 @@ function AjustesDeEnvio({ showToast, canManage }) {
                     {conDocumento.length === 0 && (
                         <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                             <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                            Ninguna de tus plantillas lleva encabezado de documento, así que no pueden adjuntar
-                            el PDF. Crea una en Plantillas con encabezado de tipo DOCUMENTO.
+                            Ninguna de las plantillas aprobadas en este número lleva encabezado de documento, así
+                            que no pueden adjuntar el PDF. Crea una en Plantillas con encabezado de tipo Documento.
                         </p>
                     )}
 
@@ -972,6 +1011,15 @@ function AjustesDeEnvio({ showToast, canManage }) {
                         // falta, no se marca nada.
                         const elegida = (estado.disponibles ?? []).find(p => p.id === actual?.id);
                         const fueraDeLaLinea = elegida?.en_la_linea === false;
+                        // Una elegida que no existe en el número no se enseña
+                        // como elegida: «facturas (en)» con su marca en el
+                        // desplegable hacía pensar al cliente que alguien había
+                        // entrado a su software a escoger cosas. Para este número
+                        // no hay ninguna, y es lo que se dice. En Integra no se
+                        // borra desde aquí: esta pantalla sólo está mirando, y
+                        // un Meta que tarde en contestar desconfiguraría las
+                        // facturas de un cliente sin que nadie lo pidiera.
+                        const vigente = fueraDeLaLinea ? null : actual;
 
                         return (
                             <div key={clave} className="space-y-1.5">
@@ -980,19 +1028,23 @@ function AjustesDeEnvio({ showToast, canManage }) {
 
                                 <div className="flex items-center gap-1.5">
                                     <select
-                                        value={actual?.id ?? ''}
+                                        value={vigente?.id ?? ''}
                                         disabled={!canManage || guardando === clave}
-                                        onChange={e => guardar({ [campo]: e.target.value ? Number(e.target.value) : null }, clave)}
+                                        onChange={e => elegir(clave, campo, e.target.value)}
                                         className="h-8 min-w-[200px] rounded-lg border border-input bg-card px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring/50"
                                     >
                                         <option value="">Sin elegir</option>
-                                        {(estado.disponibles ?? []).map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.title} ({p.language})
-                                                {p.con_documento ? '' : ' · sin adjunto'}
-                                                {p.en_la_linea === false ? ' · no está en esta línea' : ''}
-                                            </option>
-                                        ))}
+                                        <optgroup label={`Aprobadas en ${estado.linea?.numero || 'tu número'}`}>
+                                            {opciones.map(p => (
+                                                <option key={p.valor} value={p.valor}>
+                                                    {p.nombre} ({p.idioma})
+                                                    {p.con_documento ? '' : ' · sin adjunto'}
+                                                </option>
+                                            ))}
+                                            {opciones.length === 0 && (
+                                                <option disabled value="-">No hay plantillas aprobadas en este número</option>
+                                            )}
+                                        </optgroup>
                                     </select>
 
                                     {/* Elegir la plantilla y decir qué lleva
@@ -1001,12 +1053,12 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                         pantalla y menos en otro sistema. */}
                                     <button
                                         type="button"
-                                        disabled={!actual?.id}
-                                        onClick={() => setParametrizando({ id: actual.id, uso: etiqueta.toLowerCase() })}
-                                        title={actual?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
+                                        disabled={!vigente?.id}
+                                        onClick={() => setParametrizando({ id: vigente.id, uso: etiqueta.toLowerCase() })}
+                                        title={vigente?.id ? 'Decir qué dato va en cada variable' : 'Elige primero una plantilla'}
                                         className={cn(
                                             'flex h-8 items-center gap-1 rounded-lg border border-input px-2 text-[11px] transition-colors',
-                                            actual?.id
+                                            vigente?.id
                                                 ? 'cursor-pointer text-foreground hover:bg-muted'
                                                 : 'cursor-not-allowed text-muted-foreground/50',
                                         )}
@@ -1026,18 +1078,20 @@ function AjustesDeEnvio({ showToast, canManage }) {
                                       <p className="flex items-start gap-1.5">
                                           <AlertTriangle className="mt-px size-3.5 shrink-0" />
                                           <span>
-                                              <span className="font-mono">{elegida.title} ({elegida.language})</span> no está
-                                              aprobada en {estado.linea?.numero || estado.linea?.nombre || 'la línea por la que envía Integra'}.
-                                              Los catálogos de Meta son por número y no se heredan: mientras siga así, estos
-                                              envíos se caen uno a uno.
+                                              <strong>No hay plantilla para {etiqueta.toLowerCase()} en {estado.linea?.numero || 'este número'}.</strong>{' '}
+                                              La que se usaba, <span className="font-mono">{elegida.title} ({elegida.language})</span>,
+                                              es de otro número y aquí no existe: hasta que elijas una de la lista, no se envían.
                                           </span>
                                       </p>
-                                      <a
-                                          href="/templates"
-                                          className="mt-1.5 ml-5 inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-2 py-1 font-medium hover:bg-destructive/10"
-                                      >
-                                          <Copy className="size-3" /> Copiarla a esta línea
-                                      </a>
+                                      {/* Copiarla es el camino largo —otra revisión de
+                                          Meta—, así que va como enlace y no como botón. */}
+                                      <p className="mt-1 pl-5">
+                                          ¿Necesitas justo esa?{' '}
+                                          <a href="/templates" className="font-medium underline underline-offset-2">
+                                              Cópiala a este número
+                                          </a>{' '}
+                                          y espera a que Meta la apruebe.
+                                      </p>
                                   </div>
                               )}
                             </div>
@@ -1544,7 +1598,7 @@ function Interruptor({ titulo, descripcion, activo, ocupado, disabled, onCambiar
  * un cliente (9-sep-2026).
  */
 function LineasDelErp({ showToast, canManage }) {
-    const { lineasDelErp = [], lineaElegida = false } = usePage().props;
+    const { lineasDelErp = [], lineaElegida = false, credencialApagada = null } = usePage().props;
     const [guardando, setGuardando] = useState(null);
     // Qué línea se pidió cambiar y por qué no se pudo. Va por línea y no suelto
     // arriba: el motivo se lee al lado del botón que lo provocó.
@@ -1553,10 +1607,14 @@ function LineasDelErp({ showToast, canManage }) {
     // facturación de toda la empresa a otro número; no es un clic de ida.
     const [confirmando, setConfirmando] = useState(null);
 
-    if (lineasDelErp.length === 0) return null;
+    // Sin líneas activas pero con la credencial apagada es cuando más falta el aviso.
+    if (lineasDelErp.length === 0 && !credencialApagada) return null;
 
     const activas = lineasDelErp.filter(l => l.ultima_vez);
     const actual = lineasDelErp.find(l => l.es_la_del_erp);
+    // A qué línea mover la credencial apagada: la elegida o, si hay una sola
+    // activa, esa. Con varias y ninguna elegida, que decida quien administra.
+    const destinoDeLaCredencial = actual ?? (lineasDelErp.length === 1 ? lineasDelErp[0] : null);
 
     /**
      * El cambio se pide con axios, no con `router.post`.
@@ -1577,7 +1635,7 @@ function LineasDelErp({ showToast, canManage }) {
             setConfirmando(null);
             showToast?.(data.message ?? 'Listo: el ERP enviará por esa línea.');
             router.reload({
-                only: ['lineasDelErp', 'lineaElegida'],
+                only: ['lineasDelErp', 'lineaElegida', 'credencialApagada'],
                 preserveScroll: true,
                 preserveState: true,
             });
@@ -1598,6 +1656,52 @@ function LineasDelErp({ showToast, canManage }) {
             Icon={Plug}
             does="La línea por la que tu software administrativo manda facturas y recibos."
         >
+            {/* La credencial con la que entra el ERP es de una línea apagada.
+                El API sólo acepta activas, así que cada envío recibe un 401 y
+                elegir línea aquí no lo arregla: la petición no llega a
+                preguntar. Nac Technology, 23-sep-2026: reconectaron el número,
+                Meta le dio un phone_number_id nuevo y la instancia vieja se
+                apagó con el ERP todavía configurado con ella. */}
+            {credencialApagada && (
+                <div className="mb-3 rounded-lg bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                    <p className="flex items-start gap-1.5 font-semibold">
+                        <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                        Tu software administrativo entra con la credencial de una línea apagada, así que no puede enviar.
+                    </p>
+                    <p className="mt-1.5 pl-5">
+                        La última vez que entró fue {formatearUltimaVez(credencialApagada.ultima_vez)}, por
+                        {' '}{credencialApagada.nombre}{credencialApagada.numero ? ` (${credencialApagada.numero})` : ''}
+                        {credencialApagada.phone_number_id && (
+                            <> · <span className="font-mono">{credencialApagada.phone_number_id}</span></>
+                        )}. Esa línea está apagada y cada factura o recibo que intente mandar se rechaza.
+                    </p>
+                    {/* Antes había que generar un token y pegarlo a mano en el ERP.
+                        Ahora el cambio se escribe en Integra por su API. */}
+                    {destinoDeLaCredencial ? (
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2 pl-5">
+                            <Button
+                                size="sm"
+                                disabled={!canManage || guardando !== null}
+                                onClick={() => elegir(destinoDeLaCredencial.id)}
+                                className="h-7 px-2.5 text-[11px]"
+                            >
+                                {guardando === destinoDeLaCredencial.id
+                                    ? <><Loader2 className="mr-1 size-3 animate-spin" /> Cambiando en Integra…</>
+                                    : `Usar ${destinoDeLaCredencial.nombre} para los envíos de Integra`}
+                            </Button>
+                            <span className="text-destructive/80">Se cambia en Integra al instante, sin copiar nada.</span>
+                        </div>
+                    ) : (
+                        <p className="mt-1.5 pl-5">
+                            Elige abajo con «Usar esta» la línea por la que debe enviar: se configura en Integra al instante.
+                        </p>
+                    )}
+                    {rechazo && destinoDeLaCredencial && rechazo.id === destinoDeLaCredencial.id && (
+                        <p className="mt-1.5 pl-5 font-semibold">{rechazo.motivo}</p>
+                    )}
+                </div>
+            )}
+
             {lineasDelErp.length > 1 && !lineaElegida && (
                 <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
                     <AlertTriangle className="mt-px size-3.5 shrink-0" />
@@ -1744,11 +1848,15 @@ function LineasDelErp({ showToast, canManage }) {
                 pregunta, sí, pero enviaba con su credencial de siempre y salía
                 por la línea de siempre: la frase prometía algo que no pasaba. Lo
                 que lo cumple ahora es que el cambio se aplica de este lado. */}
-            <p className="mt-3 text-[11px] text-muted-foreground">
-                El cambio vale desde el siguiente envío y se aplica aquí, así que no hay que tocar
-                nada del otro lado aunque tu software administrativo siga entrando con la
-                credencial de siempre.
-            </p>
+            {/* Y la promesa sólo se hace cuando es verdad: con la credencial
+                apagada, sí hay que tocar el otro lado. */}
+            {!credencialApagada && (
+                <p className="mt-3 text-[11px] text-muted-foreground">
+                    El cambio vale desde el siguiente envío y se aplica aquí, así que no hay que tocar
+                    nada del otro lado aunque tu software administrativo siga entrando con la
+                    credencial de siempre.
+                </p>
+            )}
 
             {/* Con qué credencial entra dice si ese cliente ya se puede migrar
                 al token de verdad: el phone_number_id no es un secreto, se

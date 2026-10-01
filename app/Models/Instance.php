@@ -25,6 +25,12 @@ class Instance extends Model
         'health_status',
         'health_checked_at',
         'health_error',
+        'puede_enviar',
+        'puede_enviar_motivo',
+        'puede_enviar_visto_at',
+        'problema_de_pago',
+        'problema_de_pago_desde',
+        'enlace_de_pago',
         'meta',
         'access_token',
         'token_expires_at',
@@ -57,6 +63,8 @@ class Instance extends Model
     protected $casts = [
         'active' => 'boolean',
         'health_checked_at' => 'datetime',
+        'puede_enviar_visto_at' => 'datetime',
+        'problema_de_pago_desde' => 'datetime',
         'api_token_created_at' => 'datetime',
         'api_token_last_used_at' => 'datetime',
         'api_last_seen_at' => 'datetime',
@@ -250,11 +258,14 @@ class Instance extends Model
     public function isMetaConfigured()
     {
         // Cada canal se configura con cosas distintas: WhatsApp con un número y
-        // una WABA, Instagram con una cuenta profesional. Messenger todavía no
-        // está construido, y decir que no está listo es la respuesta correcta
-        // —y la segura: ningún camino de salida intentará hablar con Meta por un
-        // canal que aún no sabe hacerlo.
-        if ($this->esInstagram()) {
+        // una WABA; Instagram con una cuenta profesional y Messenger con una
+        // página, los dos con su token.
+        //
+        // Messenger devolvió `false` aquí hasta el 27-sep-2026, de cuando aún no
+        // estaba construido. Se construyó el envío y nadie volvió a esta línea:
+        // la primera respuesta real desde el chat falló con «Instancia no
+        // configurada» sin llegar a salir.
+        if ($this->esInstagram() || $this->esMessenger()) {
             return ! empty($this->external_account_id) && ! empty($this->access_token);
         }
 

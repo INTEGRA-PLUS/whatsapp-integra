@@ -31,6 +31,61 @@ class ResumenIaClient
     }
 
     /**
+     * ¿Responde la IA de la plataforma? Un resumen de mentira de dos mensajes.
+     *
+     * Recorre el camino real —CRM → n8n → Ollama— y no una puerta aparte: lo
+     * que se quiere saber es si el resumen funciona, y un «ping» a Ollama
+     * diría que sí aunque n8n estuviera caído. Cuesta una inferencia mínima al
+     * día. Nació el 28-sep-2026: Ollama rechazaba todo por el pago vencido y
+     * se supo porque lo contó un cliente.
+     *
+     * @return array{ok: bool, estado: ?int, detalle: ?string}
+     */
+    public function probar(): array
+    {
+        if (! self::configured()) {
+            return ['ok' => false, 'estado' => null, 'detalle' => 'El servicio de resumen no está configurado.'];
+        }
+
+        try {
+            $respuesta = Http::acceptJson()
+                ->withHeaders(['X-Api-Key' => (string) config('services.resumen.api_key')])
+                ->timeout((int) config('services.resumen.timeout', 30))
+                ->post((string) config('services.resumen.webhook_url'), [
+                    // Ids que no existen pero no son cero: el flujo rechaza un id
+                    // vacío —«falta conversacion.id»— antes de llegar a Ollama, y
+                    // la prueba se quedaba sin probar nada.
+                    'empresa' => ['id' => self::ID_DE_PRUEBA, 'nombre' => 'Comprobación diaria'],
+                    'conversacion' => ['id' => self::ID_DE_PRUEBA, 'contacto' => 'Prueba'],
+                    'tono' => 'telegrama',
+                    'mensajes' => [
+                        ['de' => 'cliente', 'texto' => 'Hola, ¿ya quedó registrado mi pago?', 'cuando' => now()->toIso8601String()],
+                        ['de' => 'asesor', 'texto' => 'Sí, quedó registrado hoy.', 'cuando' => now()->toIso8601String()],
+                    ],
+                ]);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'estado' => null, 'detalle' => $e->getMessage()];
+        }
+
+        if ($respuesta->failed()) {
+            return ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => mb_substr($respuesta->body(), 0, 300)];
+        }
+
+        if ($this->leer($respuesta->json()) !== null) {
+            return ['ok' => true, 'estado' => $respuesta->status(), 'detalle' => null];
+        }
+
+        // El flujo a veces contesta 200 con el motivo en `error`: se pasa tal
+        // cual, que es lo que dice si el fallo es de Ollama o del propio flujo.
+        $error = data_get($respuesta->json(), 'error') ?? data_get($respuesta->json(), 'output.error');
+
+        return ['ok' => false, 'estado' => $respuesta->status(), 'detalle' => $error ? (string) $error : 'Respondió, pero sin resumen.'];
+    }
+
+    /** Ni empresa ni conversación: el id con que viaja la comprobación diaria. */
+    public const ID_DE_PRUEBA = 999999999;
+
+    /**
      * @param  list<WhatsAppMessage>  $mensajes  De más antiguo a más reciente.
      * @return array{resumen: string, puntos: list<string>, pendientes: list<string>}|null
      */

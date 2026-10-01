@@ -33,9 +33,13 @@ return [
     | Los planes de CRM
     |--------------------------------------------------------------------------
     |
-    | `agentes`, `contactos` y `lineas` son lo que incluye el plan. **No son
-    | límites duros**: nadie deja de atender a un cliente porque la empresa
-    | creció. Sirven para saber cuándo toca hablar de subir de plan, y salen en
+    | `agentes`, `contactos` y `lineas` son lo que incluye el plan. Agentes y
+    | contactos **no son límites duros**: nadie deja de atender a un cliente
+    | porque la empresa creció.
+    |
+    | Las líneas sí, desde el 30-sep-2026, y son **por canal**: el Básico es una
+    | de WhatsApp, una de Instagram y una de Messenger. No se apaga ninguna que
+    | ya funcione; lo que se impide es conectar o reactivar una más. Sirven para saber cuándo toca hablar de subir de plan, y salen en
     | el panel cuando alguien se pasa.
     |
     | Los topes se eligieron contra la base real, no a ojo: con 2 agentes y
@@ -82,6 +86,23 @@ return [
         ],
 
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | El plan que trae el paquete de Integra
+    |--------------------------------------------------------------------------
+    |
+    | El cliente de Integra tiene el Básico dentro de su ERP, y ninguno más.
+    | Subir se paga, y se paga sólo la diferencia: Pro +30, Avanzado +80.
+    |
+    | Hasta el 29-sep-2026 la pantalla de Planes pintaba «Incluido» en los tres
+    | planes y un cliente pidió el Pro gratis con la captura en la mano. Los
+    | cuatro que ya estaban en un plan mayor lo conservan sin cargo: van con
+    | `companies.crm_pactado`.
+    |
+    */
+
+    'plan_incluido_en_integra' => 'basico',
 
     /*
     |--------------------------------------------------------------------------
@@ -211,7 +232,10 @@ return [
         'Respuestas automáticas y respuestas rápidas',
         'Campañas y plantillas',
         'Reportes de atención',
-        'Agentes y líneas ilimitados',
+        // Decía «Agentes y líneas ilimitados» y contradecía la tabla de al
+        // lado, que da 2, 5 y 10 agentes. No son topes duros —nadie deja de
+        // atender por pasarse—, pero ilimitado no es.
+        'Si te pasas de agentes o contactos no se corta nada: te avisamos para hablar de subir',
         'WhatsApp, Instagram y Facebook Messenger',
     ],
 

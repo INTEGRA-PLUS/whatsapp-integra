@@ -235,7 +235,7 @@ class CierreAutomaticoExtension extends Extension implements RunsOnSchedule, Han
             ->get();
 
         foreach ($candidatas as $conversation) {
-            $this->enviar($conversation, strtr($pregunta, ['{name}' => $conversation->name ?? '']));
+            $this->enviar($conversation, $this->conNombre($pregunta, $conversation));
 
             // Se marca aunque el envío se caiga después: si no llegó, el
             // cliente tampoco va a contestar, y cerrar un hilo parado es
@@ -303,7 +303,7 @@ class CierreAutomaticoExtension extends Extension implements RunsOnSchedule, Han
         $despedida = trim((string) ($ajustes['mensaje_de_cierre'] ?? ''));
 
         if ($despedida !== '') {
-            $this->enviar($conversation, strtr($despedida, ['{name}' => $conversation->name ?? '']));
+            $this->enviar($conversation, $this->conNombre($despedida, $conversation));
         }
 
         $conversation->update([
@@ -344,7 +344,31 @@ class CierreAutomaticoExtension extends Extension implements RunsOnSchedule, Han
             null,
             '',
             null,
-            new AiDecision(MenuActionResult::reply($texto))
+            // Con su origen: sin él, la cola lo guardaba como respuesta de la
+            // IA y el chat lo enseñaba con la etiqueta «IA».
+            new AiDecision(MenuActionResult::reply($texto), origen: self::ORIGEN)
         );
+    }
+
+    /** Cómo queda marcado en el mensaje lo que manda esta extensión. */
+    public const ORIGEN = 'cierre_automatico';
+
+    /**
+     * El texto con `{name}` rellenado con el nombre de la persona.
+     *
+     * Se usaba el nombre de la conversación, que cuando nadie la ha nombrado es
+     * el número: «¿Necesitas algo más, 573008653612?». Primero el contacto
+     * vinculado; si sólo hay un número, se quita el hueco con su coma en vez de
+     * leerle al cliente su propio teléfono.
+     */
+    private function conNombre(string $texto, WhatsAppConversation $conversation): string
+    {
+        $nombre = collect([$conversation->contact?->name, $conversation->name])
+            ->map(fn ($n) => trim((string) $n))
+            ->first(fn ($n) => $n !== '' && ! preg_match('/^[\d\s+().-]+$/', $n));
+
+        return $nombre
+            ? strtr($texto, ['{name}' => $nombre])
+            : trim(preg_replace('/[,\s]*\{name\}/u', '', $texto));
     }
 }

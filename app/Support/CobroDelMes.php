@@ -93,10 +93,12 @@ class CobroDelMes
                 'empresa' => $company->name,
                 'plan' => $plan->nombre(),
                 'ia' => $plan->nombreIa(),
-                // Al cliente de Integra sólo se le cobra el complemento: el CRM
-                // va dentro de su ERP. Decirlo en la lista evita que quien
-                // factura se pregunte por qué paga menos que el de al lado.
-                'solo_ia' => $plan->incluidoEnIntegra(),
+                // Al cliente de Integra el Básico le va dentro de su ERP: se le
+                // cobra el complemento y, si subió de plan, la diferencia.
+                // Decirlo en la lista evita que quien factura se pregunte por
+                // qué paga menos que el de al lado.
+                'solo_ia' => $plan->incluidoEnIntegra() && $plan->precioCrmAPagar() === 0,
+                'diferencia_crm' => $plan->incluidoEnIntegra() ? $plan->precioCrmAPagar() : null,
                 'contactos_reales' => $plan->contactosReales(),
                 'agentes_reales' => $plan->agentesReales(),
                 'se_paso' => $plan->sePasoDelTramo(),
@@ -135,12 +137,11 @@ class CobroDelMes
         // cortesía, alguien la pasaría a activo en la siguiente revisión y le
         // cobraría dos veces el mismo CRM.
         //
-        // Pero **sólo mientras no tenga complemento de IA**. El día que lo
-        // contrata sí entra en la factura, por el importe del complemento y
-        // nada más: el CRM ya se lo cobró el ERP. Ése es el único camino por el
-        // que un cliente de Integra empieza a aparecer aquí, y es justo la
-        // venta que se busca — excluirlo siempre la haría invisible.
-        if ($plan->incluidoEnIntegra() && ! $plan->tieneIa()) {
+        // Pero **sólo mientras no tenga nada que su paquete no traiga**. El día
+        // que contrata la IA, o sube de plan y paga la diferencia con el
+        // Básico, entra en la factura por eso y nada más. Excluirlo siempre
+        // haría invisible justo la venta que se busca.
+        if ($plan->cubiertoPorIntegra()) {
             return 'integra';
         }
 
@@ -173,7 +174,11 @@ class CobroDelMes
                 self::limpio($fila['empresa']),
                 $fila['plan'],
                 $fila['ia'],
-                $fila['solo_ia'] ? 'Solo complemento IA (CRM en su ERP)' : 'CRM + complemento',
+                match (true) {
+                    $fila['solo_ia'] => 'Solo complemento IA (CRM en su ERP)',
+                    ($fila['diferencia_crm'] ?? 0) > 0 => 'Diferencia sobre el Básico de Integra + complemento',
+                    default => 'CRM + complemento',
+                },
                 $fila['contactos_reales'],
                 $fila['agentes_reales'],
                 $fila['usd'] ?: 'sin plan',

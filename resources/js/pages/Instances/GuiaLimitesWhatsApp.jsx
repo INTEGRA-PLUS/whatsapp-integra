@@ -1,8 +1,9 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Aviso, Captura, Paso, useAvance } from '@/components/guia';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import {
-    ArrowLeft, FileText, Gauge, RotateCcw, ShieldCheck, TriangleAlert,
+    FileText, Gauge, RotateCcw, ShieldCheck, TriangleAlert,
 } from 'lucide-react';
 
 /**
@@ -53,23 +54,18 @@ export default function GuiaLimitesWhatsApp() {
 
             <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6 pb-24">
 
-                <Link
-                    href="/instances"
-                    className="inline-flex w-fit items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                    <ArrowLeft className="size-4" /> Volver a Instancias
-                </Link>
-
-                <header>
-                    <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                        Subir el límite de mensajes de WhatsApp
-                    </h1>
-                    <p className="mt-1.5 text-[14.5px] leading-relaxed text-muted-foreground">
-                        Si al facturar te salen mensajes en <strong className="font-semibold text-foreground">Fallido</strong> con
-                        el aviso <span className="font-mono text-[13px]">Spam Rate limit hit</span>, esta guía te dice
-                        por qué pasa y cómo subir el cupo de 250 a 2.000 clientes por día.
-                    </p>
-                </header>
+                <CabeceraModulo
+                    icono={Gauge}
+                    volver="/instances"
+                    titulo="Subir el límite de mensajes de WhatsApp"
+                    descripcion={
+                        <>
+                            Si al facturar te salen mensajes en <strong className="font-semibold text-foreground">Fallido</strong> con
+                            el aviso <span className="font-mono text-[13px]">Spam Rate limit hit</span>, esta guía te dice
+                            por qué pasa y cómo subir el cupo de 250 a 2.000 clientes por día.
+                        </>
+                    }
+                />
 
                 {/* ── Lo primero de todo: no es spam ───────────────────────── */}
                 <Aviso tono="bien" titulo="No te reportaron por spam">

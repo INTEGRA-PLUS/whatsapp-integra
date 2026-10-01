@@ -183,7 +183,18 @@ class MessengerLoginService
             return [];
         }
 
-        return collect($respuesta->json('data') ?? [])
+        $datos = $respuesta->json('data') ?? [];
+
+        // Con el inicio de sesión para empresas, la página concedida no siempre
+        // sale en `/me/accounts` —pasa con páginas de un portafolio comercial—.
+        // El 27-sep-2026 Facebook concedió los cuatro permisos sobre la página
+        // Integra y `/me/accounts` vino vacío, tres veces seguidas. Lo que sí
+        // es fiable es preguntarle al token a qué páginas dio acceso.
+        if ($datos === []) {
+            $datos = $this->paginasConcedidas($tokenDeUsuario);
+        }
+
+        return collect($datos)
             ->filter(fn ($pagina) => ! empty($pagina['id']) && ! empty($pagina['access_token']))
             ->map(fn ($pagina) => [
                 'id' => (string) $pagina['id'],
@@ -221,6 +232,116 @@ class MessengerLoginService
         }
 
         return true;
+    }
+
+    /**
+     * Las páginas a las que el token da acceso, leídas de sus `granular_scopes`.
+     *
+     * `debug_token` dice, permiso a permiso, sobre qué páginas se concedió
+     * (`target_ids`). Con esos ids se pide cada página directamente, con los
+     * mismos campos que `/me/accounts`.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function paginasConcedidas(string $tokenDeUsuario): array
+    {
+        try {
+            $depuracion = Http::get("https://graph.facebook.com/{$this->version()}/debug_token", [
+                'input_token' => $tokenDeUsuario,
+                'access_token' => $this->appId().'|'.$this->appSecret(),
+            ]);
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        $alcances = collect($depuracion->json('data.granular_scopes') ?? []);
+
+        $ids = $alcances
+            ->whereIn('scope', ['pages_messaging', 'pages_show_list', 'pages_manage_metadata'])
+            ->flatMap(fn ($alcance) => $alcance['target_ids'] ?? [])
+            ->unique()
+            ->values();
+
+        $conMensajeria = $alcances->where('scope', 'pages_messaging')
+            ->flatMap(fn ($alcance) => $alcance['target_ids'] ?? [])
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        return $ids->map(function ($id) use ($tokenDeUsuario, $conMensajeria) {
+            // Sin `tasks`: pedido así, por id, Facebook responde «(#100) Tried
+            // accessing nonexisting field (tasks)» y la consulta entera falla.
+            // Ese campo sólo existe en `/me/accounts`. Lo que decía —si se puede
+            // mensajear— aquí lo dice el propio token: `pages_messaging`
+            // concedido sobre esta página.
+            $pagina = Http::get("https://graph.facebook.com/{$this->version()}/{$id}", [
+                'fields' => 'id,name,access_token,picture{url}',
+                'access_token' => $tokenDeUsuario,
+            ]);
+
+            if (! $pagina->successful()) {
+                return null;
+            }
+
+            return $pagina->json() + [
+                'tasks' => in_array((string) $id, $conMensajeria, true) ? [self::TAREA_NECESARIA] : [],
+            ];
+        })->filter()->values()->all();
+    }
+
+    /**
+     * Lo que Facebook concedió en un token que no trae páginas, para el log.
+     *
+     * Nunca los tokens: sólo qué permisos quedaron concedidos o rechazados y qué
+     * páginas vinieron, con o sin su token de página.
+     *
+     * @return array<string, mixed>
+     */
+    public function diagnosticoSinPaginas(string $tokenDeUsuario): array
+    {
+        try {
+            $permisos = Http::get("https://graph.facebook.com/{$this->version()}/me/permissions", [
+                'access_token' => $tokenDeUsuario,
+            ])->json('data') ?? [];
+
+            $cuentas = Http::get("https://graph.facebook.com/{$this->version()}/me/accounts", [
+                'fields' => 'id,name,tasks',
+                'access_token' => $tokenDeUsuario,
+            ]);
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+
+        $alcances = Http::get("https://graph.facebook.com/{$this->version()}/debug_token", [
+            'input_token' => $tokenDeUsuario,
+            'access_token' => $this->appId().'|'.$this->appSecret(),
+        ])->json('data.granular_scopes') ?? [];
+
+        // Y qué contesta Facebook al pedir cada una: si trae su token (sin
+        // enseñarlo), sus tareas o el error exacto.
+        $consultas = collect($alcances)->flatMap(fn ($a) => $a['target_ids'] ?? [])->unique()->mapWithKeys(function ($id) use ($tokenDeUsuario) {
+            $r = Http::get("https://graph.facebook.com/{$this->version()}/{$id}", [
+                'fields' => 'id,name,access_token',
+                'access_token' => $tokenDeUsuario,
+            ]);
+
+            return [$id => [
+                'http' => $r->status(),
+                'trae_token' => ! empty($r->json('access_token')),
+                'error' => $r->json('error.message'),
+            ]];
+        })->all();
+
+        return [
+            'consulta_por_pagina' => $consultas,
+            'paginas_concedidas' => collect($alcances)->mapWithKeys(fn ($a) => [$a['scope'] ?? '?' => $a['target_ids'] ?? []])->all(),
+            'permisos' => collect($permisos)->mapWithKeys(fn ($p) => [$p['permission'] ?? '?' => $p['status'] ?? '?'])->all(),
+            'paginas_en_bruto' => collect($cuentas->json('data') ?? [])->map(fn ($p) => [
+                'id' => $p['id'] ?? null,
+                'nombre' => $p['name'] ?? null,
+                'tareas' => $p['tasks'] ?? [],
+            ])->all(),
+            'error_de_meta' => $cuentas->json('error.message'),
+        ];
     }
 
     /** Y lo contrario, al desconectar: la página deja de mandarnos nada. */

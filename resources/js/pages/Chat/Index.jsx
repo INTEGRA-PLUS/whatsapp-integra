@@ -13,7 +13,7 @@
  * colores en esta pantalla, ese es el límite: los tokens sí, el esqueleto de
  * WhatsApp no.
  */
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment, memo, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
@@ -697,6 +697,36 @@ function TooltipSemaforo({ nivel, texto, lado = 'top', children }) {
     );
 }
 
+/**
+ * El texto entero al pasar el ratón, sólo si está cortado.
+ *
+ * En la lista, el nombre y el último mensaje se truncan con «…», y para saber
+ * quién era «Maria Angel Guerrero Torr…» o qué decía el mensaje había que abrir
+ * la conversación (28-sep-2026). Si el texto cabe, no sale nada: un tooltip que
+ * repite lo que ya se lee sólo estorba al mover el ratón por la lista.
+ */
+function TextoCompleto({ texto, children }) {
+    const ref = useRef(null);
+    const [abierto, setAbierto] = useState(false);
+
+    if (!texto) return children;
+
+    return (
+        // Con una pequeña espera: recorrer la lista con el ratón no debe ir
+        // abriendo y cerrando un tooltip en cada fila.
+        <Tooltip
+            delayDuration={350}
+            open={abierto}
+            onOpenChange={quiere => setAbierto(quiere && !!ref.current && ref.current.scrollWidth > ref.current.clientWidth)}
+        >
+            <TooltipTrigger asChild>{cloneElement(children, { ref })}</TooltipTrigger>
+            <TooltipContent side="top" align="start" className="max-w-xs whitespace-pre-wrap break-words text-left">
+                {texto}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
 // ─── ConversationItem Component ──────────────────────────────────────────────
 
 const ConversationItem = memo(({
@@ -782,12 +812,14 @@ const ConversationItem = memo(({
                             identifica a nadie. El nombre es lo único por lo que
                             se reconoce una fila, así que se queda con el espacio
                             y lo que cede es la insignia. */}
-                        <p className={clsx(
-                            "min-w-0 flex-1 text-sm font-bold truncate",
-                            conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
-                        )}>
-                            {contactFullName(conv.contact) || conv.name || conv.phone_number}
-                        </p>
+                        <TextoCompleto texto={contactFullName(conv.contact) || conv.name || conv.phone_number}>
+                            <p className={clsx(
+                                "min-w-0 flex-1 text-sm font-bold truncate",
+                                conv.status === 'closed' ? "text-muted-foreground/70" : "text-foreground"
+                            )}>
+                                {contactFullName(conv.contact) || conv.name || conv.phone_number}
+                            </p>
+                        </TextoCompleto>
                         {/* Quién viene atendiendo. «¿Esto lo lleva la IA o mi
                             menú?» no tenía respuesta en ninguna pantalla: había
                             que abrir el chat y mirar burbuja por burbuja.
@@ -979,9 +1011,11 @@ const ConversationItem = memo(({
                             leía como «@JHEYSON: se ve lo lento que está». El
                             nombre del agente ya está en la línea de arriba, en
                             su etiqueta, que es donde no se confunde con nadie. */}
-                        <p className="text-xs text-muted-foreground truncate leading-relaxed">
-                            {conv.last_message || '...'}
-                        </p>
+                        <TextoCompleto texto={conv.last_message ? conv.last_message.slice(0, 600) : null}>
+                            <p className="min-w-0 text-xs text-muted-foreground truncate leading-relaxed">
+                                {conv.last_message || '...'}
+                            </p>
+                        </TextoCompleto>
                     </div>
                 </div>
             </div>
@@ -3742,6 +3776,22 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         return (Date.now() - new Date(lastInbound.sent_at || lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
     }, [messages, selectedConversation]);
 
+    // La plantilla que ya salió y espera respuesta, si la hay. Enviar una
+    // plantilla NO abre la ventana de 24 h —la abre la respuesta del cliente—,
+    // así que tras mandar la factura el aviso seguía diciendo «debes enviar
+    // primero una plantilla aprobada» debajo de la plantilla recién enviada, y
+    // parecía que no había salido (Nova Partners, 28-sep-2026). Una que falló
+    // no cuenta: ahí sí hay que mandar otra.
+    const plantillaEsperando = useMemo(() => {
+        if (!windowExpired) return null;
+        const momento = m => new Date(m.sent_at || m.created_at).getTime();
+        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+        return [...messages].reverse().find(m => m.direction === 'outbound'
+            && m.type === 'template'
+            && m.status !== 'failed'
+            && (!lastInbound || momento(m) > momento(lastInbound))) ?? null;
+    }, [messages, windowExpired]);
+
     /**
      * Pide sugerencias de respuesta para la conversación abierta.
      *
@@ -4853,7 +4903,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
 
     return (
         <>
-            <Head title="Chat WhatsApp Business" />
+            <Head title="Chat" />
             {confirmDialog}
 
             {/* Resultado de pedir la eliminación: sin esto el agente pulsa
@@ -5593,9 +5643,14 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         <div className="mx-auto size-24 rounded-full bg-primary/10 flex items-center justify-center mb-8">
                                             <MessageSquare className="size-12 text-accent-foreground/40" />
                                         </div>
-                                        <h3 className="text-2xl font-black text-foreground mb-3">Integra Plus para WhatsApp</h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed">Envía y recibe mensajes sin necesidad de mantener tu teléfono conectado. <br/>Centraliza toda tu operación en un solo lugar.</p>
-                                        <div className="mt-10 pt-8 border-t border-border/10 text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.3em]">Cifrado de extremo a extremo</div>
+                                        {/* Sin canal en el título: la misma pantalla atiende
+                                            WhatsApp, Instagram y Messenger, y con una página
+                                            de Messenger elegida decía «para WhatsApp» — en el
+                                            screencast del App Review de Messenger. Y sin el
+                                            «Cifrado de extremo a extremo» de antes, que no es
+                                            cierto: los mensajes pasan por nuestro servidor. */}
+                                        <h3 className="text-2xl font-black text-foreground mb-3">Tu bandeja de conversaciones</h3>
+                                        <p className="text-sm text-muted-foreground leading-relaxed">WhatsApp, Instagram y Messenger en un solo lugar. <br/>Elige una conversación para empezar.</p>
                                     </div>
                                 </div>
                             ) : (
@@ -6427,6 +6482,18 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                         IA
                                                                     </span>
                                                                 )}
+                                                                {/* Lo que manda la extensión de cierre automático. Antes
+                                                                    salía como «IA», también en empresas sin IA, y parecía
+                                                                    que el CRM le había encendido algo que no pagaban. */}
+                                                                {isOut && !msg.sender?.name && msg.metadata?.action_type === 'cierre_automatico' && (
+                                                                    <span
+                                                                        className="mb-0.5 inline-flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase leading-tight tracking-wide text-muted-foreground"
+                                                                        title="Lo envió la extensión de cierre automático: un texto fijo que se configura en Extensiones, no la IA."
+                                                                    >
+                                                                        <Clock className="size-2.5 shrink-0" />
+                                                                        Cierre automático
+                                                                    </span>
+                                                                )}
                                                                 {/* La corrección se edita en un diálogo aparte y no
                                                                     aquí dentro. Dentro de la burbuja, el textarea y sus
                                                                     botones caían debajo de la hora y los checks —que son
@@ -6668,21 +6735,46 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                         </div>
                                     )}
 
-                                    {/* Ventana de 24h vencida: hay que reabrir con una plantilla aprobada */}
+                                    {/* Ventana de 24h cerrada. Dos casos con dos mensajes: si ya
+                                        salió una plantilla, lo que falta es que el cliente conteste
+                                        —no otra plantilla—; si no, hay que mandar una. */}
                                     {windowExpired && composerMode === 'reply' && !isRecording && (
                                         <div className="bg-[#f0f2f5] dark:bg-[#202c33] px-3 pt-2 z-10">
-                                            <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
-                                                <Clock className="size-4 mt-0.5 shrink-0" />
-                                                <span className="flex-1 leading-snug">
-                                                    La ventana de 24h para responder libremente a este contacto ya expiró. Debes enviar primero una <b>plantilla aprobada</b>.
-                                                </span>
-                                                <button
-                                                    onClick={() => setShowTemplates(true)}
-                                                    className="shrink-0 rounded-md bg-warning hover:bg-warning text-primary-foreground text-[11px] font-bold px-2.5 py-1 transition-colors"
-                                                >
-                                                    Enviar plantilla
-                                                </button>
-                                            </div>
+                                            {plantillaEsperando ? (
+                                                <div className="flex items-start gap-2 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-[12px] text-foreground">
+                                                    <CheckCircle2 className="size-4 mt-0.5 shrink-0 text-info" />
+                                                    <span className="flex-1 leading-snug">
+                                                        {/* «10:03 a. m.» ya termina en punto: no se le añade otro. */}
+                                                        <b>{`Plantilla enviada ${cuandoSeEnvio(plantillaEsperando)}`.replace(/\.?$/, '.')}</b>{' '}
+                                                        <span className="text-muted-foreground">
+                                                            Podrás escribirle libremente en cuanto el cliente responda: WhatsApp abre
+                                                            las 24 horas con su respuesta, no con la plantilla.
+                                                        </span>
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setShowTemplates(true)}
+                                                        className="shrink-0 rounded-md border border-info/40 px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-info/15"
+                                                    >
+                                                        Enviar otra
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
+                                                    <Clock className="size-4 mt-0.5 shrink-0" />
+                                                    <span className="flex-1 leading-snug">
+                                                        {messages.some(m => m.direction === 'inbound')
+                                                            ? 'Pasaron más de 24 horas desde el último mensaje del cliente.'
+                                                            : 'Este cliente todavía no te ha escrito.'}{' '}
+                                                        Para escribirle, envía una <b>plantilla aprobada</b>; cuando responda podrás escribir libremente.
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setShowTemplates(true)}
+                                                        className="shrink-0 rounded-md bg-warning hover:bg-warning text-primary-foreground text-[11px] font-bold px-2.5 py-1 transition-colors"
+                                                    >
+                                                        Enviar plantilla
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -8986,3 +9078,13 @@ function TemplatePickerModal({ conversationId, instanceId, onClose, onSent, wind
 }
 
 ChatIndex.layout = page => <AppLayout breadcrumb={['Chat']}>{page}</AppLayout>;
+
+/** «hoy a las 10:00 a. m.», «ayer a las…» o la fecha: para el aviso de la plantilla enviada. */
+function cuandoSeEnvio(m) {
+    const fecha = new Date(m.sent_at || m.created_at);
+    const hora = fecha.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
+    const dias = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(fecha).setHours(0, 0, 0, 0)) / 86400000);
+    if (dias === 0) return `hoy a las ${hora}`;
+    if (dias === 1) return `ayer a las ${hora}`;
+    return `el ${fecha.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })} a las ${hora}`;
+}

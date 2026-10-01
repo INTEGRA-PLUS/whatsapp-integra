@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import { Plus, Pencil, Trash2, Zap, Search, MessageSquareText, Info, FileText, MessageSquare } from 'lucide-react';
 
@@ -53,24 +54,17 @@ export default function QuickRepliesIndex({ replies: initialReplies, con_integra
         <>
             <Head title="Respuestas Rápidas" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Zap className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Respuestas Rápidas</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Guarda mensajes frecuentes y úsalos en el chat escribiendo <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">/atajo</code>.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={Zap}
+                    titulo="Respuestas Rápidas"
+                    descripcion={<>Guarda mensajes frecuentes y úsalos en el chat escribiendo <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">/atajo</code>.</>}
+                >
                     {can('quick_replies.create') && (
                         <Button onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nueva Respuesta
                         </Button>
                     )}
-                </div>
+                </CabeceraModulo>
 
                 {replies.length > 0 && (
                     <div className="relative max-w-md">

@@ -2,7 +2,8 @@ import { Head, Link, useForm } from '@inertiajs/react';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ArrowLeft, Check, Loader2, Save, Shield, User as UserIcon } from 'lucide-react';
+import CabeceraModulo from '@/components/cabecera-modulo';
+import { AlertTriangle, Check, Loader2, Save, Shield, User as UserIcon, Users } from 'lucide-react';
 
 /**
  * Editar a alguien del equipo.
@@ -37,19 +38,12 @@ export default function Edit({ user, roles, userRoleId, es_uno_mismo }) {
             <Head title={`Editar: ${user.name}`} />
 
             <div className="flex max-w-3xl flex-col gap-6 p-6 lg:p-8">
-                <div className="flex items-center gap-3">
-                    <Button asChild variant="outline" size="icon" className="size-8 shrink-0">
-                        <Link href={route('users.index')} aria-label="Volver a usuarios">
-                            <ArrowLeft className="size-4" />
-                        </Link>
-                    </Button>
-                    <div>
-                        <h1 className="text-2xl font-semibold text-foreground">{user.name}</h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            En el equipo desde el {new Date(user.created_at).toLocaleDateString('es-CO')}.
-                        </p>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={Users}
+                    titulo={user.name}
+                    descripcion={`En el equipo desde el ${new Date(user.created_at).toLocaleDateString('es-CO')}.`}
+                    volver={route('users.index')}
+                />
 
                 <form onSubmit={enviar} className="flex flex-col gap-6">
                     <section className="rounded-xl border bg-card p-5">

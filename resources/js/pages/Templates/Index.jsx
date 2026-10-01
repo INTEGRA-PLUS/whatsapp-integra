@@ -3,9 +3,11 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { TabButton, WhatsAppPreview, templateToModel } from './preview';
 import {
     FileText,
+    FileType,
     Search,
     RefreshCw,
     ChevronDown,
@@ -29,6 +31,7 @@ import {
     Copy,
     ArrowRight,
     AlertTriangle,
+    Pencil,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -111,7 +114,7 @@ const LANG_LABELS = {
     fr: 'Francés', it: 'Italiano', de: 'Alemán',
 };
 
-export default function TemplatesIndex({ instances = [] }) {
+export default function TemplatesIndex({ instances = [], negocio = '' }) {
     const { auth } = usePage().props;
     const can = (perm) => (auth?.user?.permissions ?? []).includes(perm);
 
@@ -212,67 +215,52 @@ export default function TemplatesIndex({ instances = [] }) {
         <>
             <Head title="Plantillas" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                {/* HERO HEADER */}
-                <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-6 lg:p-8">
-                    <div className="absolute -top-12 -right-12 size-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-                    <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                        <div className="flex items-center gap-4">
-                            <div className="size-14 rounded-2xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
-                                <FileText className="size-7" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl lg:text-3xl font-semibold text-foreground tracking-tight">
-                                    Plantillas de WhatsApp
-                                </h1>
-                                <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-                                    Administra las plantillas aprobadas por Meta y sus traducciones a distintos idiomas.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {instances.length > 1 && (
-                                <select
-                                    value={instanceId ?? ''}
-                                    onChange={e => setInstanceId(Number(e.target.value) || null)}
-                                    className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
-                                >
-                                    {instances.map(i => (
-                                        <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
-                                    ))}
-                                </select>
-                            )}
-                            <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
-                                {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                                Actualizar
-                            </Button>
-                            <Link href={route('templates.analytics')}>
-                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
-                                    <BarChart3 className="size-4" /> Analítica
-                                </Button>
-                            </Link>
-                            <Link href={route('templates.defaults')}>
-                                <Button variant="outline" className="gap-2 h-9 bg-card/80">
-                                    <Sparkles className="size-4" /> Plantillas por defecto
-                                </Button>
-                            </Link>
-                            {can('templates.create') && instanceId && instances.length > 1 && (
-                                <Button
-                                    onClick={() => setCopiando(true)}
-                                    variant="outline"
-                                    className="gap-2 h-9 bg-card/80"
-                                    title="Llevar plantillas de esta línea a otra"
-                                >
-                                    <Copy className="size-4" /> Copiar a otra línea
-                                </Button>
-                            )}
-                            {can('templates.create') && instanceId && (
-                                <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
-                                    <Sparkles className="size-4" /> Nueva plantilla
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <CabeceraModulo
+                    icono={FileType}
+                    titulo="Plantillas de WhatsApp"
+                    descripcion="Administra las plantillas aprobadas por Meta y sus traducciones a distintos idiomas."
+                >
+                    {instances.length > 1 && (
+                        <select
+                            value={instanceId ?? ''}
+                            onChange={e => setInstanceId(Number(e.target.value) || null)}
+                            className="h-9 rounded-lg border border-input bg-card/80 px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        >
+                            {instances.map(i => (
+                                <option key={i.id} value={i.id}>{i.name} ({i.display_phone_number})</option>
+                            ))}
+                        </select>
+                    )}
+                    <Button onClick={load} disabled={loading || !instanceId} variant="outline" className="gap-2 h-9 bg-card/80">
+                        {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Actualizar
+                    </Button>
+                    <Link href={route('templates.analytics')}>
+                        <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                            <BarChart3 className="size-4" /> Analítica
+                        </Button>
+                    </Link>
+                    <Link href={route('templates.defaults')}>
+                        <Button variant="outline" className="gap-2 h-9 bg-card/80">
+                            <Sparkles className="size-4" /> Plantillas por defecto
+                        </Button>
+                    </Link>
+                    {can('templates.create') && instanceId && instances.length > 1 && (
+                        <Button
+                            onClick={() => setCopiando(true)}
+                            variant="outline"
+                            className="gap-2 h-9 bg-card/80"
+                            title="Llevar plantillas de esta línea a otra"
+                        >
+                            <Copy className="size-4" /> Copiar a otra línea
+                        </Button>
+                    )}
+                    {can('templates.create') && instanceId && (
+                        <Button onClick={goToCreate} className="gap-2 h-9 shadow-md">
+                            <Sparkles className="size-4" /> Nueva plantilla
+                        </Button>
+                    )}
+                </CabeceraModulo>
 
                 {copiando && (
                     <CopiarPlantillasModal
@@ -464,6 +452,8 @@ export default function TemplatesIndex({ instances = [] }) {
                                 onToggle={() => toggle(family.name)}
                                 onOpenDetail={openDetail}
                                 canCreate={can('templates.create')}
+                                canEdit={can('templates.update')}
+                                instanceId={instanceId}
                                 onAddTranslation={() => goToTranslation(family)}
                             />
                         ))}
@@ -476,6 +466,8 @@ export default function TemplatesIndex({ instances = [] }) {
                     templateId={detail.id}
                     templateName={detail.name}
                     instanceId={instanceId}
+                    negocio={negocio}
+                    canEdit={can('templates.update')}
                     onClose={() => setDetail(null)}
                     onSelectSibling={(sibling) => setDetail({ id: sibling.id, name: sibling.name })}
                 />
@@ -652,10 +644,14 @@ function StatCard({ icon: Icon, label, value, tone }) {
     );
 }
 
-function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTranslation }) {
+function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, instanceId, onAddTranslation }) {
     const CatIcon = CATEGORY_ICONS[family.category] ?? FileText;
     const variantCount = family.variants.length;
     const approvedCount = family.variants.filter(v => v.status === 'APPROVED').length;
+    // La versión que abren «Ver» y «Editar»: la aprobada si hay, que es la que
+    // se envía. Con varios idiomas, el detalle deja saltar a los demás.
+    const principal = family.variants.find(v => v.status === 'APPROVED') ?? family.variants[0];
+    const editable = principal && ESTADOS_EDITABLES.includes(principal.status);
 
     return (
         <div className="group rounded-xl border bg-card overflow-hidden transition-all hover:border-primary/40 hover:shadow-md">
@@ -680,9 +676,23 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                                 </span>
                             )}
                         </div>
-                        <h3 className="font-mono text-base font-semibold text-foreground truncate" title={family.name}>
-                            {family.name}
-                        </h3>
+                        {/* El nombre abre el detalle. Hasta ahora lo único que
+                            se podía pulsar era la pastilla del idioma —pequeña,
+                            y con el estado escrito dentro, que la hace parecer
+                            una etiqueta y no un botón—. Así que quien quería ver
+                            su plantilla hacía clic en el nombre, que es lo
+                            obvio, y no pasaba nada. */}
+                        <button
+                            type="button"
+                            onClick={() => onOpenDetail(family.variants[0])}
+                            title={`Ver ${family.name}`}
+                            className="group/nombre flex max-w-full items-center gap-1.5 text-left"
+                        >
+                            <h3 className="font-mono text-base font-semibold text-foreground truncate group-hover/nombre:underline" title={family.name}>
+                                {family.name}
+                            </h3>
+                            <Eye className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/nombre:opacity-100" />
+                        </button>
                     </div>
                 </div>
 
@@ -750,29 +760,72 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, onAddTr
                 )}
             </div>
 
-            {/* Footer: expand toggle */}
-            {variantCount > 0 && (
-                <button
-                    onClick={onToggle}
-                    className="w-full flex items-center justify-center gap-1.5 border-t bg-muted/20 hover:bg-muted/40 transition-colors text-[11px] text-muted-foreground py-1.5"
-                >
-                    {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                    {isOpen ? 'Ocultar detalle' : 'Ver detalle por idioma'}
-                </button>
+            {/* Las dos acciones que la gente busca, a la vista. Antes «ver» era
+                pulsar el nombre o la pastilla del idioma y «editar» estaba
+                dentro del detalle: nadie las encontraba y preguntaban cómo se
+                veía o se cambiaba una plantilla (28-sep-2026). */}
+            {principal && (
+                <div className="flex flex-wrap items-center gap-2 border-t bg-muted/20 px-4 py-2.5 sm:px-5">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 min-w-[7rem] flex-1 gap-1.5"
+                        onClick={() => onOpenDetail(principal)}
+                    >
+                        <Eye className="size-3.5" /> Ver plantilla
+                    </Button>
+                    {canEdit && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 min-w-[7rem] flex-1 gap-1.5"
+                            disabled={!editable}
+                            title={editable
+                                ? `Editar la versión en ${principal.language}`
+                                : 'Meta sólo deja editar plantillas aprobadas, rechazadas o pausadas'}
+                            onClick={() => router.visit(route('templates.edit', {
+                                templateId: principal.id,
+                                instance_id: instanceId,
+                            }))}
+                        >
+                            <Pencil className="size-3.5" /> Editar
+                        </Button>
+                    )}
+                    {/* El detalle por idioma sólo tiene sentido con varios idiomas;
+                        con uno repetía lo que ya dice la tarjeta. */}
+                    {variantCount > 1 && (
+                        <button
+                            type="button"
+                            onClick={onToggle}
+                            className="flex w-full items-center justify-center gap-1.5 pt-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                            {isOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                            {isOpen ? 'Ocultar idiomas' : `Ver los ${variantCount} idiomas`}
+                        </button>
+                    )}
+                </div>
             )}
         </div>
     );
 }
 
-function TemplateDetailModal({ templateId, templateName, instanceId, onClose, onSelectSibling }) {
+/** Los estados en los que Meta deja editar una plantilla. */
+const ESTADOS_EDITABLES = ['APPROVED', 'REJECTED', 'PAUSED'];
+
+function TemplateDetailModal({ templateId, templateName, instanceId, negocio, canEdit = false, onClose, onSelectSibling }) {
     const [template, setTemplate] = useState(null);
     const [siblings, setSiblings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [tab, setTab] = useState('detail');
+    const [tab, setTab] = useState('preview');
 
+    // Se abre por la vista previa y no por la ficha de datos: quien entra aquí
+    // quiere ver cómo le va a llegar el mensaje al cliente. El id, la categoría
+    // y el estado están a una pestaña, y ya se ven en la tarjeta de fuera.
     useEffect(() => {
-        setTab('detail');
+        setTab('preview');
     }, [templateId]);
 
     useEffect(() => {
@@ -804,9 +857,30 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                         <h2 className="text-lg font-semibold text-foreground font-mono truncate">{templateName}</h2>
                         <p className="text-xs text-muted-foreground mt-0.5">Detalle de plantilla y traducciones</p>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={onClose}>
-                        <X className="size-4" />
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-1">
+                        {/* Se edita el idioma que está abierto: cada traducción es
+                            una plantilla aparte en Meta, con su propio estado. */}
+                        {canEdit && template && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                disabled={!ESTADOS_EDITABLES.includes(template.status)}
+                                title={ESTADOS_EDITABLES.includes(template.status)
+                                    ? `Editar la versión en ${template.language}`
+                                    : 'Meta solo deja editar plantillas aprobadas, rechazadas o pausadas'}
+                                onClick={() => router.visit(route('templates.edit', {
+                                    templateId: template.id,
+                                    instance_id: instanceId,
+                                }))}
+                            >
+                                <Pencil className="size-3.5" /> Editar
+                            </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={onClose}>
+                            <X className="size-4" />
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Tab strip */}
@@ -829,7 +903,9 @@ function TemplateDetailModal({ templateId, templateName, instanceId, onClose, on
                     {!loading && template && tab === 'preview' && (
                         <WhatsAppPreview
                             model={templateToModel(template)}
-                            verifiedName={templateName}
+                            // El negocio, no el nombre técnico de la plantilla:
+                            // el cliente ve quién le escribe, no `facturacion`.
+                            verifiedName={negocio || 'Tu negocio'}
                             empty="Esta plantilla no tiene componentes para previsualizar."
                         />
                     )}

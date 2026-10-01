@@ -26,6 +26,13 @@ final class AiDecision
      * @param array   $eventData Cuerpo de ese evento.
      * @param array   $client A quién identificó el flujo en Integra:
      *                        {id, identificacion, nombre}. Vacío si a nadie.
+     * @param ?string $origen Quién decidió, si no fue la IA. Este objeto es el
+     *                        vehículo para meter un texto ya decidido en la
+     *                        cola que habla con Meta, y lo usan también cosas
+     *                        que no son IA —el cierre automático—. Sin decirlo,
+     *                        su mensaje se guardaba como `ia` y el chat lo
+     *                        etiquetaba «IA» en una empresa sin IA contratada
+     *                        (Nova Partners, 28-sep-2026).
      */
     public function __construct(
         public readonly MenuActionResult $result,
@@ -34,6 +41,7 @@ final class AiDecision
         public readonly ?string $event = null,
         public readonly array $eventData = [],
         public readonly array $client = [],
+        public readonly ?string $origen = null,
     ) {}
 
     /** ¿El flujo identificó al cliente en Integra? */

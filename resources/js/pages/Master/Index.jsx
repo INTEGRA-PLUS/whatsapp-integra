@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { 
     Sparkles,
     Check,
@@ -33,6 +34,7 @@ import {
     UserCog,
     CreditCard,
     Download,
+    LayoutGrid,
 } from 'lucide-react';
 
 export default function MasterIndex({ stats, companies_growth, messages_volume, top_companies, companies, company_users, filters, planes = [], complementos = [], ciclos = [], cobros = [], planes_resumen, cobro_del_mes }) {
@@ -154,6 +156,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
             nota_de_cobro: company.nota_de_cobro ?? '',
             precio_personalizado: company.precio_personalizado ?? '',
             viene_de_integra: !!company.viene_de_integra,
+            crm_pactado: !!p.crm_pactado,
         });
         setPlanCompany(company);
     }
@@ -310,43 +313,40 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                     pulsarlos. Un panel interno no tiene a quién impresionar:
                     tiene que decir dónde estás, dejarte cambiar de sitio y
                     quitarse de en medio. */}
-                <header className="sticky top-0 z-40 border-b border-border bg-card/95 px-6 py-4 backdrop-blur">
-                    <div className="mx-auto flex max-w-[1500px] flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <h1 className="font-heading text-lg font-semibold tracking-tight text-foreground">
-                                    Panel master
-                                </h1>
+                <div className="mx-auto w-full max-w-[1500px] px-4 pt-4 sm:px-6 sm:pt-6">
+                    <CabeceraModulo
+                        icono={LayoutGrid}
+                        titulo={
+                            <span className="flex items-center gap-2">
+                                Panel master
                                 <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                     Interno
                                 </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{SUBTITULO[activeTab]}</p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3">
-                            <nav className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
-                                {PESTANAS.map(({ value, label }) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        onClick={() => cambiarPestana(value)}
-                                        className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                                            activeTab === value
-                                                ? 'bg-card text-foreground shadow-sm'
-                                                : 'text-muted-foreground hover:text-foreground'
-                                        }`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </nav>
-                            <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
-                                <Plus className="size-4" /> Nueva empresa
-                            </Button>
-                        </div>
-                    </div>
-                </header>
+                            </span>
+                        }
+                        descripcion={SUBTITULO[activeTab]}
+                    >
+                        <nav className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+                            {PESTANAS.map(({ value, label }) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => cambiarPestana(value)}
+                                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        activeTab === value
+                                            ? 'bg-card text-foreground shadow-sm'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </nav>
+                        <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
+                            <Plus className="size-4" /> Nueva empresa
+                        </Button>
+                    </CabeceraModulo>
+                </div>
 
                 <div className="mx-auto w-full max-w-[1500px] space-y-8 p-6">
 
@@ -717,7 +717,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     <p className="mt-0.5 text-xs text-muted-foreground">
                                         Se vende aparte del plan y se suma al precio. De las {planes_resumen.total_empresas} empresas,{' '}
                                         <span className="font-semibold text-foreground">{planes_resumen.de_integra}</span> vienen de Integra
-                                        y ya pagan el CRM dentro de su ERP: lo único nuevo que se les puede vender es esto.
+                                        y ya tienen el Básico dentro de su ERP: se les puede vender esto y la diferencia de un plan mayor.
                                     </p>
                                 </div>
                                 {/* Qué trae cada nivel, y no sólo cuánto cuesta.
@@ -999,7 +999,7 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                         {planCompany.plan_resumen?.precio_usd > 0 && (
                             <p className="-mt-2 text-xs text-muted-foreground">
                                 {planCompany.plan_resumen.incluido_en_integra
-                                    ? 'Viene de Integra, así que sólo se le cobra el complemento: '
+                                    ? 'Viene de Integra: el Básico va en su ERP y se le cobra lo demás (diferencia de plan y complemento): '
                                     : 'Le corresponden '}
                                 <span className="font-mono font-semibold text-foreground">
                                     ${planCompany.plan_resumen.precio_usd}
@@ -1035,12 +1035,35 @@ export default function MasterIndex({ stats, companies_growth, messages_volume, 
                                     Viene de Integra
                                 </span>
                                 <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                                    Se le vendió el ERP con el CRM dentro, así que ya paga. No se le
-                                    factura aquí y no aparece en la lista de cobro. Lo que sí se le
-                                    puede vender es el complemento de IA.
+                                    Se le vendió el ERP con el plan Básico dentro, así que eso ya lo
+                                    paga. Si sube a Pro o Avanzado paga sólo la diferencia, y el
+                                    complemento de IA va aparte.
                                 </span>
                             </span>
                         </label>
+
+                        {/* Sólo para los que ya tenían un plan mayor antes del
+                            29-sep-2026. Sin la casilla visible, alguien «arregla»
+                            su plan y les empieza a cobrar lo que se les vendió. */}
+                        {planForm.viene_de_integra && planForm.plan !== 'basico' && (
+                            <label className="-mt-2 flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                                <input
+                                    type="checkbox"
+                                    checked={planForm.crm_pactado}
+                                    onChange={e => setPlanForm({ ...planForm, crm_pactado: e.target.checked })}
+                                    className="mt-0.5 size-4 shrink-0 accent-primary"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-foreground">
+                                        Plan mayor pactado sin cargo
+                                    </span>
+                                    <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                                        No se le cobra la diferencia sobre el Básico. Es para quien ya
+                                        tenía este plan antes de separar los precios; deja la razón en la nota.
+                                    </span>
+                                </span>
+                            </label>
+                        )}
 
                         <Selector
                             label="Cobro"
@@ -1579,7 +1602,7 @@ function CobroDelMes({ datos }) {
 
 const MOTIVO_FUERA = {
     interna: 'internas nuestras',
-    integra: 'con el CRM dentro de Integra',
+    integra: 'con el Básico dentro de Integra',
     cortesia: 'en cortesía',
     prueba: 'en prueba',
     mes_gratis: 'con mes gratis',
@@ -1646,7 +1669,7 @@ function Suscripcion({ company }) {
             ) : (
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                     No se le factura nada: {plan.incluido_en_integra
-                        ? 'viene de Integra y no tiene complemento de IA contratado.'
+                        ? 'viene de Integra, está en el Básico (o tiene su plan pactado) y no tiene complemento de IA.'
                         : 'está en cortesía o sin plan de pago.'}
                 </p>
             )}
@@ -1717,7 +1740,7 @@ function Suscripcion({ company }) {
 }
 
 const ETIQUETA_COBRO = {
-    integra: 'Integra — el CRM va en su ERP',
+    integra: 'Integra — el Básico va en su ERP',
     cortesia: 'Cortesía — no se factura',
     prueba: 'Prueba',
     activo: 'Activo — se factura',

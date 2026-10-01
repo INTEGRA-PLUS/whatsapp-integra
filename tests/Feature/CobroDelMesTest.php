@@ -60,7 +60,7 @@ class CobroDelMesTest extends TestCase
         $this->empresa('ISP con Integra', [
             'viene_de_integra' => true,
             'cobro' => 'integra',
-            'plan' => 'pro',
+            'plan' => 'basico',
         ]);
 
         $datos = CobroDelMes::calcular();
@@ -145,7 +145,7 @@ class CobroDelMesTest extends TestCase
         $this->empresa('ISP que compró IA', [
             'viene_de_integra' => true,
             'cobro' => 'integra',
-            'plan' => 'avanzado',
+            'plan' => 'basico',
             'ia' => 'esencial',
         ]);
 

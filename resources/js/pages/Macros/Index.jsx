@@ -3,6 +3,7 @@ import { Head, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { clsx } from 'clsx';
 import AppLayout from '@/layouts/AppLayout';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import {
     Plus, Pencil, Trash2, Wand2, Search, Info, ArrowUp, ArrowDown,
@@ -119,24 +120,17 @@ export default function MacrosIndex({ macros: initialMacros, tags, companyUsers 
         <>
             <Head title="Macros" />
             <div className="flex flex-col gap-6 p-6 lg:p-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                        <div className="size-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                            <Wand2 className="size-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-semibold text-foreground">Macros</h1>
-                            <p className="text-sm text-muted-foreground mt-0.5">
-                                Encadena varias acciones (mensaje, etiquetas, asignación, estado) y ejecútalas con un clic desde el chat.
-                            </p>
-                        </div>
-                    </div>
+                <CabeceraModulo
+                    icono={Wand2}
+                    titulo="Macros"
+                    descripcion="Encadena varias acciones (mensaje, etiquetas, asignación, estado) y ejecútalas con un clic desde el chat."
+                >
                     {can('macros.create') && (
                         <Button onClick={() => setShowCreate(true)} className="gap-2">
                             <Plus className="size-4" /> Nuevo Macro
                         </Button>
                     )}
-                </div>
+                </CabeceraModulo>
 
                 {macros.length > 0 && (
                     <div className="relative max-w-md">

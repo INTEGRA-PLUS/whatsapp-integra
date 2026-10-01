@@ -1,6 +1,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
+import CabeceraModulo from '@/components/cabecera-modulo';
 import { 
     Pencil, 
     Trash2, 
@@ -70,22 +71,18 @@ export default function UsersIndex({ users, stats }) {
                 <div className="relative overflow-hidden border-b border-border bg-card">
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/[0.09] via-primary/[0.02] to-transparent" />
                     <div className="max-w-7xl mx-auto px-6 py-8 relative">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-                            <div>
-                                <h1 className="text-4xl font-black tracking-tight text-foreground flex items-center gap-4">
-                                    <div className="size-12 bg-primary text-primary-foreground rounded-2xl flex items-center justify-center rotate-3">
-                                        <Users className="size-7" />
-                                    </div>
-                                    Mi Equipo
-                                </h1>
-                                <p className="text-muted-foreground mt-2 text-lg">Administra los accesos y roles de tu organización.</p>
-                            </div>
-                            <Button asChild size="lg" className="gap-2 shadow-xl shadow-primary/20 h-12 px-8 rounded-xl transition-all hover:scale-105 active:scale-95">
+                        <CabeceraModulo
+                            icono={Users}
+                            titulo="Mi Equipo"
+                            descripcion="Administra los accesos y roles de tu organización."
+                            className="mb-6"
+                        >
+                            <Button asChild className="gap-2">
                                 <Link href={route('users.create')}>
-                                    <UserPlus className="size-5" /> Agregar Miembro
+                                    <UserPlus className="size-4" /> Agregar Miembro
                                 </Link>
                             </Button>
-                        </div>
+                        </CabeceraModulo>
 
                         {/* Fila de Estadísticas */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

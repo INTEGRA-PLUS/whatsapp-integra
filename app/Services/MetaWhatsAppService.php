@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Instance;
+use App\Models\WhatsAppConversation;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -9,8 +11,11 @@ use Illuminate\Support\Facades\Storage;
 class MetaWhatsAppService
 {
     protected $baseUri;
+
     protected $accessToken;
+
     protected $apiVersion;
+
     protected $callingBaseUri;
 
     public function __construct()
@@ -31,8 +36,8 @@ class MetaWhatsAppService
             'type' => 'text',
             'text' => [
                 'preview_url' => true,
-                'body' => $message
-            ]
+                'body' => $message,
+            ],
         ];
 
         // Responder a un mensaje concreto (cita estilo WhatsApp).
@@ -96,8 +101,8 @@ class MetaWhatsAppService
             'type' => 'image',
             'image' => [
                 'link' => $imageUrl,
-                'caption' => $caption
-            ]
+                'caption' => $caption,
+            ],
         ];
 
         if ($contextWamid) {
@@ -114,8 +119,8 @@ class MetaWhatsAppService
             'to' => $to,
             'type' => 'audio',
             'audio' => [
-                'link' => $audioUrl
-            ]
+                'link' => $audioUrl,
+            ],
         ]);
     }
 
@@ -128,10 +133,10 @@ class MetaWhatsAppService
             'template' => [
                 'name' => $templateName,
                 'language' => [
-                    'code' => $languageCode
+                    'code' => $languageCode,
                 ],
-                'components' => $components
-            ]
+                'components' => $components,
+            ],
         ]);
     }
 
@@ -175,10 +180,10 @@ class MetaWhatsAppService
     public function uploadMedia(string $phoneNumberId, string $filePath, string $mimeType): array
     {
         try {
-            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
             $accessToken = $instance ? $instance->access_token : null;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 return ['success' => false, 'error' => 'Access token not found'];
             }
 
@@ -205,6 +210,7 @@ class MetaWhatsAppService
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp uploadMedia exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -214,7 +220,7 @@ class MetaWhatsAppService
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
             'status' => 'read',
-            'message_id' => $messageId
+            'message_id' => $messageId,
         ]);
     }
 
@@ -299,10 +305,10 @@ class MetaWhatsAppService
     public function requestCallPermission(string $phoneNumberId, string $to, string $bodyText = '¿Nos permites llamarte por WhatsApp?')
     {
         try {
-            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
             $accessToken = $instance ? $instance->access_token : null;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 return ['success' => false, 'error' => 'Access token not found'];
             }
 
@@ -337,6 +343,7 @@ class MetaWhatsAppService
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::channel('whatsapp')->error('WhatsApp Request Call Permission Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -371,6 +378,7 @@ class MetaWhatsAppService
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::channel('whatsapp')->error('WhatsApp Enable Calling Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -400,6 +408,7 @@ class MetaWhatsAppService
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::channel('whatsapp')->error('WhatsApp Get App Subscriptions Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -437,6 +446,7 @@ class MetaWhatsAppService
             return ['success' => false, 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::channel('whatsapp')->error('WhatsApp Update App Subscription Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -448,11 +458,12 @@ class MetaWhatsAppService
     protected function sendCallRequest(string $phoneNumberId, array $data)
     {
         try {
-            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
             $accessToken = $instance ? $instance->access_token : null;
 
-            if (!$accessToken) {
+            if (! $accessToken) {
                 Log::error('WhatsApp Calling Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
+
                 return ['success' => false, 'error' => 'Access token not found'];
             }
 
@@ -489,11 +500,12 @@ class MetaWhatsAppService
             $url = "{$this->baseUri}/{$mediaId}";
             $response = Http::withToken($accessToken)->get($url);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('Error getting media URL', [
                     'media_id' => $mediaId,
-                    'response' => $response->json()
+                    'response' => $response->json(),
                 ]);
+
                 return null;
             }
 
@@ -503,12 +515,12 @@ class MetaWhatsAppService
 
             $mediaResponse = Http::withToken($accessToken)->get($mediaUrl);
 
-            if (!$mediaResponse->successful()) {
+            if (! $mediaResponse->successful()) {
                 return null;
             }
 
             $extension = $this->getExtensionFromMime($mimeType);
-            $filename = uniqid('wa_') . '_' . time() . '.' . $extension;
+            $filename = uniqid('wa_').'_'.time().'.'.$extension;
             $path = "whatsapp/media/{$filename}";
 
             Storage::disk('s3_media')->put($path, $mediaResponse->body(), 'public');
@@ -518,14 +530,15 @@ class MetaWhatsAppService
                 'path' => $path,
                 'url' => Storage::disk('s3_media')->url($path),
                 'mime_type' => $mimeType,
-                'size' => strlen($mediaResponse->body())
+                'size' => strlen($mediaResponse->body()),
             ];
 
         } catch (\Exception $e) {
             Log::error('Exception downloading media', [
                 'media_id' => $mediaId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -544,17 +557,18 @@ class MetaWhatsAppService
                 ->timeout(15)
                 ->get("{$this->baseUri}/{$mediaId}");
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 return null;
             }
 
             return [
                 'mime_type' => $response->json('mime_type'),
                 'file_size' => (int) $response->json('file_size'),
-                'url'       => $response->json('url'),
+                'url' => $response->json('url'),
             ];
         } catch (\Exception $e) {
             Log::warning('WhatsApp mediaInfo exception', ['media_id' => $mediaId, 'message' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -595,7 +609,7 @@ class MetaWhatsAppService
     {
         $to = $data['to'] ?? null;
 
-        if ($to !== null && \App\Models\WhatsAppConversation::isBsuid($to)) {
+        if ($to !== null && WhatsAppConversation::isBsuid($to)) {
             unset($data['to']);
             $data['recipient'] = $to;
         }
@@ -608,11 +622,12 @@ class MetaWhatsAppService
         $data = $this->withRecipient($data);
 
         try {
-            $instance = \App\Models\Instance::where('phone_number_id', $phoneNumberId)->first();
+            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
             $accessToken = $instance ? $instance->access_token : null;
-            
-            if (!$accessToken) {
+
+            if (! $accessToken) {
                 Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
+
                 return ['success' => false, 'error' => 'Access token not found'];
             }
 
@@ -625,7 +640,7 @@ class MetaWhatsAppService
             if ($response->successful()) {
                 return [
                     'success' => true,
-                    'data' => $response->json()
+                    'data' => $response->json(),
                 ];
             }
 
@@ -633,23 +648,23 @@ class MetaWhatsAppService
                 'url' => $url,
                 'data' => $data,
                 'status' => $response->status(),
-                'response' => $response->json()
+                'response' => $response->json(),
             ]);
 
             return [
                 'success' => false,
-                'error' => $response->json()
+                'error' => $response->json(),
             ];
 
         } catch (\Exception $e) {
             Log::error('WhatsApp API Exception', [
                 'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ];
         }
     }
@@ -688,6 +703,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Enable Insights Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -716,9 +732,9 @@ class MetaWhatsAppService
 
         try {
             $response = Http::timeout(30)->get("{$this->baseUri}/oauth/access_token", [
-                'client_id'     => $appId,
+                'client_id' => $appId,
                 'client_secret' => $appSecret,
-                'code'          => $code,
+                'code' => $code,
             ]);
 
             $token = $response->json('access_token');
@@ -731,7 +747,7 @@ class MetaWhatsAppService
             // común aquí es un reintento sobre un código ya canjeado. No se
             // registra el código: es una credencial de corta vida.
             Log::error('Embedded Signup: fallo al canjear el código', [
-                'status'   => $response->status(),
+                'status' => $response->status(),
                 'response' => $response->json(),
             ]);
 
@@ -748,6 +764,36 @@ class MetaWhatsAppService
         return $this->graphGet("/{$wabaId}", $accessToken, [
             'fields' => 'id,name,currency,timezone_id,is_enabled_for_insights,account_review_status,business_verification_status,message_template_namespace',
         ]);
+    }
+
+    /**
+     * Si Meta deja enviar por esta cuenta, y qué entidad lo impide si no.
+     *
+     * Responde por tres cosas a la vez —la cuenta de WhatsApp, el portafolio
+     * del negocio y la app— y ahí está su valor: cuando lo que falla es el
+     * **portafolio**, casi siempre es la facturación, que es justo lo que no se
+     * puede consultar de otra forma. `primary_funding_id` responde «You do not
+     * have permission»: somos Tech Provider, no BSP, y el medio de pago vive en
+     * el portafolio del cliente.
+     *
+     * Así que no se lee la tarjeta: se lee la consecuencia, que además llega
+     * antes de que empiecen a rebotar las facturas.
+     */
+    public function healthStatus(string $wabaId, string $accessToken)
+    {
+        return $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'health_status']);
+    }
+
+    /**
+     * La moneda en que Meta le cobra a la cuenta: '' si no tiene, null si Meta
+     * no lo dijo. Va sola, sin más campos: si Meta negara éste, la consulta
+     * entera fallaría — como pasó con `tasks` en las páginas de Messenger.
+     */
+    public function monedaDeLaCuenta(string $wabaId, string $accessToken): ?string
+    {
+        $res = $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'currency']);
+
+        return ($res['success'] ?? false) ? (string) ($res['data']['currency'] ?? '') : null;
     }
 
     public function getPhoneNumber(string $phoneNumberId, string $accessToken)
@@ -773,7 +819,7 @@ class MetaWhatsAppService
      * Va con su propia versión de Graph: `smb_app_data` no existe en la v21 con
      * la que envían los clientes en producción, y subir esa no hace falta.
      *
-     * @param string $syncType `smb_app_state_sync` (contactos) o `history` (chats)
+     * @param  string  $syncType  `smb_app_state_sync` (contactos) o `history` (chats)
      */
     public function startSmbDataSync(string $phoneNumberId, string $accessToken, string $syncType): array
     {
@@ -784,32 +830,32 @@ class MetaWhatsAppService
                 ->timeout(30)
                 ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/smb_app_data", [
                     'messaging_product' => 'whatsapp',
-                    'sync_type'         => $syncType,
+                    'sync_type' => $syncType,
                 ]);
 
             if ($response->successful()) {
                 return [
-                    'success'    => true,
+                    'success' => true,
                     // Guardarlo es lo único que permite reclamar a Meta si el
                     // contenido nunca llega.
                     'request_id' => $response->json('request_id'),
-                    'data'       => $response->json(),
+                    'data' => $response->json(),
                 ];
             }
 
             Log::error('WhatsApp SMB Data Sync Error', [
                 'phone_number_id' => $phoneNumberId,
-                'sync_type'       => $syncType,
-                'status'          => $response->status(),
-                'response'        => $response->json(),
+                'sync_type' => $syncType,
+                'status' => $response->status(),
+                'response' => $response->json(),
             ]);
 
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp SMB Data Sync Exception', [
                 'phone_number_id' => $phoneNumberId,
-                'sync_type'       => $syncType,
-                'message'         => $e->getMessage(),
+                'sync_type' => $syncType,
+                'message' => $e->getMessage(),
             ]);
 
             return ['success' => false, 'error' => $e->getMessage()];
@@ -828,9 +874,9 @@ class MetaWhatsAppService
             // Meta exige Content-Type: application/json en este endpoint aunque
             // el body vaya vacío; sin esto devuelve "Unsupported post request".
             $response = Http::withHeaders([
-                    'Authorization' => "Bearer {$accessToken}",
-                    'Content-Type' => 'application/json',
-                ])
+                'Authorization' => "Bearer {$accessToken}",
+                'Content-Type' => 'application/json',
+            ])
                 ->timeout(30)
                 ->post($url);
 
@@ -847,6 +893,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Subscribe App Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -881,6 +928,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Update Profile Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -907,11 +955,11 @@ class MetaWhatsAppService
                 'access_token' => $accessToken,
             ]);
 
-            if (!$init->successful()) {
+            if (! $init->successful()) {
                 return ['success' => false, 'stage' => 'init', 'error' => $init->json()];
             }
             $uploadId = $init->json('id');
-            if (!$uploadId) {
+            if (! $uploadId) {
                 return ['success' => false, 'stage' => 'init', 'error' => 'No upload id returned'];
             }
 
@@ -925,18 +973,19 @@ class MetaWhatsAppService
                 ->timeout(60)
                 ->post($uploadUrl);
 
-            if (!$upload->successful()) {
+            if (! $upload->successful()) {
                 return ['success' => false, 'stage' => 'upload', 'error' => $upload->json()];
             }
 
             $handle = $upload->json('h');
-            if (!$handle) {
+            if (! $handle) {
                 return ['success' => false, 'stage' => 'upload', 'error' => 'No handle returned'];
             }
 
             return ['success' => true, 'handle' => $handle];
         } catch (\Exception $e) {
             Log::error('WhatsApp Profile Photo Upload Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1036,18 +1085,18 @@ class MetaWhatsAppService
             'end' => $params['end'],
             'granularity' => $params['granularity'] ?? 'DAILY',
         ];
-        if (!empty($params['dimensions'])) {
+        if (! empty($params['dimensions'])) {
             $query['dimensions'] = json_encode($params['dimensions']);
         }
-        if (!empty($params['phone_numbers'])) {
+        if (! empty($params['phone_numbers'])) {
             $query['phone_numbers'] = json_encode($params['phone_numbers']);
         }
 
         return $this->graphGet("/{$wabaId}", $accessToken, [
-            'fields' => 'conversation_analytics.start(' . $params['start'] . ').end(' . $params['end']
-                . ').granularity(' . ($params['granularity'] ?? 'DAILY') . ')'
-                . (!empty($params['dimensions']) ? '.dimensions([' . implode(',', array_map(fn($d) => '"' . $d . '"', $params['dimensions'])) . '])' : '')
-                . '',
+            'fields' => 'conversation_analytics.start('.$params['start'].').end('.$params['end']
+                .').granularity('.($params['granularity'] ?? 'DAILY').')'
+                .(! empty($params['dimensions']) ? '.dimensions(['.implode(',', array_map(fn ($d) => '"'.$d.'"', $params['dimensions'])).'])' : '')
+                .'',
         ]);
     }
 
@@ -1078,6 +1127,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Register Phone Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1108,6 +1158,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Request Code Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1136,6 +1187,7 @@ class MetaWhatsAppService
             return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
         } catch (\Exception $e) {
             Log::error('WhatsApp Verify Code Exception', ['message' => $e->getMessage()]);
+
             return ['success' => false, 'error' => $e->getMessage()];
         }
     }
@@ -1150,7 +1202,7 @@ class MetaWhatsAppService
             'template_ids' => json_encode(array_values(array_map('strval', $params['template_ids'] ?? []))),
         ];
 
-        if (!empty($params['product_type'])) {
+        if (! empty($params['product_type'])) {
             $query['product_type'] = $params['product_type'];
         }
 
@@ -1174,6 +1226,7 @@ class MetaWhatsAppService
                     'template_language' => $payload['language'] ?? null,
                     'meta_response' => $response->json(),
                 ]);
+
                 return ['success' => true, 'data' => $response->json()];
             }
 
@@ -1190,6 +1243,51 @@ class MetaWhatsAppService
         } catch (\Exception $e) {
             Log::error('WhatsApp Template Create Exception', [
                 'waba_id' => $wabaId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Edita una plantilla existente: `POST /{template_id}`.
+     *
+     * Meta sólo deja tocar `category`, `components` y el tiempo de vida, y los
+     * `components` se REEMPLAZAN enteros: mandar sólo el cuerpo borraría el
+     * encabezado y los botones. Quien llama tiene que enviar la plantilla
+     * completa.
+     */
+    public function editTemplate(string $templateId, string $accessToken, array $payload)
+    {
+        try {
+            $url = "{$this->baseUri}/{$templateId}";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->asJson()
+                ->post($url, $payload);
+
+            if ($response->successful()) {
+                Log::info('WhatsApp Template Edited', [
+                    'template_id' => $templateId,
+                    'meta_response' => $response->json(),
+                ]);
+
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Template Edit Error', [
+                'url' => $url,
+                'payload' => $payload,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Template Edit Exception', [
+                'template_id' => $templateId,
                 'message' => $e->getMessage(),
             ]);
 
@@ -1277,7 +1375,7 @@ class MetaWhatsAppService
     {
         $configured = config('services.meta.webhook_app_secrets');
 
-        if (!is_string($configured) || trim($configured) === '') {
+        if (! is_string($configured) || trim($configured) === '') {
             return ['secrets' => [], 'by_app_id' => []];
         }
 
@@ -1366,10 +1464,11 @@ class MetaWhatsAppService
 
         if ($secrets === []) {
             Log::channel('whatsapp')->error('❌ Sin META_APP_SECRETS/META_APP_SECRET configurado: no se puede validar la firma del webhook');
+
             return false;
         }
 
-        if (empty($signature) || !str_starts_with($signature, 'sha256=')) {
+        if (empty($signature) || ! str_starts_with($signature, 'sha256=')) {
             return false;
         }
 
@@ -1378,7 +1477,7 @@ class MetaWhatsAppService
         foreach ($secrets as $secret) {
             // Sin cortes tempranos: se recorren todos los secretos siempre para
             // no filtrar por tiempo de respuesta cuál de ellos fue el que casó.
-            $expectedSignature = 'sha256=' . hash_hmac('sha256', $payload, $secret);
+            $expectedSignature = 'sha256='.hash_hmac('sha256', $payload, $secret);
             $valid = hash_equals($expectedSignature, $signature) || $valid;
         }
 

@@ -141,7 +141,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 $this->ai->result,
                 $meta,
                 $assignment,
-                WhatsAppBotFlow::ACTION_AI,
+                $this->ai->origen ?? WhatsAppBotFlow::ACTION_AI,
                 $this->ai->note
             );
             return;
@@ -850,7 +850,10 @@ class ProcessWhatsAppMenu implements ShouldQueue
      */
     private function aiTrace(): ?array
     {
-        if ($this->ai === null) {
+        // Lo que no decidió la IA no lleva traza de IA. Con `isset` y no con
+        // `!== null`: un job encolado antes de que existiera `origen` llega sin
+        // la propiedad inicializada, y leerla a pelo lanzaría.
+        if ($this->ai === null || isset($this->ai->origen)) {
             return null;
         }
 

@@ -329,7 +329,7 @@ class MasterController extends Controller
     private function resumenDePlanes(): array
     {
         $empresas = Company::query()
-            ->get(['id', 'plan', 'ia', 'cobro', 'gratis_hasta', 'interna', 'viene_de_integra'])
+            ->get(['id', 'plan', 'ia', 'cobro', 'gratis_hasta', 'interna', 'viene_de_integra', 'crm_pactado'])
             ->map(fn (Company $company) => PlanDeLaEmpresa::de($company));
 
         return [
@@ -611,6 +611,10 @@ class MasterController extends Controller
             'ciclo' => 'required|string|in:'.implode(',', array_keys(config('planes.ciclos'))),
             'cobro' => 'required|string|in:'.implode(',', config('planes.cobros')),
             'viene_de_integra' => 'boolean',
+            // Conserva sin cargo un plan mayor que el Básico de su Integra. Es
+            // para los que ya lo tenían antes del 29-sep-2026, no para regalar
+            // planes: por eso también pide nota.
+            'crm_pactado' => 'boolean',
             'gratis_hasta' => 'nullable|date',
             // El precio negociado, cuando no sale del catálogo. Vacío = se
             // vuelve a la tarifa, y por eso se admite null explícitamente: sin

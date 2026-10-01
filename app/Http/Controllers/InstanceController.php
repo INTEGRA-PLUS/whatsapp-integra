@@ -2,13 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\MessengerLoginService;
 use App\Models\Contact;
+use App\Models\Company;
 use App\Models\Instance;
 use App\Services\InstagramLoginService;
 use App\Services\RegistrarLineaEnIntegra;
+use App\Services\LineaDeEnvioEnIntegra;
+use App\Models\CompanyIntegration;
+use App\Support\IntegrationProvider;
 use App\Models\WhatsAppCampaign;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
+use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -53,7 +59,51 @@ class InstanceController extends Controller
             // insertado de WhatsApp.
             'instagramDisponible' => app(InstagramLoginService::class)->estaConfigurado(),
             'messengerDisponible' => app(\App\Services\MessengerLoginService::class)->estaConfigurado(),
+            // Cuántas líneas de cada canal le deja conectar su plan. La
+            // pantalla lo usa para no abrir la ventana de Meta cuando el
+            // servidor la va a rechazar al volver.
+            'cupos' => $user->company ? PlanDeLaEmpresa::de($user->company)->cupos() : null,
+            // Para el recuadro de Integra de cada tarjeta: si hay software
+            // conectado y por cuál de las líneas factura.
+            'integra' => [
+                'conectado' => CompanyIntegration::where('company_id', $user->company_id)
+                    ->whereIn('key', IntegrationProvider::find(IntegrationProvider::INTEGRA)['legacy_keys'] ?? [])
+                    ->get()
+                    ->contains(fn (CompanyIntegration $i) => $i->isConnected()),
+                'linea_de_envio' => $user->company?->instanciaDelErp()?->id,
+            ],
         ]);
+    }
+
+    /**
+     * «Sincronizar con Integra»: dejar allá esta línea como la de envío.
+     *
+     * Es el arreglo a mano de cuando las dos puntas no coinciden y cada factura
+     * vuelve con «Instancia no válida o token ausente» (Nova Partners,
+     * 24-sep-2026). Sólo para la línea por la que ya factura el CRM: cambiar de
+     * línea es otra decisión —comprueba que la nueva tenga las plantillas— y se
+     * toma en Integraciones, no con un botón de sincronizar.
+     */
+    public function sincronizarConIntegra(Instance $instance)
+    {
+        abort_unless($instance->company_id === auth()->user()->company_id, 403);
+
+        if (! $instance->active || ! $instance->esWhatsApp() || ! $instance->phone_number_id) {
+            return response()->json([
+                'message' => 'Sólo una línea de WhatsApp conectada puede enviar las facturas de Integra.',
+            ], 422);
+        }
+
+        if (auth()->user()->company->instanciaDelErp()?->id !== $instance->id) {
+            return response()->json([
+                'message' => 'Integra envía las facturas por otra línea. Para cambiarla, elígela en '
+                    .'Integraciones › Por dónde envía Integra.',
+            ], 422);
+        }
+
+        $res = app(LineaDeEnvioEnIntegra::class)($instance);
+
+        return response()->json(['ok' => $res['ok'], 'message' => $res['mensaje']], $res['ok'] ? 200 : 422);
     }
 
     /**
@@ -99,6 +149,18 @@ class InstanceController extends Controller
         }
     }
 
+    /**
+     * Por qué el plan no deja encender una línea más de este canal, o null.
+     *
+     * Se devuelve como aviso (`flash`) y no como error de validación: la
+     * pantalla pinta los avisos, y el mensaje dice qué hacer —desconectar la
+     * actual o subir de plan—, que es lo que el cliente necesita leer.
+     */
+    private function sinCupo(?Company $company, string $canal, ?int $excepto = null): ?string
+    {
+        return $company ? PlanDeLaEmpresa::de($company)->motivoParaNoConectar($canal, $excepto) : null;
+    }
+
     public function store(Request $request)
     {
         $request->validate([
@@ -112,6 +174,10 @@ class InstanceController extends Controller
         $this->assertPhoneNumberIdIsFree($request);
 
         $user = auth()->user();
+
+        if ($motivo = $this->sinCupo($user->company, Instance::CANAL_WHATSAPP)) {
+            return back()->with('error', $motivo);
+        }
 
         $instance = Instance::create([
             'company_id' => $user->company_id,
@@ -160,6 +226,14 @@ class InstanceController extends Controller
 
         if ($request->boolean('active', true)) {
             $this->assertPhoneNumberIdIsFree($request, $instance->id);
+
+            // Reactivar una línea apagada es conectar una más: si no, bastaría
+            // desactivar la vieja, conectar la nueva y volver a encender la
+            // vieja para tener dos en el Básico.
+            if (! $instance->active
+                && ($motivo = $this->sinCupo($user->company, $instance->channel ?? Instance::CANAL_WHATSAPP, $instance->id))) {
+                return back()->with('error', $motivo);
+            }
         }
 
         $cambios = [
@@ -234,6 +308,13 @@ class InstanceController extends Controller
 
         $this->assertPhoneNumberIdIsFree($request, $instance->id);
 
+        // Reconectar una línea apagada es encender una más: pasa por el cupo
+        // del plan igual que conectar una nueva.
+        if (! $instance->active
+            && ($motivo = $this->sinCupo($instance->company, $instance->channel ?? Instance::CANAL_WHATSAPP, $instance->id))) {
+            return back()->with('error', $motivo);
+        }
+
         $instance->update(['active' => true]);
 
         return back()->with('success', 'Instancia reconectada.');
@@ -282,6 +363,27 @@ class InstanceController extends Controller
             'phone_number_id' => $instance->phone_number_id,
             'usuario' => $user->email,
         ] + $perdido);
+
+        // Una página de Messenger se suscribió al webhook al conectarla, y borrar
+        // la fila no le dice nada a Meta: la página seguía mandándonos sus
+        // mensajes. El 27-sep-2026, preparando el App Review, se conectó por
+        // error la página de un cliente real a la empresa de pruebas; borrarla
+        // la dejaba enviando. Si Meta no contesta se borra igual —dejar una
+        // página sin poder quitarse sería peor—, pero queda escrito.
+        if ($instance->esMessenger()) {
+            try {
+                $desuscrita = app(MessengerLoginService::class)->desuscribirPagina($instance);
+            } catch (\Throwable $e) {
+                $desuscrita = false;
+            }
+
+            if (! $desuscrita) {
+                Log::channel('messenger')->warning('⚠️ La página borrada sigue suscrita en Meta', [
+                    'instance_id' => $instance->id,
+                    'pagina' => $instance->external_account_id,
+                ]);
+            }
+        }
 
         // Sin FK (ver su migración): la cascada no los alcanza.
         \App\Models\ComprobanteDePago::where('instance_id', $instance->id)->delete();

@@ -25,6 +25,10 @@ Schedule::command('whatsapp:fallback-template')->hourly()->withoutOverlapping();
 // avisa cuando el estado CAMBIA, para que la alerta no se vuelva ruido.
 Schedule::command('whatsapp:health-check')->dailyAt('07:00')->withoutOverlapping();
 
+// La IA de la plataforma (n8n + Ollama). Justo después de la de WhatsApp: el
+// 28-sep-2026 llevaba dos días caída por el pago de Ollama y lo dijo un cliente.
+Schedule::command('ia:revisar')->dailyAt('07:05')->withoutOverlapping();
+
 // Las credenciales de integración se cifran con la APP_KEY. Si el contenedor
 // arranca con otra, todas dejan de funcionar a la vez sin borrarse: la fila
 // sigue en «connected» y la pantalla pide conectar de nuevo, así que el cliente

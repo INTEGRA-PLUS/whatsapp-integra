@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\IniciarSincronizacionCoexistencia;
 use App\Models\Instance;
+use App\Support\PlanDeLaEmpresa;
 use App\Services\RegistrarLineaEnIntegra;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
@@ -116,6 +117,13 @@ class EmbeddedSignupController extends Controller
         ]);
 
         $user = auth()->user();
+
+        // El cupo del plan, antes de gastar el código: es de un solo uso. La
+        // pantalla ya no ofrece el botón cuando no hay cupo; esto es para quien
+        // la tenía abierta de antes o llama directo.
+        if ($user->company && ($motivo = PlanDeLaEmpresa::de($user->company)->motivoParaNoConectar(Instance::CANAL_WHATSAPP))) {
+            return response()->json(['message' => $motivo], 422);
+        }
 
         // Un phone_number_id activo en dos instancias hace que los mensajes
         // entrantes lleguen sólo a una. Cuando lo sabemos de antemano se corta

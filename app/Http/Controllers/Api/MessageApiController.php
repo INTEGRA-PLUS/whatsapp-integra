@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Instance;
+use App\Support\FacturacionDeMeta;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\MetaWhatsAppService;
@@ -114,6 +115,37 @@ class MessageApiController extends Controller
         ]);
     }
 
+    /**
+     * Un 401 con la credencial de una instancia que existe pero está apagada.
+     *
+     * Es el único 401 que tiene dueño: detrás hay un ERP de verdad que se ha
+     * quedado sin enviar, no un token inventado. Hasta ahora no dejaba rastro
+     * y el log de acceso no guarda la cabecera, así que el 24-sep-2026 hubo 41
+     * rechazos en dos horas y no había forma de saber de qué empresa eran.
+     *
+     * Sólo se registra si la instancia existe: un token que no es de nadie no
+     * dice nada útil, y volcarlo al log sería guardar lo que alguien probó.
+     */
+    private function avisarSiLaCredencialEstaApagada(string $token, Request $request): void
+    {
+        $apagada = Instance::where('active', false)
+            ->where(fn ($q) => $q->where('api_token', Instance::hashApiToken($token))
+                ->orWhere('phone_number_id', $token))
+            ->first(['id', 'company_id', 'phone_number_id']);
+
+        if (! $apagada) {
+            return;
+        }
+
+        Log::channel('whatsapp')->warning('🔌 El ERP entra con la credencial de una línea apagada', [
+            'instance_id' => $apagada->id,
+            'company_id' => $apagada->company_id,
+            'ruta' => $request->path(),
+            'linea_activa' => $apagada->company?->instanciaDelErp()?->id,
+            'que_hacer' => 'Cambiar la credencial en el ERP por un token de la línea activa.',
+        ]);
+    }
+
     private function validateInstance(Request $request)
     {
         $token = $request->header('X-Instance-Token');
@@ -146,6 +178,8 @@ class MessageApiController extends Controller
         // —se enseña en la pantalla de Instancias y en el panel de Meta— así
         // que sólo se acepta mientras queden clientes por migrar.
         if (! config('whatsapp.api.allow_legacy_token', true)) {
+            $this->avisarSiLaCredencialEstaApagada($token, $request);
+
             return null;
         }
 
@@ -169,6 +203,10 @@ class MessageApiController extends Controller
         }
 
         $instance = $candidates->first();
+
+        if (! $instance) {
+            $this->avisarSiLaCredencialEstaApagada($token, $request);
+        }
 
         // Cada uso del esquema viejo deja rastro con la empresa: es la lista de
         // a quién falta avisar antes de poder apagarlo.
@@ -230,11 +268,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -468,7 +506,7 @@ class MessageApiController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             Log::channel('whatsapp')->warning('📄 Documento sin destinatario utilizable', [
@@ -477,7 +515,7 @@ class MessageApiController extends Controller
             ]);
 
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -557,6 +595,12 @@ class MessageApiController extends Controller
         );
 
         if (! ($result['success'] ?? false)) {
+            FacturacionDeMeta::registrarFallo(
+                $instance,
+                $result['error']['error']['code'] ?? null,
+                $result['error']['error']['message'] ?? null
+            );
+
             return response()->json([
                 'success' => false,
                 'error' => $result['error']['error']['message'] ?? 'Error al enviar el documento a Meta',
@@ -695,11 +739,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
@@ -733,11 +777,22 @@ class MessageApiController extends Controller
                 'guard_error' => $guard['error'],
             ]);
 
+            // Por la API las plantillas llegan del ERP, y cuando el número de
+            // datos no cuadra casi siempre es que nadie dijo qué va en cada
+            // variable. Este texto es el que el ERP enseña tal cual en la
+            // pantalla de facturas: el 25-sep-2026 Nac Technology vio «necesita
+            // 4 datos y el envío manda 3» sin ninguna pista de dónde se
+            // arreglaba.
+            $error = $guard['error'];
+            if ($guard['code'] === 'template_body_parameters') {
+                $error .= ' Revisa qué dato va en cada variable en el CRM: Integraciones → Envíos automáticos → Variables.';
+            }
+
             return response()->json([
                 'success' => false,
                 'code' => TemplateParameterGuard::CODE,
                 'reason' => $guard['code'],
-                'error' => $guard['error'],
+                'error' => $error,
             ], 422);
         }
 
@@ -817,6 +872,15 @@ class MessageApiController extends Controller
                 'wamid' => $message->wamid,
             ]);
         }
+
+        // El ERP no guarda la burbuja cuando Meta rechaza, así que el
+        // observer de mensajes no se entera: es justo por donde llegaron las
+        // facturas de JHeda sin moneda configurada (30-sep-2026).
+        FacturacionDeMeta::registrarFallo(
+            $instance,
+            $result['error']['error']['code'] ?? null,
+            $result['error']['error']['message'] ?? null
+        );
 
         return response()->json([
             'success' => false,
@@ -958,11 +1022,11 @@ class MessageApiController extends Controller
         // llegaba tal cual al hilo y a WhatsApp. El hilo escrito de otra forma
         // que el que abre el webhook partía la conversación en dos. Un BSUID pasa
         // intacto: quitarle las letras lo convertiría en un teléfono inventado.
-        $to = WhatsAppConversation::normalizeRecipient($request->to);
+        $to = WhatsAppConversation::destinatarioDelApi($request->to);
 
         if ($to === '') {
             return response()->json(['errors' => ['to' => [
-                'El destinatario debe ser un número de teléfono o un identificador de WhatsApp (por ejemplo CO.1402615141764490).',
+                WhatsAppConversation::motivoDestinatarioInvalido($request->to),
             ]]], 422);
         }
 
