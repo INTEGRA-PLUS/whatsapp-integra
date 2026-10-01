@@ -137,6 +137,141 @@ class WhatsAppCampaign extends Model
         return $this->recipients()->whereIn('status', ['pending', 'sending'])->count();
     }
 
+    /**
+     * La campaña termina cuando no queda nadie pendiente. Se decide en el
+     * último job que acaba, y no en el que reparte: repartir es instantáneo,
+     * enviar puede durar horas.
+     *
+     * Una pausada no se cierra aunque no quede nadie en cola: la pausa puede
+     * venir de una plantilla que Meta paró (SendCampaignMessage), y cerrarla
+     * borraría el único aviso de que hay que mirar la plantilla y reanudar.
+     */
+    public function cerrarSiTermino(): void
+    {
+        $this->refreshCounters();
+
+        if ($this->outstandingCount() > 0 || in_array($this->status, ['cancelled', 'paused'], true)) {
+            return;
+        }
+
+        $this->update([
+            // Todo fallido es un fallo de la campaña; con entregas parciales el
+            // detalle ya dice cuántas y por qué.
+            'status'       => $this->sent_count === 0 ? 'failed' : 'completed',
+            'completed_at' => now(),
+            'last_run_at'  => now(),
+        ]);
+    }
+
+    /**
+     * Minutos que un destinatario puede pasar en "sending" sin wamid antes de
+     * darlo por perdido. Un envío normal está ahí segundos; el job tiene
+     * 120 s de tope. Quince minutos es que el worker murió con él en la mano.
+     */
+    public const MINUTOS_ATASCADO = 15;
+
+    /**
+     * Rescata los destinatarios que se quedaron en "sending" porque el worker
+     * murió a medio envío (un despliegue, un OOM, un `queue:restart`).
+     *
+     * Antes no los miraba nadie: contaban como pendientes para siempre, la
+     * campaña no se cerraba nunca y, si era recurrente, `campaigns:run-scheduled`
+     * no la volvía a lanzar porque seguía "enviando".
+     *
+     * Si la burbuja del chat tiene wamid, Meta sí lo aceptó y sólo faltó
+     * apuntarlo: se marca enviado. Si no, no se sabe si salió, y se marca
+     * fallido con ese motivo en vez de reenviarlo solo: un "fallido" se puede
+     * reintentar a mano; un mensaje duplicado no se puede retirar.
+     *
+     * @return int cuántos se rescataron
+     */
+    public static function rescatarEnviosAtascados(): int
+    {
+        $limite = now()->subMinutes(self::MINUTOS_ATASCADO);
+        $campanas = [];
+        $rescatados = 0;
+
+        WhatsAppCampaignRecipient::where('status', 'sending')
+            ->whereNull('wamid')
+            ->where('updated_at', '<', $limite)
+            ->orderBy('id')
+            ->chunkById(200, function ($filas) use (&$campanas, &$rescatados, $limite) {
+                foreach ($filas as $fila) {
+                    $wamid = $fila->message_id
+                        ? WhatsAppMessage::whereKey($fila->message_id)->value('wamid')
+                        : null;
+
+                    $cambio = $wamid
+                        ? ['status' => 'sent', 'wamid' => $wamid, 'sent_at' => $fila->sent_at ?: now()]
+                        : [
+                            'status' => 'failed',
+                            'error_message' => 'El envío se cortó a medias (se reinició el servidor de envíos) y no consta '
+                                .'que WhatsApp lo recibiera. Revisa el chat del cliente antes de reintentarlo.',
+                        ];
+
+                    // Condicional otra vez: si el job seguía vivo y acaba de
+                    // terminar, su resultado gana.
+                    $hecho = WhatsAppCampaignRecipient::whereKey($fila->id)
+                        ->where('status', 'sending')
+                        ->whereNull('wamid')
+                        ->where('updated_at', '<', $limite)
+                        ->update($cambio + ['updated_at' => now()]);
+
+                    if ($hecho) {
+                        if (! $wamid && $fila->message_id) {
+                            WhatsAppMessage::whereKey($fila->message_id)
+                                ->where('status', 'pending')
+                                ->whereNull('wamid')
+                                ->update([
+                                    'status' => 'failed',
+                                    'failed_at' => now(),
+                                    'error_message' => $cambio['error_message'],
+                                ]);
+                        }
+
+                        $rescatados++;
+                        $campanas[$fila->campaign_id] = true;
+                    }
+                }
+            });
+
+        foreach (array_keys($campanas) as $id) {
+            static::find($id)?->cerrarSiTermino();
+        }
+
+        // Y las que se quedaron "enviando" sin nadie en cola: el último job
+        // murió justo antes de cerrarla.
+        static::where('status', 'sending')
+            ->where('updated_at', '<', $limite)
+            ->whereDoesntHave('recipients', fn ($q) => $q->whereIn('status', ['pending', 'sending']))
+            ->get()
+            ->each(fn (self $c) => $c->cerrarSiTermino());
+
+        return $rescatados;
+    }
+
+    /**
+     * Fallidos que tiene sentido volver a enviar.
+     *
+     * Fuera quedan:
+     * - 131050: el cliente se dio de baja de los mensajes de marketing. Volver a
+     *   intentarlo es escribir a quien pidió que no, y Meta lo vuelve a rechazar.
+     * - 131049: Meta frenó el envío para no saturar al cliente con marketing.
+     *   Reintentarlo antes de 24 h da el mismo rechazo y empeora la calidad del
+     *   número; pasado ese plazo sí puede entrar.
+     */
+    public function fallidosReintentables()
+    {
+        return $this->recipients()
+            ->where('status', 'failed')
+            ->where(function ($q) {
+                $q->whereNull('error_code')
+                    ->orWhereNotIn('error_code', ['131050', '131049'])
+                    ->orWhere(fn ($q) => $q->where('error_code', '131049')
+                        ->where('updated_at', '<', now()->subDay()));
+            });
+    }
+
     public function isRecurring(): bool
     {
         return $this->schedule_type === 'recurring';

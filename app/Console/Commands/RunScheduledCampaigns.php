@@ -18,11 +18,30 @@ class RunScheduledCampaigns extends Command
     {
         $now = now();
 
+        // Primero, los envíos que un worker muerto dejó en "sending": mientras
+        // estén ahí la campaña cuenta como "enviando" y la de abajo nunca la
+        // volvería a lanzar. Va aquí porque esto corre cada minuto pase lo que
+        // pase, haya o no campañas que lanzar.
+        $rescatados = WhatsAppCampaign::rescatarEnviosAtascados();
+
+        if ($rescatados > 0) {
+            Log::channel('whatsapp')->warning('Destinatarios de campaña rescatados de "sending"', [
+                'destinatarios' => $rescatados,
+            ]);
+        }
+
+        // Ni pausadas ni canceladas: relanzarlas las ponía en "queued" con el
+        // `paused_at`/`cancelled_at` puesto, ProcessWhatsAppCampaign se negaba a
+        // repartirlas y se quedaban en cola para siempre —y fuera de este
+        // listado, que excluye "queued"—. Una cancelada, además, volvía a
+        // escribir a toda la lista.
         $due = WhatsAppCampaign::query()
             ->where('schedule_type', 'recurring')
             ->whereNotNull('next_run_at')
             ->where('next_run_at', '<=', $now)
-            ->whereNotIn('status', ['queued', 'sending'])
+            ->whereNotIn('status', ['queued', 'sending', 'paused', 'cancelled'])
+            ->whereNull('paused_at')
+            ->whereNull('cancelled_at')
             ->get();
 
         if ($due->isEmpty()) {
@@ -36,7 +55,14 @@ class RunScheduledCampaigns extends Command
                     // Una recurrente vuelve a empezar de cero cada vez: se limpian
                     // también los acuses del envío anterior, que si no quedarían
                     // mezclados con los de esta vuelta.
+                    //
+                    // Salvo quien no quiere recibirla: "skipped" son los que
+                    // estaban dados de baja al crear la campaña, y 131050 los que
+                    // se dieron de baja de marketing después. Ponerlos en
+                    // "pending" era volver a escribirles en cada vuelta.
                     WhatsAppCampaignRecipient::where('campaign_id', $campaign->id)
+                        ->where('status', '!=', 'skipped')
+                        ->where(fn ($q) => $q->whereNull('error_code')->orWhere('error_code', '!=', '131050'))
                         ->update([
                             'status' => 'pending',
                             'wamid' => null,
