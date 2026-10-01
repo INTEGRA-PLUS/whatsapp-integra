@@ -62,11 +62,15 @@ class HandleInertiaRequests extends Middleware
                 ? Instance::where('company_id', $request->user()->company_id)
                     ->where('active', true)
                     ->whereNotNull('problema_de_pago')
-                    ->get(['id', 'name', 'display_phone_number', 'problema_de_pago'])
+                    ->get(['id', 'name', 'display_phone_number', 'waba_id', 'problema_de_pago'])
+                    // `problema` puede ser `por_confirmar`: Meta ya no marca
+                    // el pago pero aún no ha entregado nada que lo pruebe. La
+                    // alerta lo pinta en ámbar, no en rojo.
                     ->map(fn (Instance $i) => [
                         'id' => $i->id,
                         'nombre' => $i->name,
                         'numero' => $i->display_phone_number,
+                        'waba_id' => $i->waba_id,
                         'problema' => $i->problema_de_pago,
                     ])
                     ->values()
