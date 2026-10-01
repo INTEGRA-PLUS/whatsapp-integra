@@ -1375,6 +1375,7 @@ class MessageApiController extends Controller
                 'template' => $fallback['name'],
                 'error' => $result['error'] ?? null,
             ]);
+            $this->fallbackTemplates->refrescarTrasError($instance, $result['error'] ?? null); // 132001/132015/132016: el estado guardado ya no vale
 
             return response()->json([
                 'success' => false,
