@@ -12,6 +12,8 @@ use App\Models\WhatsAppCall;
 use App\Models\WhatsAppCallPermission;
 use App\Support\MensajeNoEntregado;
 use App\Jobs\ProcesarWebhookCoexistencia;
+use App\Services\EstadosDeMensaje;
+use App\Services\EventosDePlantilla;
 use App\Services\MetaWhatsAppService;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
@@ -114,6 +116,15 @@ class WhatsAppWebhookController extends Controller
                         $this->processCallChange($change['value'] ?? []);
                     } elseif ($field === 'account_update') {
                         $this->procesarAccountUpdate($entry['id'] ?? null, $change['value'] ?? []);
+                    } elseif (in_array($field, EventosDePlantilla::CAMPOS, true)) {
+                        // `entry.id` es la WABA: el aviso vale para todas sus
+                        // instancias, de todas las empresas que la tengan.
+                        app(EventosDePlantilla::class)->procesar(
+                            $field,
+                            isset($entry['id']) ? (string) $entry['id'] : null,
+                            $entry['time'] ?? null,
+                            $change['value'] ?? []
+                        );
                     } elseif (in_array($field, self::CAMPOS_COEXISTENCIA, true)) {
                         $this->encolarCoexistencia($field, $change['value'] ?? []);
                     }
@@ -295,10 +306,14 @@ class WhatsAppWebhookController extends Controller
         if (isset($value['statuses'])) {
             foreach ($value['statuses'] as $status) {
                 // Un acuse de recibo que falle no puede impedir que se procesen
-                // los mensajes nuevos del mismo lote.
+                // los mensajes nuevos del mismo lote. Pero sí cuenta como
+                // fallo: antes se registraba y se respondía 200, y el estado
+                // se perdía para siempre. Reintentar es seguro porque un acuse
+                // repetido no hace retroceder al mensaje.
                 try {
                     $this->updateMessageStatus($status, $instance);
                 } catch (\Throwable $e) {
+                    $this->failedEvents++;
                     Log::channel('whatsapp')->error('❌ Error actualizando estado de mensaje', [
                         'wamid' => $status['id'] ?? null,
                         'status' => $status['status'] ?? null,
@@ -1254,104 +1269,27 @@ class WhatsAppWebhookController extends Controller
         ]);
     }
 
+    /**
+     * El acuse de Meta. La lógica vive en EstadosDeMensaje para que quien
+     * guarda un wamid pueda aplicar los acuses que llegaron antes que él.
+     *
+     * `$instance` es la que recibió el webhook y se usa sólo para el log: el
+     * mensaje se busca por wamid (único) y su tiempo real va al canal de la
+     * instancia de su conversación, que con dos empresas compartiendo el
+     * phone_number_id no es la misma.
+     */
     private function updateMessageStatus($status, Instance $instance)
     {
-        $wamid = $status['id'];
-        $newStatus = $status['status'];
-
-        $message = WhatsAppMessage::where('wamid', $wamid)->first();
-
-        $updateData = ['status' => $newStatus];
-
-        if ($newStatus === 'delivered') {
-            $updateData['delivered_at'] = now();
-        } elseif ($newStatus === 'read') {
-            $updateData['read_at'] = now();
-        } elseif ($newStatus === 'failed') {
-            $errors = $status['errors'] ?? [];
-            $primaryError = $errors[0] ?? [];
-            $errorCode = $primaryError['code'] ?? null;
-            $errorTitle = $primaryError['title'] ?? null;
-            $errorMessage = $primaryError['message'] ?? 'Error desconocido';
-            $errorDetails = $primaryError['error_data']['details'] ?? null;
-
-            $updateData['failed_at'] = now();
-            $updateData['error_message'] = $errorMessage;
-            $updateData['error_code'] = $errorCode;
-            $updateData['error_details'] = $errorDetails;
-
-            Log::channel('whatsapp')->warning('⚠️ Mensaje fallido', [
-                'wamid' => $wamid,
-                'recipient_id' => $status['recipient_id'] ?? null,
-                'error_code' => $errorCode,
-                'error_title' => $errorTitle,
-                'error_message' => $errorMessage,
-                'error_details' => $errorDetails,
-                'all_errors' => json_encode($errors, JSON_UNESCAPED_UNICODE),
-                'full_status' => json_encode($status, JSON_UNESCAPED_UNICODE),
-            ]);
-        }
-
-        // El destinatario de campaña se actualiza aunque no exista la burbuja: los
-        // envíos anteriores a que las campañas escribieran en el chat solo dejaron
-        // el wamid en la fila del destinatario, y sin esto su estado se quedaba
-        // congelado en "enviado" para siempre.
-        $this->updateCampaignRecipientStatus($wamid, $newStatus, $updateData);
-
-        if (!$message) {
-            return;
-        }
-
-        $message->update($updateData);
-
-        // Tiempo real: refleja el check (enviado/entregado/leído/fallido) en la UI.
-        broadcast(new \App\Events\WhatsAppMessageEvent($message, $instance->id, 'status'));
-
-        Log::channel('whatsapp')->info('✅ Estado actualizado', [
-            'wamid' => $wamid,
-            'status' => $newStatus
-        ]);
+        EstadosDeMensaje::procesar(is_array($status) ? $status : []);
     }
 
     /**
-     * Lleva el acuse de Meta a la fila del destinatario de la campaña.
-     *
-     * Sin esto una campaña reporta "enviada" y nada más: entregado, leído y
-     * fallido son justo lo que hay que mirar después de un envío masivo, y esa
-     * información llega siempre por webhook, nunca en la respuesta del envío.
+     * Aplica los acuses que llegaron antes de que se guardara el wamid del
+     * mensaje. Ver EstadosDeMensaje::aplicarPendiente().
      */
-    private function updateCampaignRecipientStatus(string $wamid, string $newStatus, array $messageUpdate): void
+    public static function aplicarEstadoPendiente(WhatsAppMessage $message): bool
     {
-        $recipient = \App\Models\WhatsAppCampaignRecipient::where('wamid', $wamid)->first();
-
-        if (!$recipient) {
-            return;
-        }
-
-        // Un acuse viejo no debe pisar a uno más avanzado: Meta no garantiza el
-        // orden, y "delivered" llegando después de "read" borraría la lectura.
-        $rank = ['pending' => 0, 'sending' => 1, 'sent' => 2, 'delivered' => 3, 'read' => 4];
-        if (($rank[$newStatus] ?? 0) > 0
-            && ($rank[$newStatus] ?? 0) <= ($rank[$recipient->status] ?? 0)
-            && $newStatus !== 'failed') {
-            return;
-        }
-
-        $update = ['status' => $newStatus];
-
-        if ($newStatus === 'delivered') {
-            $update['delivered_at'] = now();
-        } elseif ($newStatus === 'read') {
-            $update['read_at'] = now();
-            $update['delivered_at'] = $recipient->delivered_at ?: now();
-        } elseif ($newStatus === 'failed') {
-            $update['error_message'] = $messageUpdate['error_message'] ?? null;
-            $update['error_code'] = $messageUpdate['error_code'] ?? null;
-            $update['error_details'] = $messageUpdate['error_details'] ?? null;
-        }
-
-        $recipient->update($update);
-        $recipient->campaign?->refreshCounters();
+        return EstadosDeMensaje::aplicarPendiente($message);
     }
 
     /**

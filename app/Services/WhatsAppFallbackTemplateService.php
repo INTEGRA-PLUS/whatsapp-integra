@@ -39,6 +39,28 @@ class WhatsAppFallbackTemplateService
     public const STATUS_DISABLED    = 'DISABLED';     // la empresa lo apagó a propósito
     public const STATUS_UNAVAILABLE = 'UNAVAILABLE';  // sin WABA/token, o Meta no respondió
 
+    /*
+     * Los tres siguientes son estados de Meta, no nuestros. `META_DISABLED` va
+     * con prefijo a propósito: Meta llama `DISABLED` a la plantilla que apagó
+     * por mala calidad, y nosotros llamamos igual al respaldo que la empresa
+     * apagó en Ajustes. Guardar el de Meta tal cual hacía que la pantalla
+     * dijera «Desactivado» con el interruptor encendido, y que el comando de
+     * estado lo pintara en gris como si fuera una decisión de la empresa
+     * (1-oct-2026).
+     */
+    public const STATUS_PAUSED        = 'PAUSED';        // Meta la pausó por calidad (3 h, luego 6 h)
+    public const STATUS_IN_APPEAL     = 'IN_APPEAL';     // la empresa apeló un rechazo
+    public const STATUS_META_DISABLED = 'META_DISABLED'; // Meta la desactivó: hay que crear otra
+
+    /**
+     * Códigos de envío que dicen que la plantilla ya no es la que creíamos:
+     * 132001 no existe (o no en ese idioma), 132015 pausada, 132016
+     * desactivada. Con cualquiera de ellos el estado guardado miente, y
+     * esperar al TTL de 12 h de una APPROVED es seguir mandando avisos que
+     * Meta va a rechazar.
+     */
+    public const CODIGOS_QUE_INVALIDAN = [132001, 132015, 132016];
+
     /**
      * Cada cuánto se vuelve a preguntar a Meta, en minutos, según en qué estado
      * quedó la última consulta. Aprobada es el caso normal y casi nunca cambia;
@@ -50,6 +72,11 @@ class WhatsAppFallbackTemplateService
         self::STATUS_REJECTED    => 360,
         self::STATUS_MISSING     => 60,
         self::STATUS_UNAVAILABLE => 30,
+        // La primera pausa dura 3 h y la segunda 6: mirar cada media hora
+        // basta para retomar los avisos poco después de que Meta la suelte.
+        self::STATUS_PAUSED        => 30,
+        self::STATUS_IN_APPEAL     => 60,
+        self::STATUS_META_DISABLED => 720,
     ];
 
     /** Tope de Meta para el cuerpo ya renderizado de una plantilla. */
@@ -192,6 +219,155 @@ class WhatsAppFallbackTemplateService
         ];
     }
 
+    /* --------------------- Avisos que llegan de Meta -------------------- */
+
+    /**
+     * Traduce el estado que da Meta al vocabulario de este servicio. Sólo
+     * renombra lo que choca o lo que tiene otro nombre en el webhook; el resto
+     * pasa tal cual.
+     */
+    public static function estadoDesdeMeta(?string $status): string
+    {
+        $status = strtoupper(trim((string) $status));
+
+        return match ($status) {
+            '' => self::STATUS_PENDING,
+            'DISABLED' => self::STATUS_META_DISABLED,
+            // REINSTATED es el fin de una pausa: vuelve a estar aprobada.
+            'REINSTATED' => self::STATUS_APPROVED,
+            'DELETED', 'PENDING_DELETION' => self::STATUS_MISSING,
+            default => $status,
+        };
+    }
+
+    /**
+     * ¿Es esta plantilla la de respaldo de la instancia? El idioma sólo se
+     * compara si los dos lados lo traen, y sin distinguir «es-CO» de «es_CO»:
+     * el webhook de calidad lo manda con guion y el catálogo con guion bajo.
+     */
+    public function esLaDeRespaldo(Instance $instance, ?string $name, ?string $language = null): bool
+    {
+        if (!$name) {
+            return false;
+        }
+
+        $settings = $instance->fallbackTemplateSettings();
+        $definition = $this->definition($instance);
+
+        if ($definition['name'] !== $name) {
+            return false;
+        }
+
+        $guardado = $settings['language'] ?? $definition['language'];
+
+        return !$language || !$guardado
+            || self::idiomaComparable($language) === self::idiomaComparable($guardado);
+    }
+
+    /**
+     * Apunta lo que Meta acaba de avisar por webhook, sin preguntarle nada.
+     *
+     * No se llama a `ensure()` desde aquí: el aviso ya trae el estado, y
+     * consultar el Graph dentro del webhook de una WABA con cuatro números
+     * serían cuatro llamadas por evento, mientras Meta espera respuesta.
+     * Lo que el aviso no trae (el cuerpo de una plantilla recién aprobada que
+     * aún no conocíamos) se deja para la próxima consulta poniendo el TTL a
+     * cero.
+     */
+    public function registrarEventoDeMeta(Instance $instance, string $evento, ?string $detalle = null): string
+    {
+        $status = self::estadoDesdeMeta($evento);
+        $settings = $instance->fallbackTemplateSettings();
+
+        $conocidos = [
+            self::STATUS_APPROVED, self::STATUS_PENDING, self::STATUS_REJECTED,
+            self::STATUS_PAUSED, self::STATUS_IN_APPEAL, self::STATUS_META_DISABLED,
+            self::STATUS_MISSING,
+        ];
+
+        // FLAGGED, LIMIT_EXCEEDED, ARCHIVED…: no sabemos si se puede enviar o
+        // no. Mejor que lo diga el Graph en el próximo aviso que adivinarlo.
+        if (!in_array($status, $conocidos, true)) {
+            $this->invalidar($instance);
+
+            return $settings['status'] ?? self::STATUS_PENDING;
+        }
+
+        $definition = $this->definition($instance);
+
+        $values = [
+            'name'       => $definition['name'],
+            'language'   => $settings['language'] ?? $definition['language'],
+            'source'     => $settings['source'] ?? $definition['source'],
+            'status'     => $status,
+            'checked_at' => now()->toIso8601String(),
+            'last_error' => $status === self::STATUS_APPROVED ? null : $detalle,
+        ];
+
+        if ($status === self::STATUS_APPROVED && empty($settings['body'])) {
+            // Sin cuerpo `prepare()` no puede armar los parámetros: que la
+            // próxima consulta lo traiga del Graph.
+            $values['checked_at'] = null;
+        }
+
+        $this->persist($instance, $values);
+
+        Log::channel('whatsapp')->info('Estado de la plantilla de respaldo actualizado por webhook', [
+            'company_id'  => $instance->company_id,
+            'instance_id' => $instance->id,
+            'template'    => $definition['name'],
+            'evento'      => $evento,
+            'status'      => $status,
+        ]);
+
+        return $status;
+    }
+
+    /**
+     * Obliga a que la próxima consulta vaya a Meta, sin hacerla ahora. Para
+     * quien acaba de ver un envío rechazado y no quiere esperar al TTL.
+     */
+    public function invalidar(Instance $instance): void
+    {
+        if (!$instance->fallbackTemplateSettings()) {
+            return;
+        }
+
+        $this->persist($instance, ['checked_at' => null]);
+    }
+
+    /**
+     * Si el error de un envío del respaldo dice que la plantilla ya no está
+     * aprobada (pausada, desactivada, borrada), invalida el estado guardado.
+     * Acepta el error tal y como lo devuelve MetaWhatsAppService o el código
+     * suelto.
+     */
+    public function refrescarTrasError(Instance $instance, $error): bool
+    {
+        $codigo = is_array($error)
+            ? ($error['error']['code'] ?? $error['code'] ?? null)
+            : $error;
+
+        if (!in_array((int) $codigo, self::CODIGOS_QUE_INVALIDAN, true)) {
+            return false;
+        }
+
+        Log::channel('whatsapp')->warning('Meta rechazó la plantilla de respaldo: se vuelve a consultar su estado', [
+            'company_id'  => $instance->company_id,
+            'instance_id' => $instance->id,
+            'codigo'      => (int) $codigo,
+        ]);
+
+        $this->invalidar($instance);
+
+        return true;
+    }
+
+    public static function idiomaComparable(?string $language): string
+    {
+        return str_replace('-', '_', strtolower(trim((string) $language)));
+    }
+
     /* --------------------------- Definición --------------------------- */
 
     /**
@@ -229,6 +405,13 @@ class WhatsAppFallbackTemplateService
         $checkedAt = $settings['checked_at'] ?? null;
 
         if (!$status || !$checkedAt) {
+            return false;
+        }
+
+        // Un `DISABLED` guardado sólo puede venir de Meta (el apagado de la
+        // empresa nunca se persiste como estado, se lee de `disabled`): es de
+        // antes de separar los dos y hay que volver a preguntar.
+        if ($status === self::STATUS_DISABLED) {
             return false;
         }
 
@@ -296,10 +479,12 @@ class WhatsAppFallbackTemplateService
     /** Guarda en la instancia lo que Meta dice de la plantilla encontrada. */
     private function absorb(Instance $instance, array $entry): array
     {
+        $status = self::estadoDesdeMeta($entry['status'] ?? null);
+
         $values = [
             'name'       => $entry['name'] ?? null,
             'language'   => $entry['language'] ?? null,
-            'status'     => $entry['status'] ?? self::STATUS_PENDING,
+            'status'     => $status,
             'category'   => $entry['category'] ?? null,
             'body'       => $this->bodyText($entry),
             'checked_at' => now()->toIso8601String(),
@@ -315,6 +500,10 @@ class WhatsAppFallbackTemplateService
                 'template'    => $entry['name'] ?? null,
                 'reason'      => $entry['rejected_reason'] ?? null,
             ]);
+        } elseif ($status === self::STATUS_PAUSED) {
+            $values['last_error'] = 'Meta pausó la plantilla por quejas o baja calidad. Se reanuda sola en unas horas.';
+        } elseif ($status === self::STATUS_META_DISABLED) {
+            $values['last_error'] = 'Meta desactivó la plantilla por baja calidad. Elige o crea otra para el respaldo.';
         }
 
         $this->persist($instance, $values);
@@ -409,7 +598,7 @@ class WhatsAppFallbackTemplateService
         }
 
         $this->persist($instance, [
-            'status'         => $result['data']['status'] ?? self::STATUS_PENDING,
+            'status'         => self::estadoDesdeMeta($result['data']['status'] ?? null),
             'category'       => $result['data']['category'] ?? ($entry['category'] ?? null),
             'body'           => $this->bodyText($entry),
             'provisioned_at' => now()->toIso8601String(),

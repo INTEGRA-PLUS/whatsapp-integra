@@ -1686,7 +1686,22 @@ const FALLBACK_STATUS = {
     REJECTED:    { label: 'Rechazada',  tone: 'bg-destructive/15 text-destructive ring-destructive/30' },
     MISSING:     { label: 'Sin crear',  tone: 'bg-destructive/15 text-destructive ring-destructive/30' },
     UNAVAILABLE: { label: 'Sin verificar', tone: 'bg-muted/15 text-foreground dark:text-muted-foreground ring-border/30' },
+    // Apagado por la empresa con el interruptor de abajo.
     DISABLED:    { label: 'Desactivado', tone: 'bg-muted/15 text-foreground dark:text-muted-foreground ring-border/30' },
+    // Estos tres los decide Meta. META_DISABLED no es DISABLED: Meta la apagó
+    // por baja calidad y hay que elegir otra; con la misma etiqueta parecía
+    // que la empresa había apagado el respaldo con el interruptor encendido.
+    PAUSED:        { label: 'Pausada por Meta', tone: 'bg-warning/15 text-warning ring-warning/30' },
+    IN_APPEAL:     { label: 'En apelación', tone: 'bg-warning/15 text-warning ring-warning/30' },
+    META_DISABLED: { label: 'Desactivada por Meta', tone: 'bg-destructive/15 text-destructive ring-destructive/30' },
+};
+
+// Qué pasa con los avisos mientras la plantilla está en cada estado de Meta.
+const FALLBACK_STATUS_HINT = {
+    PENDING:       'Mientras Meta la revisa, los avisos fuera de la ventana siguen sin poder entregarse.',
+    PAUSED:        'Meta la pausó porque los clientes la bloquearon o la reportaron. Se reanuda sola en 3 o 6 horas; mientras tanto los avisos fuera de la ventana no se entregan.',
+    IN_APPEAL:     'Meta está revisando la apelación. Hasta que la apruebe, los avisos fuera de la ventana no se entregan.',
+    META_DISABLED: 'Meta la desactivó por baja calidad y ya no se puede usar. Elige otra plantilla aprobada abajo o vuelve a la de Integra CRM.',
 };
 
 // Huecos {{n}} del cuerpo, ordenados como los espera la Cloud API.
@@ -1813,9 +1828,9 @@ function FallbackTemplatePanel({ instanceId, showToast }) {
                         {state?.last_error && (
                             <p className="text-[11px] text-destructive mt-1.5 break-words">{state.last_error}</p>
                         )}
-                        {state?.status === 'PENDING' && (
+                        {!disabled && FALLBACK_STATUS_HINT[state?.status] && (
                             <p className="text-[11px] text-muted-foreground mt-1.5">
-                                Mientras Meta la revisa, los avisos fuera de la ventana siguen sin poder entregarse.
+                                {FALLBACK_STATUS_HINT[state.status]}
                             </p>
                         )}
                     </div>
