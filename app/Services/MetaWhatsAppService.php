@@ -672,12 +672,114 @@ class MetaWhatsAppService
     public function listTemplates(string $wabaId, string $accessToken, array $params = [])
     {
         $defaults = [
-            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason',
+            // `parameter_format` hace falta para copiar una plantilla con
+            // variables con nombre: sin él se crea como POSITIONAL y Meta la
+            // rechaza por llevar {{nombre}}.
+            'fields' => 'id,name,language,status,category,parameter_format,components,quality_score,previous_category,rejected_reason',
             'limit' => 100,
         ];
         $query = array_merge($defaults, $params);
 
         return $this->graphGet("/{$wabaId}/message_templates", $accessToken, $query);
+    }
+
+    /**
+     * El catálogo entero de un WABA, siguiendo `paging.cursors.after`.
+     *
+     * `listTemplates()` devuelve UNA página, y Meta no garantiza el `limit`
+     * que se le pide: con un catálogo grande corta antes. Leer sólo la primera
+     * página hacía que una plantilla de la segunda «no existiera» —no se
+     * podía editar ni previsualizar, ni elegir para una campaña—.
+     *
+     * Devuelve la misma forma que `listTemplates()`, con todas las filas en
+     * `data.data`. Si falla cualquier página falla todo: un catálogo a medias
+     * convierte «no la leí» en «no existe», que es justo el fallo de arriba.
+     * El tope de páginas es para no quedarse en bucle si Meta repite cursor.
+     */
+    public function listAllTemplates(string $wabaId, string $accessToken, array $params = [], int $maxPaginas = 20): array
+    {
+        $filas = [];
+        $despues = null;
+        $vistos = [];
+
+        for ($pagina = 0; $pagina < $maxPaginas; $pagina++) {
+            $consulta = $params;
+            unset($consulta['before']);
+            if ($despues !== null) {
+                $consulta['after'] = $despues;
+            }
+
+            $res = $this->listTemplates($wabaId, $accessToken, $consulta);
+
+            if (! ($res['success'] ?? false)) {
+                return $res;
+            }
+
+            foreach ($res['data']['data'] ?? [] as $fila) {
+                $filas[] = $fila;
+            }
+
+            $despues = $res['data']['paging']['cursors']['after'] ?? null;
+
+            // Sin `next` no hay más páginas, aunque Meta mande cursores.
+            if (empty($res['data']['paging']['next']) || ! $despues || isset($vistos[$despues])) {
+                return ['success' => true, 'data' => ['data' => $filas, 'paging' => null], 'truncated' => false];
+            }
+
+            $vistos[$despues] = true;
+        }
+
+        Log::warning('Catálogo de plantillas cortado por el tope de páginas', [
+            'waba_id' => $wabaId,
+            'paginas' => $maxPaginas,
+            'filas' => count($filas),
+        ]);
+
+        return ['success' => true, 'data' => ['data' => $filas, 'paging' => null], 'truncated' => true];
+    }
+
+    /**
+     * Borra UNA plantilla: `DELETE /{waba_id}/message_templates?hsm_id=&name=`.
+     *
+     * Se manda siempre el `hsm_id` además del nombre. Borrar sólo por nombre
+     * se lleva **todos los idiomas** de esa plantilla, y lo que el usuario
+     * pidió borrar es la que tiene delante.
+     */
+    public function deleteTemplate(string $wabaId, string $accessToken, string $name, string $hsmId): array
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}/message_templates";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->delete($url.'?'.http_build_query(['hsm_id' => $hsmId, 'name' => $name]));
+
+            if ($response->successful()) {
+                Log::info('WhatsApp Template Deleted', [
+                    'waba_id' => $wabaId,
+                    'template_id' => $hsmId,
+                    'template_name' => $name,
+                ]);
+
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Template Delete Error', [
+                'waba_id' => $wabaId,
+                'template_id' => $hsmId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Template Delete Exception', [
+                'waba_id' => $wabaId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     public function enableInsights(string $wabaId, string $accessToken)
@@ -1298,7 +1400,7 @@ class MetaWhatsAppService
     public function getTemplate(string $templateId, string $accessToken, array $params = [])
     {
         $defaults = [
-            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason,library_template_name',
+            'fields' => 'id,name,language,status,category,parameter_format,components,quality_score,previous_category,rejected_reason,library_template_name',
         ];
         $query = array_merge($defaults, $params);
 
