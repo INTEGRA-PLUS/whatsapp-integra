@@ -1,10 +1,5 @@
 <?php
 
-use App\Http\Controllers\FacturaRapidaController;
-use App\Http\Controllers\MiPlanController;
-use App\Http\Controllers\PlanesController;
-use App\Http\Controllers\ResumenController;
-use App\Http\Controllers\TextoPredictivoController;
 use App\Http\Controllers\AiDocumentoController;
 use App\Http\Controllers\AiFlowSettingsController;
 use App\Http\Controllers\Auth\ContrasenaOlvidadaController;
@@ -16,13 +11,11 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
 use App\Http\Controllers\ExtensionController;
+use App\Http\Controllers\FacturaRapidaController;
+use App\Http\Controllers\FlujoIaController;
 use App\Http\Controllers\InstagramConexionController;
 use App\Http\Controllers\InstagramPrivacidadController;
 use App\Http\Controllers\InstagramWebhookController;
-use App\Http\Controllers\MessengerConexionController;
-use App\Http\Controllers\MessengerWebhookController;
-use App\Http\Controllers\FlujoIaController;
-use App\Http\Controllers\ModoDeAtencionController;
 use App\Http\Controllers\InstanceController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\KanbanController;
@@ -30,21 +23,31 @@ use App\Http\Controllers\MacroController;
 use App\Http\Controllers\Master\LogsController;
 use App\Http\Controllers\Master\MessagesController;
 use App\Http\Controllers\MasterController;
-use App\Http\Controllers\SuscripcionController;
+use App\Http\Controllers\MessengerConexionController;
+use App\Http\Controllers\MessengerWebhookController;
+use App\Http\Controllers\MiPlanController;
+use App\Http\Controllers\ModoDeAtencionController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OnePayWebhookController;
+use App\Http\Controllers\PagoDeMetaController;
+use App\Http\Controllers\PlanesController;
 use App\Http\Controllers\QuickReplyController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\ResumenController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SuscripcionController;
 use App\Http\Controllers\SystemNotificationController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\TemplateController;
+use App\Http\Controllers\TextoPredictivoController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WebhookEndpointController;
 use App\Http\Controllers\WhatsAppCampaignController;
 use App\Http\Controllers\WhatsAppMenuController;
 use App\Http\Controllers\WhatsAppSettingsController;
 use App\Http\Controllers\WhatsAppWebhookController;
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -65,7 +68,7 @@ Route::post('/webhooks/whatsapp', [WhatsAppWebhookController::class, 'webhook'])
 // Contesta 200 a todo, incluso a lo que no le incumbe: un webhook que responde
 // error hace que la pasarela reintente en bucle un evento que nunca se va a
 // querer. Lo que decide si el pago es nuestro es la referencia, no el HTTP.
-Route::post('pagos/onepay', \App\Http\Controllers\OnePayWebhookController::class)
+Route::post('pagos/onepay', OnePayWebhookController::class)
     ->name('pagos.onepay');
 
 Route::get('/webhooks/instagram', [InstagramWebhookController::class, 'verificar']);
@@ -286,13 +289,13 @@ Route::post('/logout', function (Request $request) {
  */
 Route::get('/api/version', function (Request $request) {
     return response()->json([
-        'version' => (new App\Http\Middleware\HandleInertiaRequests)->version($request),
+        'version' => (new HandleInertiaRequests)->version($request),
     ]);
 })
     // Fuera del middleware de Inertia a propósito. Estando dentro, preguntar la
     // versión con las cabeceras de Inertia devolvía 409 —la recarga forzada que
     // todo esto existe para evitar—, y el aviso no habría salido nunca.
-    ->withoutMiddleware(App\Http\Middleware\HandleInertiaRequests::class)
+    ->withoutMiddleware(HandleInertiaRequests::class)
     ->name('version');
 
 Route::middleware('auth')->group(function () {
@@ -339,9 +342,9 @@ Route::middleware('auth')->group(function () {
     // Activar el pago en Meta, paso a paso, y el botón de comprobarlo. Es
     // adonde lleva la alerta roja del layout cuando Meta rechaza envíos por
     // falta de tarjeta o de moneda (JHeda, 30-sep-2026).
-    Route::get('/instances/pago-en-meta', [\App\Http\Controllers\PagoDeMetaController::class, 'guia'])
+    Route::get('/instances/pago-en-meta', [PagoDeMetaController::class, 'guia'])
         ->name('instances.pago-meta');
-    Route::post('/instances/{instance}/comprobar-pago', [\App\Http\Controllers\PagoDeMetaController::class, 'comprobar'])
+    Route::post('/instances/{instance}/comprobar-pago', [PagoDeMetaController::class, 'comprobar'])
         ->middleware('throttle:10,1')
         ->name('instances.comprobar-pago');
 
@@ -462,6 +465,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/family/{name}', [TemplateController::class, 'family'])
             ->where('name', '[A-Za-z0-9_\-\.]+')
             ->middleware('permission:templates.view');
+        Route::delete('/family/{name}', [TemplateController::class, 'destroy'])
+            ->where('name', '[A-Za-z0-9_\-\.]+')
+            ->middleware('permission:templates.delete');
         Route::get('/{templateId}', [TemplateController::class, 'show'])
             ->where('templateId', '[0-9]+')
             ->middleware('permission:templates.view');
@@ -664,7 +670,7 @@ Route::middleware('auth')->group(function () {
 
     // Settings routes
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/', function (\Illuminate\Http\Request $request) {
+        Route::get('/', function (Request $request) {
             // El apartado de IA se fue de aquí a su propia pantalla, y el
             // enlace viejo está escrito en manuales y en WhatsApps del equipo.
             // Quien lo abra acaba en la pestaña de Perfil sin entender qué pasó,

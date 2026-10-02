@@ -32,6 +32,7 @@ import {
     ArrowRight,
     AlertTriangle,
     Pencil,
+    Trash2,
 } from 'lucide-react';
 
 // Orden de familias "por número y por prioridad": las plantillas con prefijo
@@ -129,6 +130,7 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
     const [categoryFilter, setCategoryFilter] = useState('');
     const [expanded, setExpanded] = useState(() => new Set());
     const [detail, setDetail] = useState(null);
+    const [borrando, setBorrando] = useState(null);
 
     function goToCreate() {
         router.visit(route('templates.create', { instance_id: instanceId }));
@@ -453,6 +455,8 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                                 onOpenDetail={openDetail}
                                 canCreate={can('templates.create')}
                                 canEdit={can('templates.update')}
+                                canDelete={can('templates.delete')}
+                                onDelete={() => setBorrando(family)}
                                 instanceId={instanceId}
                                 onAddTranslation={() => goToTranslation(family)}
                             />
@@ -470,6 +474,18 @@ export default function TemplatesIndex({ instances = [], negocio = '' }) {
                     canEdit={can('templates.update')}
                     onClose={() => setDetail(null)}
                     onSelectSibling={(sibling) => setDetail({ id: sibling.id, name: sibling.name })}
+                />
+            )}
+
+            {borrando && (
+                <EliminarPlantillaModal
+                    family={borrando}
+                    instanceId={instanceId}
+                    onClose={() => setBorrando(null)}
+                    onEliminada={() => {
+                        setBorrando(null);
+                        load();
+                    }}
                 />
             )}
 
@@ -644,7 +660,7 @@ function StatCard({ icon: Icon, label, value, tone }) {
     );
 }
 
-function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, instanceId, onAddTranslation }) {
+function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit = false, canDelete = false, onDelete, instanceId, onAddTranslation }) {
     const CatIcon = CATEGORY_ICONS[family.category] ?? FileText;
     const variantCount = family.variants.length;
     const approvedCount = family.variants.filter(v => v.status === 'APPROVED').length;
@@ -793,6 +809,20 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
                             <Pencil className="size-3.5" /> Editar
                         </Button>
                     )}
+                    {canDelete && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            title={variantCount > 1
+                                ? `Eliminar ${family.name} en sus ${variantCount} idiomas`
+                                : `Eliminar ${family.name}`}
+                            onClick={onDelete}
+                        >
+                            <Trash2 className="size-3.5" /> Eliminar
+                        </Button>
+                    )}
                     {/* El detalle por idioma sólo tiene sentido con varios idiomas;
                         con uno repetía lo que ya dice la tarjeta. */}
                     {variantCount > 1 && (
@@ -807,6 +837,83 @@ function FamilyCard({ family, isOpen, onToggle, onOpenDetail, canCreate, canEdit
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+/**
+ * Confirmar el borrado de una plantilla.
+ *
+ * Hizo falta para corregir categorías: Meta no deja cambiar la de una
+ * plantilla aprobada, así que una de utilidad marcada como marketing sólo se
+ * arregla borrándola y creándola otra vez (2-oct-2026). El aviso dice lo que
+ * se rompe: lo que la envía por nombre —el ERP, las facturas— falla desde ese
+ * momento, y Meta no deja reutilizar el nombre enseguida.
+ */
+function EliminarPlantillaModal({ family, instanceId, onClose, onEliminada }) {
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState(null);
+    const idiomas = family.variants.length;
+
+    async function eliminar() {
+        setEnviando(true);
+        setError(null);
+        try {
+            await axios.delete(`/api/templates/family/${encodeURIComponent(family.name)}`, {
+                params: { instance_id: instanceId },
+            });
+            onEliminada();
+        } catch (err) {
+            setError(err?.response?.data?.message ?? 'No se pudo eliminar la plantilla.');
+            setEnviando(false);
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !enviando && onClose()}>
+            <div className="w-full max-w-md rounded-xl border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start gap-3 border-b px-6 py-4">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive">
+                        <Trash2 className="size-4" />
+                    </div>
+                    <div className="min-w-0">
+                        <h2 className="text-base font-semibold text-foreground">Eliminar plantilla</h2>
+                        <p className="mt-0.5 font-mono text-sm text-muted-foreground break-all">{family.name}</p>
+                    </div>
+                </div>
+
+                <div className="space-y-3 px-6 py-4 text-sm text-foreground">
+                    <p>
+                        Se borra en Meta{idiomas > 1 ? <> con sus <strong>{idiomas} idiomas</strong></> : null} y
+                        <strong> no se puede deshacer</strong>.
+                    </p>
+                    <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
+                        <li>
+                            Todo lo que la envía por su nombre —facturas del ERP, campañas, respuestas
+                            automáticas— empezará a fallar desde ya.
+                        </li>
+                        <li>
+                            Meta no deja crear otra plantilla con el mismo nombre durante un tiempo
+                            (hasta 30 días). Si es para cambiarle la categoría, crea primero la nueva
+                            con otro nombre y cambia los envíos a ella antes de borrar esta.
+                        </li>
+                    </ul>
+
+                    {error && (
+                        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
+                            {error}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex justify-end gap-2 border-t px-6 py-3">
+                    <Button variant="outline" onClick={onClose} disabled={enviando}>Cancelar</Button>
+                    <Button variant="destructive" onClick={eliminar} disabled={enviando} className="gap-1.5">
+                        {enviando ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                        Eliminar
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }

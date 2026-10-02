@@ -1295,6 +1295,50 @@ class MetaWhatsAppService
         }
     }
 
+    /**
+     * Borra una plantilla: `DELETE /{waba_id}/message_templates?name=...`.
+     *
+     * Por nombre se van TODOS sus idiomas, que en Meta son plantillas aparte
+     * con el mismo nombre. El borrado no tiene vuelta atrás.
+     */
+    public function deleteTemplate(string $wabaId, string $accessToken, string $name)
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}/message_templates";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->delete($url.'?'.http_build_query(['name' => $name]));
+
+            if ($response->successful()) {
+                Log::info('WhatsApp Template Deleted', [
+                    'waba_id' => $wabaId,
+                    'template_name' => $name,
+                    'meta_response' => $response->json(),
+                ]);
+
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Template Delete Error', [
+                'waba_id' => $wabaId,
+                'template_name' => $name,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Template Delete Exception', [
+                'waba_id' => $wabaId,
+                'template_name' => $name,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
     public function getTemplate(string $templateId, string $accessToken, array $params = [])
     {
         $defaults = [

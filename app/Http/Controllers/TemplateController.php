@@ -6,6 +6,8 @@ use App\Models\Instance;
 use App\Services\Integra;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
@@ -117,11 +119,11 @@ class TemplateController extends Controller
 
         return Inertia::render('Templates/Defaults', [
             'instances' => $instances,
-            'catalog'   => $this->catalogoParaVerlo(),
+            'catalog' => $this->catalogoParaVerlo(),
             // Para que la vista previa se encabece con el nombre de quien mira,
             // y no con un «Tu negocio» genérico al lado de un ejemplo que dice
             // otra empresa.
-            'negocio'   => $user->company?->name,
+            'negocio' => $user->company?->name,
         ]);
     }
 
@@ -141,12 +143,12 @@ class TemplateController extends Controller
     public function syncDefault(Request $request, string $key)
     {
         $catalog = $this->defaultTemplatesCatalog();
-        if (!isset($catalog[$key])) {
+        if (! isset($catalog[$key])) {
             return response()->json(['message' => 'Plantilla por defecto desconocida.'], 404);
         }
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -180,13 +182,13 @@ class TemplateController extends Controller
             'category' => $entry['category'],
             'components' => $componentes,
         ];
-        if (!empty($entry['parameter_format'])) {
+        if (! empty($entry['parameter_format'])) {
             $payload['parameter_format'] = $entry['parameter_format'];
         }
 
         $result = $this->meta->createTemplate($instance->waba_id, $instance->access_token, $payload);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             $inner = $result['error']['error'] ?? null;
             $code = is_array($inner) ? ($inner['code'] ?? null) : null;
             $subcode = is_array($inner) ? ($inner['error_subcode'] ?? null) : null;
@@ -308,7 +310,7 @@ class TemplateController extends Controller
         }
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -320,7 +322,7 @@ class TemplateController extends Controller
                 'fields' => 'id,name,language',
                 'limit' => 500,
             ]);
-            if (!$listResult['success']) {
+            if (! $listResult['success']) {
                 if ($this->isTemplatesUnavailableError($listResult['error'] ?? null)) {
                     return response()->json([
                         'data' => [],
@@ -360,7 +362,7 @@ class TemplateController extends Controller
             'template_ids' => $templateIds,
         ]);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             if ($this->isInsightsDisabledError($result['error'] ?? null)) {
                 return response()->json([
                     'needs_activation' => true,
@@ -375,7 +377,7 @@ class TemplateController extends Controller
         }
 
         // If templatesIndex empty (because user passed ids), enrich it now with one extra fetch.
-        if (empty($templatesIndex) && !empty($templateIds)) {
+        if (empty($templatesIndex) && ! empty($templateIds)) {
             $listResult = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
                 'fields' => 'id,name,language',
                 'limit' => 500,
@@ -393,13 +395,13 @@ class TemplateController extends Controller
     public function enableInsights(Request $request)
     {
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
         $result = $this->meta->enableInsights($instance->waba_id, $instance->access_token);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json([
                 'message' => 'No se pudo activar la analítica en Meta.',
                 'error' => $result['error'] ?? null,
@@ -414,7 +416,9 @@ class TemplateController extends Controller
 
     protected function isTemplatesUnavailableError($error): bool
     {
-        if (!is_array($error)) return false;
+        if (! is_array($error)) {
+            return false;
+        }
 
         $inner = $error['error'] ?? $error;
         $code = $inner['code'] ?? null;
@@ -423,12 +427,14 @@ class TemplateController extends Controller
         // Meta code 100 / subcode 33: object does not exist, missing permissions,
         // or unsupported operation. Tratamos esto como "sin plantillas disponibles"
         // para no exponer el error crudo al usuario final.
-        return ((int) $code === 100 && (int) $subcode === 33);
+        return (int) $code === 100 && (int) $subcode === 33;
     }
 
     protected function isInsightsDisabledError($error): bool
     {
-        if (!is_array($error)) return false;
+        if (! is_array($error)) {
+            return false;
+        }
 
         $inner = $error['error'] ?? $error;
         $subcode = $inner['error_subcode'] ?? null;
@@ -437,6 +443,7 @@ class TemplateController extends Controller
         }
 
         $msg = strtolower(json_encode($error));
+
         return str_contains($msg, 'is_enabled_for_insights')
             || str_contains($msg, 'insights have not been enabled')
             || str_contains($msg, 'insights is not enabled')
@@ -457,13 +464,15 @@ class TemplateController extends Controller
         ]);
 
         $now = time();
-        if ($data['end'] > $now) $data['end'] = $now;
+        if ($data['end'] > $now) {
+            $data['end'] = $now;
+        }
         if ($data['start'] >= $data['end']) {
             return response()->json(['message' => 'Rango inválido.'], 422);
         }
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -474,10 +483,11 @@ class TemplateController extends Controller
             'dimensions' => ['CONVERSATION_CATEGORY', 'CONVERSATION_TYPE'],
         ]);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             if ($this->isInsightsDisabledError($result['error'] ?? null)) {
                 return response()->json(['needs_activation' => true], 200);
             }
+
             return response()->json([
                 'message' => 'Error obteniendo analítica de conversaciones.',
                 'error' => $result['error'] ?? null,
@@ -509,7 +519,7 @@ class TemplateController extends Controller
             $byType[$type] = ($byType[$type] ?? 0) + $count;
 
             if ($start > 0) {
-                if (!isset($byDay[$start])) {
+                if (! isset($byDay[$start])) {
                     $byDay[$start] = ['start' => $start, 'conversation' => 0, 'cost' => 0.0];
                 }
                 $byDay[$start]['conversation'] += $count;
@@ -518,7 +528,7 @@ class TemplateController extends Controller
         }
 
         $series = array_values($byDay);
-        usort($series, fn($a, $b) => $a['start'] <=> $b['start']);
+        usort($series, fn ($a, $b) => $a['start'] <=> $b['start']);
 
         return [
             'totals' => $totals,
@@ -562,7 +572,7 @@ class TemplateController extends Controller
                 $totals['read'] += $read;
                 $totals['clicked'] += $clickedTotal;
 
-                if (!isset($perTemplate[$tid])) {
+                if (! isset($perTemplate[$tid])) {
                     $meta = $templatesIndex[$tid] ?? ['name' => $tid, 'language' => null];
                     $perTemplate[$tid] = [
                         'template_id' => $tid,
@@ -582,7 +592,7 @@ class TemplateController extends Controller
 
                 $dayKey = $dp['start'] ?? null;
                 if ($dayKey !== null) {
-                    if (!isset($perDay[$dayKey])) {
+                    if (! isset($perDay[$dayKey])) {
                         $perDay[$dayKey] = ['start' => $dayKey, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'clicked' => 0];
                     }
                     $perDay[$dayKey]['sent'] += $sent;
@@ -594,10 +604,10 @@ class TemplateController extends Controller
         }
 
         $templates = array_values($perTemplate);
-        usort($templates, fn($a, $b) => $b['sent'] <=> $a['sent']);
+        usort($templates, fn ($a, $b) => $b['sent'] <=> $a['sent']);
 
         $series = array_values($perDay);
-        usort($series, fn($a, $b) => $a['start'] <=> $b['start']);
+        usort($series, fn ($a, $b) => $a['start'] <=> $b['start']);
 
         return [
             'totals' => $totals,
@@ -609,7 +619,7 @@ class TemplateController extends Controller
     public function list(Request $request)
     {
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -621,7 +631,7 @@ class TemplateController extends Controller
 
         $result = $this->meta->listTemplates($instance->waba_id, $instance->access_token, $params);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             if ($this->isTemplatesUnavailableError($result['error'] ?? null)) {
                 return response()->json([
                     'data' => [],
@@ -649,7 +659,7 @@ class TemplateController extends Controller
     public function family(Request $request, string $name)
     {
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -658,7 +668,7 @@ class TemplateController extends Controller
             'limit' => 100,
         ]);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             if ($this->isTemplatesUnavailableError($result['error'] ?? null)) {
                 return response()->json([
                     'name' => $name,
@@ -693,12 +703,12 @@ class TemplateController extends Controller
         ]);
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
         $debug = $this->meta->debugToken($instance->access_token);
-        if (!$debug['success'] || empty($debug['data']['app_id'])) {
+        if (! $debug['success'] || empty($debug['data']['app_id'])) {
             return response()->json([
                 'message' => 'No se pudo identificar la app del token para subir el archivo.',
                 'error' => $debug['error'] ?? null,
@@ -714,7 +724,7 @@ class TemplateController extends Controller
             $file->getMimeType()
         );
 
-        if (!$upload['success']) {
+        if (! $upload['success']) {
             return response()->json([
                 'message' => 'No se pudo subir el archivo a Meta.',
                 'stage' => $upload['stage'] ?? null,
@@ -746,7 +756,7 @@ class TemplateController extends Controller
             $data['category'],
             $data['parameter_format'] ?? 'POSITIONAL'
         );
-        if (!empty($semanticErrors)) {
+        if (! empty($semanticErrors)) {
             return response()->json([
                 'message' => 'Componentes inválidos.',
                 'errors' => $semanticErrors,
@@ -754,7 +764,7 @@ class TemplateController extends Controller
         }
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -769,13 +779,13 @@ class TemplateController extends Controller
             $payload['allow_category_change'] = (bool) $data['allow_category_change'];
         }
 
-        if (!empty($data['parameter_format'])) {
+        if (! empty($data['parameter_format'])) {
             $payload['parameter_format'] = $data['parameter_format'];
         }
 
         $result = $this->meta->createTemplate($instance->waba_id, $instance->access_token, $payload);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json([
                 'message' => $this->extractMetaErrorMessage($result['error']) ?? 'Error creando la plantilla en Meta.',
                 'error' => $result['error'] ?? null,
@@ -786,7 +796,7 @@ class TemplateController extends Controller
         $verified = false;
         if ($metaTemplateId) {
             $check = $this->meta->getTemplate((string) $metaTemplateId, $instance->access_token, ['fields' => 'id,name,language,status']);
-            $verified = !empty($check['success']);
+            $verified = ! empty($check['success']);
         }
 
         return response()->json([
@@ -832,7 +842,7 @@ class TemplateController extends Controller
             $data['category'],
             $data['parameter_format'] ?? 'POSITIONAL'
         );
-        if (!empty($semanticErrors)) {
+        if (! empty($semanticErrors)) {
             return response()->json([
                 'message' => 'Componentes inválidos.',
                 'errors' => $semanticErrors,
@@ -840,7 +850,7 @@ class TemplateController extends Controller
         }
 
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -857,7 +867,7 @@ class TemplateController extends Controller
         }
 
         $estado = $actual['status'] ?? null;
-        if (!in_array($estado, ['APPROVED', 'REJECTED', 'PAUSED'], true)) {
+        if (! in_array($estado, ['APPROVED', 'REJECTED', 'PAUSED'], true)) {
             return response()->json([
                 'message' => 'Meta sólo deja editar plantillas aprobadas, rechazadas o pausadas. '
                     .'Esta está en estado '.($estado ?? 'desconocido').'.',
@@ -900,7 +910,7 @@ class TemplateController extends Controller
 
         $result = $this->meta->editTemplate($templateId, $instance->access_token, $payload);
 
-        if (!$result['success']) {
+        if (! $result['success']) {
             return response()->json([
                 'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Meta no aceptó los cambios.',
                 'error' => $result['error'] ?? null,
@@ -923,7 +933,6 @@ class TemplateController extends Controller
             'editada' => true,
         ]);
     }
-
 
     /**
      * Las reglas de validación de `components`, iguales al crear y al editar:
@@ -992,7 +1001,7 @@ class TemplateController extends Controller
                         }
                         $errors = array_merge($errors, $this->validateNamedVariableNames($vars, 'encabezado'));
                         $params = $c['example']['header_text_named_params'] ?? [];
-                        if (!$this->namedExamplesMatch($vars, $params)) {
+                        if (! $this->namedExamplesMatch($vars, $params)) {
                             $errors[] = 'Debes proveer un ejemplo por cada variable del encabezado (header_text_named_params).';
                         }
                     } else {
@@ -1001,7 +1010,7 @@ class TemplateController extends Controller
                         if (count($vars) > 1) {
                             $errors[] = 'El encabezado de texto admite máximo una variable {{1}}.';
                         }
-                        if (!$this->isSequential($vars)) {
+                        if (! $this->isSequential($vars)) {
                             $errors[] = 'Las variables del encabezado deben ser secuenciales desde {{1}}.';
                         }
                         $examples = $c['example']['header_text'] ?? [];
@@ -1011,7 +1020,7 @@ class TemplateController extends Controller
                     }
                 } elseif (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
                     $handle = $c['example']['header_handle'] ?? null;
-                    if (empty($handle) || !is_array($handle) || empty($handle[0])) {
+                    if (empty($handle) || ! is_array($handle) || empty($handle[0])) {
                         $errors[] = "El encabezado {$format} requiere un media handle de Meta en example.header_handle.";
                     }
                 }
@@ -1029,13 +1038,13 @@ class TemplateController extends Controller
                     $vars = $this->extractNamedVariables($text);
                     $errors = array_merge($errors, $this->validateNamedVariableNames($vars, 'cuerpo'));
                     $params = $c['example']['body_text_named_params'] ?? [];
-                    if (!$this->namedExamplesMatch($vars, $params)) {
+                    if (! $this->namedExamplesMatch($vars, $params)) {
                         $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo (body_text_named_params).';
                     }
                 } else {
                     $errors = array_merge($errors, $this->rejectNamedInPositional($text, 'cuerpo'));
                     $vars = $this->extractVariables($text);
-                    if (!$this->isSequential($vars)) {
+                    if (! $this->isSequential($vars)) {
                         $errors[] = 'Las variables del cuerpo deben ser secuenciales desde {{1}} sin saltos.';
                     }
                     $examples = $c['example']['body_text'][0] ?? [];
@@ -1058,56 +1067,70 @@ class TemplateController extends Controller
             if ($type === 'BUTTONS') {
                 foreach (($c['buttons'] ?? []) as $j => $b) {
                     $btType = $b['type'] ?? null;
-                    if (!$btType) continue;
+                    if (! $btType) {
+                        continue;
+                    }
 
-                    if (!isset($btnCount[$btType])) $btnCount[$btType] = 0;
+                    if (! isset($btnCount[$btType])) {
+                        $btnCount[$btType] = 0;
+                    }
                     $btnCount[$btType]++;
 
-                    if ($btType === 'OTP') $hasOtp = true;
+                    if ($btType === 'OTP') {
+                        $hasOtp = true;
+                    }
 
                     if ($btType === 'URL') {
                         $url = $b['url'] ?? '';
                         if ($url === '') {
-                            $errors[] = "Botón URL #" . ($j + 1) . ": URL requerida.";
+                            $errors[] = 'Botón URL #'.($j + 1).': URL requerida.';
                         }
                         $urlVars = $this->extractVariables($url);
                         if (count($urlVars) > 0) {
                             $example = $b['example'] ?? [];
                             if (empty($example) || empty($example[0])) {
-                                $errors[] = "Botón URL #" . ($j + 1) . ": al usar {{1}} debes proveer example con la URL completa.";
+                                $errors[] = 'Botón URL #'.($j + 1).': al usar {{1}} debes proveer example con la URL completa.';
                             }
                         }
                     }
 
                     if ($btType === 'PHONE_NUMBER' && empty($b['phone_number'])) {
-                        $errors[] = "Botón teléfono #" . ($j + 1) . ": número requerido.";
+                        $errors[] = 'Botón teléfono #'.($j + 1).': número requerido.';
                     }
 
                     if ($btType === 'OTP') {
                         $otpType = $b['otp_type'] ?? 'COPY_CODE';
-                        if (!in_array($otpType, ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'], true)) {
-                            $errors[] = "Botón OTP #" . ($j + 1) . ": otp_type inválido.";
+                        if (! in_array($otpType, ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'], true)) {
+                            $errors[] = 'Botón OTP #'.($j + 1).': otp_type inválido.';
                         }
                         if (in_array($otpType, ['ONE_TAP', 'ZERO_TAP'], true) && empty($b['package_name'])) {
-                            $errors[] = "Botón OTP {$otpType} #" . ($j + 1) . ": package_name requerido.";
+                            $errors[] = "Botón OTP {$otpType} #".($j + 1).': package_name requerido.';
                         }
                     }
 
                     if (in_array($btType, ['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'], true)) {
                         if ($btType !== 'OTP' && empty($b['text'])) {
-                            $errors[] = "Botón #" . ($j + 1) . ": texto requerido.";
+                            $errors[] = 'Botón #'.($j + 1).': texto requerido.';
                         }
                     }
                 }
             }
         }
 
-        if ($btnCount['PHONE_NUMBER'] > 1) $errors[] = 'Meta solo permite 1 botón de teléfono.';
-        if ($btnCount['URL'] > 2) $errors[] = 'Meta solo permite hasta 2 botones URL.';
-        if ($btnCount['COPY_CODE'] > 1) $errors[] = 'Meta solo permite 1 botón COPY_CODE.';
-        if ($btnCount['OTP'] > 1) $errors[] = 'Meta solo permite 1 botón OTP.';
+        if ($btnCount['PHONE_NUMBER'] > 1) {
+            $errors[] = 'Meta solo permite 1 botón de teléfono.';
+        }
+        if ($btnCount['URL'] > 2) {
+            $errors[] = 'Meta solo permite hasta 2 botones URL.';
+        }
+        if ($btnCount['COPY_CODE'] > 1) {
+            $errors[] = 'Meta solo permite 1 botón COPY_CODE.';
+        }
+        if ($btnCount['OTP'] > 1) {
+            $errors[] = 'Meta solo permite 1 botón OTP.';
+        }
 
-        if ($category === 'AUTHENTICATION' && !$hasOtp) {
+        if ($category === 'AUTHENTICATION' && ! $hasOtp) {
             $errors[] = 'Las plantillas AUTHENTICATION requieren un botón OTP.';
         }
 
@@ -1119,12 +1142,14 @@ class TemplateController extends Controller
         preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $text, $matches);
         $nums = array_unique(array_map('intval', $matches[1] ?? []));
         sort($nums);
+
         return $nums;
     }
 
     protected function extractNamedVariables(string $text): array
     {
         preg_match_all('/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/', $text, $matches);
+
         return array_values(array_unique($matches[1] ?? []));
     }
 
@@ -1132,44 +1157,57 @@ class TemplateController extends Controller
     {
         $errors = [];
         foreach ($vars as $v) {
-            if (!preg_match('/^[a-z][a-z0-9_]*$/', $v)) {
+            if (! preg_match('/^[a-z][a-z0-9_]*$/', $v)) {
                 $errors[] = "Variable {{{$v}}} del {$where}: con tipo de variable \"Nombre\" usa minúsculas, números y guiones bajos, empezando por letra.";
             }
         }
+
         return $errors;
     }
 
     protected function namedExamplesMatch(array $vars, array $params): bool
     {
-        if (empty($vars)) return true;
+        if (empty($vars)) {
+            return true;
+        }
         $names = array_map(fn ($p) => $p['param_name'] ?? null, $params);
+
         return count($vars) === count($params)
             && empty(array_diff($vars, $names))
-            && !in_array(null, array_map(fn ($p) => ($p['example'] ?? '') === '' ? null : true, $params), true);
+            && ! in_array(null, array_map(fn ($p) => ($p['example'] ?? '') === '' ? null : true, $params), true);
     }
 
     protected function rejectNamedInPositional(string $text, string $where): array
     {
         $all = $this->extractNamedVariables($text);
-        $nonNumeric = array_filter($all, fn ($v) => !ctype_digit($v));
+        $nonNumeric = array_filter($all, fn ($v) => ! ctype_digit($v));
+
         return empty($nonNumeric)
             ? []
-            : ["El {$where} usa variables con nombre ({{" . reset($nonNumeric) . '}}), pero el tipo de variable es "Número". Cambia el tipo de variable a "Nombre" o usa {{1}}, {{2}}...'];
+            : ["El {$where} usa variables con nombre ({{".reset($nonNumeric).'}}), pero el tipo de variable es "Número". Cambia el tipo de variable a "Nombre" o usa {{1}}, {{2}}...'];
     }
 
     protected function isSequential(array $nums): bool
     {
-        if (empty($nums)) return true;
-        for ($i = 0; $i < count($nums); $i++) {
-            if ($nums[$i] !== $i + 1) return false;
+        if (empty($nums)) {
+            return true;
         }
+        for ($i = 0; $i < count($nums); $i++) {
+            if ($nums[$i] !== $i + 1) {
+                return false;
+            }
+        }
+
         return true;
     }
 
     protected function extractMetaErrorMessage($error): ?string
     {
-        if (!is_array($error)) return null;
+        if (! is_array($error)) {
+            return null;
+        }
         $inner = $error['error'] ?? $error;
+
         return $inner['error_user_msg']
             ?? $inner['message']
             ?? $inner['error_user_title']
@@ -1184,55 +1222,79 @@ class TemplateController extends Controller
 
             if ($c['type'] === 'HEADER') {
                 $component['format'] = $c['format'] ?? 'TEXT';
-                if (!empty($c['text'])) $component['text'] = $c['text'];
-                if (!empty($c['example'])) $component['example'] = $c['example'];
+                if (! empty($c['text'])) {
+                    $component['text'] = $c['text'];
+                }
+                if (! empty($c['example'])) {
+                    $component['example'] = $c['example'];
+                }
             } elseif ($c['type'] === 'BODY') {
-                if (!empty($c['text'])) $component['text'] = $c['text'];
-                if (!empty($c['example'])) $component['example'] = $c['example'];
-                if (!empty($c['add_security_recommendation'])) {
+                if (! empty($c['text'])) {
+                    $component['text'] = $c['text'];
+                }
+                if (! empty($c['example'])) {
+                    $component['example'] = $c['example'];
+                }
+                if (! empty($c['add_security_recommendation'])) {
                     $component['add_security_recommendation'] = true;
                 }
             } elseif ($c['type'] === 'FOOTER') {
-                if (!empty($c['text'])) $component['text'] = $c['text'];
-                if (!empty($c['code_expiration_minutes'])) {
+                if (! empty($c['text'])) {
+                    $component['text'] = $c['text'];
+                }
+                if (! empty($c['code_expiration_minutes'])) {
                     $component['code_expiration_minutes'] = (int) $c['code_expiration_minutes'];
                 }
             } elseif ($c['type'] === 'BUTTONS') {
                 $component['buttons'] = array_map(function ($b) {
                     $btn = ['type' => $b['type']];
-                    if ($b['type'] !== 'OTP' && !empty($b['text'])) {
+                    if ($b['type'] !== 'OTP' && ! empty($b['text'])) {
                         $btn['text'] = $b['text'];
                     }
                     if ($b['type'] === 'URL') {
-                        if (!empty($b['url'])) $btn['url'] = $b['url'];
-                        if (!empty($b['example'])) $btn['example'] = array_values($b['example']);
+                        if (! empty($b['url'])) {
+                            $btn['url'] = $b['url'];
+                        }
+                        if (! empty($b['example'])) {
+                            $btn['example'] = array_values($b['example']);
+                        }
                     }
-                    if ($b['type'] === 'PHONE_NUMBER' && !empty($b['phone_number'])) {
+                    if ($b['type'] === 'PHONE_NUMBER' && ! empty($b['phone_number'])) {
                         $btn['phone_number'] = $b['phone_number'];
                     }
-                    if ($b['type'] === 'COPY_CODE' && !empty($b['example'])) {
+                    if ($b['type'] === 'COPY_CODE' && ! empty($b['example'])) {
                         $btn['example'] = array_values($b['example']);
                     }
                     if ($b['type'] === 'OTP') {
                         $btn['otp_type'] = $b['otp_type'] ?? 'COPY_CODE';
-                        if (!empty($b['text'])) $btn['text'] = $b['text'];
-                        if (!empty($b['autofill_text'])) $btn['autofill_text'] = $b['autofill_text'];
-                        if (!empty($b['package_name'])) $btn['package_name'] = $b['package_name'];
-                        if (!empty($b['signature_hash'])) $btn['signature_hash'] = $b['signature_hash'];
+                        if (! empty($b['text'])) {
+                            $btn['text'] = $b['text'];
+                        }
+                        if (! empty($b['autofill_text'])) {
+                            $btn['autofill_text'] = $b['autofill_text'];
+                        }
+                        if (! empty($b['package_name'])) {
+                            $btn['package_name'] = $b['package_name'];
+                        }
+                        if (! empty($b['signature_hash'])) {
+                            $btn['signature_hash'] = $b['signature_hash'];
+                        }
                     }
+
                     return $btn;
                 }, $c['buttons'] ?? []);
             }
 
             $clean[] = $component;
         }
+
         return $clean;
     }
 
     public function show(Request $request, string $templateId)
     {
         $instance = $this->resolveInstance($request);
-        if (!$instance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $instance;
         }
 
@@ -1265,6 +1327,72 @@ class TemplateController extends Controller
             'message' => 'Error consultando la plantilla.',
             'error' => $result['error'] ?? null,
         ], 502);
+    }
+
+    /**
+     * Borrar una plantilla con todos sus idiomas.
+     *
+     * Hacía falta para corregir la categoría: Meta no deja cambiar la de una
+     * plantilla aprobada, así que una de utilidad que quedó como marketing sólo
+     * se arregla borrándola y creándola de nuevo (2-oct-2026).
+     *
+     * El borrado va contra el WABA de la línea, que es de la empresa; aun así
+     * se comprueba que el nombre exista ahí para responder 404 en vez de
+     * dejar a Meta decir algo críptico.
+     */
+    public function destroy(Request $request, string $name)
+    {
+        $instance = $this->resolveInstance($request);
+        if (! $instance instanceof Instance) {
+            return $instance;
+        }
+
+        $familia = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+            'fields' => 'id,name,language,status',
+            'name' => $name,
+            'limit' => 100,
+        ]);
+
+        if (! ($familia['success'] ?? false)) {
+            return response()->json([
+                'message' => 'Error consultando la plantilla en Meta.',
+                'error' => $familia['error'] ?? null,
+            ], 502);
+        }
+
+        // El filtro `name` de Meta es por coincidencia parcial: `factura`
+        // trae también `factura_vencida`. Se exige el nombre exacto.
+        $variantes = collect($familia['data']['data'] ?? [])
+            ->filter(fn ($p) => ($p['name'] ?? null) === $name);
+
+        if ($variantes->isEmpty()) {
+            return response()->json([
+                'message' => 'No encontramos esa plantilla en esta línea.',
+            ], 404);
+        }
+
+        $result = $this->meta->deleteTemplate($instance->waba_id, $instance->access_token, $name);
+
+        if (! $result['success']) {
+            return response()->json([
+                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Meta no dejó borrar la plantilla.',
+                'error' => $result['error'] ?? null,
+            ], 502);
+        }
+
+        Log::info('Plantilla borrada desde el CRM', [
+            'company_id' => $instance->company_id,
+            'instance_id' => $instance->id,
+            'user_id' => auth()->id(),
+            'template_name' => $name,
+            'idiomas' => $variantes->pluck('language')->values()->all(),
+        ]);
+
+        return response()->json([
+            'eliminada' => true,
+            'name' => $name,
+            'idiomas' => $variantes->count(),
+        ]);
     }
 
     /**
@@ -1385,7 +1513,7 @@ class TemplateController extends Controller
     }
 
     /** El catálogo de una línea, o null si Meta no contesta. */
-    private function catalogoDe(Instance $instancia): ?\Illuminate\Support\Collection
+    private function catalogoDe(Instance $instancia): ?Collection
     {
         $res = $this->meta->listTemplates($instancia->waba_id, $instancia->access_token, ['limit' => 200]);
 
@@ -1508,7 +1636,7 @@ class TemplateController extends Controller
         $temporal = null;
 
         try {
-            $descarga = \Illuminate\Support\Facades\Http::timeout(60)->get($url);
+            $descarga = Http::timeout(60)->get($url);
 
             if (! $descarga->successful()) {
                 return null;
@@ -1553,7 +1681,7 @@ class TemplateController extends Controller
             ? $query->where('id', $instanceId)->first()
             : $query->orderBy('id')->first();
 
-        if (!$instance) {
+        if (! $instance) {
             return response()->json([
                 'message' => 'No hay una instancia activa con WABA configurado.',
             ], 422);
