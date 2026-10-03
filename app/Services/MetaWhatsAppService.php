@@ -801,8 +801,11 @@ class MetaWhatsAppService
             $response = Http::withToken($accessToken)
                 ->timeout(20)
                 ->get("https://graph.facebook.com/{$version}/{$wabaId}", [
+                    // DAILY y no MONTHLY: con un mes recién empezado Meta
+                    // rechaza la mensual por «período demasiado reducido»
+                    // (subcódigo 2388087, 3-oct-2026). Quien llama suma.
                     'fields' => "currency,pricing_analytics.start({$desde}).end({$hasta})"
-                        .'.granularity(MONTHLY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])',
+                        .'.granularity(DAILY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])',
                 ]);
 
             if ($response->successful()) {
