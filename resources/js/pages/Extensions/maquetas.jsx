@@ -1,4 +1,4 @@
-import { Activity, Bell, Clock, Copy, Lightbulb, Sparkles, UserRound, Wrench } from 'lucide-react';
+import { Activity, Bell, CalendarClock, Check, Clock, Copy, KeyRound, Lightbulb, Sparkles, UserRound, Wifi, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 
 /**
@@ -413,6 +413,87 @@ function DiagnosticoDeInternet() {
     );
 }
 
+function CambioDeClaveWifi() {
+    return (
+        <>
+            <Pantalla titulo="Panel del cliente · contrato #23672">
+                <div className="space-y-2.5 px-3 py-3">
+                    <div className="rounded-lg border p-2.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                                <Wifi className="size-3" /> WiFi
+                            </span>
+                            <span className="ml-auto rounded-full border border-success/30 bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">
+                                Cambio automático
+                            </span>
+                        </div>
+                        <div className="mt-1.5 space-y-1 text-[11px]">
+                            <div className="flex justify-between"><span className="text-muted-foreground">Red 2.4 GHz</span><span className="font-mono text-foreground">CasaGomez</span></div>
+                            <div className="flex justify-between"><span className="text-muted-foreground">Red 5 GHz</span><span className="font-mono text-foreground">CasaGomez-5G</span></div>
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border border-success/30 bg-success/10 p-2.5">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                                Mensaje para el cliente
+                            </span>
+                            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold text-accent-foreground">
+                                <Copy className="size-2.5" /> Copiar
+                            </span>
+                        </div>
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-foreground">
+                            En unos minutos tus equipos se desconectarán del WiFi. Vuelve a conectarlos
+                            con la clave nueva que nos diste.
+                        </p>
+                    </div>
+                </div>
+            </Pantalla>
+            <Pie>
+                el asesor escribe la clave que le dicta el cliente y tu Integra la aplica: si el
+                equipo está en la plataforma de gestión llega sola en minutos; si no, queda para que
+                la aplique una persona. Al aplicarse, todos los dispositivos del cliente se
+                desconectan. No le escribe al cliente y la clave no se guarda en el CRM. Necesita
+                tu cuenta de Integra conectada con el permiso «contratos.wifi».
+            </Pie>
+        </>
+    );
+}
+
+function ProrrogaDePago() {
+    return (
+        <>
+            <Pantalla titulo="Panel del cliente · contrato #23672">
+                <div className="space-y-2 px-3 py-3">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-[11px] font-semibold text-foreground">FV-10482</p>
+                            <p className="text-[10px] text-muted-foreground">Venció el 5 oct 2026</p>
+                        </div>
+                        <span className="text-[11px] font-bold tabular-nums text-foreground">$89.900</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-accent-foreground">
+                        <CalendarClock className="size-3" /> Pedir prórroga
+                    </span>
+                    <div className="flex items-start gap-1.5 rounded-lg border border-success/30 bg-success/10 px-2.5 py-2 text-[11px] leading-relaxed text-foreground">
+                        <Check className="mt-px size-3 shrink-0 text-success" />
+                        <span>
+                            Solicitud radicada para el 15 oct 2026: queda pendiente de aprobación. Al
+                            cliente dile que quedó radicada, no que está aprobada.
+                        </span>
+                    </div>
+                </div>
+            </Pantalla>
+            <Pie>
+                el asesor elige la factura y la fecha en que el cliente promete pagar, y la solicitud
+                queda radicada en tu Integra para que alguien la apruebe. No aprueba nada sola: los
+                topes (días de plazo, promesas al año, una sin atender) los pone Integra y su
+                respuesta se ve tal cual. Necesita tu cuenta de Integra conectada.
+            </Pie>
+        </>
+    );
+}
+
 function Mini({ children }) {
     return (
         <div className="mt-3 h-[76px] overflow-hidden rounded-lg border bg-background/60 px-2.5 py-2">
@@ -518,6 +599,34 @@ const MINIS = {
         </Mini>
     ),
 
+    wifi_password: () => (
+        <Mini>
+            <div className="flex items-center gap-1.5">
+                <Wifi className="size-3 shrink-0 text-accent-foreground" />
+                <span className="truncate text-[11px] font-bold text-foreground">CasaGomez · 2.4 y 5 GHz</span>
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 rounded border border-primary/30 bg-primary/10 px-1.5 py-1">
+                <KeyRound className="size-3 shrink-0 text-accent-foreground" />
+                <span className="truncate font-mono text-[11px] text-foreground">gomez2026!</span>
+            </div>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">Cambio automático · en unos minutos</p>
+        </Mini>
+    ),
+
+    payment_extension: () => (
+        <Mini>
+            <div className="flex items-center gap-1.5">
+                <CalendarClock className="size-3 shrink-0 text-accent-foreground" />
+                <span className="truncate text-[11px] font-bold text-foreground">FV-10482 · $89.900</span>
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 rounded border border-success/30 bg-success/10 px-1.5 py-1">
+                <Check className="size-3 shrink-0 text-success" />
+                <span className="truncate text-[11px] font-semibold text-foreground">Prórroga radicada al 15 oct</span>
+            </div>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">Pendiente de aprobación</p>
+        </Mini>
+    ),
+
     agent_signature: () => (
         <Mini>
             <div className="flex h-full items-center justify-end rounded bg-[#efeae2] px-2 dark:bg-[#0b141a]">
@@ -541,6 +650,8 @@ const MAQUETAS = {
     conversation_summary: ResumenConIa,
     predictive_text: TextoPredictivo,
     internet_diagnostic: DiagnosticoDeInternet,
+    wifi_password: CambioDeClaveWifi,
+    payment_extension: ProrrogaDePago,
 };
 
 export function tieneMaqueta(slug) {

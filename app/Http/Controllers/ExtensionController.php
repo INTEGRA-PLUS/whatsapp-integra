@@ -30,6 +30,8 @@ class ExtensionController extends Controller
      */
     private const SCOPES_POR_EXTENSION = [
         'internet_diagnostic' => 'diagnostico',
+        'wifi_password' => 'wifi',
+        'payment_extension' => 'prorroga',
     ];
 
     public function __construct(private ExtensionRegistry $registry) {}

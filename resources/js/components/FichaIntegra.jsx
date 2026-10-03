@@ -33,12 +33,14 @@ import {
     Activity,
     AlertTriangle,
     ArrowLeft,
+    CalendarClock,
     Check,
     ChevronDown,
     ChevronRight,
     Copy,
     ExternalLink,
     FileText,
+    KeyRound,
     Loader2,
     MapPin,
     Receipt,
@@ -560,9 +562,483 @@ function Insignia({ tono = 'muted', children }) {
     );
 }
 
-function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
+/**
+ * El error de una acción sobre el contrato (WiFi, prórroga). Igual que el del
+ * diagnóstico: si falta el permiso en Integra, el aviso es amarillo y lleva a
+ * Integraciones, porque no es un fallo sino algo que se arregla reconectando.
+ */
+function ErrorDeAccion({ error, sinPermiso }) {
+    if (!error) return null;
+
+    if (sinPermiso) {
+        return (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2">
+                <p className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-foreground">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+                    <span>{error}</span>
+                </p>
+                {/* Pestaña nueva: navegar dejaría al asesor sin la conversación. */}
+                <a
+                    href="/integrations"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1.5 inline-flex items-center gap-1 pl-5 text-[11px] font-bold text-accent-foreground hover:underline"
+                >
+                    Abrir Integraciones <ExternalLink className="size-2.5" />
+                </a>
+            </div>
+        );
+    }
+
+    return (
+        <p className="flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-destructive">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            {error}
+        </p>
+    );
+}
+
+/** El mensaje de un error de axios: el del servidor (validación, Integra, tope de ritmo) o uno genérico. */
+function mensajeDeError(err, porDefecto) {
+    if (err?.code === 'ECONNABORTED') return 'Integra tardó demasiado en contestar. Vuelve a intentarlo.';
+
+    return err?.response?.data?.message ?? porDefecto;
+}
+
+const ESTADO_SOLICITUD_WIFI = {
+    en_cola:          { label: 'En cola',              cls: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
+    aplicada:         { label: 'Aplicada',             cls: 'bg-success/15 text-success' },
+    pendiente_manual: { label: 'Pendiente de persona', cls: 'bg-warning/15 text-warning' },
+};
+
+/**
+ * La misma regla que valida el servidor (8–63 caracteres ASCII imprimibles),
+ * repetida aquí para avisar mientras el cliente aún está dictando y no después
+ * de mandarla. Devuelve el motivo o null.
+ */
+function problemaDeClave(clave) {
+    if (clave.length === 0) return null;
+    if (!/^[\x20-\x7E]+$/.test(clave)) return 'Sin tildes ni ñ: sólo letras sin tilde, números y símbolos.';
+    if (clave.length < 8) return `Tiene ${clave.length} caracteres; el mínimo es 8.`;
+    if (clave.length > 63) return `Tiene ${clave.length} caracteres; el máximo es 63.`;
+
+    return null;
+}
+
+/**
+ * El WiFi del contrato (extensión «Cambio de clave WiFi»).
+ *
+ * Se carga al abrir el contrato, a diferencia del diagnóstico: aquí Integra no
+ * se conecta al router, sólo lee lo que tiene guardado, y es rápido.
+ *
+ * La clave nueva vive en el estado sólo mientras se escribe: tras enviarla se
+ * borra, y la actual nunca llega (Integra no la tiene).
+ */
+function WifiDelContrato({ conversationId, contratoNro }) {
+    const [estado, setEstado] = useState('cargando');   // cargando | listo | error
+    const [wifi, setWifi] = useState(null);
+    const [error, setError] = useState(null);
+    const [sinPermiso, setSinPermiso] = useState(false);
+
+    const [abierto, setAbierto] = useState(false);
+    const [clave, setClave] = useState('');
+    const [confirmado, setConfirmado] = useState(false);
+    const [enviando, setEnviando] = useState(false);
+    const [errorEnvio, setErrorEnvio] = useState(null);
+    const [envioSinPermiso, setEnvioSinPermiso] = useState(false);
+    const [solicitud, setSolicitud] = useState(null);
+    const [copiado, setCopiado] = useState(false);
+
+    async function cargar() {
+        setEstado('cargando');
+        setError(null);
+        setSinPermiso(false);
+        try {
+            const { data } = await axios.get('/api/integrations/integra/wifi', {
+                params: { conversation_id: conversationId, contrato: contratoNro },
+                timeout: 30000,
+            });
+            setWifi(data.wifi ?? null);
+            setEstado('listo');
+        } catch (err) {
+            setSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
+            setError(mensajeDeError(err, 'No se pudo consultar el WiFi del contrato.'));
+            setEstado('error');
+        }
+    }
+
+    useEffect(() => {
+        cargar();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [conversationId, contratoNro]);
+
+    const problema = problemaDeClave(clave);
+    const puedeEnviar = clave.length > 0 && !problema && confirmado && !enviando;
+
+    function cerrarFormulario() {
+        setAbierto(false);
+        setClave('');
+        setConfirmado(false);
+        setErrorEnvio(null);
+        setEnvioSinPermiso(false);
+    }
+
+    async function enviar(e) {
+        e.preventDefault();
+        if (!puedeEnviar) return;
+
+        setEnviando(true);
+        setErrorEnvio(null);
+        setEnvioSinPermiso(false);
+        try {
+            const { data } = await axios.post('/api/integrations/integra/wifi', {
+                conversation_id: conversationId,
+                contrato: contratoNro,
+                clave,
+            }, { timeout: 30000 });
+            setSolicitud(data.solicitud ?? null);
+            // La clave no se queda en la pantalla ni en memoria una vez enviada.
+            cerrarFormulario();
+            cargar();
+        } catch (err) {
+            setEnvioSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
+            setErrorEnvio(mensajeDeError(err, 'No se pudo enviar el cambio de clave.'));
+        } finally {
+            setEnviando(false);
+        }
+    }
+
+    async function copiar() {
+        try {
+            await navigator.clipboard.writeText(solicitud.mensaje_cliente);
+            setCopiado(true);
+            setTimeout(() => setCopiado(false), 2000);
+        } catch {
+            // Sin portapapeles el texto sigue a la vista para copiarlo a mano.
+        }
+    }
+
+    const redes = wifi?.redes ?? [];
+    const solicitudes = (wifi?.solicitudes ?? []).slice(0, 3);
+
+    return (
+        <div className="rounded-xl border border-border/50 px-3 py-2.5 space-y-2.5">
+            <div className="flex items-center gap-1.5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1.5">
+                    <Wifi className="size-3" /> WiFi
+                </p>
+                {estado === 'listo' && wifi && (
+                    <span className="ml-auto">
+                        <Insignia tono={wifi.automatico ? 'success' : 'warning'}>
+                            {wifi.automatico ? 'Cambio automático' : 'Lo aplica una persona'}
+                        </Insignia>
+                    </span>
+                )}
+                {estado !== 'cargando' && (
+                    <button
+                        type="button"
+                        onClick={cargar}
+                        title="Volver a consultar"
+                        className={clsx('size-6 flex items-center justify-center rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5', !(estado === 'listo' && wifi) && 'ml-auto')}
+                    >
+                        <RefreshCw className="size-3" />
+                    </button>
+                )}
+            </div>
+
+            {estado === 'cargando' && (
+                <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" /> Consultando el WiFi del contrato…
+                </p>
+            )}
+
+            {estado === 'error' && <ErrorDeAccion error={error} sinPermiso={sinPermiso} />}
+
+            {estado === 'listo' && wifi && (
+                <>
+                    {!wifi.automatico && wifi.motivo_manual && (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">{wifi.motivo_manual}</p>
+                    )}
+
+                    <div>
+                        {redes.length === 0 && (
+                            <p className="text-[11.5px] text-muted-foreground">Integra no tiene redes registradas para este contrato.</p>
+                        )}
+                        {redes.map((r, i) => (
+                            <Campo key={`${r.banda}-${i}`} label={`Red ${r.banda} GHz`} valor={r.ssid || '—'} mono />
+                        ))}
+                    </div>
+
+                    {solicitudes.length > 0 && (
+                        <div className="space-y-1">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Últimos cambios</p>
+                            {solicitudes.map(s => {
+                                const e = ESTADO_SOLICITUD_WIFI[s.estado] ?? { label: legible(s.estado), cls: 'bg-muted text-muted-foreground' };
+
+                                return (
+                                    <div key={s.id} className="flex items-baseline justify-between gap-3 text-[11.5px]">
+                                        <span className="text-muted-foreground">
+                                            {formatFecha(s.creada_en)}
+                                            {s.aplicada_en ? ` · aplicada el ${formatFecha(s.aplicada_en)}` : ''}
+                                        </span>
+                                        <span className={clsx('shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full', e.cls)}>{e.label}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </>
+            )}
+
+            {solicitud && (
+                <div className={clsx(
+                    'rounded-lg border p-2.5',
+                    solicitud.automatico ? 'border-success/30 bg-success/10' : 'border-warning/40 bg-warning/10'
+                )}>
+                    <p className="flex items-start gap-1.5 text-[11.5px] font-bold text-foreground">
+                        <Check className={clsx('mt-px size-3.5 shrink-0', solicitud.automatico ? 'text-success' : 'text-warning')} />
+                        {solicitud.automatico
+                            ? 'Clave enviada: llega al equipo en unos minutos.'
+                            : 'Solicitud creada: la aplicará una persona de tu equipo.'}
+                    </p>
+                    {!solicitud.automatico && solicitud.motivo_manual && (
+                        <p className="mt-1 pl-5 text-[11px] text-muted-foreground">{solicitud.motivo_manual}</p>
+                    )}
+                    {solicitud.mensaje_cliente && (
+                        <div className="mt-2 rounded-lg border border-border/60 bg-background/60 p-2.5">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/70">
+                                    Mensaje para el cliente
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={copiar}
+                                    className="ml-auto inline-flex items-center gap-1 text-[10.5px] font-bold text-accent-foreground hover:underline"
+                                >
+                                    {copiado ? <><Check className="size-2.5" /> Copiado</> : <><Copy className="size-2.5" /> Copiar</>}
+                                </button>
+                            </div>
+                            <p className="mt-1.5 whitespace-pre-wrap text-[11.5px] leading-relaxed text-foreground">
+                                {solicitud.mensaje_cliente}
+                            </p>
+                            <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+                                No se le ha enviado nada al cliente: esto se copia y se pega.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Se puede pedir aunque el GET haya fallado por algo pasajero; si
+                es por permiso, el POST fallará igual y no tiene sentido. */}
+            {!abierto && !(estado === 'error' && sinPermiso) && (
+                <button
+                    type="button"
+                    onClick={() => { setAbierto(true); setSolicitud(null); }}
+                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-[12.5px] font-bold text-accent-foreground transition-colors hover:bg-primary/20"
+                >
+                    <KeyRound className="size-3.5" /> Cambiar clave
+                </button>
+            )}
+
+            {abierto && (
+                <form onSubmit={enviar} className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+                    <label className="block">
+                        <span className="text-[11px] font-bold text-foreground">Clave nueva que dicta el cliente</span>
+                        {/* type="text" a propósito: el asesor tiene que ver lo
+                            que escribe para leérselo de vuelta al cliente. */}
+                        <input
+                            type="text"
+                            value={clave}
+                            onChange={e => setClave(e.target.value)}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck={false}
+                            maxLength={63}
+                            autoFocus
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary"
+                        />
+                    </label>
+                    {problema
+                        ? <p className="text-[11px] text-destructive">{problema}</p>
+                        : <p className="text-[11px] text-muted-foreground">Entre 8 y 63 caracteres, sin tildes ni ñ.</p>}
+
+                    <label className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={confirmado}
+                            onChange={e => setConfirmado(e.target.checked)}
+                            className="mt-0.5 shrink-0"
+                        />
+                        <span className="text-[11.5px] leading-relaxed text-foreground">
+                            Cuando se aplique, todos los dispositivos del cliente se desconectarán y tendrá
+                            que conectarlos con la clave nueva. Ya se lo dije.
+                        </span>
+                    </label>
+
+                    <ErrorDeAccion error={errorEnvio} sinPermiso={envioSinPermiso} />
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="submit"
+                            disabled={!puedeEnviar}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-bold text-primary-foreground disabled:opacity-50"
+                        >
+                            {enviando ? <><Loader2 className="size-3.5 animate-spin" /> Enviando…</> : 'Cambiar la clave'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={cerrarFormulario}
+                            disabled={enviando}
+                            className="rounded-lg px-3 py-1.5 text-[12px] font-bold text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                        >
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            )}
+        </div>
+    );
+}
+
+/** Mañana en Y-m-d, en la hora del navegador: el servidor exige «después de hoy». */
+function mananaYmd() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const dos = n => String(n).padStart(2, '0');
+
+    return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`;
+}
+
+/**
+ * Pedir prórroga de una factura (extensión «Prórroga de pago»).
+ *
+ * Lo que sale de aquí es una solicitud, no una prórroga: Integra la deja
+ * pendiente de aprobación. Por eso el aviso de éxito dice qué contarle al
+ * cliente. Los topes (días, promesas al año, una sin atender) los decide
+ * Integra y su mensaje se pinta tal cual: nadie lo explica mejor.
+ */
+function ProrrogaDeFactura({ conversationId, contratoNro, factura }) {
+    const [abierto, setAbierto] = useState(false);
+    const [fecha, setFecha] = useState('');
+    const [comentario, setComentario] = useState('');
+    const [enviando, setEnviando] = useState(false);
+    const [error, setError] = useState(null);
+    const [sinPermiso, setSinPermiso] = useState(false);
+    const [solicitud, setSolicitud] = useState(null);
+
+    const minimo = mananaYmd();
+    const fechaValida = fecha !== '' && fecha >= minimo;
+
+    async function enviar(e) {
+        e.preventDefault();
+        if (!fechaValida || enviando) return;
+
+        setEnviando(true);
+        setError(null);
+        setSinPermiso(false);
+        try {
+            const { data } = await axios.post('/api/integrations/integra/prorroga', {
+                conversation_id: conversationId,
+                contrato: contratoNro,
+                factura_id: factura.id,
+                fecha,
+                comentario: comentario.trim() || null,
+            }, { timeout: 30000 });
+            setSolicitud(data.solicitud ?? {});
+            setAbierto(false);
+            setFecha('');
+            setComentario('');
+        } catch (err) {
+            setSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
+            setError(mensajeDeError(err, 'No se pudo radicar la prórroga.'));
+        } finally {
+            setEnviando(false);
+        }
+    }
+
+    if (solicitud) {
+        return (
+            <p className="mx-3 mb-2 flex items-start gap-1.5 rounded-lg border border-success/30 bg-success/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-foreground">
+                <Check className="mt-px size-3.5 shrink-0 text-success" />
+                <span>
+                    Solicitud radicada{solicitud.fecha_propuesta ? ` para el ${formatFecha(solicitud.fecha_propuesta)}` : ''}: queda
+                    pendiente de aprobación. Al cliente dile que quedó radicada, no que está aprobada.
+                </span>
+            </p>
+        );
+    }
+
+    if (!abierto) {
+        return (
+            <div className="px-3 pb-1.5">
+                <button
+                    type="button"
+                    onClick={() => setAbierto(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-accent-foreground hover:underline"
+                >
+                    <CalendarClock className="size-3" /> Pedir prórroga
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <form onSubmit={enviar} className="mx-3 mb-2 space-y-2 rounded-lg border border-border/60 bg-muted/30 p-2.5">
+            <label className="block">
+                <span className="text-[11px] font-bold text-foreground">Pagará hasta el</span>
+                <input
+                    type="date"
+                    value={fecha}
+                    min={minimo}
+                    onChange={e => setFecha(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12.5px] text-foreground outline-none focus:border-primary"
+                />
+            </label>
+            <label className="block">
+                <span className="text-[11px] font-bold text-foreground">Comentario <span className="font-normal text-muted-foreground">(opcional)</span></span>
+                <textarea
+                    value={comentario}
+                    onChange={e => setComentario(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    className="mt-1 w-full resize-none rounded-lg border border-border bg-background px-2.5 py-1.5 text-[12px] text-foreground outline-none focus:border-primary"
+                />
+            </label>
+
+            <ErrorDeAccion error={error} sinPermiso={sinPermiso} />
+
+            <div className="flex items-center gap-2">
+                <button
+                    type="submit"
+                    disabled={!fechaValida || enviando}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-bold text-primary-foreground disabled:opacity-50"
+                >
+                    {enviando ? <><Loader2 className="size-3.5 animate-spin" /> Enviando…</> : 'Radicar prórroga'}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => { setAbierto(false); setError(null); setSinPermiso(false); }}
+                    disabled={enviando}
+                    className="rounded-lg px-3 py-1.5 text-[12px] font-bold text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"
+                >
+                    Cancelar
+                </button>
+            </div>
+        </form>
+    );
+}
+
+function DetalleContrato({ contrato, onFactura, diagnostico, acciones, conversationId }) {
     const a = contrato.ampliado ?? {};
     const consumoPorDia = a.consumo?.por_dia ?? [];
+    const puedeProrrogar = Boolean(acciones?.prorroga && conversationId && contrato.nro);
+    // Hoy llega como { vence, vigente }; si algún día llega la fecha a secas,
+    // que se siga leyendo en vez de pintar «hasta —».
+    const promesa = contrato.promesa_pago == null
+        ? null
+        : typeof contrato.promesa_pago === 'object' ? contrato.promesa_pago : { vence: contrato.promesa_pago };
 
     return (
         <div className="space-y-4">
@@ -620,7 +1096,12 @@ function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
                 </div>
             )}
 
-            {a.wifi && (
+            {/* Con la extensión encendida, el WiFi se consulta a Integra en
+                vivo y el dato viejo del resumen (que puede traer una clave ya
+                cambiada) deja de pintarse. */}
+            {acciones?.wifi && conversationId && contrato.nro ? (
+                <WifiDelContrato conversationId={conversationId} contratoNro={contrato.nro} />
+            ) : a.wifi && (
                 <div className="rounded-xl border border-border/50 px-3 py-2.5">
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 flex items-center gap-1.5 mb-1">
                         <Wifi className="size-3" /> WiFi registrado
@@ -670,14 +1151,27 @@ function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
             {a.facturas?.length > 0 && (
                 <div className="space-y-0.5">
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Facturas pendientes de este contrato</p>
+                    {/* Antes de pedir otra: Integra rechaza una prórroga
+                        nueva si hay una sin atender, y verlo aquí ahorra el
+                        viaje de ida y vuelta. */}
+                    {puedeProrrogar && promesa && (
+                        <p className={clsx('px-3 py-1 text-[11px]', promesa.vigente ? 'text-warning' : 'text-muted-foreground')}>
+                            Promesa de pago hasta {formatFecha(promesa.vence) ?? '—'}
+                            {promesa.vigente === true ? ' (vigente)' : promesa.vigente === false ? ' (vencida)' : ''}
+                        </p>
+                    )}
                     {a.facturas.map((f, i) => (
-                        <Fila
-                            key={f.id ?? i}
-                            titulo={f.codigo}
-                            subtitulo={`${f.vencida ? 'Venció el ' : 'Vence el '}${formatFecha(f.vencimiento)}`}
-                            derecha={<span className="text-sm font-bold tabular-nums text-foreground">{formatCOP(f.por_pagar)}</span>}
-                            onClick={f.id ? () => onFactura(f.id) : undefined}
-                        />
+                        <div key={f.id ?? i}>
+                            <Fila
+                                titulo={f.codigo}
+                                subtitulo={`${f.vencida ? 'Venció el ' : 'Vence el '}${formatFecha(f.vencimiento)}`}
+                                derecha={<span className="text-sm font-bold tabular-nums text-foreground">{formatCOP(f.por_pagar)}</span>}
+                                onClick={f.id ? () => onFactura(f.id) : undefined}
+                            />
+                            {puedeProrrogar && f.id && (
+                                <ProrrogaDeFactura conversationId={conversationId} contratoNro={contrato.nro} factura={f} />
+                            )}
+                        </div>
                     ))}
                 </div>
             )}
@@ -690,7 +1184,7 @@ function DetalleContrato({ contrato, onFactura, diagnostico, conversationId }) {
  * lista tenga vuelta atrás: sin ella, cerrar el detalle cerraba también la lista
  * y había que volver a abrirla desde el panel.
  */
-function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver, diagnostico, conversationId }) {
+function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver, diagnostico, acciones, conversationId }) {
     const vista = pila[pila.length - 1];
     const pendientes = ficha.facturas?.pendientes ?? [];
     const historial = ficha.facturas?.historial ?? [];
@@ -823,6 +1317,7 @@ function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver, diagnostico
                             contrato={contrato}
                             onFactura={(id) => onEntrar({ tipo: 'factura', id })}
                             diagnostico={diagnostico}
+                            acciones={acciones}
                             conversationId={conversationId}
                         />
                     )}
@@ -834,7 +1329,7 @@ function DialogoIntegra({ pila, ficha, onCerrar, onEntrar, onVolver, diagnostico
     );
 }
 
-export default function FichaIntegra({ conversationId, diagnostico = { activa: false, informe: true } }) {
+export default function FichaIntegra({ conversationId, diagnostico = { activa: false, informe: true }, acciones = { wifi: false, prorroga: false } }) {
     const [cargando, setCargando] = useState(true);
     const [error, setError] = useState(null);
     const [ficha, setFicha] = useState(null);
@@ -1084,6 +1579,7 @@ export default function FichaIntegra({ conversationId, diagnostico = { activa: f
                     onEntrar={entrar}
                     onVolver={volver}
                     diagnostico={diagnostico}
+                    acciones={acciones}
                     conversationId={conversationId}
                 />
             )}

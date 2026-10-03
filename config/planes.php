@@ -222,6 +222,11 @@ return [
         // —la consulta la hace el ERP contra el router del cliente—, y eso lo
         // comprueba la propia extensión al instalarse, no el plan.
         'internet_diagnostic',
+        // Las dos del contrato, por lo mismo: ningún modelo detrás, sólo una
+        // llamada al ERP. Cambian cosas en Integra, pero eso lo frena el
+        // scope del token y el interruptor de la extensión, no el plan.
+        'wifi_password',
+        'payment_extension',
     ],
 
     'nucleo' => [

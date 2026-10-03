@@ -57,6 +57,8 @@ class IntegraCapabilities
      */
     public const LABELS_EXTRA = [
         'diagnostico' => 'Diagnosticar la red',
+        'wifi' => 'Cambiar la clave del WiFi',
+        'prorroga' => 'Pedir prórrogas de pago',
     ];
 
     /**
@@ -70,6 +72,8 @@ class IntegraCapabilities
         'contratos' => 'contratos.leer',
         'radicados' => 'radicados.leer + radicados.crear',
         'diagnostico' => 'contratos.diagnostico',
+        'wifi' => 'contratos.wifi',
+        'prorroga' => 'contratos.prorroga',
     ];
 
     /**
@@ -112,6 +116,14 @@ class IntegraCapabilities
             // general de abajo —sólo 401 y 403 significan «no puedes»— y se da
             // por bueno, que es la respuesta prudente para un sondeo.
             'diagnostico' => fn () => $client->contractDiagnostic('0', 6),
+            // Las dos que escriben se sondean con un cuerpo que Integra rechaza
+            // por validación ANTES de tocar nada: el scope lo mira el
+            // middleware primero (403 si falta) y después la validación
+            // responde 422 —una clave de un carácter, una prórroga sin fecha—.
+            // Nunca se cambia una clave ni se pide un plazo de verdad, ni
+            // aunque existiera el contrato «0».
+            'wifi' => fn () => $client->changeWifiPassword('0', 'x'),
+            'prorroga' => fn () => $client->requestPaymentExtension('0', 0, '', '0'),
         ];
 
         $can = [];

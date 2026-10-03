@@ -91,6 +91,9 @@ class ChatController extends Controller
             // aparte por una extensión sería una segunda petición para pintar
             // un botón.
             'diagnostico_red' => $this->ajustesDiagnosticoRed($user->company_id),
+            // Y lo mismo para los otros dos botones del contrato: cambiar la
+            // clave del WiFi y pedir prórroga, cada uno con su extensión.
+            'acciones_contrato' => $this->accionesDelContrato($user->company_id),
         ]);
     }
 
@@ -209,6 +212,33 @@ class ChatController extends Controller
         return [
             'activa' => true,
             'informe' => (bool) ($diagnostico->settings()['informe_whatsapp'] ?? true),
+        ];
+    }
+
+    /**
+     * Qué acciones del contrato ofrece el panel del cliente.
+     *
+     * Como en el diagnóstico, sólo se pregunta por el interruptor: sin Integra
+     * conectado el panel ni se pinta, y estas extensiones no se instalan sin
+     * conexión. El endpoint vuelve a mirarlo, porque esconder el botón no es
+     * apagar la función.
+     *
+     * @return array{wifi: bool, prorroga: bool}
+     */
+    private function accionesDelContrato(?int $companyId): array
+    {
+        if (! $companyId) {
+            return ['wifi' => false, 'prorroga' => false];
+        }
+
+        $encendidas = CompanyExtension::where('company_id', $companyId)
+            ->whereIn('slug', ['wifi_password', 'payment_extension'])
+            ->where('enabled', true)
+            ->pluck('slug');
+
+        return [
+            'wifi' => $encendidas->contains('wifi_password'),
+            'prorroga' => $encendidas->contains('payment_extension'),
         ];
     }
 

@@ -1003,5 +1003,13 @@ Route::middleware('auth')->group(function () {
         // contrato puede lo decide el propio controlador —extensión encendida,
         // contrato del cliente de esa conversación y tope de ritmo—.
         Route::get('/integra/diagnostico', [IntegrationController::class, 'diagnosticoDeRed']);
+
+        // WiFi y prórroga del contrato (extensiones «Cambio de clave WiFi» y
+        // «Prórroga de pago»). Mismas puertas que el diagnóstico, en el
+        // controlador: extensión encendida, contrato del cliente de esa
+        // conversación y tope de ritmo en las que escriben.
+        Route::get('/integra/wifi', [IntegrationController::class, 'wifi']);
+        Route::post('/integra/wifi', [IntegrationController::class, 'cambiarClaveWifi']);
+        Route::post('/integra/prorroga', [IntegrationController::class, 'prorroga']);
     });
 });

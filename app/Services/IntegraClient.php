@@ -51,6 +51,12 @@ use Illuminate\Support\Facades\Log;
  *        llamada; sin datos de infraestructura (IP, MAC, ONU, MikroTik)
  *   POST /api/v1/contratos/{nro}/prorroga             (contratos.prorroga)
  *        body: { factura_id, fecha, comentario?, identificacion? }
+ *   GET  /api/v1/contratos/{nro}/wifi?identificacion= (contratos.leer)
+ *        redes, si el cambio de clave es automático y las últimas solicitudes;
+ *        nunca la clave actual
+ *   POST /api/v1/contratos/{nro}/wifi                 (contratos.wifi)
+ *        body: { clave, identificacion? }
+ *   GET  /api/v1/contratos/{nro}/diagnostico          (contratos.diagnostico)
  */
 class IntegraClient
 {
@@ -139,15 +145,27 @@ class IntegraClient
      */
     public const ABILITY_DIAGNOSTICO = 'contratos.diagnostico';
 
+    /**
+     * Cambiar la clave del WiFi del cliente (extensión «Cambio de clave WiFi»).
+     *
+     * Opcional por lo mismo que el diagnóstico: es nuevo en Integra, y pedirlo
+     * entre los obligatorios rompería el asistente de conexión en un entorno
+     * atrasado. Leer las redes (`GET /wifi`) va con `contratos.leer`; sólo
+     * escribir la clave necesita éste.
+     */
+    public const ABILITY_WIFI = 'contratos.wifi';
+
     public const ABILITIES_OPTIONAL = [
         self::ABILITY_EMIT,
         self::ABILITY_INSTANCIAS,
         self::ABILITY_AJUSTES_LEER,
         self::ABILITY_AJUSTES_ESCRIBIR,
         self::ABILITY_DIAGNOSTICO,
+        self::ABILITY_WIFI,
     ];
 
     protected string $baseUrl;
+
     protected ?string $token;
 
     public function __construct(string $baseUrl, ?string $token = null)
@@ -166,12 +184,13 @@ class IntegraClient
      * Acepta el dominio pelado, con /software, o incluso con /api/v1 pegado, y
      * sondea {base} y {base}/software hasta que el API responda con el token.
      *
-     * @param ?callable $ping Verificación a ejecutar contra cada candidato (recibe el
-     *                        cliente, debe lanzar RuntimeException si falla). Por
-     *                        defecto pega a /pagos/catalogos (flujo de pagos); otras
-     *                        integraciones (ej. contactos) pasan una verificación
-     *                        propia para no exigir scopes que su token no tiene.
+     * @param  ?callable  $ping  Verificación a ejecutar contra cada candidato (recibe el
+     *                           cliente, debe lanzar RuntimeException si falla). Por
+     *                           defecto pega a /pagos/catalogos (flujo de pagos); otras
+     *                           integraciones (ej. contactos) pasan una verificación
+     *                           propia para no exigir scopes que su token no tiene.
      * @return self cliente ya apuntando a la base que funcionó.
+     *
      * @throws \RuntimeException si ninguna variante responde (mensaje apto para UI).
      */
     public static function probeBase(string $inputUrl, string $token, ?callable $ping = null): self
@@ -204,7 +223,8 @@ class IntegraClient
      * scopes del flujo de pagos) sondeando los mismos prefijos que probeBase.
      *
      * @return array{0: self, 1: string, 2: string[]} cliente apuntando a la base que funcionó,
-     *         token en claro y los scopes que el entorno concedió.
+     *                                                token en claro y los scopes que el entorno concedió.
+     *
      * @throws \RuntimeException con mensaje apto para UI (401 credenciales, 422 validación,
      *                           CODE_ENDPOINT_MISSING si el entorno no expone /tokens).
      */
@@ -229,6 +249,7 @@ class IntegraClient
             } catch (\Throwable $e) {
                 Log::warning('Integra: error de red al emitir token', ['base' => $candidate, 'msg' => $e->getMessage()]);
                 $lastError = new \RuntimeException('No se pudo contactar al servidor de Integra. Revisa la URL del entorno.', 0);
+
                 continue;
             }
 
@@ -263,9 +284,9 @@ class IntegraClient
             ->acceptJson()
             ->timeout(20)
             ->post('/api/v1/tokens', [
-                'email'     => $email,
-                'password'  => $password,
-                'nombre'    => 'wpp-integraciones',
+                'email' => $email,
+                'password' => $password,
+                'nombre' => 'wpp-integraciones',
                 'abilities' => $abilities,
             ]);
     }
@@ -312,8 +333,8 @@ class IntegraClient
     }
 
     /**
-     * @param ?int $timeout Segundos. Sólo lo pasa quien sabe que su endpoint
-     *        tarda más que el resto; 20 s cubre todo lo demás de sobra.
+     * @param  ?int  $timeout  Segundos. Sólo lo pasa quien sabe que su endpoint
+     *                         tarda más que el resto; 20 s cubre todo lo demás de sobra.
      */
     protected function request(?int $timeout = null): PendingRequest
     {
@@ -394,6 +415,7 @@ class IntegraClient
      * además valida el scope pagos.leer, necesario para el flujo del chat).
      *
      * @return array{ok: bool, cuentas: int, metodos_pago: int}
+     *
      * @throws \RuntimeException
      */
     /**
@@ -607,6 +629,7 @@ class IntegraClient
      * "Sin coincidencias" (404 de negocio) se devuelve como lista vacía.
      *
      * @return array{data: array, total: int}
+     *
      * @throws \RuntimeException (code CODE_ENDPOINT_MISSING si el entorno aún no tiene /contactos/buscar)
      */
     public function searchContacts(string $q, int $limite = 8): array
@@ -629,8 +652,9 @@ class IntegraClient
     /**
      * Facturas pendientes (abiertas con saldo) de un cliente.
      *
-     * @param array $params ['nit' => ...] o ['cliente_id' => ...]
+     * @param  array  $params  ['nit' => ...] o ['cliente_id' => ...]
      * @return array{found: bool, message: ?string, facturas: array, cliente: ?array, total_facturas: int, total_por_pagar: float}
+     *
      * @throws \RuntimeException
      */
     public function pendingInvoices(array $params): array
@@ -673,8 +697,9 @@ class IntegraClient
      * ningún cliente; aquí eso es una lista vacía y no un fallo: el hilo puede
      * ser de alguien que todavía no está en el ERP.
      *
-     * @param array $params ['cliente_id' => ...] o ['nit' => ...], + estado, desde, hasta, por_pagina
+     * @param  array  $params  ['cliente_id' => ...] o ['nit' => ...], + estado, desde, hasta, por_pagina
      * @return array{data: array, meta: array}
+     *
      * @throws \RuntimeException
      */
     public function invoiceHistory(array $params): array
@@ -710,6 +735,7 @@ class IntegraClient
      * empresa responde 404, no la factura ajena.
      *
      * @return array{factura: array, cliente: ?array}|null
+     *
      * @throws \RuntimeException
      */
     public function invoice(int $facturaId): ?array
@@ -733,6 +759,7 @@ class IntegraClient
      * Catálogos para registrar un pago: cuentas/bancos, métodos y formas de pago.
      *
      * @return array{cuentas: array, metodos_pago: array, formas_pago: array}
+     *
      * @throws \RuntimeException
      */
     public function paymentCatalogs(): array
@@ -755,8 +782,9 @@ class IntegraClient
      * tope de página en 100 en vez de 25; el resumen de contratos/facturas no
      * se persiste en el CRM en esta primera versión).
      *
-     * @param array $params page, por_pagina, q, identificacion, estado, actualizado_desde
+     * @param  array  $params  page, por_pagina, q, identificacion, estado, actualizado_desde
      * @return array{data: array, meta: array}
+     *
      * @throws \RuntimeException
      */
     public function listContacts(array $params = []): array
@@ -777,8 +805,9 @@ class IntegraClient
      * recibo de caja, movimiento contable, cierre de la factura si se cubre el
      * saldo y reactivación del servicio (Mikrotik/OLT) si corresponde.
      *
-     * @param array $payload { cuenta, metodo_pago, monto, fecha?, observaciones?, comprobante_pago?, forma_pago? }
+     * @param  array  $payload  { cuenta, metodo_pago, monto, fecha?, observaciones?, comprobante_pago?, forma_pago? }
      * @return array { ingreso_id, recibo_caja, monto_aplicado, factura_estado, factura_por_pagar }
+     *
      * @throws \RuntimeException
      */
     public function registerPayment(int $facturaId, array $payload, ?int $timeout = null): array
@@ -799,6 +828,7 @@ class IntegraClient
      * prioridad entra el radicado que abrirá el cliente desde WhatsApp.
      *
      * @return array{servicios: array, tecnicos: array, prioridades: array, estatus: array}
+     *
      * @throws \RuntimeException
      */
     public function radicadoCatalogs(): array
@@ -818,8 +848,9 @@ class IntegraClient
      * `identificacion`; nombre, teléfono y dirección se toman del contacto si
      * no se envían.
      *
-     * @param array $payload { servicio, prioridad, cliente_id|identificacion, reporte?, contrato?, medio?, telefono?, ip?, mac_address? }
+     * @param  array  $payload  { servicio, prioridad, cliente_id|identificacion, reporte?, contrato?, medio?, telefono?, ip?, mac_address? }
      * @return array { id, codigo, estatus, cliente_id, fecha }
+     *
      * @throws \RuntimeException
      */
     public function createRadicado(array $payload): array
@@ -840,7 +871,8 @@ class IntegraClient
      * el número esté mal no es un fallo de la integración, y el llamador
      * necesita distinguirlo de que la API esté caída.
      *
-     * @param string $nro Número de contrato (contracts.nro), no el id.
+     * @param  string  $nro  Número de contrato (contracts.nro), no el id.
+     *
      * @throws \RuntimeException
      */
     public function contractStatus(string $nro): ?array
@@ -886,11 +918,12 @@ class IntegraClient
      * `veredicto.confianza` en «media» pide reintentar antes de despachar a
      * nadie. `whatsapp` trae el informe ya redactado.
      *
-     * @param string $nro Número de contrato (contracts.nro), NO el id que se ve
-     *        en la URL del software.
-     * @param ?int $timeout Sólo para el sondeo de capacidades, que no puede
-     *        dejar la pantalla de Integraciones medio minuto colgada.
+     * @param  string  $nro  Número de contrato (contracts.nro), NO el id que se ve
+     *                       en la URL del software.
+     * @param  ?int  $timeout  Sólo para el sondeo de capacidades, que no puede
+     *                         dejar la pantalla de Integraciones medio minuto colgada.
      * @return array|null null si Integra no conoce el contrato.
+     *
      * @throws \RuntimeException 403 si al token le falta `contratos.diagnostico`.
      */
     public function contractDiagnostic(string $nro, ?int $timeout = null): ?array
@@ -945,10 +978,11 @@ class IntegraClient
      * existe; aquí eso llega como null, igual que un contrato inexistente, y
      * esa ambigüedad es la que protege al titular.
      *
-     * @param string $nro Número de contrato (contracts.nro), no el id.
-     * @param string $identificacion Cédula/NIT de quien dice ser el titular.
-     * @param int $diasConsumo Días de detalle en `consumo.por_dia` (1–90).
+     * @param  string  $nro  Número de contrato (contracts.nro), no el id.
+     * @param  string  $identificacion  Cédula/NIT de quien dice ser el titular.
+     * @param  int  $diasConsumo  Días de detalle en `consumo.por_dia` (1–90).
      * @return array|null null si el contrato no existe o no es de esa persona.
+     *
      * @throws \RuntimeException
      */
     public function contractSummary(string $nro, string $identificacion, int $diasConsumo = 7): ?array
@@ -982,13 +1016,14 @@ class IntegraClient
      * mostrarle al cliente: explica por qué no se pudo, que es justo lo que
      * evita que insista.
      *
-     * @param string $nro Número de contrato (no el id).
-     * @param int $facturaId Factura pendiente, de resumen.facturacion.pendientes.items.
-     * @param string $fecha Fecha propuesta de pago (Y-m-d), posterior a hoy.
-     * @param string $identificacion Documento del titular; si no coincide, 404.
+     * @param  string  $nro  Número de contrato (no el id).
+     * @param  int  $facturaId  Factura pendiente, de resumen.facturacion.pendientes.items.
+     * @param  string  $fecha  Fecha propuesta de pago (Y-m-d), posterior a hoy.
+     * @param  string  $identificacion  Documento del titular; si no coincide, 404.
      * @return array{id?: int, tipo?: string, estado?: string, fecha_propuesta?: string, factura?: string}
+     *
      * @throws \RuntimeException 422 con el motivo listo para el cliente; 404 si
-     *         el contrato no existe o no es de esa persona.
+     *                           el contrato no existe o no es de esa persona.
      */
     public function requestPaymentExtension(
         string $nro,
@@ -997,12 +1032,101 @@ class IntegraClient
         string $identificacion,
         ?string $comentario = null
     ): array {
-        $res = $this->call('post', '/api/v1/contratos/'.rawurlencode($nro).'/prorroga', array_filter([
-            'factura_id' => $facturaId,
-            'fecha' => $fecha,
-            'identificacion' => $identificacion,
-            'comentario' => $comentario,
-        ], fn ($v) => $v !== null && $v !== ''));
+        try {
+            $res = $this->call('post', '/api/v1/contratos/'.rawurlencode($nro).'/prorroga', array_filter([
+                'factura_id' => $facturaId,
+                'fecha' => $fecha,
+                'identificacion' => $identificacion,
+                'comentario' => $comentario,
+            ], fn ($v) => $v !== null && $v !== ''));
+        } catch (\RuntimeException $e) {
+            // `contratos.prorroga` entró en ABILITIES después que el resto: los
+            // tokens emitidos antes no lo tienen y no lo ganan solos.
+            if ($e->getCode() === 403) {
+                throw new \RuntimeException(
+                    'A tu token de Integra le falta el permiso «contratos.prorroga». Reconecta '
+                    .'Integra desde Integraciones con tu usuario y contraseña: el token nuevo ya '
+                    .'sale con él.',
+                    403
+                );
+            }
+            throw $e;
+        }
+
+        return $res->json('data.solicitud') ?? [];
+    }
+
+    /**
+     * El WiFi del contrato: cómo se llaman sus redes, si el cambio de clave es
+     * automático y cómo van las últimas solicitudes.
+     *
+     * **Nunca trae la clave actual**: Integra no le pregunta nada al equipo, y
+     * el equipo tampoco la entrega. Lo que sí dice es `automatico`, que es lo
+     * que decide qué se le promete al cliente: con `true` la clave llega al
+     * equipo en minutos; con `false` la tiene que poner una persona.
+     *
+     * Como en el resumen, `$identificacion` comprueba la titularidad y un
+     * documento que no coincide responde 404 igual que un contrato que no
+     * existe. Aquí los dos vuelven como null.
+     *
+     * @return array{contrato?: string, automatico?: bool, motivo_manual?: ?string, redes?: array, solicitudes?: array}|null
+     *
+     * @throws \RuntimeException
+     */
+    public function contractWifi(string $nro, ?string $identificacion = null): ?array
+    {
+        try {
+            $res = $this->call('get', '/api/v1/contratos/'.rawurlencode($nro).'/wifi', array_filter([
+                'identificacion' => $identificacion,
+            ], fn ($v) => $v !== null && $v !== ''));
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 404) {
+                return null;
+            }
+            throw $e;
+        }
+
+        return $res->json('data') ?? null;
+    }
+
+    /**
+     * Cambia la clave del WiFi del contrato, en las dos bandas a la vez.
+     *
+     * **Tiene efecto en casa del cliente**: si su ONU está en el ACS la clave
+     * llega al equipo en minutos y TODOS sus dispositivos se desconectan. Por
+     * eso la clave la elige el cliente y la escribe el asesor tal cual; aquí no
+     * se inventa ni se completa nada.
+     *
+     * Integra valida (8 a 63 caracteres ASCII, sin tildes ni ñ) y sólo admite
+     * una solicitud en curso por cliente: los dos rechazos llegan como 422 con
+     * el motivo redactado. La clave no se registra en ningún log, ni aquí ni en
+     * quien llame.
+     *
+     * @return array{id?: int, contrato?: string, automatico?: bool, estado?: string, motivo_manual?: ?string, mensaje_cliente?: string}
+     *
+     * @throws \RuntimeException 403 si al token le falta `contratos.wifi`; 404
+     *                           si el contrato no existe o no es de esa persona; 422 con el motivo.
+     */
+    public function changeWifiPassword(string $nro, string $clave, ?string $identificacion = null): array
+    {
+        try {
+            $res = $this->call('post', '/api/v1/contratos/'.rawurlencode($nro).'/wifi', array_filter([
+                'clave' => $clave,
+                'identificacion' => $identificacion,
+            ], fn ($v) => $v !== null && $v !== ''));
+        } catch (\RuntimeException $e) {
+            // Mismo motivo que en el diagnóstico: el 403 genérico no dice qué
+            // permiso falta ni que se arregla reconectando.
+            if ($e->getCode() === 403) {
+                throw new \RuntimeException(
+                    'A tu token de Integra le falta el permiso «'.self::ABILITY_WIFI.'», que no '
+                    .'viene con los demás. Reconecta Integra desde Integraciones con tu usuario y '
+                    .'contraseña: el token nuevo ya sale con él.',
+                    403
+                );
+            }
+            throw $e;
+        }
 
         return $res->json('data.solicitud') ?? [];
     }

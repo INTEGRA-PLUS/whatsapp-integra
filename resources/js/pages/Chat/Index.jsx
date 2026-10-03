@@ -1902,7 +1902,7 @@ function PaymentModal({ integration, conversation, onClose, comprobante = null, 
     );
 }
 
-export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 }, texto_predictivo = { activa: false, automatico: false, cuantas: 3 }, usa_integra = false, diagnostico_red = { activa: false, informe: true } }) {
+export default function ChatIndex({ instances, integrations = [], umbral_seguimiento = 30, resumen_ia = { activa: false, minimo: 8 }, texto_predictivo = { activa: false, automatico: false, cuantas: 3 }, usa_integra = false, diagnostico_red = { activa: false, informe: true }, acciones_contrato = { wifi: false, prorroga: false } }) {
     const { auth } = usePage().props;
     
     // Helper to check permissions
@@ -7951,7 +7951,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 Ver App\Support\UsaIntegra. */}
                                             {usa_integra && (
                                                 <div className="border-t border-border/40 pt-4">
-                                                    <FichaIntegra conversationId={selectedConversation.id} diagnostico={diagnostico_red} />
+                                                    <FichaIntegra conversationId={selectedConversation.id} diagnostico={diagnostico_red} acciones={acciones_contrato} />
                                                 </div>
                                             )}
                                         </div>

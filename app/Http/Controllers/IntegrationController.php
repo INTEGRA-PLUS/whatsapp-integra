@@ -13,6 +13,7 @@ use App\Services\IntegraClient;
 use App\Support\IntegrationProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
@@ -644,11 +645,204 @@ class IntegrationController extends Controller
             'contrato' => 'required|string|max:40',
         ]);
 
+        return $this->sobreContratoDelCliente(
+            $data,
+            'internet_diagnostic',
+            'Diagnóstico de internet',
+            ['clave' => 'integra:diagnostico', 'tope' => 12, 'mensaje' => 'Se han pedido muchos diagnósticos en el último minuto. Espera un poco: '
+                .'Integra limita esta consulta y el cupo es de toda la empresa.'],
+            function (IntegraClient $client, string $nro) {
+                $diagnostico = $client->contractDiagnostic($nro);
+
+                // null es el 404 de Integra: el contrato no existe para el ERP.
+                // No es lo mismo que un router que no contesta —eso vuelve con
+                // 200 y su veredicto— y por eso se dice distinto.
+                if ($diagnostico === null) {
+                    return response()->json([
+                        'message' => 'Integra no reconoce el contrato #'.$nro.'.',
+                    ], 404);
+                }
+
+                return [
+                    'diagnostico' => $diagnostico,
+                    'consultado_at' => now()->toIso8601String(),
+                ];
+            }
+        );
+    }
+
+    /**
+     * GET /api/integrations/integra/wifi — las redes del contrato, si el
+     * cambio de clave es automático y cómo van las últimas solicitudes.
+     *
+     * Integra nunca devuelve la clave actual: el equipo no la entrega. Lo que
+     * importa aquí es `automatico`, que decide qué se le promete al cliente
+     * antes de cambiarla. Las mismas puertas que el diagnóstico, sin tope de
+     * ritmo: es una lectura barata que no toca el equipo.
+     */
+    public function wifi(Request $request)
+    {
+        $data = $request->validate([
+            'conversation_id' => 'required|integer',
+            'contrato' => 'required|string|max:40',
+        ]);
+
+        return $this->sobreContratoDelCliente(
+            $data,
+            'wifi_password',
+            'Cambio de clave WiFi',
+            null,
+            function (IntegraClient $client, string $nro, ?string $identificacion) {
+                $wifi = $client->contractWifi($nro, $identificacion);
+
+                if ($wifi === null) {
+                    return response()->json([
+                        'message' => 'Integra no reconoce el contrato #'.$nro.' para este cliente.',
+                    ], 404);
+                }
+
+                return ['wifi' => $wifi];
+            }
+        );
+    }
+
+    /**
+     * POST /api/integrations/integra/wifi — cambiar la clave del WiFi.
+     *
+     * **Tiene efecto en casa del cliente**: si su equipo está en el ACS, todos
+     * sus dispositivos se desconectan en minutos. Por eso la clave la dicta el
+     * cliente y aquí sólo se reenvía; se valida lo mismo que valida Integra
+     * (8–63 caracteres ASCII imprimibles) para que el asesor vea el error antes
+     * del viaje, pero quien manda es Integra.
+     *
+     * La clave no se guarda ni se registra: el log dice quién la cambió, en qué
+     * contrato y cómo quedó, nunca cuál es.
+     */
+    public function cambiarClaveWifi(Request $request)
+    {
+        $data = $request->validate([
+            'conversation_id' => 'required|integer',
+            'contrato' => 'required|string|max:40',
+            'clave' => ['required', 'string', 'min:8', 'max:63', 'regex:/^[\x20-\x7E]+$/'],
+        ], [
+            'clave.regex' => 'La clave sólo puede llevar letras sin tilde, números y símbolos: nada de tildes ni ñ.',
+            'clave.min' => 'La clave tiene que tener al menos 8 caracteres.',
+            'clave.max' => 'La clave no puede pasar de 63 caracteres.',
+        ]);
+
+        return $this->sobreContratoDelCliente(
+            $data,
+            'wifi_password',
+            'Cambio de clave WiFi',
+            ['clave' => 'integra:wifi', 'tope' => 10, 'mensaje' => 'Se han pedido muchos cambios de clave en el último minuto. Espera un poco antes de volver a intentarlo.'],
+            function (IntegraClient $client, string $nro, ?string $identificacion) use ($data) {
+                $solicitud = $client->changeWifiPassword($nro, $data['clave'], $identificacion);
+
+                Log::channel('whatsapp')->info('Integra: clave WiFi cambiada desde el chat', [
+                    'company_id' => $this->companyId(),
+                    'user_id' => auth()->id(),
+                    'conversation_id' => $data['conversation_id'],
+                    'contrato' => $nro,
+                    'estado' => $solicitud['estado'] ?? null,
+                    'automatico' => $solicitud['automatico'] ?? null,
+                ]);
+
+                return ['solicitud' => $solicitud];
+            }
+        );
+    }
+
+    /**
+     * POST /api/integrations/integra/prorroga — dejar radicada una promesa de
+     * pago sobre una factura pendiente del contrato.
+     *
+     * No concede nada: deja la solicitud pendiente en Integra para que alguien
+     * la apruebe. Los topes (días, promesas al año, una sin atender) los aplica
+     * Integra y su 422 viene redactado para enseñarlo tal cual.
+     *
+     * La factura no se coteja aquí contra la ficha: Integra ya responde 422 si
+     * no está pendiente EN ESTE contrato, y el contrato sí está cotejado.
+     * Al salir bien se tira la ficha cacheada para que la promesa se vea al
+     * refrescar el panel.
+     */
+    public function prorroga(Request $request)
+    {
+        $data = $request->validate([
+            'conversation_id' => 'required|integer',
+            'contrato' => 'required|string|max:40',
+            'factura_id' => 'required|integer|min:1',
+            'fecha' => 'required|date_format:Y-m-d|after:today',
+            'comentario' => 'nullable|string|max:500',
+        ], [
+            'fecha.after' => 'La fecha de la promesa tiene que ser posterior a hoy.',
+        ]);
+
+        return $this->sobreContratoDelCliente(
+            $data,
+            'payment_extension',
+            'Prórroga de pago',
+            ['clave' => 'integra:prorroga', 'tope' => 10, 'mensaje' => 'Se han pedido muchas prórrogas en el último minuto. Espera un poco antes de volver a intentarlo.'],
+            function (IntegraClient $client, string $nro, ?string $identificacion, string $llave) use ($data) {
+                $solicitud = $client->requestPaymentExtension(
+                    $nro,
+                    (int) $data['factura_id'],
+                    $data['fecha'],
+                    (string) $identificacion,
+                    $data['comentario'] ?? null
+                );
+
+                Cache::forget($llave);
+
+                Log::channel('whatsapp')->info('Integra: prórroga pedida desde el chat', [
+                    'company_id' => $this->companyId(),
+                    'user_id' => auth()->id(),
+                    'conversation_id' => $data['conversation_id'],
+                    'contrato' => $nro,
+                    'factura_id' => $data['factura_id'],
+                    'fecha' => $data['fecha'],
+                    'solicitud_id' => $solicitud['id'] ?? null,
+                ]);
+
+                return ['solicitud' => $solicitud];
+            }
+        );
+    }
+
+    /**
+     * Las puertas de toda acción sobre un contrato desde el panel del chat.
+     *
+     * Las tres hacen falta, y por eso viven en un solo sitio:
+     *
+     *  1. **La extensión encendida.** Si no, el endpoint no existe para esa
+     *     empresa: apagarla tiene que apagarla de verdad, no sólo esconder el
+     *     botón.
+     *  2. **El contrato es del cliente de esta conversación.** Los números de
+     *     contrato son secuenciales, así que un endpoint que acepte cualquiera
+     *     es un endpoint para pasearse por la base del ERP escribiendo números
+     *     —y aquí, además, para cambiarle la clave del WiFi al vecino—. Se
+     *     coteja contra la ficha, que el panel acaba de cargar y está en caché.
+     *  3. **El ritmo**, en las que lo necesitan: el cupo de Integra es de la
+     *     empresa entera, y un asesor impaciente no debe agotárselo al resto.
+     *
+     * La acción recibe además la identificación del titular SEGÚN INTEGRA (la
+     * de la ficha, no la que se tecleó en el contacto), que es con la que
+     * Integra comprueba la titularidad.
+     *
+     * Un 403 de Integra —falta el scope— se devuelve marcado `sin_permiso`
+     * para que el panel lo pinte como un paso pendiente con salida a
+     * Integraciones, no como un error rojo.
+     *
+     * @param  array{conversation_id: int, contrato: string}  $data
+     * @param  ?array{clave: string, tope: int, mensaje: string}  $ritmo
+     * @param  callable(IntegraClient, string, ?string, string): mixed  $accion
+     */
+    private function sobreContratoDelCliente(array $data, string $slug, string $extension, ?array $ritmo, callable $accion)
+    {
         $companyId = $this->companyId();
 
-        if (! $this->extensionEncendida($companyId, 'internet_diagnostic')) {
+        if (! $this->extensionEncendida($companyId, $slug)) {
             return response()->json([
-                'message' => 'La extensión «Diagnóstico de internet» no está encendida.',
+                'message' => 'La extensión «'.$extension.'» no está encendida.',
             ], 403);
         }
 
@@ -659,11 +853,8 @@ class IntegrationController extends Controller
             return response()->json(['message' => 'Conversación no encontrada.'], 404);
         }
 
-        if (! RateLimiter::attempt('integra:diagnostico:'.$companyId, 12, fn () => true)) {
-            return response()->json([
-                'message' => 'Se han pedido muchos diagnósticos en el último minuto. Espera un poco: '
-                    .'Integra limita esta consulta y el cupo es de toda la empresa.',
-            ], 429);
+        if ($ritmo && ! RateLimiter::attempt($ritmo['clave'].':'.$companyId, $ritmo['tope'], fn () => true)) {
+            return response()->json(['message' => $ritmo['mensaje']], 429);
         }
 
         [$identificacion, $telefono, $llave] = $this->criterioDeFicha($conversation, $companyId);
@@ -674,26 +865,23 @@ class IntegrationController extends Controller
             ], 422);
         }
 
-        return Integra::respond($companyId, function (IntegraClient $client) use ($data, $llave, $identificacion, $telefono) {
+        return Integra::respond($companyId, function (IntegraClient $client) use ($data, $llave, $identificacion, $telefono, $accion) {
             $ficha = $this->fichaCacheada($client, $llave, $identificacion, $telefono);
+            $nro = (string) $data['contrato'];
 
             $suyos = collect($ficha['contratos'] ?? [])
                 ->pluck('nro')
-                ->map(fn ($nro) => (string) $nro);
+                ->map(fn ($n) => (string) $n);
 
-            if (! $suyos->contains((string) $data['contrato'])) {
+            if (! $suyos->contains($nro)) {
                 return response()->json([
                     'message' => 'Ese contrato no es del cliente de esta conversación.',
                 ], 403);
             }
 
             try {
-                $diagnostico = $client->contractDiagnostic((string) $data['contrato']);
+                return $accion($client, $nro, $ficha['cliente']['identificacion'] ?? $identificacion, $llave);
             } catch (\RuntimeException $e) {
-                // El permiso que falta se marca aparte del resto de fallos: el
-                // panel lo pinta como un aviso con salida a Integraciones y no
-                // como un error rojo, porque no es que algo se haya roto — es
-                // que falta un paso, y hay uno concreto que darlo.
                 if ($e->getCode() === 403) {
                     return response()->json([
                         'message' => $e->getMessage(),
@@ -703,20 +891,6 @@ class IntegrationController extends Controller
 
                 throw $e;
             }
-
-            // null es el 404 de Integra: el contrato no existe para el ERP. No
-            // es lo mismo que un router que no contesta —eso vuelve con 200 y
-            // su veredicto— y por eso se dice distinto.
-            if ($diagnostico === null) {
-                return response()->json([
-                    'message' => 'Integra no reconoce el contrato #'.$data['contrato'].'.',
-                ], 404);
-            }
-
-            return [
-                'diagnostico' => $diagnostico,
-                'consultado_at' => now()->toIso8601String(),
-            ];
         });
     }
 

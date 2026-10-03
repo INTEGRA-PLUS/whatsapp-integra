@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
-use App\Models\User;
 use App\Models\CompanyIntegration;
+use App\Models\User;
 use App\Models\WhatsAppMenu;
 use App\Models\WhatsAppMenuOption;
 use App\Services\IntegraCapabilities;
@@ -49,6 +49,42 @@ class MenuReviewTest extends TestCase
         $this->assertTrue($can['facturas']);
         $this->assertFalse($can['radicados'], 'El 403 es el único "no puedes" junto al 401.');
         $this->assertTrue($can['contratos'], 'Un 404 de contrato inexistente confirma que el scope está.');
+    }
+
+    /**
+     * Los sondeos de WiFi y prórroga ESCRIBEN si el cuerpo es válido, así que
+     * se mandan con uno que Integra rechaza por validación: una clave de un
+     * carácter y una prórroga sin fecha. El 422 confirma el scope; el 403 dice
+     * que falta. Y ninguno puede llevar un cuerpo que de verdad cambie algo.
+     */
+    public function test_los_sondeos_que_escriben_no_pueden_cambiar_nada(): void
+    {
+        $company = $this->companyWithIntegra();
+
+        Http::fake([
+            '*/contratos/*/wifi*' => Http::response([
+                'success' => false, 'message' => 'Datos inválidos.', 'errors' => ['clave' => ['Muy corta.']],
+            ], 422),
+            '*/contratos/*/prorroga*' => Http::response([
+                'success' => false, 'message' => 'El token no tiene permiso para esta operación.',
+            ], 403),
+            '*' => Http::response(['success' => true, 'data' => []], 200),
+        ]);
+
+        $can = IntegraCapabilities::for($company->id)['can'];
+
+        $this->assertTrue($can['wifi'], 'El 422 de validación confirma que el scope está.');
+        $this->assertFalse($can['prorroga'], 'El 403 es que falta `contratos.prorroga`.');
+
+        // La clave del sondeo nunca sería aceptada (Integra pide 8–63).
+        Http::assertSent(fn ($r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/contratos/0/wifi')
+            && mb_strlen((string) $r['clave']) < 8);
+
+        // Y la prórroga va sin fecha: no hay plazo que conceder.
+        Http::assertSent(fn ($r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/contratos/0/prorroga')
+            && ! isset($r->data()['fecha']));
     }
 
     /**
