@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Instance;
+use App\Support\FacturacionDeMeta;
 use App\Support\PlanDeLaEmpresa;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -68,6 +69,7 @@ class HandleInertiaRequests extends Middleware
                         'nombre' => $i->name,
                         'numero' => $i->display_phone_number,
                         'problema' => $i->problema_de_pago,
+                        'titulo' => FacturacionDeMeta::explicacion($i->problema_de_pago)['titulo'],
                     ])
                     ->values()
                 : [],

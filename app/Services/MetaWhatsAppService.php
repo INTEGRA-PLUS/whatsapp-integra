@@ -785,6 +785,37 @@ class MetaWhatsAppService
     }
 
     /**
+     * Lo que Meta lleva cobrado a la cuenta entre dos fechas, por categoría.
+     *
+     * Es `pricing_analytics`, lo mismo que el panel de Meta enseña en
+     * «Estadísticas». No es el saldo pendiente de pago —ése no lo da ninguna
+     * API—, pero sí lo consumido, que es lo que se acaba cobrando.
+     *
+     * @return array{success: bool, data?: array, error?: mixed}
+     */
+    public function consumoDeLaCuenta(string $wabaId, string $accessToken, int $desde, int $hasta): array
+    {
+        $version = config('services.meta.pricing_api_version', 'v23.0');
+
+        try {
+            $response = Http::withToken($accessToken)
+                ->timeout(20)
+                ->get("https://graph.facebook.com/{$version}/{$wabaId}", [
+                    'fields' => "currency,pricing_analytics.start({$desde}).end({$hasta})"
+                        .'.granularity(MONTHLY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])',
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * La moneda en que Meta le cobra a la cuenta: '' si no tiene, null si Meta
      * no lo dijo. Va sola, sin más campos: si Meta negara éste, la consulta
      * entera fallaría — como pasó con `tasks` en las páginas de Messenger.

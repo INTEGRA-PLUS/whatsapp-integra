@@ -27,6 +27,10 @@ class PagoDeMetaTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const PAGO_PENDIENTE_DE_META = 'Message failed to send because your WhatsApp Business account has unsettled payments. '
+        .'Visit https://business.facebook.com/billing_hub/accounts/details/?business_id=760374460373551&asset_id=1289115706586051'
+        .'&wizard_name=PAY_NOW&account_type=whatsapp-business-account to resolve this issue.';
+
     private const ERROR_DE_META = 'Message failed to send because your WhatsApp Business account currency is not configured. '
         .'Visit https://business.facebook.com/billing_hub/accounts/details/?business_id=932164282769511&asset_id=102644279143040'
         .'&wizard_name=CHANGE_COUNTRY_CURRENCY&account_type=whatsapp-business-account to resolve this issue.';
@@ -92,17 +96,142 @@ class PagoDeMetaTest extends TestCase
         $this->assertNull($instance->refresh()->problema_de_pago);
     }
 
-    /** Una plantilla que sale prueba que ya hay tarjeta: la alerta se apaga sola. */
-    public function test_una_plantilla_enviada_apaga_la_alerta(): void
+    /** Una plantilla entregada prueba que ya hay tarjeta: la alerta se apaga sola. */
+    public function test_una_plantilla_entregada_apaga_la_alerta(): void
     {
         [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()]);
 
         // Un texto dentro de las 24 h sale gratis aun sin tarjeta: no prueba nada.
-        $this->mensaje($instance, 'sent', 'text');
+        $this->mensaje($instance, 'delivered', 'text');
         $this->assertNotNull($instance->refresh()->problema_de_pago);
 
-        $this->mensaje($instance, 'sent', 'template');
+        $this->mensaje($instance, 'delivered', 'template');
         $this->assertNull($instance->refresh()->problema_de_pago);
+    }
+
+    /**
+     * «sent» no prueba nada: Meta acepta el envío con un 200 y lo rechaza por
+     * cobro segundos después. Apagar ahí hacía que la alerta parpadeara y
+     * avisara a los admins con cada factura.
+     */
+    public function test_una_plantilla_solo_aceptada_no_apaga_la_alerta(): void
+    {
+        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::PAGO_PENDIENTE, 'problema_de_pago_desde' => now()]);
+
+        $this->mensaje($instance, 'sent', 'template');
+
+        $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, $instance->refresh()->problema_de_pago);
+    }
+
+    /**
+     * El caso del 3-oct-2026: la tarjeta seguía asociada y Meta decía «unsettled
+     * payments», pero el CRM sólo leía el título del error y avisaba «no tienes
+     * método de pago». El motivo y el enlace de pagar vienen en el detalle.
+     */
+    public function test_un_cobro_pendiente_no_se_confunde_con_falta_de_tarjeta(): void
+    {
+        Notification::fake();
+        [$instance] = $this->linea();
+
+        $this->mensaje($instance, 'failed', 'template', '131042', 'Business eligibility payment issue', self::PAGO_PENDIENTE_DE_META);
+
+        $instance->refresh();
+        $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, $instance->problema_de_pago);
+        $this->assertStringContainsString('wizard_name=PAY_NOW', $instance->enlace_de_pago);
+        $this->assertStringContainsString('unsettled payments', $instance->detalle_de_pago);
+    }
+
+    public function test_reconoce_cada_motivo_de_meta(): void
+    {
+        $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, FacturacionDeMeta::tipo(self::PAGO_PENDIENTE_DE_META));
+        $this->assertSame(FacturacionDeMeta::PAGO_RESTRINGIDO, FacturacionDeMeta::tipo(
+            'Message failed to send because your WhatsApp Business account payment has been restricted. Visit https://business.facebook.com/billing_hub/accounts/details/?asset_id=1 to resolve this issue.'
+        ));
+        $this->assertSame(FacturacionDeMeta::SIN_MONEDA, FacturacionDeMeta::tipo(self::ERROR_DE_META));
+        $this->assertSame(FacturacionDeMeta::SIN_METODO, FacturacionDeMeta::tipo('Business eligibility payment issue'));
+    }
+
+    /** Por la API del ERP el detalle llega en `error_data.details`, no en `message`. */
+    public function test_la_api_lee_el_detalle_del_error(): void
+    {
+        Notification::fake();
+        [$instance] = $this->linea();
+        $token = $instance->generarApiToken();
+
+        Http::fake([
+            '*/message_templates*' => Http::response(['data' => []]),
+            'https://graph.facebook.com/*/messages' => Http::response(['error' => [
+                'message' => 'Business eligibility payment issue',
+                'code' => 131042,
+                'error_data' => ['details' => self::PAGO_PENDIENTE_DE_META],
+            ]], 400),
+        ]);
+
+        $this->withHeader('X-Instance-Token', $token)
+            ->postJson('/api/v1/messages/template', [
+                'to' => '573001112233',
+                'template_name' => 'facturacion',
+                'language_code' => 'es',
+            ])
+            ->assertStatus(500);
+
+        $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, $instance->refresh()->problema_de_pago);
+    }
+
+    /** La guía enseña lo que dijo Meta, sin el enlace, que ya es un botón. */
+    public function test_la_guia_ensena_el_motivo_real(): void
+    {
+        [$instance, $admin] = $this->linea([
+            'problema_de_pago' => FacturacionDeMeta::PAGO_PENDIENTE,
+            'detalle_de_pago' => self::PAGO_PENDIENTE_DE_META,
+            'enlace_de_pago' => 'https://business.facebook.com/billing_hub/accounts/details/?asset_id=1&wizard_name=PAY_NOW',
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/instances/pago-en-meta')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('lineas.0.explicacion.titulo', 'Meta tiene un cobro pendiente sin pagar')
+                ->where('lineas.0.detalle', 'Message failed to send because your WhatsApp Business account has unsettled payments.')
+                ->where('lineas.0.pagar_ahora', true)
+                ->where('alertaPagoMeta.0.titulo', 'Meta tiene un cobro pendiente sin pagar')
+            );
+    }
+
+    /** Lo consumido, por categoría y separando lo gratis, en la moneda de la cuenta. */
+    public function test_el_consumo_suma_lo_cobrado_por_categoria(): void
+    {
+        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::PAGO_PENDIENTE]);
+
+        Http::fake([
+            'https://graph.facebook.com/v23.0/*' => Http::response([
+                'currency' => 'USD',
+                'pricing_analytics' => ['data' => [['data_points' => [
+                    ['pricing_type' => 'FREE_CUSTOMER_SERVICE', 'pricing_category' => 'SERVICE', 'volume' => 184, 'cost' => 0],
+                    ['pricing_type' => 'REGULAR', 'pricing_category' => 'UTILITY', 'volume' => 1238, 'cost' => 0.9904],
+                    ['pricing_type' => 'REGULAR', 'pricing_category' => 'MARKETING', 'volume' => 802, 'cost' => 10.025],
+                ]]]],
+            ]),
+        ]);
+
+        $this->actingAs($admin)
+            ->getJson("/instances/{$instance->id}/consumo-meta")
+            ->assertOk()
+            ->assertJsonPath('moneda', 'USD')
+            ->assertJsonPath('periodos.0.total', 11.02)
+            ->assertJsonPath('periodos.0.cobrados', 2040)
+            ->assertJsonPath('periodos.0.gratis', 184)
+            ->assertJsonPath('periodos.0.categorias.0.categoria', 'MARKETING');
+    }
+
+    public function test_no_se_ve_el_consumo_de_otra_empresa(): void
+    {
+        [, $admin] = $this->linea();
+        [$ajena] = $this->linea();
+
+        $this->actingAs($admin)
+            ->getJson("/instances/{$ajena->id}/consumo-meta")
+            ->assertForbidden();
     }
 
     /** La alerta sale en todas las pantallas, sólo con las líneas de su empresa. */
@@ -231,7 +360,7 @@ class PagoDeMetaTest extends TestCase
         return [$instance, $admin];
     }
 
-    private function mensaje(Instance $instance, string $estado, string $tipo, ?string $codigo = null, ?string $error = null): WhatsAppMessage
+    private function mensaje(Instance $instance, string $estado, string $tipo, ?string $codigo = null, ?string $error = null, ?string $detalle = null): WhatsAppMessage
     {
         $conversacion = WhatsAppConversation::firstOrCreate(
             ['instance_id' => $instance->id, 'wa_id' => '573001112233'],
@@ -246,6 +375,7 @@ class PagoDeMetaTest extends TestCase
             'status' => $estado,
             'error_code' => $codigo,
             'error_message' => $error,
+            'error_details' => $detalle,
             'sent_at' => now(),
             'wamid' => 'wamid.'.Str::random(10),
         ]);

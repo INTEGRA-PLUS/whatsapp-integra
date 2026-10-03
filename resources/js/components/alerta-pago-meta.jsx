@@ -27,7 +27,11 @@ export default function AlertaPagoMeta() {
     }
 
     const nombres = lineas.map(l => `${l.nombre}${l.numero ? ` (${l.numero})` : ''}`).join(', ');
-    const sinMoneda = lineas.some(l => l.problema === 'sin_moneda');
+    // El motivo real de Meta, no siempre «no tienes tarjeta»: con la tarjeta
+    // asociada y un cobro rechazado por saldo, decir eso hizo que una empresa
+    // desconfiara del aviso entero (3-oct-2026).
+    const titulo = lineas[0]?.titulo ?? 'Tu cuenta de Meta no tiene un método de pago válido';
+    const pendiente = lineas.some(l => l.problema === 'pago_pendiente');
 
     return (
         <div role="alert" className="mx-3 mt-3 sm:mx-4">
@@ -38,16 +42,17 @@ export default function AlertaPagoMeta() {
                 <div className="min-w-0 flex-1 text-sm leading-snug">
                     <p className="font-bold">Tus mensajes de WhatsApp no están saliendo</p>
                     <p className="text-white/90">
-                        Meta rechaza los envíos de {nombres} porque tu cuenta no tiene{' '}
-                        {sinMoneda ? 'moneda ni tarjeta configuradas' : 'un método de pago válido'}.
-                        Hay que asociar una tarjeta en Meta: son cinco minutos.
+                        Meta rechaza los envíos de {nombres}: {titulo.charAt(0).toLowerCase() + titulo.slice(1)}.{' '}
+                        {pendiente
+                            ? 'Tu tarjeta sigue asociada; lo que falta es pagar lo consumido.'
+                            : 'Hay que arreglarlo en la facturación de Meta.'}
                     </p>
                 </div>
                 <Link
                     href={`/instances/pago-en-meta?linea=${lineas[0].id}`}
                     className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-bold text-destructive transition-opacity hover:opacity-90"
                 >
-                    Arreglarlo paso a paso <ArrowRight className="size-4" />
+                    {pendiente ? 'Ver el detalle y lo consumido' : 'Arreglarlo paso a paso'} <ArrowRight className="size-4" />
                 </Link>
             </div>
         </div>

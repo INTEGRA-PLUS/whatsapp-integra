@@ -22,18 +22,26 @@ class PagoDeMetaObserver
         }
 
         if ($message->status === 'failed') {
-            if (FacturacionDeMeta::esErrorDePago($message->error_code, $message->error_message)) {
-                FacturacionDeMeta::registrarFallo($this->instancia($message), $message->error_code, $message->error_message);
+            // El título y el detalle juntos: el título («Business eligibility
+            // payment issue») es igual para todo; el motivo y el enlace de
+            // «Pagar ahora» vienen en el detalle (3-oct-2026).
+            $texto = trim($message->error_message.' '.$message->error_details);
+
+            if (FacturacionDeMeta::esErrorDePago($message->error_code, $texto)) {
+                FacturacionDeMeta::registrarFallo($this->instancia($message), $message->error_code, $texto);
             }
 
             return;
         }
 
-        // Una plantilla que sale es la prueba de que la cuenta ya cobra: las
+        // Una plantilla ENTREGADA es la prueba de que la cuenta ya cobra: las
         // respuestas dentro de las 24 h salen gratis incluso sin tarjeta, así
-        // que sólo cuenta la plantilla.
+        // que sólo cuenta la plantilla. Y entregada, no «sent»: Meta acepta el
+        // envío con un 200 y lo rechaza por cobro segundos después por webhook.
+        // Con «sent» la alerta se apagaba y se volvía a encender con cada
+        // factura, y cada vuelta avisaba otra vez a los admins.
         if ($message->direction === 'outbound'
-            && in_array($message->status, ['sent', 'delivered', 'read'], true)
+            && in_array($message->status, ['delivered', 'read'], true)
             && ($message->type === 'template' || isset($message->metadata['template']))) {
             $instancia = $this->instancia($message);
 

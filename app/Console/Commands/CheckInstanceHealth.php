@@ -111,7 +111,7 @@ class CheckInstanceHealth extends Command
                     && preg_match('/payment|funding|billing|currency|pago/i', (string) $podra['motivo']);
 
                 if ($esDePago) {
-                    FacturacionDeMeta::marcar($instance, FacturacionDeMeta::SIN_METODO);
+                    FacturacionDeMeta::marcar($instance, FacturacionDeMeta::tipo((string) $podra['motivo']));
                 } elseif ($podra['estado'] === 'BLOCKED' && $antesPodia !== $podra['estado']) {
                     // Sólo BLOCKED: LIMITED envía con tope (casi siempre el
                     // negocio sin verificar), y avisar «no está dejando

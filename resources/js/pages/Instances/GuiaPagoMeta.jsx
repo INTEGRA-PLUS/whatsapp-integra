@@ -1,12 +1,12 @@
 import { Head, Link } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Aviso, Paso, useAvance } from '@/components/guia';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import {
-    CreditCard, ExternalLink, CircleCheck, CircleAlert, Loader2, RefreshCw, ShieldCheck, Receipt,
+    CreditCard, ExternalLink, CircleCheck, CircleAlert, Loader2, RefreshCw, ShieldCheck, Receipt, Quote, BarChart3,
 } from 'lucide-react';
 
 /**
@@ -66,16 +66,15 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                     descripcion="Meta cobra cada plantilla que envías (facturas, avisos, campañas) directamente a tu tarjeta. Sin tarjeta ni moneda configuradas en tu cuenta de WhatsApp, rechaza los envíos."
                 />
 
-                {conProblema.length > 0 ? (
+                {linea?.problema ? (
+                    <EstadoDeLaLinea linea={linea} />
+                ) : conProblema.length > 0 ? (
                     <Aviso tono="alto" titulo="Tus mensajes no están saliendo">
                         <p>
                             Meta está rechazando los envíos de{' '}
-                            <strong>{conProblema.map(l => `${l.nombre}${l.numero ? ` (${l.numero})` : ''}`).join(', ')}</strong>{' '}
-                            porque la cuenta de WhatsApp Business no tiene{' '}
-                            {conProblema.some(l => l.problema === 'sin_moneda') ? 'moneda ni método de pago configurados' : 'un método de pago válido'}.
-                            Mientras no lo arregles, <strong>no sale ninguna factura ni ningún aviso</strong>.
+                            <strong>{conProblema.map(l => `${l.nombre}${l.numero ? ` (${l.numero})` : ''}`).join(', ')}</strong>.
+                            Elige la línea abajo para ver el motivo.
                         </p>
-                        <p>Son cinco minutos. Sigue los pasos de abajo.</p>
                     </Aviso>
                 ) : (
                     <Aviso tono="bien" titulo="Tus líneas no tienen problemas de pago ahora mismo">
@@ -85,6 +84,8 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                         </p>
                     </Aviso>
                 )}
+
+                {linea?.waba_id && <Consumo linea={linea} />}
 
                 {/* ── Lo que hay que entender antes de tocar nada ───────────── */}
                 <section className="grid gap-3 sm:grid-cols-3">
@@ -123,7 +124,7 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                                         {l.numero && <span className="ml-2 tabular-nums text-muted-foreground">{l.numero}</span>}
                                     </span>
                                     {l.problema
-                                        ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-bold text-destructive">Sin pago</span>
+                                        ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-bold text-destructive">{ETIQUETA[l.problema] ?? 'Sin pago'}</span>
                                         : <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold text-success">Al día</span>}
                                 </label>
                             ))}
@@ -234,6 +235,150 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
 }
 
 GuiaPagoMeta.layout = page => <AppLayout>{page}</AppLayout>;
+
+const ETIQUETA = {
+    pago_pendiente: 'Pago pendiente',
+    pago_restringido: 'Pago restringido',
+    sin_moneda: 'Sin moneda',
+    sin_metodo_de_pago: 'Sin tarjeta',
+};
+
+const CATEGORIA = {
+    MARKETING: 'Marketing',
+    UTILITY: 'Utilidad',
+    AUTHENTICATION: 'Autenticación',
+    AUTHENTICATION_INTERNATIONAL: 'Autenticación internacional',
+    SERVICE: 'Servicio',
+};
+
+/**
+ * El motivo real, con el texto de Meta tal cual debajo.
+ *
+ * Hasta el 3-oct-2026 todo salía como «no tienes un método de pago», y una
+ * empresa con la tarjeta asociada y un cobro rechazado por saldo contestó que
+ * su tarjeta no estaba desasociada: tenía razón, y el aviso perdió crédito. Las
+ * palabras de Meta, en inglés y sin traducir, son la prueba de que no lo
+ * decimos nosotros.
+ */
+function EstadoDeLaLinea({ linea }) {
+    const que = linea.explicacion ?? {};
+
+    return (
+        <Aviso tono="alto" titulo={que.titulo ?? 'Tus mensajes no están saliendo'}>
+            <p>
+                Meta está rechazando los envíos de <strong>{linea.nombre}{linea.numero ? ` (${linea.numero})` : ''}</strong>.{' '}
+                {que.explicacion}
+            </p>
+            <p><strong>Qué hacer:</strong> {que.accion}</p>
+            {linea.detalle && (
+                <figure className="rounded-lg border border-destructive/20 bg-background/60 px-3 py-2.5">
+                    <figcaption className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <Quote className="size-3" /> Lo que dice Meta
+                    </figcaption>
+                    <blockquote className="text-[13px] italic leading-relaxed text-foreground">{linea.detalle}</blockquote>
+                </figure>
+            )}
+            <a href={linea.enlace} target="_blank" rel="noopener noreferrer" className="w-fit">
+                <Button className="gap-2 bg-[#1877f2] text-white hover:bg-[#166fe0]">
+                    <ExternalLink className="size-4" />
+                    {linea.pagar_ahora ? 'Pagar el saldo pendiente en Meta' : 'Abrir la facturación en Meta'}
+                </Button>
+            </a>
+        </Aviso>
+    );
+}
+
+/**
+ * Lo que Meta lleva cobrado: este mes y el anterior, por categoría.
+ *
+ * Es lo más parecido a «cuánto debo» que da la API. El saldo exacto pendiente
+ * —con impuestos y descontando lo ya pagado— sólo está en el panel de Meta, y
+ * así se dice: un número que no cuadra con la factura de Meta es peor que
+ * ninguno.
+ */
+function Consumo({ linea }) {
+    const [datos, setDatos] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let vivo = true;
+        setDatos(null);
+        setError(null);
+        axios.get(route('instances.consumo-meta', linea.id))
+            .then(({ data }) => vivo && setDatos(data))
+            .catch(() => vivo && setError('Meta no devolvió el consumo de esta cuenta ahora mismo.'));
+        return () => { vivo = false; };
+    }, [linea.id]);
+
+    const dinero = (valor) => new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: datos?.moneda || 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(valor ?? 0);
+
+    const actual = datos?.periodos?.[0];
+    const marketingManda = actual?.categorias?.[0]?.categoria === 'MARKETING' && actual.total > 0;
+
+    return (
+        <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+            <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-[13px] font-bold text-foreground">
+                    <BarChart3 className="size-4 text-accent-foreground" /> Consumo en Meta de {linea.nombre}
+                </p>
+                {datos?.moneda && <span className="text-[11px] font-semibold text-muted-foreground">en {datos.moneda}</span>}
+            </div>
+
+            {!datos && !error && (
+                <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" /> Consultando a Meta…
+                </p>
+            )}
+            {error && <p className="text-[13px] text-muted-foreground">{error}</p>}
+
+            {datos && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                    {datos.periodos.map(p => (
+                        <div key={p.desde} className="rounded-lg border bg-background/60 p-3">
+                            <p className="text-[12px] font-semibold text-muted-foreground">
+                                {p.periodo}{p.en_curso ? ' · hasta hoy' : ''}
+                            </p>
+                            <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{dinero(p.total)}</p>
+                            <p className="text-[12px] text-muted-foreground">
+                                {p.cobrados.toLocaleString('es-CO')} mensajes cobrados · {p.gratis.toLocaleString('es-CO')} gratis
+                            </p>
+                            {p.categorias.length > 0 && (
+                                <table className="mt-2 w-full text-[12.5px]">
+                                    <tbody>
+                                        {p.categorias.map(c => (
+                                            <tr key={c.categoria} className="border-t first:border-t-0">
+                                                <td className="py-1 text-foreground">{CATEGORIA[c.categoria] ?? c.categoria}</td>
+                                                <td className="py-1 text-right tabular-nums text-muted-foreground">{c.mensajes.toLocaleString('es-CO')}</td>
+                                                <td className="py-1 pl-3 text-right font-semibold tabular-nums text-foreground">{dinero(c.costo)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {marketingManda && (
+                <p className="rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] leading-snug text-foreground">
+                    La mayor parte del gasto es <strong>Marketing</strong>. Si tus facturas o tirillas salen con una plantilla
+                    de Marketing, pásalas a una de <strong>Utilidad</strong>: cuesta unas 15 veces menos.
+                </p>
+            )}
+
+            <p className="text-[11.5px] leading-snug text-muted-foreground">
+                Es lo que Meta registra como consumido; puede tardar unas horas en actualizarse. El saldo exacto
+                pendiente, con impuestos y descontando lo que ya pagaste, está en la facturación de Meta.
+            </p>
+        </section>
+    );
+}
 
 function Dato({ icono: Icono, titulo, children }) {
     return (

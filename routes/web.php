@@ -347,6 +347,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/instances/{instance}/comprobar-pago', [PagoDeMetaController::class, 'comprobar'])
         ->middleware('throttle:10,1')
         ->name('instances.comprobar-pago');
+    Route::get('/instances/{instance}/consumo-meta', [PagoDeMetaController::class, 'consumo'])
+        ->middleware('throttle:20,1')
+        ->name('instances.consumo-meta');
 
     // Respaldo por consulta del progreso de la importación de coexistencia,
     // para cuando el websocket no conecta. Va antes de nada que capture

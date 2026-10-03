@@ -6,6 +6,7 @@ use App\Models\Instance;
 use App\Models\User;
 use App\Notifications\SystemNotification;
 use App\Services\MetaWhatsAppService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
@@ -39,6 +40,19 @@ class FacturacionDeMeta
 
     public const SIN_METODO = 'sin_metodo_de_pago';
 
+    /**
+     * Hay tarjeta, pero un cobro de Meta quedó sin pagar —casi siempre por
+     * falta de saldo o cupo—. «has unsettled payments».
+     *
+     * Antes caía en SIN_METODO y la alerta decía «no tienes un método de
+     * pago»: el 3-oct-2026 una empresa respondió que su tarjeta seguía
+     * asociada, y tenía razón. Lo que faltaba era pagar lo debido.
+     */
+    public const PAGO_PENDIENTE = 'pago_pendiente';
+
+    /** Meta restringió los pagos de la cuenta. «payment has been restricted». */
+    public const PAGO_RESTRINGIDO = 'pago_restringido';
+
     /** El código de Meta para todo lo que es cobro: tarjeta, moneda, crédito. */
     public const CODIGO = '131042';
 
@@ -60,9 +74,149 @@ class FacturacionDeMeta
         );
     }
 
+    /**
+     * Qué le pasa a la cuenta, leído del texto de Meta. El título del error
+     * («Business eligibility payment issue») es el mismo en todos los casos:
+     * lo que distingue es el detalle, así que hay que pasar el detalle.
+     */
     public static function tipo(?string $mensaje): string
     {
-        return preg_match('/currency/i', (string) $mensaje) ? self::SIN_MONEDA : self::SIN_METODO;
+        $mensaje = (string) $mensaje;
+
+        return match (true) {
+            (bool) preg_match('/currency/i', $mensaje) => self::SIN_MONEDA,
+            (bool) preg_match('/unsettled|outstanding|overdue|past due/i', $mensaje) => self::PAGO_PENDIENTE,
+            (bool) preg_match('/restricted|disabled|suspended/i', $mensaje) => self::PAGO_RESTRINGIDO,
+            default => self::SIN_METODO,
+        };
+    }
+
+    /**
+     * El problema dicho para quien paga: qué pasa y qué hacer.
+     *
+     * @return array{titulo: string, explicacion: string, accion: string}
+     */
+    public static function explicacion(?string $tipo): array
+    {
+        return match ($tipo) {
+            self::PAGO_PENDIENTE => [
+                'titulo' => 'Meta tiene un cobro pendiente sin pagar',
+                'explicacion' => 'Tu tarjeta sigue asociada, pero Meta intentó cobrar lo consumido y el cobro no pasó: '
+                    .'lo más común es que la tarjeta no tuviera saldo o cupo, o que el banco bloqueara la compra internacional. '
+                    .'Mientras ese saldo siga pendiente, Meta rechaza los envíos.',
+                'accion' => 'Paga el saldo pendiente en Meta («Pagar ahora») o cambia a una tarjeta con saldo.',
+            ],
+            self::PAGO_RESTRINGIDO => [
+                'titulo' => 'Meta restringió los pagos de tu cuenta',
+                'explicacion' => 'Meta bloqueó los cobros de esta cuenta de WhatsApp Business. Suele pasar tras varios '
+                    .'cobros rechazados seguidos o cuando Meta revisa la tarjeta. Mientras siga así, rechaza los envíos.',
+                'accion' => 'Abre la facturación en Meta: allí dice qué pide para levantar la restricción (pagar lo pendiente, verificar la tarjeta o cambiarla).',
+            ],
+            self::SIN_MONEDA => [
+                'titulo' => 'Tu cuenta de Meta no tiene moneda ni tarjeta',
+                'explicacion' => 'La cuenta de WhatsApp Business nunca se configuró para pagar: le falta la moneda y el método de pago.',
+                'accion' => 'Elige país y moneda en Meta y añade una tarjeta.',
+            ],
+            default => [
+                'titulo' => 'Tu cuenta de Meta no tiene un método de pago válido',
+                'explicacion' => 'Meta no encuentra una tarjeta con la que cobrar: no hay ninguna, está vencida o fue rechazada.',
+                'accion' => 'Añade o actualiza la tarjeta en la facturación de Meta.',
+            ],
+        };
+    }
+
+    /**
+     * El texto de Meta sin el enlace, que en la pantalla ya es un botón.
+     */
+    public static function detalleLegible(?string $detalle): ?string
+    {
+        if (! $detalle) {
+            return null;
+        }
+
+        $limpio = preg_replace('#\s*Visit https://business\.facebook\.com/\S+ to resolve this issue\.?#i', '', $detalle);
+
+        return trim($limpio) ?: null;
+    }
+
+    /**
+     * Lo que Meta registra como consumido este mes y el anterior.
+     *
+     * Es lo más cerca que se puede llegar de «cuánto debes»: el saldo
+     * pendiente exacto, con impuestos, sólo lo enseña el panel de Meta. Se
+     * guarda media hora porque `pricing_analytics` se actualiza con retraso y
+     * la guía la abre cada agente que ve la alerta.
+     *
+     * @return array{moneda: ?string, periodos: array<int, array{periodo: string, desde: string, hasta: string, total: float, cobrados: int, gratis: int, categorias: array}>}|null
+     */
+    public static function consumo(Instance $instance, MetaWhatsAppService $meta): ?array
+    {
+        if (! $instance->waba_id || ! $instance->access_token) {
+            return null;
+        }
+
+        return Cache::remember("consumo-meta:{$instance->id}", now()->addMinutes(30), function () use ($instance, $meta) {
+            $inicioMes = now()->startOfMonth();
+            $periodos = [
+                ['desde' => $inicioMes->copy()->subMonthNoOverflow(), 'hasta' => $inicioMes->copy()],
+                ['desde' => $inicioMes->copy(), 'hasta' => now()],
+            ];
+
+            $moneda = null;
+            $salida = [];
+
+            foreach ($periodos as $p) {
+                $res = $meta->consumoDeLaCuenta($instance->waba_id, $instance->access_token, $p['desde']->timestamp, $p['hasta']->timestamp);
+
+                if (! ($res['success'] ?? false)) {
+                    Log::channel('whatsapp')->warning('No se pudo leer el consumo de Meta', [
+                        'instance_id' => $instance->id,
+                        'error' => $res['error'] ?? null,
+                    ]);
+
+                    return null;
+                }
+
+                $moneda ??= $res['data']['currency'] ?? null;
+                $categorias = [];
+                $cobrados = 0;
+                $gratis = 0;
+
+                foreach ($res['data']['pricing_analytics']['data'][0]['data_points'] ?? [] as $punto) {
+                    $categoria = $punto['pricing_category'] ?? 'OTRA';
+                    $volumen = (int) ($punto['volume'] ?? 0);
+                    $costo = (float) ($punto['cost'] ?? 0);
+
+                    if ($costo > 0) {
+                        $categorias[$categoria] ??= ['categoria' => $categoria, 'mensajes' => 0, 'costo' => 0.0];
+                        $categorias[$categoria]['mensajes'] += $volumen;
+                        $categorias[$categoria]['costo'] += $costo;
+                        $cobrados += $volumen;
+                    } else {
+                        $gratis += $volumen;
+                    }
+                }
+
+                $categorias = collect($categorias)
+                    ->map(fn ($c) => [...$c, 'costo' => round($c['costo'], 4)])
+                    ->sortByDesc('costo')
+                    ->values()
+                    ->all();
+
+                $salida[] = [
+                    'periodo' => ucfirst($p['desde']->locale('es')->isoFormat('MMMM YYYY')),
+                    'desde' => $p['desde']->toDateString(),
+                    'hasta' => $p['hasta']->toDateString(),
+                    'en_curso' => $p['hasta']->isToday(),
+                    'total' => round(array_sum(array_column($categorias, 'costo')), 2),
+                    'cobrados' => $cobrados,
+                    'gratis' => $gratis,
+                    'categorias' => $categorias,
+                ];
+            }
+
+            return ['moneda' => $moneda, 'periodos' => array_reverse($salida)];
+        });
     }
 
     /** El enlace al asistente de Meta que trae el propio error, si lo trae. */
@@ -107,6 +261,7 @@ class FacturacionDeMeta
             'problema_de_pago' => self::tipo($mensaje),
             'problema_de_pago_desde' => $instance->problema_de_pago_desde ?? now(),
             'enlace_de_pago' => self::enlaceDe($mensaje) ?? $instance->enlace_de_pago,
+            'detalle_de_pago' => $mensaje ?: $instance->detalle_de_pago,
         ])->saveQuietly();
 
         if ($nuevo) {
@@ -132,6 +287,7 @@ class FacturacionDeMeta
             'problema_de_pago' => null,
             'problema_de_pago_desde' => null,
             'enlace_de_pago' => null,
+            'detalle_de_pago' => null,
         ])->saveQuietly();
     }
 
@@ -194,7 +350,7 @@ class FacturacionDeMeta
         }
 
         if ($motivo !== null) {
-            self::marcar($instance, self::SIN_METODO);
+            self::marcar($instance, self::tipo($motivo));
 
             return ['ok' => false, 'mensaje' => 'Meta sigue sin un método de pago válido: '.$motivo];
         }
@@ -288,11 +444,12 @@ class FacturacionDeMeta
             return;
         }
 
+        $que = self::explicacion($instance->problema_de_pago);
+
         Notification::send($admins, new SystemNotification(
             'Tus mensajes de WhatsApp no están saliendo',
-            "Meta está rechazando los envíos de «{$instance->name}» porque tu cuenta de WhatsApp Business "
-                .'no tiene tarjeta ni moneda configuradas. Entra en Instancias → «Activar el pago en Meta» '
-                .'y sigue los pasos: son cinco minutos.',
+            "Meta está rechazando los envíos de «{$instance->name}»: {$que['titulo']}. {$que['accion']} "
+                .'Tienes el detalle y lo consumido en Instancias → «Pago en Meta».',
             'Sistema'
         ));
     }

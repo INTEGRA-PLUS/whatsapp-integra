@@ -132,6 +132,10 @@ return [
         // La Calling API requiere una versión más reciente del Graph API que la
         // mensajería. Se mantiene separada para no afectar el resto de llamadas.
         'calling_api_version' => env('META_CALLING_API_VERSION', 'v23.0'),
+        // `pricing_analytics` (lo que Meta lleva cobrado a cada cuenta) no
+        // devuelve nada en la v21: responde 200 con el campo vacío. Aparte por
+        // lo mismo que las otras, para no mover la versión de los envíos.
+        'pricing_api_version' => env('META_PRICING_API_VERSION', 'v23.0'),
     ],
 
     // Software Integra (integración "Pagos a facturas").

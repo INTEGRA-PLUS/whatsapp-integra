@@ -31,6 +31,7 @@ class Instance extends Model
         'problema_de_pago',
         'problema_de_pago_desde',
         'enlace_de_pago',
+        'detalle_de_pago',
         'meta',
         'access_token',
         'token_expires_at',

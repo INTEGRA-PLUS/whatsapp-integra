@@ -598,7 +598,7 @@ class MessageApiController extends Controller
             FacturacionDeMeta::registrarFallo(
                 $instance,
                 $result['error']['error']['code'] ?? null,
-                $result['error']['error']['message'] ?? null
+                trim(($result['error']['error']['message'] ?? '').' '.($result['error']['error']['error_data']['details'] ?? ''))
             );
 
             return response()->json([
@@ -879,7 +879,7 @@ class MessageApiController extends Controller
         FacturacionDeMeta::registrarFallo(
             $instance,
             $result['error']['error']['code'] ?? null,
-            $result['error']['error']['message'] ?? null
+            trim(($result['error']['error']['message'] ?? '').' '.($result['error']['error']['error_data']['details'] ?? ''))
         );
 
         return response()->json([
