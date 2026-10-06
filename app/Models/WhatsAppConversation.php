@@ -630,10 +630,44 @@ class WhatsAppConversation extends Model
         // fluye, pero cuando Meta reintenta un webhook durante días y luego suelta
         // la cola de golpe, `created_at` es de hoy y `sent_at` de hace tres días:
         // dábamos la ventana por abierta y el envío moría con "Re-engagement".
+        //
+        // Y si la línea cambió de número, lo que el cliente le escribió al
+        // anterior no abre ventana con el nuevo: para Meta son dos números
+        // distintos. Contarlo dejaba escribir al asesor y Meta le rechazaba
+        // hasta un saludo con «Access denied» (CMNET, 6-oct-2026).
+        $desde = now()->subDay();
+        $cambio = $this->instance?->numero_cambiado_at;
+
+        if ($cambio && $cambio->gt($desde)) {
+            $desde = $cambio;
+        }
+
         return $this->messages()
             ->where('direction', 'inbound')
-            ->whereRaw('COALESCE(sent_at, created_at) >= ?', [now()->subDay()])
+            ->whereRaw('COALESCE(sent_at, created_at) >= ?', [$desde])
             ->exists();
+    }
+
+    /**
+     * El cliente sólo le ha escrito al número anterior de la línea: la ventana
+     * no está cerrada por tiempo sino porque con el número nuevo no ha hablado.
+     * Sirve para decírselo así al asesor, que si no lee «pasaron 24 horas» de
+     * un cliente que escribió hace diez minutos.
+     */
+    public function escribioSoloAlNumeroAnterior(): bool
+    {
+        $cambio = $this->instance?->numero_cambiado_at;
+
+        if (! $cambio) {
+            return false;
+        }
+
+        $ultimo = $this->messages()
+            ->where('direction', 'inbound')
+            ->selectRaw('MAX(COALESCE(sent_at, created_at)) as ultimo')
+            ->value('ultimo');
+
+        return $ultimo !== null && $cambio->gt($ultimo);
     }
 
     /**

@@ -148,6 +148,31 @@ class CambioDeNumeroTest extends TestCase
         $this->assertStringStartsWith('There was a problem with the access token', $mensaje->error_details);
     }
 
+    /**
+     * Lo que el cliente escribió al número anterior no abre ventana con el
+     * nuevo: el CRM tiene que pedir una plantilla en vez de dejar escribir.
+     */
+    public function test_lo_escrito_al_numero_anterior_no_abre_la_ventana(): void
+    {
+        $conversacion = $this->conversacionConEntranteHace(now()->subHour());
+        $this->assertTrue($conversacion->isWindowOpen(), 'Antes del cambio, una hora es ventana abierta.');
+
+        $this->cambiarDeNumero();
+        $conversacion->refresh();
+
+        $this->assertFalse($conversacion->isWindowOpen());
+        $this->assertTrue($conversacion->escribioSoloAlNumeroAnterior());
+    }
+
+    public function test_cuando_escribe_al_numero_nuevo_la_ventana_se_abre(): void
+    {
+        $this->cambiarDeNumero();
+        $conversacion = $this->conversacionConEntranteHace(now()->addMinute());
+
+        $this->assertTrue($conversacion->isWindowOpen());
+        $this->assertFalse($conversacion->escribioSoloAlNumeroAnterior());
+    }
+
     public function test_una_linea_que_nunca_cambio_de_numero_no_se_toca(): void
     {
         $conversacion = $this->conversacionConEntranteHace(now()->subHour());

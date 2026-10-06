@@ -3794,16 +3794,32 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     // Ventana de servicio de 24h de Meta: sin un inbound reciente, solo se puede
     // reabrir la conversación con una plantilla aprobada (texto/adjuntos libres
     // quedan bloqueados). Se deriva de los mensajes ya cargados, sin llamadas nuevas.
+    // Si la línea cambió de número, lo que el cliente escribió al anterior no
+    // abre ventana con el nuevo: para Meta son dos números distintos, y dejar
+    // escribir terminaba en «Access denied» hasta para un saludo (CMNET,
+    // 6-oct-2026). `soloAlNumeroAnterior` es para decirlo con esas palabras.
+    const cambioDeNumero = useMemo(() => {
+        const linea = instances?.find(i => String(i.id) === String(selectedConversation?.instance_id));
+        return linea?.numero_cambiado_at ? new Date(linea.numero_cambiado_at).getTime() : null;
+    }, [instances, selectedConversation?.instance_id]);
+
+    const ultimoEntrante = useMemo(() => {
+        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+        return lastInbound ? new Date(lastInbound.sent_at || lastInbound.created_at).getTime() : null;
+    }, [messages]);
+
+    const soloAlNumeroAnterior = cambioDeNumero !== null && ultimoEntrante !== null && ultimoEntrante < cambioDeNumero;
+
     const windowExpired = useMemo(() => {
         if (!selectedConversation) return false;
-        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
-        if (!lastInbound) return true;
+        if (ultimoEntrante === null) return true;
+        if (soloAlNumeroAnterior) return true;
         // Cuenta desde que el cliente pulsó enviar (sent_at), no desde que
         // nosotros guardamos el mensaje: cuando Meta entrega un webhook con días
         // de retraso, created_at es de hoy y la ventana ya está cerrada. Mirar
         // created_at dejaba escribir al asesor para que el envío muriera después.
-        return (Date.now() - new Date(lastInbound.sent_at || lastInbound.created_at).getTime()) > 24 * 60 * 60 * 1000;
-    }, [messages, selectedConversation]);
+        return (Date.now() - ultimoEntrante) > 24 * 60 * 60 * 1000;
+    }, [ultimoEntrante, soloAlNumeroAnterior, selectedConversation]);
 
     // La plantilla que ya salió y espera respuesta, si la hay. Enviar una
     // plantilla NO abre la ventana de 24 h —la abre la respuesta del cliente—,
@@ -6791,9 +6807,11 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                 <div className="flex items-start gap-2 rounded-lg border border-warning/50 bg-warning/15 px-3 py-2 text-[12px] text-warning">
                                                     <Clock className="size-4 mt-0.5 shrink-0" />
                                                     <span className="flex-1 leading-snug">
-                                                        {messages.some(m => m.direction === 'inbound')
-                                                            ? 'Pasaron más de 24 horas desde el último mensaje del cliente.'
-                                                            : 'Este cliente todavía no te ha escrito.'}{' '}
+                                                        {soloAlNumeroAnterior
+                                                            ? 'Este cliente te escribió al número anterior de la línea; con el número nuevo todavía no ha hablado.'
+                                                            : messages.some(m => m.direction === 'inbound')
+                                                                ? 'Pasaron más de 24 horas desde el último mensaje del cliente.'
+                                                                : 'Este cliente todavía no te ha escrito.'}{' '}
                                                         Para escribirle, envía una <b>plantilla aprobada</b>; cuando responda podrás escribir libremente.
                                                     </span>
                                                     <button

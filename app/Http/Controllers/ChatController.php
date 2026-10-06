@@ -614,6 +614,19 @@ class ChatController extends Controller
      * ventana de servicio de 24h está abierta (último mensaje entrante reciente),
      * que determina si se puede enviar texto libre o hace falta una plantilla.
      */
+    /**
+     * Por qué no se puede escribir libremente, dicho para el asesor. Si la línea
+     * cambió de número y el cliente sólo escribió al anterior, «pasaron 24
+     * horas» es falso: escribió hace un rato, pero a otro número.
+     */
+    private function ventanaCerrada(WhatsAppConversation $conversation): string
+    {
+        return $conversation->escribioSoloAlNumeroAnterior()
+            ? 'Este cliente te escribió al número anterior de la línea y con el número nuevo todavía no ha hablado. '
+                .'Envíale primero una plantilla aprobada o pídele que te escriba al número nuevo.'
+            : 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.';
+    }
+
     public function startConversation(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -1423,7 +1436,7 @@ class ChatController extends Controller
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
-                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+                'error' => $this->ventanaCerrada($conversation),
             ], 422);
         }
 
@@ -1489,7 +1502,7 @@ class ChatController extends Controller
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
-                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+                'error' => $this->ventanaCerrada($conversation),
             ], 422);
         }
 
@@ -1588,7 +1601,7 @@ class ChatController extends Controller
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
-                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+                'error' => $this->ventanaCerrada($conversation),
             ], 422);
         }
 
@@ -1667,7 +1680,7 @@ class ChatController extends Controller
             return response()->json([
                 'success' => false,
                 'code' => 'window_closed',
-                'error' => 'La ventana de 24h para responder libremente expiró. Envía primero una plantilla aprobada.',
+                'error' => $this->ventanaCerrada($conversation),
             ], 422);
         }
 
