@@ -261,7 +261,10 @@ export default function PanelConversacion({ conversacionId, resumen, onCerrar, o
                 body: JSON.stringify({ message: cuerpo }),
             });
             setTexto('');
-            if (datos.message) setMensajes(prev => [...prev, datos.message]);
+            // El mensaje guardado viene en `data`; `message` es el texto
+            // «Mensaje encolado». Leer `message` pintaba un «archivo» con
+            // «Invalid Date» en vez de lo que se acababa de escribir.
+            if (datos.data) setMensajes(prev => [...prev, datos.data]);
             onCambio?.();
         } catch (err) {
             aviso.error('No se pudo enviar el mensaje', { detalle: err.message });
@@ -280,7 +283,7 @@ export default function PanelConversacion({ conversacionId, resumen, onCerrar, o
                 `/api/chat/conversations/${conversacionId}/${tipo === 'imagen' ? 'send-image' : 'send-document'}`,
                 { method: 'POST', body: cuerpo },
             );
-            if (datos.message) setMensajes(prev => [...prev, datos.message]);
+            if (datos.data) setMensajes(prev => [...prev, datos.data]);
             aviso.exito(tipo === 'imagen' ? 'Imagen enviada' : `${archivo.name} enviado`);
             onCambio?.();
         } catch (err) {
