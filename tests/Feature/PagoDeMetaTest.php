@@ -224,6 +224,43 @@ class PagoDeMetaTest extends TestCase
             ->assertJsonPath('periodos.0.categorias.0.categoria', 'MARKETING');
     }
 
+    /** El portafolio que paga: hay clientes con varios en su Facebook. */
+    public function test_el_consumo_dice_a_que_portafolio_cobra_meta(): void
+    {
+        [$instance, $admin] = $this->linea();
+
+        Http::fake(fn ($r) => str_contains($r->url(), 'owner_business_info')
+            ? Http::response([
+                'name' => 'Principal',
+                'owner_business_info' => ['id' => '123456789', 'name' => 'Ferretería Ejemplo SAS'],
+            ])
+            : Http::response(['currency' => 'COP', 'pricing_analytics' => ['data' => [['data_points' => []]]]]));
+
+        $this->actingAs($admin)
+            ->getJson("/instances/{$instance->id}/consumo-meta")
+            ->assertOk()
+            ->assertJsonPath('moneda', 'COP')
+            ->assertJsonPath('cuenta', 'Principal')
+            ->assertJsonPath('portafolio.id', '123456789')
+            ->assertJsonPath('portafolio.nombre', 'Ferretería Ejemplo SAS');
+    }
+
+    /** Si Meta niega el consumo, el portafolio se sigue enseñando. */
+    public function test_el_portafolio_sale_aunque_falle_el_consumo(): void
+    {
+        [$instance, $admin] = $this->linea();
+
+        Http::fake(fn ($r) => str_contains($r->url(), 'owner_business_info')
+            ? Http::response(['name' => 'Principal', 'owner_business_info' => ['id' => '123456789', 'name' => 'Integra Colombia SAS']])
+            : Http::response(['error' => ['message' => 'nope']], 400));
+
+        $this->actingAs($admin)
+            ->getJson("/instances/{$instance->id}/consumo-meta")
+            ->assertOk()
+            ->assertJsonPath('periodos', null)
+            ->assertJsonPath('portafolio.nombre', 'Integra Colombia SAS');
+    }
+
     public function test_no_se_ve_el_consumo_de_otra_empresa(): void
     {
         [, $admin] = $this->linea();

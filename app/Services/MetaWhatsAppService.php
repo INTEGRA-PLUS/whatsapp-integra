@@ -830,6 +830,30 @@ class MetaWhatsAppService
         return ($res['success'] ?? false) ? (string) ($res['data']['currency'] ?? '') : null;
     }
 
+    /**
+     * El nombre de la cuenta de WhatsApp y el portafolio de Meta que la posee,
+     * que es al que Meta le cobra. Aparte de la moneda y del consumo por lo
+     * mismo que `monedaDeLaCuenta`: si Meta negara `owner_business_info`, que
+     * no se lleve por delante lo demás.
+     *
+     * @return array{cuenta: ?string, portafolio: ?array{id: string, nombre: ?string}}|null
+     */
+    public function portafolioDeLaCuenta(string $wabaId, string $accessToken): ?array
+    {
+        $res = $this->graphGet("/{$wabaId}", $accessToken, ['fields' => 'name,owner_business_info']);
+
+        if (! ($res['success'] ?? false)) {
+            return null;
+        }
+
+        $duenio = $res['data']['owner_business_info'] ?? null;
+
+        return [
+            'cuenta' => $res['data']['name'] ?? null,
+            'portafolio' => isset($duenio['id']) ? ['id' => (string) $duenio['id'], 'nombre' => $duenio['name'] ?? null] : null,
+        ];
+    }
+
     public function getPhoneNumber(string $phoneNumberId, string $accessToken)
     {
         return $this->graphGet("/{$phoneNumberId}", $accessToken, [

@@ -147,7 +147,13 @@ class FacturacionDeMeta
      * guarda media hora porque `pricing_analytics` se actualiza con retraso y
      * la guía la abre cada agente que ve la alerta.
      *
-     * @return array{moneda: ?string, periodos: array<int, array{periodo: string, desde: string, hasta: string, total: float, cobrados: int, gratis: int, categorias: array}>}|null
+     * Va con el portafolio de Meta dueño de la cuenta, que es a quien Meta le
+     * cobra. Muchas líneas viven en el portafolio de Integra, pero hay
+     * clientes que crearon el suyo, y quien tiene varios en su Facebook no
+     * sabía en cuál buscar la factura (6-oct-2026). Se pide aparte y se
+     * devuelve aunque el consumo falle: son preguntas independientes.
+     *
+     * @return array{moneda: ?string, periodos: ?array<int, array{periodo: string, desde: string, hasta: string, total: float, cobrados: int, gratis: int, categorias: array}>, cuenta: ?string, portafolio: ?array{id: string, nombre: ?string}}|null
      */
     public static function consumo(Instance $instance, MetaWhatsAppService $meta): ?array
     {
@@ -155,6 +161,27 @@ class FacturacionDeMeta
             return null;
         }
 
+        $duenio = Cache::remember(
+            "portafolio-meta:{$instance->id}:{$instance->waba_id}",
+            now()->addDay(),
+            fn () => $meta->portafolioDeLaCuenta($instance->waba_id, $instance->access_token)
+        );
+
+        $consumo = self::consumoPorPeriodo($instance, $meta);
+
+        if (! $consumo && ! $duenio) {
+            return null;
+        }
+
+        return [
+            ...($consumo ?? ['moneda' => null, 'periodos' => null]),
+            'cuenta' => $duenio['cuenta'] ?? null,
+            'portafolio' => $duenio['portafolio'] ?? null,
+        ];
+    }
+
+    private static function consumoPorPeriodo(Instance $instance, MetaWhatsAppService $meta): ?array
+    {
         return Cache::remember("consumo-meta:{$instance->id}", now()->addMinutes(30), function () use ($instance, $meta) {
             $inicioMes = now()->startOfMonth();
             $periodos = [

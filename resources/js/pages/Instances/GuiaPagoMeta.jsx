@@ -6,7 +6,7 @@ import { Aviso, Paso, useAvance } from '@/components/guia';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import {
-    CreditCard, ExternalLink, CircleCheck, CircleAlert, Loader2, RefreshCw, ShieldCheck, Receipt, Quote, BarChart3,
+    CreditCard, ExternalLink, CircleCheck, CircleAlert, Loader2, RefreshCw, ShieldCheck, Receipt, Quote, BarChart3, Building2,
 } from 'lucide-react';
 
 /**
@@ -53,6 +53,8 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
     const conProblema = lineas.filter(l => l.problema);
     const [lineaId, setLineaId] = useState(elegida ?? conProblema[0]?.id ?? lineas[0]?.id ?? null);
     const linea = lineas.find(l => l.id === lineaId) ?? null;
+    const consumo = useConsumo(linea?.waba_id ? linea.id : null);
+    const portafolio = consumo.datos?.portafolio;
 
     return (
         <>
@@ -85,7 +87,7 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                     </Aviso>
                 )}
 
-                {linea?.waba_id && <Consumo linea={linea} />}
+                {linea?.waba_id && <Consumo linea={linea} {...consumo} />}
 
                 {/* ── Lo que hay que entender antes de tocar nada ───────────── */}
                 <section className="grid gap-3 sm:grid-cols-3">
@@ -93,7 +95,7 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                         Meta, directo a tu tarjeta. Integra no cobra ni ve este dinero.
                     </Dato>
                     <Dato icono={CreditCard} titulo="Qué cobra">
-                        Cada plantilla: facturas, recordatorios, campañas. En Colombia son centavos de dólar por mensaje.
+                        Cada plantilla: facturas, recordatorios, campañas. En Colombia, unos pocos pesos por mensaje de Utilidad.
                     </Dato>
                     <Dato icono={ShieldCheck} titulo="Qué es gratis">
                         Responder a un cliente que te escribió en las últimas 24 horas.
@@ -175,10 +177,19 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                                 </Button>
                             </a>
                         )}
-                        <p>
-                            Si Meta te pide elegir un portafolio, elige el de tu empresa, el que tiene tu
-                            número de WhatsApp. Si te dice que no tienes acceso, no eres administrador: vuelve al paso 1.
-                        </p>
+                        {portafolio ? (
+                            <p>
+                                Si Meta te pide elegir un portafolio, elige <strong>{portafolio.nombre ?? portafolio.id}</strong>{' '}
+                                <span className="tabular-nums text-muted-foreground">(ID {portafolio.id})</span>: es el que tiene esta
+                                línea y al que Meta le cobra. Si no te aparece o te dice que no tienes acceso, no eres
+                                administrador de ese portafolio: vuelve al paso 1.
+                            </p>
+                        ) : (
+                            <p>
+                                Si Meta te pide elegir un portafolio, elige el de tu empresa, el que tiene tu
+                                número de WhatsApp. Si te dice que no tienes acceso, no eres administrador: vuelve al paso 1.
+                            </p>
+                        )}
                     </Paso>
 
                     <Paso {...paso(3)} titulo="Elige el país y la moneda" etiqueta={EN_META}>
@@ -243,6 +254,14 @@ const ETIQUETA = {
     sin_metodo_de_pago: 'Sin tarjeta',
 };
 
+/** El código de la moneda, dicho en palabras: «$ 167,89» a secas se leyó como dólares. */
+const MONEDA = {
+    COP: 'pesos colombianos',
+    USD: 'dólares estadounidenses',
+    MXN: 'pesos mexicanos',
+    EUR: 'euros',
+};
+
 const CATEGORIA = {
     MARKETING: 'Marketing',
     UTILITY: 'Utilidad',
@@ -289,30 +308,45 @@ function EstadoDeLaLinea({ linea }) {
 }
 
 /**
+ * Lo que Meta lleva cobrado y a qué portafolio, pedido una vez para la tarjeta
+ * de consumo y el paso 2.
+ */
+function useConsumo(lineaId) {
+    const [datos, setDatos] = useState(null);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        setDatos(null);
+        setError(null);
+        if (!lineaId) return;
+        let vivo = true;
+        axios.get(route('instances.consumo-meta', lineaId))
+            .then(({ data }) => vivo && setDatos(data))
+            .catch(() => vivo && setError('Meta no devolvió el consumo de esta cuenta ahora mismo.'));
+        return () => { vivo = false; };
+    }, [lineaId]);
+
+    return { datos, error };
+}
+
+/**
  * Lo que Meta lleva cobrado: este mes y el anterior, por categoría.
  *
  * Es lo más parecido a «cuánto debo» que da la API. El saldo exacto pendiente
  * —con impuestos y descontando lo ya pagado— sólo está en el panel de Meta, y
  * así se dice: un número que no cuadra con la factura de Meta es peor que
  * ninguno.
+ *
+ * Arriba, el portafolio de Meta que paga: hay líneas en el de Integra y otras
+ * en el que creó el propio cliente, y quien tiene varios en su Facebook no
+ * sabía en cuál buscar el cobro (6-oct-2026).
  */
-function Consumo({ linea }) {
-    const [datos, setDatos] = useState(null);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        let vivo = true;
-        setDatos(null);
-        setError(null);
-        axios.get(route('instances.consumo-meta', linea.id))
-            .then(({ data }) => vivo && setDatos(data))
-            .catch(() => vivo && setError('Meta no devolvió el consumo de esta cuenta ahora mismo.'));
-        return () => { vivo = false; };
-    }, [linea.id]);
+function Consumo({ linea, datos, error }) {
+    const moneda = datos?.moneda;
 
     const dinero = (valor) => new Intl.NumberFormat('es-CO', {
         style: 'currency',
-        currency: datos?.moneda || 'USD',
+        currency: moneda || 'USD',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(valor ?? 0);
@@ -322,28 +356,54 @@ function Consumo({ linea }) {
 
     return (
         <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <p className="flex items-center gap-2 text-[13px] font-bold text-foreground">
                     <BarChart3 className="size-4 text-accent-foreground" /> Consumo en Meta de {linea.nombre}
                 </p>
-                {datos?.moneda && <span className="text-[11px] font-semibold text-muted-foreground">en {datos.moneda}</span>}
+                {moneda && (
+                    <span className="text-[11px] font-semibold text-muted-foreground">
+                        Valores en {MONEDA[moneda] ?? moneda} ({moneda})
+                    </span>
+                )}
             </div>
+
+            {datos?.portafolio && (
+                <div className="flex items-start gap-2.5 rounded-lg border bg-background/60 px-3 py-2.5 text-[12.5px] leading-snug">
+                    <Building2 className="mt-0.5 size-4 shrink-0 text-accent-foreground" />
+                    <div className="min-w-0">
+                        <p className="text-foreground">
+                            Meta le cobra al portafolio{' '}
+                            <strong>{datos.portafolio.nombre ?? 'sin nombre'}</strong>{' '}
+                            <span className="tabular-nums text-muted-foreground">· ID {datos.portafolio.id}</span>
+                        </p>
+                        <p className="text-muted-foreground">
+                            {datos.cuenta && <>Cuenta de WhatsApp «{datos.cuenta}». </>}
+                            Si en tu Facebook tienes varios portafolios, la tarjeta y la factura están en este.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {!datos && !error && (
                 <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
                     <Loader2 className="size-4 animate-spin" /> Consultando a Meta…
                 </p>
             )}
-            {error && <p className="text-[13px] text-muted-foreground">{error}</p>}
+            {(error || (datos && !datos.periodos)) && (
+                <p className="text-[13px] text-muted-foreground">{error ?? 'Meta no devolvió el consumo de esta cuenta ahora mismo.'}</p>
+            )}
 
-            {datos && (
+            {datos?.periodos && (
                 <div className="grid gap-3 sm:grid-cols-2">
                     {datos.periodos.map(p => (
                         <div key={p.desde} className="rounded-lg border bg-background/60 p-3">
                             <p className="text-[12px] font-semibold text-muted-foreground">
                                 {p.periodo}{p.en_curso ? ' · hasta hoy' : ''}
                             </p>
-                            <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{dinero(p.total)}</p>
+                            <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                                {dinero(p.total)}
+                                {moneda && <span className="ml-1.5 text-[12px] font-semibold text-muted-foreground">{moneda}</span>}
+                            </p>
                             <p className="text-[12px] text-muted-foreground">
                                 {p.cobrados.toLocaleString('es-CO')} mensajes cobrados · {p.gratis.toLocaleString('es-CO')} gratis
                             </p>
@@ -373,6 +433,7 @@ function Consumo({ linea }) {
             )}
 
             <p className="text-[11.5px] leading-snug text-muted-foreground">
+                {moneda && <>Las cifras están en {MONEDA[moneda] ?? moneda}, la moneda en que Meta le cobra a esta cuenta. </>}
                 Es lo que Meta registra como consumido; puede tardar unas horas en actualizarse. El saldo exacto
                 pendiente, con impuestos y descontando lo que ya pagaste, está en la facturación de Meta.
             </p>
