@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Events\ConversationEvent;
+use App\Events\WhatsAppMessageEvent;
 use App\Models\Instance;
 use App\Models\User;
 use App\Models\WhatsAppBotFlow;
@@ -12,15 +13,15 @@ use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use App\Services\AgentAssignmentService;
-use App\Support\TraspasoAUnAsesor;
 use App\Services\MetaWhatsAppService;
-use App\Services\WhatsAppMenuActionService;
+use App\Services\WebhookDispatcher;
 use App\Services\WhatsAppChatAiClient;
+use App\Services\WhatsAppMenuActionService;
 use App\Services\WhatsAppMenuService;
 use App\Support\AiDecision;
 use App\Support\MenuActionResult;
 use App\Support\Realtime;
-use App\Services\WebhookDispatcher;
+use App\Support\TraspasoAUnAsesor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -64,14 +65,15 @@ class ProcessWhatsAppMenu implements ShouldQueue
      * DeliverWhatsAppMessage, que sí puede reintentar sin efectos.
      */
     public int $timeout = 120;
+
     public int $tries = 1;
 
     /**
-     * @param ?string $flowInput Texto con el que el cliente contesta a una
-     *                           pregunta del bot ("dime tu cédula"). Cuando
-     *                           llega, el job retoma el flujo en curso en vez
-     *                           de mandar un menú o ejecutar una opción.
-     * @param ?AiDecision $ai    Decisión que ya tomó la IA (ver
+     * @param  ?string  $flowInput  Texto con el que el cliente contesta a una
+     *                              pregunta del bot ("dime tu cédula"). Cuando
+     *                              llega, el job retoma el flujo en curso en vez
+     *                              de mandar un menú o ejecutar una opción.
+     * @param  ?AiDecision  $ai  Decisión que ya tomó la IA (ver
      *                           ProcessWhatsAppAi). Llega resuelta: aquí sólo
      *                           se ejecuta, con las mismas comprobaciones y el
      *                           mismo camino de envío que una opción del menú.
@@ -91,12 +93,11 @@ class ProcessWhatsAppMenu implements ShouldQueue
         WhatsAppMenuService $menus,
         WhatsAppMenuActionService $actions,
         AgentAssignmentService $assignment
-    ): void
-    {
+    ): void {
         $instance = Instance::find($this->instanceId);
         $conversation = WhatsAppConversation::find($this->conversationId);
 
-        if (!$instance || !$conversation || !$instance->active) {
+        if (! $instance || ! $conversation || ! $instance->active) {
             return;
         }
 
@@ -107,16 +108,18 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 'conversation_id' => $conversation->id,
                 'assigned_to' => $conversation->assigned_to,
             ]);
+
             return;
         }
 
         // Igual que las respuestas automáticas: si Meta entregó el webhook con
         // días de retraso, mandar fuera de la ventana de 24h sólo produce un
         // fallido "Re-engagement" que nadie lee.
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             Log::channel('whatsapp')->info('⏭️ Menú omitido: ventana de 24h cerrada', [
                 'conversation_id' => $conversation->id,
             ]);
+
             return;
         }
 
@@ -144,16 +147,19 @@ class ProcessWhatsAppMenu implements ShouldQueue
                 $this->ai->origen ?? WhatsAppBotFlow::ACTION_AI,
                 $this->ai->note
             );
+
             return;
         }
 
         if ($this->flowInput !== null) {
             $this->continueFlow($instance, $conversation, $meta, $actions, $assignment);
+
             return;
         }
 
         if ($this->optionId !== null) {
             $this->executeOption($instance, $conversation, $meta, $menus, $actions, $assignment);
+
             return;
         }
 
@@ -175,7 +181,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
     ): void {
         $option = WhatsAppMenuOption::with('menu')->find($this->optionId);
 
-        if (!$option) {
+        if (! $option) {
             return;
         }
 
@@ -231,7 +237,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
     ): void {
         $flow = WhatsAppBotFlow::activeFor($conversation->id);
 
-        if (!$flow) {
+        if (! $flow) {
             return;
         }
 
@@ -406,7 +412,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
     private static function enmarcado(WhatsAppMenuOption $option, string $pregunta): string
     {
         return 'El cliente acaba de tocar la opción «'.trim((string) $option->title).'» de nuestro menú.'
-            ." Esto es una elección suya, no una pregunta repetida: respóndele completo aunque ya"
+            .' Esto es una elección suya, no una pregunta repetida: respóndele completo aunque ya'
             .' hayas hablado de esto antes, y sin hacerle notar que se lo dijiste. Lo que hay que'
             .' resolverle es: '.$pregunta;
     }
@@ -520,7 +526,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
 
         $url = $option->imageUrl();
 
-        if (!$url) {
+        if (! $url) {
             Log::channel('whatsapp')->warning('⚠️ Opción de imagen sin imagen configurada', [
                 'menu_option_id' => $option->id,
                 'conversation_id' => $conversation->id,
@@ -538,7 +544,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
 
         $result = $meta->sendImage($instance->phone_number_id, $conversation->recipientId(), $url, $caption);
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->warning('⚠️ Imagen de menú no enviada; se responde el texto', [
                 'menu_option_id' => $option->id,
                 'conversation_id' => $conversation->id,
@@ -606,13 +612,14 @@ class ProcessWhatsAppMenu implements ShouldQueue
         // El submenú pudo borrarse o quedarse sin opciones después de
         // configurarlo. Antes que dejar al cliente sin respuesta, se le contesta
         // con el texto de la opción si lo tiene.
-        if (!$target || !$target->active || $target->options->isEmpty()) {
+        if (! $target || ! $target->active || $target->options->isEmpty()) {
             Log::channel('whatsapp')->warning('⚠️ Submenú no disponible', [
                 'menu_option_id' => $option->id,
                 'target_menu_id' => $option->target_menu_id,
                 'conversation_id' => $conversation->id,
             ]);
             $this->replyWithText($instance, $conversation, $option, $meta);
+
             return;
         }
 
@@ -699,7 +706,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         WhatsAppMessage::create([
             'conversation_id' => $conversation->id,
             'type' => 'system',
-            'content' => $agent ? $note . ' → ' . $agent->name : $note,
+            'content' => $agent ? $note.' → '.$agent->name : $note,
             'direction' => 'inbound',
             'status' => 'delivered',
             'sent_at' => now(),
@@ -714,7 +721,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         if ($agent) {
             $claimed = WhatsAppConversation::where('id', $conversation->id)
                 ->whereNull('assigned_to')
-                ->update(['assigned_to' => $agent->id]);
+                ->update(['assigned_to' => $agent->id, 'assigned_at' => now()]);
 
             if ($claimed) {
                 $conversation->refresh();
@@ -754,12 +761,13 @@ class ProcessWhatsAppMenu implements ShouldQueue
             $menus->buildPayload($menu, $conversation)
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->warning('⚠️ Menú no enviado', [
                 'menu_id' => $menu->id,
                 'conversation_id' => $conversation->id,
                 'error' => $result['error'] ?? null,
             ]);
+
             return;
         }
 
@@ -923,7 +931,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
             return $texto;
         }
 
-        return $texto."\n\n_Escribe *".$palabra."* para volver a las opciones._";
+        return $texto."\n\n_Escribe *".$palabra.'* para volver a las opciones._';
     }
 
     /**
@@ -972,11 +980,12 @@ class ProcessWhatsAppMenu implements ShouldQueue
             $text
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->warning('⚠️ Respuesta de menú no enviada', $metadata + [
                 'conversation_id' => $conversation->id,
                 'error' => $result['error'] ?? null,
             ]);
+
             return;
         }
 
@@ -1007,7 +1016,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
     private function broadcastMessage(WhatsAppMessage $message, Instance $instance): void
     {
         try {
-            broadcast(new \App\Events\WhatsAppMessageEvent($message->load('sender'), $instance->id, 'new'));
+            broadcast(new WhatsAppMessageEvent($message->load('sender'), $instance->id, 'new'));
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo emitir el mensaje del menú en tiempo real', [
                 'message_id' => $message->id,

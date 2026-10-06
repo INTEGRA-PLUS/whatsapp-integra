@@ -2,27 +2,43 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use App\Models\Instance;
+use App\Events\ConversationEvent;
+use App\Events\WhatsAppCallEvent;
+use App\Events\WhatsAppMessageEvent;
+use App\Extensions\ExtensionRunner;
+use App\Jobs\LeerComprobanteDePago;
+use App\Jobs\ProcesarWebhookCoexistencia;
 use App\Models\Contact;
-use App\Models\WhatsAppConversation;
-use App\Models\WhatsAppMessage;
+use App\Models\Instance;
+use App\Models\User;
 use App\Models\WhatsAppCall;
 use App\Models\WhatsAppCallPermission;
-use App\Support\MensajeNoEntregado;
-use App\Jobs\ProcesarWebhookCoexistencia;
-use App\Services\MetaWhatsAppService;
+use App\Models\WhatsAppCampaignRecipient;
+use App\Models\WhatsAppConversation;
+use App\Models\WhatsAppMessage;
+use App\Notifications\SystemNotification;
 use App\Services\AutoResponseService;
 use App\Services\BusinessHoursService;
+use App\Services\MetaWhatsAppService;
 use App\Services\WhatsAppMenuService;
 use App\Support\ConversationNotice;
+use App\Support\MensajeNoEntregado;
+use App\Support\OptOutRequest;
+use App\Support\QuienAtiende;
+use App\Support\Realtime;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 
 class WhatsAppWebhookController extends Controller
 {
     private $metaService;
+
     private $autoResponseService;
+
     private $businessHoursService;
+
     private $menuService;
 
     public function __construct(
@@ -45,7 +61,7 @@ class WhatsAppWebhookController extends Controller
         $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge');
 
         // Fallback: Manually parse REQUEST_URI if server config strips query string
-        if (!$mode && $request->server('REQUEST_URI')) {
+        if (! $mode && $request->server('REQUEST_URI')) {
             $queryString = parse_url($request->server('REQUEST_URI'), PHP_URL_QUERY);
             if ($queryString) {
                 parse_str($queryString, $queryParams);
@@ -56,16 +72,17 @@ class WhatsAppWebhookController extends Controller
         }
 
         $verifyToken = config('services.meta.webhook_verify_token');
-        
+
         if ($mode === 'subscribe' && $token === $verifyToken) {
             Log::channel('whatsapp')->info('✅ Webhook verificado exitosamente');
+
             return response($challenge, 200)->header('Content-Type', 'text/plain');
         }
 
         Log::channel('whatsapp')->warning('❌ Intento de verificación fallido', [
             'mode' => $mode,
             'token' => $token,
-            'ip' => $request->ip()
+            'ip' => $request->ip(),
         ]);
 
         return response('Forbidden', 403);
@@ -85,7 +102,7 @@ class WhatsAppWebhookController extends Controller
         $rawPayload = $request->getContent();
         $signature = $request->header('X-Hub-Signature-256');
 
-        if (!$this->metaService->validateWebhookSignature($rawPayload, $signature)) {
+        if (! $this->metaService->validateWebhookSignature($rawPayload, $signature)) {
             Log::channel('whatsapp')->warning('❌ Webhook rechazado: firma inválida', [
                 'ip' => $request->ip(),
                 'tiene_firma' => $signature !== null,
@@ -180,14 +197,15 @@ class WhatsAppWebhookController extends Controller
             ->orderBy('id')
             ->first();
 
-        if (!$instance) {
+        if (! $instance) {
             // Sin instancia el contenido se pierde, y en el caso de `history` se
             // pierde para siempre: la importación es de un solo uso. Queda el
             // rastro para poder reclamarlo antes de que expire la ventana.
             Log::channel('whatsapp')->error('🚨 Webhook de coexistencia sin instancia activa', [
-                'field'           => $field,
+                'field' => $field,
                 'phone_number_id' => $phoneNumberId,
             ]);
+
             return;
         }
 
@@ -224,7 +242,7 @@ class WhatsAppWebhookController extends Controller
             $resumen[] = "{$field} ({$bytes} bytes, contenido omitido)";
         }
 
-        return '[coexistencia] ' . implode(', ', $resumen);
+        return '[coexistencia] '.implode(', ', $resumen);
     }
 
     private function processChange($value)
@@ -233,7 +251,7 @@ class WhatsAppWebhookController extends Controller
         $phoneNumberId = $metadata['phone_number_id'] ?? null;
 
         Log::channel('whatsapp')->info('🔍 Identificando instancia', [
-            'phone_number_id' => $phoneNumberId
+            'phone_number_id' => $phoneNumberId,
         ]);
 
         $candidates = Instance::where('phone_number_id', $phoneNumberId)
@@ -243,7 +261,7 @@ class WhatsAppWebhookController extends Controller
 
         $instance = $candidates->first();
 
-        if (!$instance) {
+        if (! $instance) {
             // Sin instancia activa el mensaje se descarta: queda el remitente en
             // el log para poder rastrear el reporte de "no me llegan mensajes".
             Log::channel('whatsapp')->warning('⚠️ No se encontró instancia activa: mensajes descartados', [
@@ -253,6 +271,7 @@ class WhatsAppWebhookController extends Controller
                 'inactive_instances' => Instance::where('phone_number_id', $phoneNumberId)
                     ->pluck('company_id', 'id'),
             ]);
+
             return;
         }
 
@@ -269,7 +288,7 @@ class WhatsAppWebhookController extends Controller
 
         Log::channel('whatsapp')->info('✅ Instancia identificada', [
             'instance_id' => $instance->id,
-            'company_id' => $instance->company_id
+            'company_id' => $instance->company_id,
         ]);
 
         if (isset($value['messages'])) {
@@ -322,10 +341,11 @@ class WhatsAppWebhookController extends Controller
             ->where('active', true)
             ->first();
 
-        if (!$instance) {
+        if (! $instance) {
             Log::channel('whatsapp')->warning('⚠️ Llamada recibida sin instancia activa', [
                 'phone_number_id' => $phoneNumberId,
             ]);
+
             return;
         }
 
@@ -344,8 +364,9 @@ class WhatsAppWebhookController extends Controller
     private function processCallEvent($call, Instance $instance)
     {
         $callId = $call['id'] ?? null;
-        if (!$callId) {
+        if (! $callId) {
             Log::channel('whatsapp')->warning('⚠️ Evento de llamada sin id', ['call' => $call]);
+
             return;
         }
 
@@ -388,9 +409,9 @@ class WhatsAppWebhookController extends Controller
         }
 
         $record = WhatsAppCall::firstOrNew(['wacid' => $callId]);
-        $isNew = !$record->exists;
+        $isNew = ! $record->exists;
 
-        if (!$record->exists) {
+        if (! $record->exists) {
             $record->fill([
                 'instance_id' => $instance->id,
                 'conversation_id' => $conversation?->id,
@@ -417,7 +438,7 @@ class WhatsAppWebhookController extends Controller
                 $status === 'missed' => 'missed',
                 $status === 'canceled' => 'canceled',
                 // terminate sin haber conectado audio => perdida (entrante) / cancelada (saliente)
-                !$record->connected_at => $direction === 'inbound' ? 'missed' : 'canceled',
+                ! $record->connected_at => $direction === 'inbound' ? 'missed' : 'canceled',
                 default => 'completed',
             };
             $record->ended_at = now();
@@ -450,7 +471,7 @@ class WhatsAppWebhookController extends Controller
         };
 
         try {
-            broadcast(new \App\Events\WhatsAppCallEvent($record, $action));
+            broadcast(new WhatsAppCallEvent($record, $action));
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('No se pudo emitir el evento de llamada', ['error' => $e->getMessage()]);
         }
@@ -479,10 +500,10 @@ class WhatsAppWebhookController extends Controller
         $granted = in_array($response, ['accept', 'accepted', 'approve', 'approved', 'yes']);
 
         $expiresAt = null;
-        if (!empty($reply['expiration_timestamp'])) {
+        if (! empty($reply['expiration_timestamp'])) {
             // Misma razón que en sent_at: sin zona explícita esto queda en UTC y
             // el permiso parecería válido cinco horas de más.
-            $expiresAt = \Carbon\Carbon::createFromTimestamp($reply['expiration_timestamp'], config('app.timezone'));
+            $expiresAt = Carbon::createFromTimestamp($reply['expiration_timestamp'], config('app.timezone'));
         }
 
         WhatsAppCallPermission::updateOrCreate(
@@ -534,7 +555,7 @@ class WhatsAppWebhookController extends Controller
             $phone = null;
         }
 
-        if (!$from || !$wamid) {
+        if (! $from || ! $wamid) {
             // Reintentar no lo va a arreglar: sin identidad o sin wamid el
             // mensaje es inguardable. Se deja constancia y se devuelve 200 para
             // que Meta no entre en el bucle de reintentos que ya costó miles de
@@ -545,6 +566,7 @@ class WhatsAppWebhookController extends Controller
                 'type' => $message['type'] ?? null,
                 'claves' => array_keys($message),
             ]);
+
             return;
         }
 
@@ -562,9 +584,9 @@ class WhatsAppWebhookController extends Controller
             $instance->id,
             $phone,
             [
-                'name' => $phone === null && $username ? '@' . $username : $contactName,
+                'name' => $phone === null && $username ? '@'.$username : $contactName,
                 'status' => 'open',
-                'last_message_at' => now()
+                'last_message_at' => now(),
             ],
             $bsuid
         );
@@ -576,7 +598,7 @@ class WhatsAppWebhookController extends Controller
             $this->rememberIdentity($conversation, $bsuid, $username, $contactName);
         }
 
-        $isBsuid = !$conversation->hasPhone();
+        $isBsuid = ! $conversation->hasPhone();
 
         // Registrar automáticamente el contacto entrante si aún no está registrado.
         // Es accesorio: si falla (contacto corrupto, choque de datos) el mensaje
@@ -590,7 +612,7 @@ class WhatsAppWebhookController extends Controller
         // mientras el hilo sigue teniendo el número guardado. Pasar `$from` metía
         // el BSUID en la agenda como si fuera un teléfono.
         try {
-            if (!$isBsuid) {
+            if (! $isBsuid) {
                 $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName, $username);
             }
         } catch (\Throwable $e) {
@@ -606,6 +628,7 @@ class WhatsAppWebhookController extends Controller
         if (($message['type'] ?? null) === 'interactive'
             && ($message['interactive']['type'] ?? null) === 'call_permission_reply') {
             $this->processCallPermissionReply($message, $instance, $conversation);
+
             return;
         }
 
@@ -613,12 +636,14 @@ class WhatsAppWebhookController extends Controller
         // en vez de crear una burbuja nueva. No genera "tipo no soportado".
         if (($message['type'] ?? null) === 'reaction') {
             $this->processReaction($message, $conversation);
+
             return;
         }
 
         $existingMessage = WhatsAppMessage::where('wamid', $wamid)->first();
         if ($existingMessage) {
             Log::channel('whatsapp')->info('ℹ️ Mensaje duplicado, ignorando', ['wamid' => $wamid]);
+
             return;
         }
 
@@ -633,7 +658,7 @@ class WhatsAppWebhookController extends Controller
             // la app). Eso hacía que la ventana de 24h se diera por abierta cinco
             // horas de más, y que comparar "cuándo lo mandó" con "cuándo llegó"
             // saliera mal.
-            'sent_at' => \Carbon\Carbon::createFromTimestamp($timestamp, config('app.timezone')),
+            'sent_at' => Carbon::createFromTimestamp($timestamp, config('app.timezone')),
         ];
 
         // Los avisos del sistema (cambio de número, cambio de identidad) no son
@@ -762,16 +787,16 @@ class WhatsAppWebhookController extends Controller
                 $messageData['metadata'] = ['system' => $system];
                 break;
 
-            // Meta recibió del cliente un tipo que la Cloud API no entrega
-            // (encuestas, ediciones, invitaciones a canal, llamadas…). El
-            // contenido original NO viaja en el webhook, pero el tipo real sí
-            // llega en `unsupported`: con eso el agente sabe qué mandó el
-            // cliente en vez de leer un "Message type unknown" que no dice nada.
-            //
-            // `errors` es la misma cosa con otro nombre: según la versión de la
-            // API el mismo error 131051 llega como `type: unsupported` o como
-            // `type: errors`. Sin esta segunda etiqueta caía en el `default` y
-            // el chat mostraba "Mensaje no compatible (errors)".
+                // Meta recibió del cliente un tipo que la Cloud API no entrega
+                // (encuestas, ediciones, invitaciones a canal, llamadas…). El
+                // contenido original NO viaja en el webhook, pero el tipo real sí
+                // llega en `unsupported`: con eso el agente sabe qué mandó el
+                // cliente en vez de leer un "Message type unknown" que no dice nada.
+                //
+                // `errors` es la misma cosa con otro nombre: según la versión de la
+                // API el mismo error 131051 llega como `type: unsupported` o como
+                // `type: errors`. Sin esta segunda etiqueta caía en el `default` y
+                // el chat mostraba "Mensaje no compatible (errors)".
             case 'unsupported':
             case 'errors':
                 $error = $message['errors'][0] ?? [];
@@ -804,8 +829,8 @@ class WhatsAppWebhookController extends Controller
                 $order = $message['order'] ?? [];
                 $items = $order['product_items'] ?? [];
                 $messageData['type'] = 'text';
-                $messageData['content'] = trim('🛒 Pedido con ' . count($items) . ' producto(s)'
-                    . (!empty($order['text']) ? ": {$order['text']}" : ''));
+                $messageData['content'] = trim('🛒 Pedido con '.count($items).' producto(s)'
+                    .(! empty($order['text']) ? ": {$order['text']}" : ''));
                 $messageData['metadata'] = ['order' => $order];
                 break;
 
@@ -845,6 +870,13 @@ class WhatsAppWebhookController extends Controller
                 : 'Conversación reabierta: el cliente volvió a escribir', 'reapertura');
         }
 
+        // Antes de guardar el mensaje: el silencio se mide hasta el anterior.
+        // Sin esto, el asesor que atendió una vez se quedaba el chat para
+        // siempre y el bot no volvía a contestarle a ese cliente.
+        if (! $isSystemNotice) {
+            QuienAtiende::sueltaSiVuelveElCliente($conversation, $reopenedByCustomer);
+        }
+
         $savedMessage = WhatsAppMessage::create($messageData);
 
         $conversationUpdate = [
@@ -852,7 +884,7 @@ class WhatsAppWebhookController extends Controller
             // `content` (la explicación va en el hilo); en la lista de chats
             // sólo cabe el resumen.
             'last_message' => ($messageData['type'] === 'system' ? 'ℹ️ ' : '')
-                . ($messageData['metadata']['resumen'] ?? $messageData['content'] ?? 'Media'),
+                .($messageData['metadata']['resumen'] ?? $messageData['content'] ?? 'Media'),
             'last_message_at' => now(),
         ];
 
@@ -873,11 +905,11 @@ class WhatsAppWebhookController extends Controller
         // el hilo, pero la baja la confirma un agente. En Colombia «baja» es
         // también dar de baja el servicio, y apuntarlo solo por la palabra
         // significaría dejar de avisarle de su factura a quien no lo pidió.
-        if (!$isSystemNotice && ($messageData['type'] ?? null) === 'text') {
-            \App\Support\OptOutRequest::flag($conversation, $messageData['content'] ?? null);
+        if (! $isSystemNotice && ($messageData['type'] ?? null) === 'text') {
+            OptOutRequest::flag($conversation, $messageData['content'] ?? null);
         }
 
-        if (!$isSystemNotice) {
+        if (! $isSystemNotice) {
             $conversation->incrementUnread();
         }
 
@@ -890,15 +922,15 @@ class WhatsAppWebhookController extends Controller
         // La captura de un pago queda leída y pendiente de que un asesor la
         // apruebe. Aquí sólo se encola: la visión tarda segundos y el webhook
         // tiene que contestarle a Meta ya.
-        if (\App\Jobs\LeerComprobanteDePago::aplica($savedMessage, $instance->company_id)) {
-            \App\Jobs\LeerComprobanteDePago::dispatch($savedMessage->id);
+        if (LeerComprobanteDePago::aplica($savedMessage, $instance->company_id)) {
+            LeerComprobanteDePago::dispatch($savedMessage->id);
         }
 
         // Tiempo real: empuja el mensaje entrante a los agentes conectados. Si
         // Reverb no responde el mensaje ya está guardado, así que solo se avisa
         // (el poll del chat lo recogerá igual).
         try {
-            broadcast(new \App\Events\WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
+            broadcast(new WhatsAppMessageEvent($savedMessage->load('sender'), $instance->id, 'new'));
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo emitir el mensaje en tiempo real', [
                 'message_id' => $savedMessage->id,
@@ -911,7 +943,7 @@ class WhatsAppWebhookController extends Controller
         // número que escribe por primera vez, o un hilo que estaba en "Cerradas"
         // y acaba de reabrirse, no están en esa lista y sin esto no saldrían
         // hasta el siguiente poll. Trae además el unread_count recién subido.
-        \App\Support\Realtime::push(\App\Events\ConversationEvent::updated(
+        Realtime::push(ConversationEvent::updated(
             $conversation,
             isset($conversationUpdate['status']) ? 'reopened' : 'message',
         ));
@@ -925,13 +957,13 @@ class WhatsAppWebhookController extends Controller
         // automática pueden querer mirar, y después llegaría tarde. El runner
         // envuelve cada extensión en su propio try/catch, así que esto no puede
         // tumbar el mensaje que ya quedó guardado.
-        if (!$isSystemNotice) {
-            app(\App\Extensions\ExtensionRunner::class)->onInbound($conversation, $savedMessage);
+        if (! $isSystemNotice) {
+            app(ExtensionRunner::class)->onInbound($conversation, $savedMessage);
         }
 
         // Las respuestas automáticas son un efecto secundario: si fallan, el
         // mensaje del cliente ya quedó guardado y no se debe reintentar el lote.
-        if (!$skipAutoResponse) {
+        if (! $skipAutoResponse) {
             try {
                 $handledOutOfHours = $this->businessHoursService->handleInbound($instance, $conversation);
 
@@ -939,10 +971,10 @@ class WhatsAppWebhookController extends Controller
                 // cuando se hace cargo: si respondieran los dos, el cliente
                 // recibiría el menú y encima el texto de bienvenida, que es
                 // justamente lo que el menú venía a reemplazar.
-                $handledByMenu = !$handledOutOfHours
+                $handledByMenu = ! $handledOutOfHours
                     && $this->menuService->handleInbound($instance, $conversation, $messageData, $wamid, $reopenedByCustomer);
 
-                if (!$handledOutOfHours && !$handledByMenu) {
+                if (! $handledOutOfHours && ! $handledByMenu) {
                     $this->autoResponseService->handleInbound($instance, $conversation, $messageData['content'] ?? '', $wamid);
                 }
             } catch (\Throwable $e) {
@@ -955,7 +987,7 @@ class WhatsAppWebhookController extends Controller
 
         Log::channel('whatsapp')->info('✅ Mensaje procesado', [
             'instance_id' => $instance->id,
-            'message_id' => $savedMessage->id
+            'message_id' => $savedMessage->id,
         ]);
     }
 
@@ -970,16 +1002,17 @@ class WhatsAppWebhookController extends Controller
         $targetWamid = $reaction['message_id'] ?? null;
         $emoji = $reaction['emoji'] ?? null;
 
-        if (!$targetWamid) {
+        if (! $targetWamid) {
             return;
         }
 
         $target = WhatsAppMessage::where('wamid', $targetWamid)
-            ->whereHas('conversation', fn($q) => $q->where('id', $conversation->id))
+            ->whereHas('conversation', fn ($q) => $q->where('id', $conversation->id))
             ->first();
 
-        if (!$target) {
+        if (! $target) {
             Log::channel('whatsapp')->info('ℹ️ Reacción a un mensaje no encontrado', ['target' => $targetWamid]);
+
             return;
         }
 
@@ -1035,7 +1068,7 @@ class WhatsAppWebhookController extends Controller
     private function applyCustomerNumberChange(Instance $instance, WhatsAppConversation $conversation, array $system): void
     {
         $type = $system['type'] ?? '';
-        if (!in_array($type, ['user_changed_number', 'customer_changed_number'], true)) {
+        if (! in_array($type, ['user_changed_number', 'customer_changed_number'], true)) {
             return;
         }
 
@@ -1065,6 +1098,7 @@ class WhatsAppWebhookController extends Controller
                 'new_wa_id' => $newWaId,
                 'existing_conversation_id' => $existing->id,
             ]);
+
             return;
         }
 
@@ -1175,9 +1209,9 @@ class WhatsAppWebhookController extends Controller
 
         // El hilo pudo crearse antes de que el cliente tuviera nombre de usuario,
         // o con el BSUID crudo como título.
-        $titulo = $username ? '@' . $username : ($contactName !== $bsuid ? $contactName : null);
+        $titulo = $username ? '@'.$username : ($contactName !== $bsuid ? $contactName : null);
 
-        if ($titulo && $conversation->name !== $titulo && (!$conversation->name || $conversation->name === $bsuid)) {
+        if ($titulo && $conversation->name !== $titulo && (! $conversation->name || $conversation->name === $bsuid)) {
             $cambios['name'] = $titulo;
         }
 
@@ -1205,18 +1239,18 @@ class WhatsAppWebhookController extends Controller
         $contact = Contact::where('company_id', $instance->company_id)
             ->where(function ($q) use ($phone) {
                 $q->where('phone_number', $phone)
-                  ->orWhere('phone_numbers', 'like', '%"' . $phone . '"%');
+                    ->orWhere('phone_numbers', 'like', '%"'.$phone.'"%');
             })
             ->first();
 
         // El usuario es único por empresa: si ya lo lleva otra ficha no se copia
         // aquí, o la inserción reventaría contra el índice y el mensaje entrante
         // se quedaría sin registrar.
-        $usernameLibre = $username && !Contact::where('company_id', $instance->company_id)
+        $usernameLibre = $username && ! Contact::where('company_id', $instance->company_id)
             ->where('username', $username)
             ->exists();
 
-        if (!$contact) {
+        if (! $contact) {
             $contact = Contact::create([
                 'company_id' => $instance->company_id,
                 'phone_number' => $phone,
@@ -1298,18 +1332,18 @@ class WhatsAppWebhookController extends Controller
         // congelado en "enviado" para siempre.
         $this->updateCampaignRecipientStatus($wamid, $newStatus, $updateData);
 
-        if (!$message) {
+        if (! $message) {
             return;
         }
 
         $message->update($updateData);
 
         // Tiempo real: refleja el check (enviado/entregado/leído/fallido) en la UI.
-        broadcast(new \App\Events\WhatsAppMessageEvent($message, $instance->id, 'status'));
+        broadcast(new WhatsAppMessageEvent($message, $instance->id, 'status'));
 
         Log::channel('whatsapp')->info('✅ Estado actualizado', [
             'wamid' => $wamid,
-            'status' => $newStatus
+            'status' => $newStatus,
         ]);
     }
 
@@ -1322,9 +1356,9 @@ class WhatsAppWebhookController extends Controller
      */
     private function updateCampaignRecipientStatus(string $wamid, string $newStatus, array $messageUpdate): void
     {
-        $recipient = \App\Models\WhatsAppCampaignRecipient::where('wamid', $wamid)->first();
+        $recipient = WhatsAppCampaignRecipient::where('wamid', $wamid)->first();
 
-        if (!$recipient) {
+        if (! $recipient) {
             return;
         }
 
@@ -1438,7 +1472,7 @@ class WhatsAppWebhookController extends Controller
             'event' => $evento,
         ]);
 
-        $admins = \App\Models\User::where('company_id', $instancia->company_id)
+        $admins = User::where('company_id', $instancia->company_id)
             ->where('role', 'admin')
             ->where('active', true)
             ->get();
@@ -1447,7 +1481,7 @@ class WhatsAppWebhookController extends Controller
             return;
         }
 
-        \Illuminate\Support\Facades\Notification::send($admins, new \App\Notifications\SystemNotification(
+        Notification::send($admins, new SystemNotification(
             'WhatsApp desconectado',
             "Meta desconectó «{$instancia->name}» ({$instancia->display_phone_number}). "
                 .'No se están recibiendo ni enviando mensajes. Vuelve a conectar la cuenta desde Instancias.',

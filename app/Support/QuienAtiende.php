@@ -2,9 +2,10 @@
 
 namespace App\Support;
 
+use App\Events\ConversationEvent;
 use App\Models\User;
 use App\Models\WhatsAppConversation;
-use App\Events\ConversationEvent;
+use App\Models\WhatsAppMessage;
 use App\Services\WebhookDispatcher;
 use Illuminate\Support\Facades\Log;
 
@@ -55,7 +56,7 @@ class QuienAtiende
         // «Atenderla yo».
         $reclamada = WhatsAppConversation::where('id', $conversation->id)
             ->whereNull('assigned_to')
-            ->update(['assigned_to' => $user->id]);
+            ->update(['assigned_to' => $user->id, 'assigned_at' => now()]);
 
         if (! $reclamada) {
             return false;
@@ -78,5 +79,149 @@ class QuienAtiende
         Realtime::push(ConversationEvent::updated($conversation->refresh(), 'assigned'));
 
         return true;
+    }
+
+    /**
+     * Y quien atendió suelta el chat cuando el cliente vuelve tiempo después.
+     *
+     * 2026-10-06: «no se está disparando ninguna respuesta automática». Desde
+     * que contestar asigna el chat (2026-09-18) nada lo desasignaba: ni cerrar,
+     * ni el cierre automático, ni que el cliente reabriera días después. El
+     * menú y la respuesta automática no le hablan encima a un asignado, así
+     * que con todo cliente que un asesor hubiera atendido alguna vez el bot se
+     * callaba para siempre. Y casi todos los clientes acaban hablando con un
+     * asesor.
+     *
+     * Se suelta en dos casos, siempre con el cliente escribiendo:
+     *
+     * - **Reabre un chat cerrado.** Cerrar es dar la atención por terminada;
+     *   lo que llegue después es una atención nueva.
+     * - **Nadie del equipo le escribe en 1 h** (`whatsapp.asignacion.
+     *   soltar_tras_minutos`): ni el asesor asignado ni un administrador. Se
+     *   cuenta desde lo último que escribió alguno de los dos o desde que se
+     *   tomó el chat (`assigned_at`), lo más reciente. Lo que escribe el
+     *   cliente no para el reloj: un cliente insistiendo sin respuesta es justo
+     *   el caso en que el bot tiene que volver.
+     *
+     * Un aviso de WhatsApp (cambio de número, mensaje revocado) no suelta
+     * nada: no es el cliente volviendo. Se llama ANTES de guardar el mensaje
+     * entrante, porque el silencio se mide hasta el mensaje anterior.
+     */
+    public static function sueltaSiVuelveElCliente(WhatsAppConversation $conversation, bool $reabierta): bool
+    {
+        if ($conversation->assigned_to === null) {
+            return false;
+        }
+
+        $motivo = $reabierta ? 'el cliente reabrió el chat' : self::sinRespuestaDelEquipo($conversation);
+
+        if ($motivo === null) {
+            return false;
+        }
+
+        $asesor = User::find($conversation->assigned_to);
+
+        // Condicional, como el reclamo: si alguien la tomó en este instante, no
+        // se le quita.
+        $soltada = WhatsAppConversation::where('id', $conversation->id)
+            ->where('assigned_to', $conversation->assigned_to)
+            ->update(['assigned_to' => null, 'assigned_at' => null]);
+
+        if (! $soltada) {
+            return false;
+        }
+
+        $conversation->assigned_to = null;
+        $conversation->assigned_at = null;
+        $conversation->syncOriginalAttributes(['assigned_to', 'assigned_at']);
+
+        // En el hilo, para que el asesor entienda por qué el chat ya no está en
+        // su bandeja. `evento` es lo que mira el menú para saber que la
+        // atención anterior terminó (WhatsAppMenuService::hablaUnaPersona).
+        ConversationNotice::record(
+            $conversation,
+            ($asesor ? "{$asesor->name} deja de tener" : 'Se libera').' el chat: '.$motivo.'. El bot vuelve a atender.',
+            'liberada',
+        );
+
+        Log::channel('whatsapp')->info('🔓 El cliente volvió y el chat se libera', [
+            'conversation_id' => $conversation->id,
+            'user_id' => $asesor?->id,
+            'motivo' => $motivo,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * El motivo, si ni el asesor asignado ni un administrador le han escrito
+     * al cliente en el plazo.
+     */
+    private static function sinRespuestaDelEquipo(WhatsAppConversation $conversation): ?string
+    {
+        $minutos = (int) config('whatsapp.asignacion.soltar_tras_minutos', 60);
+
+        if ($minutos <= 0) {
+            return null;
+        }
+
+        $limite = now()->subMinutes($minutos);
+
+        // Acaba de tomarlo: todavía no ha tenido tiempo de escribir.
+        if ($conversation->assigned_at && $conversation->assigned_at->gt($limite)) {
+            return null;
+        }
+
+        // Solo mensajes al cliente: las notas internas van con `direction =
+        // internal` y no son hablarle. La hora es la de Meta: cuando suelta una
+        // cola atascada, `created_at` es de hoy y `sent_at` de hace días.
+        $escribioHacePoco = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'outbound')
+            ->whereIn('sent_by', self::quienesCuentan($conversation))
+            ->whereRaw('COALESCE(sent_at, created_at) > ?', [$limite])
+            ->exists();
+
+        if ($escribioHacePoco) {
+            return null;
+        }
+
+        $plazo = $minutos % 60 === 0 ? ($minutos / 60).' h' : "{$minutos} min";
+
+        return "{$plazo} sin que el asesor ni un administrador le escriban al cliente";
+    }
+
+    /**
+     * El asesor asignado y los administradores de la empresa.
+     *
+     * Los roles de Spatie están particionados por empresa y esto corre dentro
+     * del webhook, sin usuario: hay que fijar el equipo para que hasRole()
+     * encuentre algo, y devolverlo como estaba, porque un mismo lote de Meta
+     * puede traer mensajes de varias empresas.
+     *
+     * @return array<int, int>
+     */
+    private static function quienesCuentan(WhatsAppConversation $conversation): array
+    {
+        $companyId = $conversation->instance?->company_id;
+        $ids = [(int) $conversation->assigned_to];
+
+        if ($companyId === null) {
+            return $ids;
+        }
+
+        $equipoAnterior = getPermissionsTeamId();
+        setPermissionsTeamId($companyId);
+
+        try {
+            $admins = User::where('company_id', $companyId)
+                ->get()
+                ->filter(fn (User $u) => $u->hasRole('admin'))
+                ->pluck('id')
+                ->all();
+        } finally {
+            setPermissionsTeamId($equipoAnterior);
+        }
+
+        return array_values(array_unique([...$ids, ...$admins]));
     }
 }
