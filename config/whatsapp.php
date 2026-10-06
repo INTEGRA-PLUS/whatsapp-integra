@@ -77,6 +77,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Cuándo suelta el chat el asesor que lo atendió
+    |--------------------------------------------------------------------------
+    |
+    | Contestar asigna el chat, y mientras esté asignado el menú y las
+    | respuestas automáticas se callan. Si el cliente escribe y en estos
+    | minutos ni el asesor asignado ni un administrador le han escrito, la
+    | asignación se suelta y el bot vuelve a atender (App\Support\QuienAtiende).
+    | 0 lo desactiva; reabrir un chat cerrado lo suelta siempre.
+    |
+    | Empezó en 24 h y el mismo día se bajó a 1 h (2026-10-06): un cliente que
+    | lleva una hora escribiendo sin que nadie le conteste ya está abandonado.
+    |
+    | Sin variable de entorno a propósito: ninguna WHATSAPP_* llega hoy al
+    | contenedor (no están en `x-app-env` de docker-compose.yml), y una que no
+    | llega parece configurada sin estarlo.
+    |
+    */
+
+    'asignacion' => [
+        'soltar_tras_minutos' => 60,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Campañas
     |--------------------------------------------------------------------------
     |

@@ -14,10 +14,10 @@ use App\Models\WhatsAppMenuSession;
 use App\Models\WhatsAppMessage;
 use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
-use App\Support\MenuActionResult;
-use App\Support\PideUnAsesor;
 use App\Support\Documentos\DocumentoDelCliente;
 use App\Support\Documentos\ImagenDelCliente;
+use App\Support\MenuActionResult;
+use App\Support\PideUnAsesor;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -31,8 +31,8 @@ use Illuminate\Support\Facades\Log;
 class WhatsAppMenuService
 {
     /**
-     * @param array $messageData El mensaje ya normalizado por el webhook
-     *                           (content + metadata), no el payload crudo.
+     * @param  array  $messageData  El mensaje ya normalizado por el webhook
+     *                              (content + metadata), no el payload crudo.
      * @return bool true si el menú se hace cargo y nadie más debe responder.
      */
     public function handleInbound(
@@ -72,6 +72,7 @@ class WhatsAppMenuService
         // 1. ¿Es la respuesta a un menú que ya mandamos?
         if ($selection = $this->resolveSelection($conversation, $messageData)) {
             ProcessWhatsAppMenu::dispatch($instance->id, $conversation->id, null, $selection->id, $wamid);
+
             return true;
         }
 
@@ -84,6 +85,7 @@ class WhatsAppMenuService
                 'conversation_id' => $conversation->id,
                 'payload_id' => $this->replyPayloadId($messageData),
             ]);
+
             return true;
         }
 
@@ -110,7 +112,7 @@ class WhatsAppMenuService
         // 3. ¿Algún menú se dispara con este mensaje?
         $menu = $this->findTriggeredMenu($instance, $conversation, (string) ($messageData['content'] ?? ''), $wamid, $reabierta);
 
-        if (!$menu) {
+        if (! $menu) {
             // 4. Nadie reconoció el mensaje. Es el caso más común y el que peor
             // quedaba: el cliente que escribe "no me funciona el internet desde
             // ayer" no usa ninguna palabra clave, así que ningún menú se dispara
@@ -128,6 +130,7 @@ class WhatsAppMenuService
                 'menu_id' => $menu->id,
                 'conversation_id' => $conversation->id,
             ]);
+
             return false;
         }
 
@@ -163,18 +166,19 @@ class WhatsAppMenuService
             ->where('conversation_id', $conversation->id)
             ->first();
 
-        if (!$session) {
+        if (! $session) {
             return null;
         }
 
         if ($session->isExpired()) {
             WhatsAppMenuSession::close($conversation->id);
+
             return null;
         }
 
         $needle = WhatsAppMenu::normalizeForMatch($text);
 
-        if ($needle === '' || !$session->menu) {
+        if ($needle === '' || ! $session->menu) {
             return null;
         }
 
@@ -314,7 +318,7 @@ class WhatsAppMenuService
         $lines = [$menu->renderBody($conversation)];
 
         foreach ($menu->options->values() as $i => $option) {
-            $lines[] = ($i + 1) . '. ' . $option->title;
+            $lines[] = ($i + 1).'. '.$option->title;
         }
 
         return implode("\n", $lines);
@@ -454,7 +458,7 @@ class WhatsAppMenuService
     ): bool {
         // Sin wamid no hay forma de casar la respuesta con la conversación
         // cuando el flujo la devuelva: preguntar sería tirar la respuesta.
-        if ($wamid === '' || !WhatsAppChatAiClient::enabledFor($instance->company_id)) {
+        if ($wamid === '' || ! WhatsAppChatAiClient::enabledFor($instance->company_id)) {
             return false;
         }
 
@@ -526,9 +530,13 @@ class WhatsAppMenuService
      */
     private function hablaUnaPersona(WhatsAppConversation $conversation): bool
     {
+        // Lo que escribió el asesor antes de que el chat se reabriera o se
+        // liberara (QuienAtiende::sueltaSiVuelveElCliente) es de la atención
+        // anterior: no cuenta como una persona atendiendo ahora.
         $reapertura = WhatsAppMessage::where('conversation_id', $conversation->id)
             ->where('direction', 'internal')
-            ->where('content', 'like', 'Conversación reabierta%')
+            ->where(fn ($q) => $q->where('content', 'like', 'Conversación reabierta%')
+                ->orWhere('metadata->evento', 'liberada'))
             ->latest('id')
             ->value('id');
 

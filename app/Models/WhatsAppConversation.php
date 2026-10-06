@@ -58,9 +58,23 @@ class WhatsAppConversation extends Model
         'sentiment_score' => 'float',
         'summary_at' => 'datetime',
         'summary_highlights' => 'array',
+        'assigned_at' => 'datetime',
     ];
 
     protected $appends = ['initials'];
+
+    protected static function booted(): void
+    {
+        // Cuándo se tomó el chat, para no quitárselo a quien acaba de tomarlo
+        // (QuienAtiende::sueltaSiVuelveElCliente). Esto cubre las asignaciones
+        // por el modelo; las que van con un `update()` condicional sobre la
+        // consulta no pasan por aquí y ponen `assigned_at` ellas mismas.
+        static::saving(function (self $conversation) {
+            if ($conversation->isDirty('assigned_to')) {
+                $conversation->assigned_at = $conversation->assigned_to ? now() : null;
+            }
+        });
+    }
 
     /**
      * Forma canónica de un teléfono: solo dígitos.

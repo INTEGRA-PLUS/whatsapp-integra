@@ -30,7 +30,7 @@ class ProcessAutoResponse implements ShouldQueue
         $instance = Instance::find($this->instanceId);
         $conversation = WhatsAppConversation::find($this->conversationId);
 
-        if (!$instance || !$conversation || !$instance->active) {
+        if (! $instance || ! $conversation || ! $instance->active) {
             return;
         }
 
@@ -39,6 +39,7 @@ class ProcessAutoResponse implements ShouldQueue
                 'conversation_id' => $conversation->id,
                 'assigned_to' => $conversation->assigned_to,
             ]);
+
             return;
         }
 
@@ -46,6 +47,7 @@ class ProcessAutoResponse implements ShouldQueue
             Log::channel('whatsapp')->info('⏭️ Auto-respuesta omitida: conversación cerrada', [
                 'conversation_id' => $conversation->id,
             ]);
+
             return;
         }
 
@@ -56,15 +58,25 @@ class ProcessAutoResponse implements ShouldQueue
         $isFirstInbound = $firstInbound !== null && $firstInbound->wamid === $this->inboundWamid;
 
         // Tiempo de inactividad: minutos entre el mensaje anterior y el actual (para "reabrir").
+        //
+        // Los avisos del hilo no cuentan. El webhook guarda «Conversación
+        // reabierta» (y el de chat liberado) justo ANTES del mensaje del
+        // cliente, así que medir contra él daba un hueco de 0 minutos y el
+        // saludo al reabrir no salía nunca en un chat que estaba cerrado. Y se
+        // mide entre las horas de Meta, no contra now(): el job puede llegar
+        // minutos tarde detrás de la IA.
         $currentMessage = WhatsAppMessage::where('conversation_id', $conversation->id)
             ->where('wamid', $this->inboundWamid)
             ->first();
         $previousMessage = WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->whereIn('direction', ['inbound', 'outbound'])
+            ->where('type', '!=', 'system')
             ->when($currentMessage, fn ($q) => $q->where('id', '<', $currentMessage->id))
             ->orderByDesc('id')
             ->first();
+        $ahora = $currentMessage ? ($currentMessage->sent_at ?? $currentMessage->created_at) : now();
         $gapMinutes = $previousMessage
-            ? (int) $previousMessage->created_at->diffInMinutes(now())
+            ? (int) abs(($previousMessage->sent_at ?? $previousMessage->created_at)->diffInMinutes($ahora))
             : null;
 
         $context = [
@@ -78,15 +90,14 @@ class ProcessAutoResponse implements ShouldQueue
                 $q->whereNull('instance_id')->orWhere('instance_id', $instance->id);
             })
             ->get()
-            ->sort(fn (AutoResponse $a, AutoResponse $b) =>
-                [$a->instance_id === null ? 1 : 0, $a->priority(), -$a->created_at->timestamp]
+            ->sort(fn (AutoResponse $a, AutoResponse $b) => [$a->instance_id === null ? 1 : 0, $a->priority(), -$a->created_at->timestamp]
                 <=>
                 [$b->instance_id === null ? 1 : 0, $b->priority(), -$b->created_at->timestamp]
             )
             ->values()
             ->first(fn (AutoResponse $r) => $r->qualifies($this->incomingText, $context));
 
-        if (!$rule) {
+        if (! $rule) {
             return;
         }
 
@@ -96,17 +107,19 @@ class ProcessAutoResponse implements ShouldQueue
                 'conversation_id' => $conversation->id,
                 'cooldown_minutes' => $rule->cooldown_minutes,
             ]);
+
             return;
         }
 
         // Normalmente la ventana está abierta: el cliente acaba de escribir. Pero
         // si Meta traía el webhook atascado y lo entrega días después, responder
         // en texto libre sólo genera un fallido "Re-engagement" que nadie lee.
-        if (!$conversation->isWindowOpen()) {
+        if (! $conversation->isWindowOpen()) {
             Log::channel('whatsapp')->info('⏭️ Auto-respuesta omitida: ventana de 24h cerrada', [
                 'auto_response_id' => $rule->id,
                 'conversation_id' => $conversation->id,
             ]);
+
             return;
         }
 
@@ -118,12 +131,13 @@ class ProcessAutoResponse implements ShouldQueue
             $renderedMessage
         );
 
-        if (!($result['success'] ?? false)) {
+        if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->warning('⚠️ Auto-respuesta no enviada', [
                 'auto_response_id' => $rule->id,
                 'conversation_id' => $conversation->id,
                 'error' => $result['error'] ?? null,
             ]);
+
             return;
         }
 

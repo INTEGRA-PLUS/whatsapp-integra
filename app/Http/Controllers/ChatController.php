@@ -7,6 +7,7 @@ use App\Events\WhatsAppMessageEvent;
 use App\Jobs\DeliverWhatsAppMessage;
 use App\Models\CompanyExtension;
 use App\Models\CompanyIntegration;
+use App\Models\ComprobanteDePago;
 use App\Models\ConversationDeletionRequest;
 use App\Models\Instance;
 use App\Models\KanbanColumn;
@@ -23,8 +24,8 @@ use App\Services\WebhookDispatcher;
 use App\Support\ConversationNotice;
 use App\Support\QuienAtiende;
 use App\Support\Realtime;
-use App\Support\UsaIntegra;
 use App\Support\Sentimiento\Lectura;
+use App\Support\UsaIntegra;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -2065,7 +2066,7 @@ class ChatController extends Controller
         // Quita relaciones de etiquetas; los mensajes caen por FK onDelete cascade.
         $conversation->tags()->detach();
         // Los comprobantes no tienen FK (ver su migración): la cascada no los alcanza.
-        \App\Models\ComprobanteDePago::where('conversation_id', $conversation->id)->delete();
+        ComprobanteDePago::where('conversation_id', $conversation->id)->delete();
         $conversation->delete();
 
         // Y se emite DESPUÉS: si el delete falla, nadie debe haber quitado la
@@ -2301,7 +2302,7 @@ class ChatController extends Controller
 
         $claimed = WhatsAppConversation::where('id', $conversationId)
             ->whereNull('assigned_to')
-            ->update(['assigned_to' => $user->id]);
+            ->update(['assigned_to' => $user->id, 'assigned_at' => now()]);
 
         if (! $claimed) {
             return response()->json([
