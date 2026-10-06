@@ -30,6 +30,11 @@ Verificado el 30-sep-2026: con una captura no pasaba nada.
 5. **Rechazar** pide un motivo. Aprobar y rechazar dejan una nota interna en el hilo, con quién lo hizo.
 6. La bandeja **Pagos por aprobar** (`/pagos-por-aprobar`) reúne todos los de la empresa. Desde ahí se
    abre el chat; se aprueba allí, al lado de la foto y de la conversación.
+7. **`/pendientes` en la caja de texto del chat** abre la misma lista (pendientes y `revisar`) en un modal, y
+   cada fila abre su conversación sin salir del chat. Sólo se ofrece a quien tiene `pagos.aprobar`, y el
+   endpoint (`GET /api/comprobantes-de-pago/pendientes`) lo vuelve a exigir. Nació el 6-oct-2026 de un
+   «me toca nuevamente validar su pago»: quien contesta chats no tiene la bandeja abierta y el cliente acaba
+   reenviando la captura.
 
 ## Decisiones que no hay que «arreglar»
 

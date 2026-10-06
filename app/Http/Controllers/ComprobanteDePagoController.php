@@ -41,13 +41,7 @@ class ComprobanteDePagoController extends Controller
         $companyId = auth()->user()->company_id;
         $estado = $request->query('estado', 'abiertos');
 
-        $query = ComprobanteDePago::where('company_id', $companyId)
-            ->with([
-                'conversacion:id,instance_id,name,phone_number,wa_id',
-                'mensaje:id,media_url,content,created_at',
-                'revisor:id,name',
-            ])
-            ->latest('id');
+        $query = $this->consulta($companyId);
 
         if ($estado === 'abiertos') {
             $query->whereIn('estado', ComprobanteDePago::ABIERTOS);
@@ -67,6 +61,38 @@ class ComprobanteDePagoController extends Controller
             'leyendo' => CompanyIntegration::leeComprobantesDe($companyId),
             'vision' => ImagenDelCliente::configurado(),
         ]);
+    }
+
+    /**
+     * Los que esperan a alguien, para el modal de `/pendientes` del chat.
+     *
+     * Es la pestaña «Por aprobar» de la bandeja sin salir del chat: el asesor
+     * que ya está contestando ve de un vistazo qué capturas siguen sin
+     * revisar, en vez de que el cliente tenga que reenviarlas.
+     */
+    public function pendientes(): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+
+        return response()->json([
+            'comprobantes' => $this->consulta($companyId)
+                ->whereIn('estado', ComprobanteDePago::ABIERTOS)
+                ->limit(50)
+                ->get(),
+            'leyendo' => CompanyIntegration::leeComprobantesDe($companyId),
+            'vision' => ImagenDelCliente::configurado(),
+        ]);
+    }
+
+    private function consulta(int $companyId)
+    {
+        return ComprobanteDePago::where('company_id', $companyId)
+            ->with([
+                'conversacion:id,instance_id,name,phone_number,wa_id',
+                'mensaje:id,media_url,content,created_at',
+                'revisor:id,name',
+            ])
+            ->latest('id');
     }
 
     public function aprobar(Request $request, int $id): JsonResponse

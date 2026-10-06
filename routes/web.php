@@ -7,6 +7,7 @@ use App\Http\Controllers\AutoResponseController;
 use App\Http\Controllers\BusinessHourController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\ComprobanteDePagoController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmbeddedSignupController;
@@ -921,11 +922,12 @@ Route::middleware('auth')->group(function () {
     // Capturas de pago que mandan los clientes, leídas y esperando a que una
     // persona las apruebe. Aprobar registra el pago en Integra y reconecta al
     // cliente: por eso tiene permiso propio y no basta la sesión.
-    Route::get('/pagos-por-aprobar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'index'])
+    Route::get('/pagos-por-aprobar', [ComprobanteDePagoController::class, 'index'])
         ->middleware('permission:pagos.aprobar')->name('pagos-por-aprobar.index');
     Route::prefix('api/comprobantes-de-pago')->middleware('permission:pagos.aprobar')->group(function () {
-        Route::post('/{id}/aprobar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'aprobar'])->whereNumber('id');
-        Route::post('/{id}/rechazar', [\App\Http\Controllers\ComprobanteDePagoController::class, 'rechazar'])->whereNumber('id');
+        Route::get('/pendientes', [ComprobanteDePagoController::class, 'pendientes']);
+        Route::post('/{id}/aprobar', [ComprobanteDePagoController::class, 'aprobar'])->whereNumber('id');
+        Route::post('/{id}/rechazar', [ComprobanteDePagoController::class, 'rechazar'])->whereNumber('id');
     });
 
     // System announcements (admin-emitted notifications)
