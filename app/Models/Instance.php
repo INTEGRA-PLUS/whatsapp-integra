@@ -26,6 +26,14 @@ class Instance extends Model
                 $instance->numero_anterior_id = $anterior;
                 $instance->numero_anterior_visible = $instance->getOriginal('display_phone_number');
                 $instance->numero_cambiado_at = now();
+
+                // Lo que Meta dijo del número anterior no vale para el nuevo.
+                // CMNET quedó con «Sin conexión (ACCOUNT_DELETED)» horas después
+                // de cambiar, por el aviso de cuando se borró el número viejo.
+                if (! $instance->isDirty('health_status')) {
+                    $instance->health_status = null;
+                    $instance->health_error = null;
+                }
             }
         });
     }

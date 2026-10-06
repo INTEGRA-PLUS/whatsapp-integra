@@ -187,6 +187,57 @@ class CambioDeNumeroTest extends TestCase
         $this->assertTrue($conversacion->isWindowOpen());
     }
 
+    /**
+     * El ERP de CMNET siguió enviando con el número viejo y recibía 401 en cada
+     * factura. Es la misma línea: se acepta el anterior como credencial.
+     */
+    public function test_el_erp_puede_seguir_usando_el_numero_anterior(): void
+    {
+        $this->cambiarDeNumero();
+
+        $this->withHeader('X-Instance-Token', '1177962515404155')
+            ->getJson('/api/v1/config')
+            ->assertOk()
+            ->assertJsonPath('linea_envios.phone_number_id', '1333422603193430');
+
+        $this->assertSame('numero_anterior', $this->linea->refresh()->api_last_seen_via);
+    }
+
+    /** Si dos líneas activas tuvieron ese número, no identifica a ninguna. */
+    public function test_un_numero_anterior_repetido_no_identifica_a_nadie(): void
+    {
+        $this->cambiarDeNumero();
+
+        $otra = Company::create(['name' => 'Otra', 'slug' => 'otra-'.Str::random(4), 'active' => true]);
+        Instance::create([
+            'company_id' => $otra->id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'otra',
+            'phone_number_id' => '999',
+            'waba_id' => 'w',
+            'type' => 'meta',
+            'active' => true,
+            'access_token' => 't',
+            'numero_anterior_id' => '1177962515404155',
+        ]);
+
+        $this->withHeader('X-Instance-Token', '1177962515404155')
+            ->getJson('/api/v1/config')
+            ->assertUnauthorized();
+    }
+
+    /** Lo que Meta dijo del número viejo (lo borró de su cuenta) no vale para el nuevo. */
+    public function test_al_cambiar_de_numero_se_olvida_el_estado_del_anterior(): void
+    {
+        $this->linea->forceFill(['health_status' => 'unreachable', 'health_error' => 'Meta avisó de una desconexión (ACCOUNT_DELETED).'])->save();
+
+        $this->cambiarDeNumero();
+
+        $this->linea->refresh();
+        $this->assertNull($this->linea->health_status);
+        $this->assertNull($this->linea->health_error);
+    }
+
     public function test_una_linea_que_nunca_cambio_de_numero_no_se_toca(): void
     {
         $conversacion = $this->conversacionConEntranteHace(now()->subHour());

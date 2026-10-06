@@ -203,6 +203,26 @@ class MessageApiController extends Controller
         }
 
         $instance = $candidates->first();
+        $porNumeroAnterior = false;
+
+        // El número ANTERIOR de una línea que cambió de número. El ERP sigue
+        // enviando con él hasta que alguien lo cambia allá, y entre tanto cada
+        // factura recibía un 401 (CMNET, 6-oct-2026: el cambio de credencial en
+        // su Integra pedía reconectar una integración que nadie entendía). Es
+        // la misma línea y la misma empresa, y el phone_number_id no es un
+        // secreto: aceptar el viejo no da acceso a nada que el nuevo no diera.
+        // Sólo si es inequívoco: una única línea activa lo tuvo antes.
+        if (! $instance) {
+            $anteriores = Instance::where('numero_anterior_id', $token)
+                ->where('active', true)
+                ->limit(2)
+                ->get();
+
+            if ($anteriores->count() === 1) {
+                $instance = $anteriores->first();
+                $porNumeroAnterior = true;
+            }
+        }
 
         if (! $instance) {
             $this->avisarSiLaCredencialEstaApagada($token, $request);
@@ -216,6 +236,7 @@ class MessageApiController extends Controller
                 'company_id' => $instance->company_id,
                 'ruta' => $request->path(),
                 'tiene_token_nuevo' => $instance->tieneApiToken(),
+                'con_el_numero_anterior' => $porNumeroAnterior,
             ]);
 
             // Y queda en la instancia, que es donde alguien puede verlo sin
@@ -224,7 +245,7 @@ class MessageApiController extends Controller
             // un cambio de la instancia.
             Instance::whereKey($instance->id)->update([
                 'api_last_seen_at' => now(),
-                'api_last_seen_via' => 'phone_number_id',
+                'api_last_seen_via' => $porNumeroAnterior ? 'numero_anterior' : 'phone_number_id',
             ]);
         }
 
