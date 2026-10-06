@@ -635,16 +635,17 @@ class WhatsAppConversation extends Model
         // anterior no abre ventana con el nuevo: para Meta son dos números
         // distintos. Contarlo dejaba escribir al asesor y Meta le rechazaba
         // hasta un saludo con «Access denied» (CMNET, 6-oct-2026).
-        $desde = now()->subDay();
+        //
+        // Para el cambio de número se mira cuándo LLEGÓ el mensaje
+        // (`created_at`), no cuándo se escribió: tras el cambio el CRM sólo
+        // recibe lo del número nuevo, aunque Meta lo entregue con retraso. Un
+        // aviso escrito a las 12:02 y entregado a las 13:38 era del nuevo.
         $cambio = $this->instance?->numero_cambiado_at;
-
-        if ($cambio && $cambio->gt($desde)) {
-            $desde = $cambio;
-        }
 
         return $this->messages()
             ->where('direction', 'inbound')
-            ->whereRaw('COALESCE(sent_at, created_at) >= ?', [$desde])
+            ->whereRaw('COALESCE(sent_at, created_at) >= ?', [now()->subDay()])
+            ->when($cambio, fn ($q) => $q->where('created_at', '>=', $cambio))
             ->exists();
     }
 
@@ -662,10 +663,11 @@ class WhatsAppConversation extends Model
             return false;
         }
 
+        // `created_at`: cuándo llegó al CRM, no cuándo lo escribió el cliente
+        // (ver isWindowOpen()).
         $ultimo = $this->messages()
             ->where('direction', 'inbound')
-            ->selectRaw('MAX(COALESCE(sent_at, created_at)) as ultimo')
-            ->value('ultimo');
+            ->max('created_at');
 
         return $ultimo !== null && $cambio->gt($ultimo);
     }

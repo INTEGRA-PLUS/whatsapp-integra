@@ -46,13 +46,10 @@ class CambioDeNumero
             return null;
         }
 
-        $ultimoDelCliente = WhatsAppMessage::where('conversation_id', $conversacion->id)
-            ->where('direction', 'inbound')
-            ->selectRaw('MAX(COALESCE(sent_at, created_at)) as ultimo')
-            ->value('ultimo');
-
-        // Si ya le escribió al número nuevo, el problema es otro.
-        if ($ultimoDelCliente && $instancia->numero_cambiado_at->lte($ultimoDelCliente)) {
+        // Si ya le escribió al número nuevo, el problema es otro. Cuenta cuándo
+        // llegó al CRM, no cuándo se escribió: lo que entra tras el cambio es
+        // del número nuevo aunque Meta lo entregue con retraso.
+        if (! $conversacion->escribioSoloAlNumeroAnterior()) {
             return null;
         }
 

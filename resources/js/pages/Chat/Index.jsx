@@ -3808,7 +3808,15 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
         return lastInbound ? new Date(lastInbound.sent_at || lastInbound.created_at).getTime() : null;
     }, [messages]);
 
-    const soloAlNumeroAnterior = cambioDeNumero !== null && ultimoEntrante !== null && ultimoEntrante < cambioDeNumero;
+    // Para el cambio de número cuenta cuándo LLEGÓ (created_at), no cuándo se
+    // escribió: tras el cambio sólo entra lo del número nuevo, aunque Meta lo
+    // entregue tarde (un aviso de Meta escrito a las 12:02 llegó a las 13:38).
+    const ultimoEntranteRecibido = useMemo(() => {
+        const lastInbound = [...messages].reverse().find(m => m.direction === 'inbound');
+        return lastInbound ? new Date(lastInbound.created_at).getTime() : null;
+    }, [messages]);
+
+    const soloAlNumeroAnterior = cambioDeNumero !== null && ultimoEntranteRecibido !== null && ultimoEntranteRecibido < cambioDeNumero;
 
     const windowExpired = useMemo(() => {
         if (!selectedConversation) return false;

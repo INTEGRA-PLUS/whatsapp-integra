@@ -69,7 +69,8 @@ class CambioDeNumeroTest extends TestCase
         $this->linea->update(['phone_number_id' => '1333422603193430', 'display_phone_number' => '+57 310 4047030', 'waba_id' => '1638591804306129']);
     }
 
-    private function conversacionConEntranteHace(\DateTimeInterface $cuando): WhatsAppConversation
+    /** `$cuando` es cuándo lo escribió el cliente; `$recibido`, cuándo llegó al CRM (por defecto, lo mismo). */
+    private function conversacionConEntranteHace(\DateTimeInterface $cuando, ?\DateTimeInterface $recibido = null): WhatsAppConversation
     {
         $conversacion = WhatsAppConversation::create([
             'instance_id' => $this->linea->id,
@@ -87,7 +88,7 @@ class CambioDeNumeroTest extends TestCase
             'direction' => 'inbound',
             'status' => 'delivered',
             'sent_at' => $cuando,
-        ]);
+        ])->forceFill(['created_at' => $recibido ?? $cuando])->save();
 
         return $conversacion;
     }
@@ -171,6 +172,19 @@ class CambioDeNumeroTest extends TestCase
 
         $this->assertTrue($conversacion->isWindowOpen());
         $this->assertFalse($conversacion->escribioSoloAlNumeroAnterior());
+    }
+
+    /**
+     * Meta escribió a las 12:02 al número nuevo y el CRM lo recibió a las
+     * 13:38, tras el cambio de las 12:31: es del número nuevo, no del viejo.
+     */
+    public function test_lo_que_llega_tarde_tras_el_cambio_cuenta_como_del_numero_nuevo(): void
+    {
+        $this->cambiarDeNumero();
+        $conversacion = $this->conversacionConEntranteHace(now()->subMinutes(30), now()->addMinute());
+
+        $this->assertFalse($conversacion->escribioSoloAlNumeroAnterior());
+        $this->assertTrue($conversacion->isWindowOpen());
     }
 
     public function test_una_linea_que_nunca_cambio_de_numero_no_se_toca(): void
