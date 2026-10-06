@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import SelectorDeFacturas from '@/components/SelectorDeFacturas';
+import PagosPendientes from '@/components/PagosPendientes';
 import SelectorInstancia from '@/components/selector-instancia';
 import { ResumenDialog } from '@/pages/Chat/ResumenDialog';
 import FichaIntegra from '@/components/FichaIntegra';
@@ -131,6 +132,18 @@ import { refreshNotifications, useConversationsRefresh } from '@/lib/notificatio
 import { playNotificationSound } from '@/lib/notificationSound';
 
 const QUICK_REPLY_TOKEN = /(?:^|\s)\/([a-zA-Z0-9_-]*)$/;
+
+/**
+ * Un comando del chat que no es una respuesta rápida de la empresa: no pega
+ * texto, abre la lista de pagos por aprobar (ver PagosPendientes). El `id` no
+ * es numérico para no chocar nunca con el de una respuesta guardada.
+ */
+const COMANDO_PENDIENTES = {
+    id: 'comando-pendientes',
+    shortcut: 'pendientes',
+    tipo: 'pendientes',
+    message: 'Ver los pagos por aprobar',
+};
 
 /**
  * El nombre de un icono de la columna plegada, al pasar por encima.
@@ -1908,6 +1921,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     // Helper to check permissions
     const can = (permission) => auth.user.permissions.includes(permission);
     const isAdmin = can('chat.update');
+    const puedeAprobarPagos = can('pagos.aprobar');
 
     const { confirm, confirmDialog } = useConfirm();
 
@@ -2060,6 +2074,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const [qrOpen, setQrOpen] = useState(false);
     // El selector de facturas que abre una respuesta rápida de tipo factura.
     const [facturasAbierto, setFacturasAbierto] = useState(false);
+    const [pendientesAbierto, setPendientesAbierto] = useState(false);
     const [qrQuery, setQrQuery] = useState('');
     const [qrTokenStart, setQrTokenStart] = useState(0);
     const [qrIndex, setQrIndex] = useState(0);
@@ -2328,11 +2343,15 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     const qrMatches = useMemo(() => {
         if (!qrOpen) return [];
         const q = qrQuery.toLowerCase();
+        // Los comandos del sistema van delante de las respuestas de la empresa.
+        // `/pendientes` sólo se ofrece a quien puede aprobar: el endpoint lo
+        // vuelve a exigir, pero ofrecer algo que responde 403 es un botón roto.
+        const todas = [...(puedeAprobarPagos ? [COMANDO_PENDIENTES] : []), ...quickReplies];
         const filtered = q
-            ? quickReplies.filter(r => r.shortcut.toLowerCase().startsWith(q))
-            : quickReplies;
+            ? todas.filter(r => r.shortcut.toLowerCase().startsWith(q))
+            : todas;
         return filtered.slice(0, 8);
-    }, [qrOpen, qrQuery, quickReplies]);
+    }, [qrOpen, qrQuery, quickReplies, puedeAprobarPagos]);
 
     useEffect(() => {
         if (qrIndex >= qrMatches.length) setQrIndex(0);
@@ -2357,6 +2376,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
     }, [qrOpen, closeQuickReplies]);
 
     const applyQuickReply = useCallback((reply) => {
+        // `/pendientes` tampoco pega texto: abre la lista de comprobantes por
+        // aprobar. Se borra el atajo por lo mismo que en el de factura.
+        if (reply.tipo === COMANDO_PENDIENTES.tipo) {
+            closeQuickReplies();
+            setNewMessage(prev => prev.slice(0, qrTokenStart));
+            setPendientesAbierto(true);
+
+            return;
+        }
+
         // La de factura no pega texto: abre el selector de facturas del cliente
         // y lo que se manda al final es la plantilla de Integra con el PDF.
         if (reply.tipo === 'factura') {
@@ -6888,6 +6917,12 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                         cualquier otra plantilla del chat —ahí están el
                                                         guardarraíl de parámetros de Meta, la burbuja y la
                                                         cola de entrega—. */}
+                                                    {pendientesAbierto && (
+                                                        <PagosPendientes
+                                                            onCerrar={() => setPendientesAbierto(false)}
+                                                            onAbrir={conv => openConversationById(conv.id)}
+                                                        />
+                                                    )}
                                                     {facturasAbierto && selectedConversation && (
                                                         <SelectorDeFacturas
                                                             conversationId={selectedConversation.id}

@@ -416,6 +416,54 @@ class ComprobanteDePagoTest extends TestCase
         $this->assertSame(['otra_cosa' => 'x', 'leer_comprobantes' => true], $this->pagos->fresh()->settings);
     }
 
+    // ─── /pendientes en el chat ──────────────────────────────────────────────
+
+    /** El modal de `/pendientes` trae sólo los que esperan a alguien. */
+    public function test_pendientes_trae_los_abiertos_y_nada_mas(): void
+    {
+        $pendiente = $this->comprobante();
+        $revisar = $this->comprobante(['estado' => ComprobanteDePago::REVISAR]);
+        $this->comprobante(['estado' => ComprobanteDePago::APROBADO]);
+        $this->comprobante(['estado' => ComprobanteDePago::RECHAZADO]);
+
+        $ids = $this->actingAs($this->aprobador())
+            ->getJson('/api/comprobantes-de-pago/pendientes')
+            ->assertOk()
+            ->assertJsonPath('leyendo', true)
+            ->assertJsonPath('comprobantes.0.conversacion.phone_number', '573007852081')
+            ->json('comprobantes.*.id');
+
+        $this->assertEqualsCanonicalizing([$pendiente->id, $revisar->id], $ids);
+    }
+
+    /** Sin `pagos.aprobar` no hay lista, aunque el chat no ofrezca el comando. */
+    public function test_pendientes_pide_el_permiso_de_aprobar(): void
+    {
+        $this->aprobador();
+        $this->comprobante();
+
+        $this->actingAs($this->usuario(permiso: false))
+            ->getJson('/api/comprobantes-de-pago/pendientes')
+            ->assertForbidden();
+    }
+
+    /** Los de otra empresa no se cuelan. */
+    public function test_pendientes_no_mezcla_empresas(): void
+    {
+        $aprobador = $this->aprobador();
+        $mio = $this->comprobante();
+
+        $otra = Company::create(['name' => 'Otra', 'slug' => 'otra-'.Str::random(4), 'active' => true]);
+        $this->comprobante(['company_id' => $otra->id]);
+
+        $ids = $this->actingAs($aprobador)
+            ->getJson('/api/comprobantes-de-pago/pendientes')
+            ->assertOk()
+            ->json('comprobantes.*.id');
+
+        $this->assertSame([$mio->id], $ids);
+    }
+
     // ─── Ayudas ──────────────────────────────────────────────────────────────
 
     private function comprobante(array $extra = []): ComprobanteDePago
