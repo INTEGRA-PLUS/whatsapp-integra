@@ -847,7 +847,10 @@ function CheckRow({ check, busy, onAction, onRequestPin, onRequestCode, onVerify
                             <p className="text-[11px] text-muted-foreground mt-1">
                                 Estado en WhatsApp: <span className="font-medium text-foreground">{check.extra?.status ?? 'Desconocido'}</span>
                                 {check.extra?.code_verification_status && (
-                                    <> · PIN: <span className="font-medium text-foreground">{check.extra.code_verification_status}</span></>
+                                    // Es el código por SMS con que se verificó el número, no el
+                                    // PIN de verificación en dos pasos: llamarlo «PIN» hacía creer
+                                    // que ése ya estaba puesto (CMNET, 6-oct-2026).
+                                    <> · Verificación del número: <span className="font-medium text-foreground">{check.extra.code_verification_status}</span></>
                                 )}
                             </p>
                             {check.extra?.quality_rating && (

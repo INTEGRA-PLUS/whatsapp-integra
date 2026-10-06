@@ -351,8 +351,10 @@ function Consumo({ linea, datos, error }) {
         maximumFractionDigits: 2,
     }).format(valor ?? 0);
 
-    const actual = datos?.periodos?.[0];
-    const marketingManda = actual?.categorias?.[0]?.categoria === 'MARKETING' && actual.total > 0;
+    // El mes en curso o, si en él no manda Marketing, el anterior: a principios
+    // de mes el actual casi no tiene datos y el aviso no salía nunca (SM
+    // Telecomunicaciones: 91 % de septiembre en Marketing, octubre en 0).
+    const marketingManda = (datos?.periodos ?? []).find(p => p.total > 0 && p.categorias?.[0]?.categoria === 'MARKETING') ?? null;
 
     return (
         <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
@@ -427,7 +429,7 @@ function Consumo({ linea, datos, error }) {
 
             {marketingManda && (
                 <p className="rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] leading-snug text-foreground">
-                    La mayor parte del gasto es <strong>Marketing</strong>. Si tus facturas o tirillas salen con una plantilla
+                    En {marketingManda.periodo.toLowerCase()} la mayor parte del gasto fue <strong>Marketing</strong>. Si tus facturas o tirillas salen con una plantilla
                     de Marketing, pásalas a una de <strong>Utilidad</strong>: cuesta unas 15 veces menos.
                 </p>
             )}

@@ -251,6 +251,74 @@ class PlantillasDeIntegraTest extends TestCase
         });
     }
 
+    /**
+     * Meta a veces responde 500 sin cuerpo: es un fallo suyo y al repetir
+     * entra. Decir «Error creando la plantilla» lo hacía parecer culpa de la
+     * plantilla (InterSolar, 2-oct-2026).
+     */
+    public function test_un_500_vacio_de_meta_dice_que_se_reintente(): void
+    {
+        $user = $this->admin();
+        $instancia = $this->instancia($user->company_id);
+
+        Http::fake(['*/message_templates*' => Http::response('', 500)]);
+
+        $this->actingAs($user)
+            ->postJson('/api/templates/defaults/reanudar_conversacion_cliente/sync', ['instance_id' => $instancia->id])
+            ->assertStatus(502)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'fallo interno') && str_contains($m, 'Vuelve a intentarlo'));
+    }
+
+    /**
+     * La vista previa enseñaba el ejemplo con que Meta aprobó la plantilla,
+     * «MEGASTORE», y CMNET preguntó por qué su plantilla hablaba de otra
+     * empresa (6-oct-2026). Se muestra el nombre de quien la mira.
+     */
+    public function test_la_vista_previa_no_ensena_el_negocio_de_ejemplo(): void
+    {
+        $user = $this->admin();
+        $instancia = $this->instancia($user->company_id);
+
+        Http::fake(['*' => Http::response([
+            'id' => '1619457086301827',
+            'name' => 'aviso_automatico_cliente',
+            'language' => 'es',
+            'status' => 'APPROVED',
+            'category' => 'UTILITY',
+            'components' => [[
+                'type' => 'BODY',
+                'text' => 'Hola, te compartimos un aviso de *{{1}}*:',
+                'example' => ['body_text' => [['MEGASTORE', 'Su soporte de pago ha sido generado bajo el Nro. 6780']]],
+            ]],
+        ], 200)]);
+
+        $this->actingAs($user)
+            ->getJson('/api/templates/1619457086301827?instance_id='.$instancia->id)
+            ->assertOk()
+            ->assertJsonPath('data.components.0.example.body_text.0.0', $user->company->name)
+            ->assertJsonPath('data.components.0.example.body_text.0.1', 'Su soporte de pago ha sido generado bajo el Nro. 6780');
+    }
+
+    /** Meta manda la app suscrita dentro de `whatsapp_business_api_data`; salía en blanco. */
+    public function test_la_preparacion_ensena_el_nombre_de_la_app_suscrita(): void
+    {
+        $user = $this->admin();
+        $instancia = $this->instancia($user->company_id);
+
+        Http::fake([
+            '*/subscribed_apps*' => Http::response(['data' => [[
+                'whatsapp_business_api_data' => ['id' => '865904982715022', 'name' => 'Integra CRM', 'link' => 'https://wpp.integracolombia.online/'],
+            ]]], 200),
+            '*' => Http::response([], 200),
+        ]);
+
+        $this->actingAs($user)
+            ->getJson('/api/settings/whatsapp/readiness?instance_id='.$instancia->id)
+            ->assertOk()
+            ->assertJsonPath('checks.webhook_subscription.extra.apps.0.name', 'Integra CRM')
+            ->assertJsonPath('checks.webhook_subscription.extra.apps.0.id', '865904982715022');
+    }
+
     private function conIntegra(int $companyId): void
     {
         CompanyIntegration::create([

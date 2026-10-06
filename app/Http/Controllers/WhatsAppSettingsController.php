@@ -866,9 +866,11 @@ class WhatsAppSettingsController extends Controller
             'raw_status' => $subscribed ? 'SUBSCRIBED' : 'NOT_SUBSCRIBED',
             'action_type' => 'subscribe_webhook',
             'extra' => [
+                // Meta manda la app dentro de `whatsapp_business_api_data`; leerla
+                // arriba dejaba «App suscrita:» en blanco (CMNET, 6-oct-2026).
                 'apps' => array_map(fn($a) => [
-                    'id' => $a['id'] ?? null,
-                    'name' => $a['name'] ?? null,
+                    'id' => $a['whatsapp_business_api_data']['id'] ?? $a['id'] ?? null,
+                    'name' => $a['whatsapp_business_api_data']['name'] ?? $a['name'] ?? null,
                 ], $appsData),
             ],
         ];

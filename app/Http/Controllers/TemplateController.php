@@ -204,7 +204,7 @@ class TemplateController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Error creando la plantilla en Meta.',
+                'message' => $this->mensajeDeMeta($result, 'Error creando la plantilla en Meta.'),
                 'error' => $result['error'] ?? null,
             ], 502);
         }
@@ -247,6 +247,39 @@ class TemplateController extends Controller
      * de verdad: cambiar el ejemplo que ve Meta empresa por empresa sería
      * cambiar la plantilla que se crea.
      */
+    /**
+     * Una plantilla del catálogo por defecto, con el ejemplo del negocio
+     * cambiado por el nombre de quien la mira.
+     *
+     * Meta guarda el ejemplo con que se aprobó —«MEGASTORE»— y la vista previa
+     * de Plantillas lo enseñaba tal cual: CMNET preguntó el 6-oct-2026 por qué
+     * su plantilla hablaba de MEGASTORE. Sólo para mirar, igual que en
+     * catalogoParaVerlo(); lo que se envía no se toca.
+     */
+    private function conEjemploDelNegocio(array $plantilla): array
+    {
+        $negocio = auth()->user()->company?->name;
+        $cual = (int) (config('whatsapp_default_templates')[$plantilla['name'] ?? '']['variable_negocio'] ?? 0);
+
+        if (! $negocio || $cual < 1) {
+            return $plantilla;
+        }
+
+        foreach ($plantilla['components'] ?? [] as $i => $componente) {
+            if (strtoupper($componente['type'] ?? '') !== 'BODY') {
+                continue;
+            }
+
+            foreach ($componente['example']['body_text'] ?? [] as $j => $juego) {
+                if (is_array($juego) && array_key_exists($cual - 1, $juego)) {
+                    $plantilla['components'][$i]['example']['body_text'][$j][$cual - 1] = $negocio;
+                }
+            }
+        }
+
+        return $plantilla;
+    }
+
     protected function catalogoParaVerlo(): array
     {
         $negocio = auth()->user()->company?->name;
@@ -787,7 +820,7 @@ class TemplateController extends Controller
 
         if (! $result['success']) {
             return response()->json([
-                'message' => $this->extractMetaErrorMessage($result['error']) ?? 'Error creando la plantilla en Meta.',
+                'message' => $this->mensajeDeMeta($result, 'Error creando la plantilla en Meta.'),
                 'error' => $result['error'] ?? null,
             ], 502);
         }
@@ -912,7 +945,7 @@ class TemplateController extends Controller
 
         if (! $result['success']) {
             return response()->json([
-                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Meta no aceptó los cambios.',
+                'message' => $this->mensajeDeMeta($result, 'Meta no aceptó los cambios.'),
                 'error' => $result['error'] ?? null,
             ], 502);
         }
@@ -1201,6 +1234,30 @@ class TemplateController extends Controller
         return true;
     }
 
+    /**
+     * El motivo de Meta, o qué hacer cuando no da ninguno.
+     *
+     * Meta a veces responde 500 con el cuerpo vacío: es un fallo suyo, de
+     * paso, y al repetir entra. El 2-oct-2026 la `facturacion` de InterSolar
+     * salió con «Error creando la plantilla en Meta.» y parecía culpa de la
+     * plantilla; el mismo envío, repetido, la creó a la primera.
+     */
+    protected function mensajeDeMeta(array $result, string $porDefecto): string
+    {
+        $mensaje = $this->extractMetaErrorMessage($result['error'] ?? null);
+
+        if ($mensaje) {
+            return $mensaje;
+        }
+
+        if ((int) ($result['status'] ?? 0) >= 500) {
+            return 'Meta tuvo un fallo interno y no dio ningún motivo; no es un problema de la plantilla. '
+                .'Vuelve a intentarlo en un minuto: casi siempre entra al segundo intento.';
+        }
+
+        return $porDefecto;
+    }
+
     protected function extractMetaErrorMessage($error): ?string
     {
         if (! is_array($error)) {
@@ -1301,7 +1358,7 @@ class TemplateController extends Controller
         $result = $this->meta->getTemplate($templateId, $instance->access_token);
 
         if ($result['success']) {
-            return response()->json(['data' => $result['data']]);
+            return response()->json(['data' => $this->conEjemploDelNegocio($result['data'])]);
         }
 
         // Meta se queja de campos que sólo existen en algunos estados
@@ -1320,7 +1377,7 @@ class TemplateController extends Controller
                 'error' => $result['error'] ?? null,
             ]);
 
-            return response()->json(['data' => $delListado]);
+            return response()->json(['data' => $this->conEjemploDelNegocio($delListado)]);
         }
 
         return response()->json([
@@ -1375,7 +1432,7 @@ class TemplateController extends Controller
 
         if (! $result['success']) {
             return response()->json([
-                'message' => $this->extractMetaErrorMessage($result['error'] ?? null) ?? 'Meta no dejó borrar la plantilla.',
+                'message' => $this->mensajeDeMeta($result, 'Meta no dejó borrar la plantilla.'),
                 'error' => $result['error'] ?? null,
             ], 502);
         }
