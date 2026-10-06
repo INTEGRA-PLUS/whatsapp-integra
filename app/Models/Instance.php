@@ -10,6 +10,26 @@ class Instance extends Model
 {
     use HasFactory;
 
+    /**
+     * Si la línea cambia de número, se guarda el anterior y cuándo cambió.
+     *
+     * Los clientes que le escribieron al número viejo no han hablado nunca
+     * con el nuevo, y Meta les rechaza hasta un saludo (CMNET, 6-oct-2026).
+     * Sin esta marca el chat sólo puede enseñar «Access denied».
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (Instance $instance) {
+            $anterior = $instance->getOriginal('phone_number_id');
+
+            if ($instance->isDirty('phone_number_id') && $anterior && $anterior !== $instance->phone_number_id) {
+                $instance->numero_anterior_id = $anterior;
+                $instance->numero_anterior_visible = $instance->getOriginal('display_phone_number');
+                $instance->numero_cambiado_at = now();
+            }
+        });
+    }
+
     protected $fillable = [
         'company_id',
         'uuid',
@@ -32,6 +52,9 @@ class Instance extends Model
         'problema_de_pago_desde',
         'enlace_de_pago',
         'detalle_de_pago',
+        'numero_anterior_id',
+        'numero_anterior_visible',
+        'numero_cambiado_at',
         'meta',
         'access_token',
         'token_expires_at',
@@ -66,6 +89,7 @@ class Instance extends Model
         'health_checked_at' => 'datetime',
         'puede_enviar_visto_at' => 'datetime',
         'problema_de_pago_desde' => 'datetime',
+        'numero_cambiado_at' => 'datetime',
         'api_token_created_at' => 'datetime',
         'api_token_last_used_at' => 'datetime',
         'api_last_seen_at' => 'datetime',

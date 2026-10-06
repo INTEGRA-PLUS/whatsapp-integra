@@ -257,6 +257,12 @@ class DeliverWhatsAppMessage implements ShouldQueue
 
     private function markFailed(WhatsAppMessage $message, string $error, $errorCode = null, ?string $errorDetails = null): void
     {
+        // «Access denied» a un cliente que sólo le escribió al número anterior
+        // de la línea: se le explica al agente qué pasa y qué hacer. Gana al
+        // detalle de Meta («There was a problem with the access token…»),
+        // que con esto delante sólo confunde; el código y el título quedan.
+        $errorDetails = \App\Support\CambioDeNumero::explicarFallo($message, $errorCode) ?? $errorDetails;
+
         $message->update([
             'status'        => 'failed',
             'failed_at'     => now(),
