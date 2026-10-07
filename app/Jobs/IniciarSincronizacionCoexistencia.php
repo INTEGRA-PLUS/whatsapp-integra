@@ -70,6 +70,11 @@ class IniciarSincronizacionCoexistencia implements ShouldQueue, ShouldBeUnique
         // y gastaría el intento igual.
         $detalle = $meta->getPhoneNumber($instance->phone_number_id, $instance->access_token);
 
+        if ($detalle['success'] ?? false) {
+            $instance->setPlataformaEnMeta($detalle['data'] ?? []);
+            $instance->saveQuietly();
+        }
+
         if (! ($detalle['data']['is_on_biz_app'] ?? false)) {
             Log::channel('whatsapp')->info('ℹ️ Instancia sin coexistencia: no hay nada que importar', [
                 'instance_id' => $instance->id,

@@ -38,7 +38,8 @@ class CheckInstanceHealth extends Command
 
     protected $signature = 'whatsapp:health-check
         {--instance= : Revisa solo esta instancia (id)}
-        {--quiet-notifications : No notifica; sólo actualiza el estado}';
+        {--quiet-notifications : No notifica; sólo actualiza el estado}
+        {--solo-plataforma : Sólo apunta si cada número está en coexistencia; no toca salud ni avisa}';
 
     protected $description = 'Comprueba contra Meta que cada instancia siga viva y avisa cuando una se cae';
 
@@ -59,6 +60,10 @@ class CheckInstanceHealth extends Command
             $this->warn('No hay instancias activas que revisar.');
 
             return self::SUCCESS;
+        }
+
+        if ($this->option('solo-plataforma')) {
+            return $this->soloPlataforma($instances);
         }
 
         $caidas = 0;
@@ -188,6 +193,10 @@ class CheckInstanceHealth extends Command
         $res = $this->meta->getPhoneNumber($instance->phone_number_id, $instance->access_token);
 
         if ($res['success'] ?? false) {
+            // De paso, si sigue en la app del celular: se guarda con la salud,
+            // en el update de quien llama.
+            $instance->setPlataformaEnMeta($res['data'] ?? []);
+
             return ['ok', null];
         }
 
@@ -196,6 +205,35 @@ class CheckInstanceHealth extends Command
             ?? (is_string($res['error'] ?? null) ? $res['error'] : 'Meta no reconoce el número o el token.');
 
         return ['unreachable', mb_substr($motivo, 0, 240)];
+    }
+
+    /**
+     * Rellena «Coexistencia / Solo API» sin esperar al chequeo de las 07:00 y
+     * sin sus efectos: no cambia la salud ni manda avisos.
+     */
+    private function soloPlataforma($instances): int
+    {
+        foreach ($instances as $instance) {
+            if (! $instance->esWhatsApp() || ! $instance->access_token || ! $instance->phone_number_id) {
+                continue;
+            }
+
+            $res = $this->meta->getPhoneNumber($instance->phone_number_id, $instance->access_token);
+
+            if (! ($res['success'] ?? false)) {
+                $this->line("  ? #{$instance->id} {$instance->name}: Meta no respondió");
+
+                continue;
+            }
+
+            $instance->setPlataformaEnMeta($res['data'] ?? []);
+            $instance->saveQuietly();
+
+            $this->line("  #{$instance->id} {$instance->name}: "
+                .($instance->plataformaEnMeta()['coexistencia'] ? 'coexistencia' : 'solo API'));
+        }
+
+        return self::SUCCESS;
     }
 
     /**

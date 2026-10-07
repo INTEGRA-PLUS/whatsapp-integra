@@ -442,6 +442,35 @@ class Instance extends Model
     }
 
     /**
+     * Cómo está conectado el número en Meta, según la última vez que se le
+     * preguntó: `coexistencia` (sigue vivo en la app del celular además de en
+     * la API), `tipo` (`platform_type`) y `visto_at`. Vacío si nunca se miró.
+     *
+     * Existe porque la tarjeta no lo decía y la única pista era el recuadro de
+     * importación, que sólo sale si el número entró por el registro insertado
+     * (7-oct-2026, Link Telecom).
+     */
+    public function plataformaEnMeta(): array
+    {
+        return $this->meta['plataforma'] ?? [];
+    }
+
+    /**
+     * Guarda lo que Meta dijo del número —la respuesta de `getPhoneNumber`—
+     * conservando el resto del JSON `meta`.
+     */
+    public function setPlataformaEnMeta(array $numero): void
+    {
+        $meta = $this->meta ?? [];
+        $meta['plataforma'] = [
+            'coexistencia' => (bool) ($numero['is_on_biz_app'] ?? false),
+            'tipo' => $numero['platform_type'] ?? null,
+            'visto_at' => now()->toIso8601String(),
+        ];
+        $this->meta = $meta;
+    }
+
+    /**
      * Nombre comercial con el que firmar los avisos automáticos: lo que el
      * cliente final debe leer, no el nombre interno de la instancia. Se prefiere
      * el nombre verificado que Meta muestra en el perfil del número.

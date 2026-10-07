@@ -412,6 +412,38 @@ function Cifra({ icono: Icono, etiqueta, valor, tono = null }) {
     );
 }
 
+/**
+ * «Coexistencia» o «Solo API», según lo último que dijo Meta del número.
+ *
+ * Antes la única pista era el recuadro de importación, que sólo sale si el
+ * número entró por el registro insertado: una línea conectada a mano se veía
+ * igual estuviera o no en la app del celular (7-oct-2026). Sin dato, nada:
+ * adivinar sería peor que callar. Lo rellena el chequeo diario de salud.
+ */
+function EtiquetaConexion({ instancia }) {
+    const plataforma = instancia.meta?.plataforma;
+
+    if (instancia.channel === 'instagram' || instancia.channel === 'messenger' || !plataforma) {
+        return null;
+    }
+
+    return plataforma.coexistencia ? (
+        <span
+            className="inline-flex items-center rounded-full bg-info/15 px-2 py-0.5 text-xs font-semibold text-info"
+            title="El número sigue funcionando en la app WhatsApp Business del celular y, a la vez, en el CRM."
+        >
+            Coexistencia
+        </span>
+    ) : (
+        <span
+            className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground"
+            title="El número vive sólo en la API: la app WhatsApp Business del celular ya no lo usa."
+        >
+            Solo API
+        </span>
+    );
+}
+
 function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando, onEditar, onToken, onDesconectar, onReconectar, onEliminar }) {
     const estado = estadoDe(instance);
 
@@ -440,6 +472,7 @@ function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                             <EtiquetaCanal instancia={instance} />
+                            <EtiquetaConexion instancia={instance} />
                             {/* El número en WhatsApp, y nada en Instagram, donde
                                 el nombre de la línea YA es la cuenta. */}
                             {instance.channel !== 'instagram' && instance.display_phone_number && (

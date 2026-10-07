@@ -41,6 +41,33 @@ class InstanceHealthCheckTest extends TestCase
         $this->assertNull($instance->health_error);
     }
 
+    /** De paso apunta si el número sigue en la app del celular, sin pisar el resto de `meta`. */
+    public function test_apunta_si_el_numero_esta_en_coexistencia(): void
+    {
+        Http::fake(['*' => Http::response(['id' => '123', 'platform_type' => 'CLOUD_API', 'is_on_biz_app' => true], 200)]);
+        $instance = $this->instancia(['meta' => ['calling' => ['enabled' => true]]]);
+
+        $this->artisan('whatsapp:health-check')->assertSuccessful();
+
+        $instance->refresh();
+        $this->assertTrue($instance->plataformaEnMeta()['coexistencia']);
+        $this->assertSame('CLOUD_API', $instance->plataformaEnMeta()['tipo']);
+        $this->assertTrue($instance->callingEnabled());
+    }
+
+    /** Rellenar la etiqueta no toca la salud ni avisa a nadie. */
+    public function test_solo_plataforma_no_toca_la_salud(): void
+    {
+        Http::fake(['*' => Http::response(['id' => '123', 'platform_type' => 'CLOUD_API'], 200)]);
+        $instance = $this->instancia(['health_status' => 'unreachable']);
+
+        $this->artisan('whatsapp:health-check --solo-plataforma')->assertSuccessful();
+
+        $instance->refresh();
+        $this->assertFalse($instance->plataformaEnMeta()['coexistencia']);
+        $this->assertSame('unreachable', $instance->health_status);
+    }
+
     /** La caída se detecta y el motivo se guarda para no repetir la consulta. */
     public function test_una_instancia_muerta_se_marca_y_guarda_el_motivo(): void
     {
@@ -134,6 +161,7 @@ class InstanceHealthCheckTest extends TestCase
      *
      * Instagram no tiene `phone_number_id` y nunca lo tendrá, pero el
      * health-check se lo exigía a todas las instancias por igual. Resultado:
+     *
      * @integracolombiasas recibía mensajes con un cartel rojo encima diciendo
      * «Meta no responde por esta cuenta. No entran ni salen mensajes». Se vio
      * preparando el screencast del App Review, delante de la pantalla que iba a
@@ -304,8 +332,8 @@ class InstanceHealthCheckTest extends TestCase
     private function instancia(array $extra = []): Instance
     {
         $company = Company::create([
-            'name' => 'Fibra ' . Str::random(4),
-            'slug' => 'fibra-' . Str::random(6),
+            'name' => 'Fibra '.Str::random(4),
+            'slug' => 'fibra-'.Str::random(6),
             'active' => true,
         ]);
 
@@ -328,7 +356,7 @@ class InstanceHealthCheckTest extends TestCase
         return User::create([
             'company_id' => $companyId,
             'name' => 'Admin',
-            'email' => 'admin-' . Str::random(6) . '@fibra.test',
+            'email' => 'admin-'.Str::random(6).'@fibra.test',
             'password' => bcrypt('secreto123'),
             'role' => 'admin',
             'active' => true,
