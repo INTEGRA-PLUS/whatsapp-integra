@@ -99,7 +99,8 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                     descripcion="Meta cobra los mensajes que entrega al método de pago de tu cuenta de WhatsApp Business. Si la cuenta no tiene moneda configurada o un método de pago válido, Meta rechaza los envíos."
                 />
 
-                {linea?.problema ? (
+                {/* «por confirmar» no es un rechazo: cae al aviso ámbar de abajo. */}
+                {linea && conProblemaDePago(linea) ? (
                     <EstadoDeLaLinea linea={linea} />
                 ) : conProblema.length > 0 ? (
                     <Aviso tono="alto" titulo="Tus mensajes no están saliendo">
