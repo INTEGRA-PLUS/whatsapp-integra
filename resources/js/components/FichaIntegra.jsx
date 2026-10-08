@@ -625,6 +625,12 @@ function problemaDeClave(clave) {
     return null;
 }
 
+/** «2.4» → «2,4 GHz». */
+const bandaLegible = banda => (banda ? `${String(banda).replace('.', ',')} GHz` : 'Banda sin identificar');
+
+/** Mismo conjunto de números (el orden no importa). */
+const mismasRedes = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+
 /**
  * El WiFi del contrato (extensión «Cambio de clave WiFi»).
  *
@@ -633,6 +639,13 @@ function problemaDeClave(clave) {
  *
  * La clave nueva vive en el estado sólo mientras se escribe: tras enviarla se
  * borra, y la actual nunca llega (Integra no la tiene).
+ *
+ * Elegir redes: hay ONU con varios SSID por banda (invitados, vecinos, los de
+ * fábrica). Integra devuelve todas en `todas_las_redes`; si el equipo tiene más
+ * que las dos principales, el asesor marca en cuáles va la clave. Por defecto
+ * las principales, y si nadie toca la selección no se manda `instancias`: el
+ * cambio es exactamente el de siempre. Las de fábrica (apagadas o con nombre
+ * tipo AP-1) van plegadas para que no se elijan por error.
  */
 function WifiDelContrato({ conversationId, contratoNro }) {
     const [estado, setEstado] = useState('cargando');   // cargando | listo | error
@@ -648,6 +661,8 @@ function WifiDelContrato({ conversationId, contratoNro }) {
     const [envioSinPermiso, setEnvioSinPermiso] = useState(false);
     const [solicitud, setSolicitud] = useState(null);
     const [copiado, setCopiado] = useState(false);
+    const [elegidas, setElegidas] = useState([]);
+    const [verDeFabrica, setVerDeFabrica] = useState(false);
 
     async function cargar() {
         setEstado('cargando');
@@ -660,10 +675,14 @@ function WifiDelContrato({ conversationId, contratoNro }) {
             });
             setWifi(data.wifi ?? null);
             setEstado('listo');
+
+            return data.wifi ?? null;
         } catch (err) {
             setSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
             setError(mensajeDeError(err, 'No se pudo consultar el WiFi del contrato.'));
             setEstado('error');
+
+            return null;
         }
     }
 
@@ -672,8 +691,27 @@ function WifiDelContrato({ conversationId, contratoNro }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [conversationId, contratoNro]);
 
+    const todas = wifi?.todas_las_redes ?? [];
+    const principales = todas.filter(r => r.principal).map(r => r.instancia);
+    // Solo hay algo que elegir si el cambio es automático y la ONU tiene más
+    // redes que las principales; si no, el formulario es el de siempre.
+    const hayEleccion = Boolean(wifi?.automatico) && todas.some(r => !r.principal);
+    const redesVisibles = todas.filter(r => r.principal || !r.de_fabrica);
+    const redesDeFabrica = todas.filter(r => !r.principal && r.de_fabrica);
+
     const problema = problemaDeClave(clave);
-    const puedeEnviar = clave.length > 0 && !problema && confirmado && !enviando;
+    const puedeEnviar = clave.length > 0 && !problema && confirmado && !enviando && (!hayEleccion || elegidas.length > 0);
+
+    function abrirFormulario() {
+        setAbierto(true);
+        setSolicitud(null);
+        setElegidas(principales);
+        setVerDeFabrica(false);
+    }
+
+    function alternarRed(instancia) {
+        setElegidas(actual => (actual.includes(instancia) ? actual.filter(i => i !== instancia) : [...actual, instancia]));
+    }
 
     function cerrarFormulario() {
         setAbierto(false);
@@ -691,11 +729,13 @@ function WifiDelContrato({ conversationId, contratoNro }) {
         setErrorEnvio(null);
         setEnvioSinPermiso(false);
         try {
-            const { data } = await axios.post('/api/integrations/integra/wifi', {
-                conversation_id: conversationId,
-                contrato: contratoNro,
-                clave,
-            }, { timeout: 30000 });
+            const cuerpo = { conversation_id: conversationId, contrato: contratoNro, clave };
+            // Solo si el asesor cambió la selección: con las principales, Integra
+            // ya sabe qué hacer y el envío queda igual al de siempre.
+            if (hayEleccion && !mismasRedes(elegidas, principales)) {
+                cuerpo.instancias = elegidas;
+            }
+            const { data } = await axios.post('/api/integrations/integra/wifi', cuerpo, { timeout: 30000 });
             setSolicitud(data.solicitud ?? null);
             // La clave no se queda en la pantalla ni en memoria una vez enviada.
             cerrarFormulario();
@@ -703,6 +743,12 @@ function WifiDelContrato({ conversationId, contratoNro }) {
         } catch (err) {
             setEnvioSinPermiso(err?.response?.data?.motivo === 'sin_permiso');
             setErrorEnvio(mensajeDeError(err, 'No se pudo enviar el cambio de clave.'));
+            // Una red elegida ya no está en la ONU: se vuelven a pedir las redes
+            // para que el asesor elija sobre lo que el equipo tiene hoy.
+            if (err?.response?.status === 422 && /ya no aparece/i.test(err?.response?.data?.message ?? '')) {
+                const nuevo = await cargar();
+                setElegidas((nuevo?.todas_las_redes ?? []).filter(r => r.principal).map(r => r.instancia));
+            }
         } finally {
             setEnviando(false);
         }
@@ -767,6 +813,9 @@ function WifiDelContrato({ conversationId, contratoNro }) {
                         {redes.map((r, i) => (
                             <Campo key={`${r.banda}-${i}`} label={`Red ${r.banda} GHz`} valor={r.ssid || '—'} mono />
                         ))}
+                        {todas.filter(r => !r.principal && !r.de_fabrica).map(r => (
+                            <Campo key={`otra-${r.instancia}`} label={`Otra red · ${bandaLegible(r.banda)}`} valor={r.ssid || '—'} mono />
+                        ))}
                     </div>
 
                     {solicitudes.length > 0 && (
@@ -780,6 +829,7 @@ function WifiDelContrato({ conversationId, contratoNro }) {
                                         <span className="text-muted-foreground">
                                             {formatFecha(s.creada_en)}
                                             {s.aplicada_en ? ` · aplicada el ${formatFecha(s.aplicada_en)}` : ''}
+                                            {s.redes ? ` · ${s.redes}` : ''}
                                         </span>
                                         <span className={clsx('shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full', e.cls)}>{e.label}</span>
                                     </div>
@@ -801,6 +851,9 @@ function WifiDelContrato({ conversationId, contratoNro }) {
                             ? 'Clave enviada: llega al equipo en unos minutos.'
                             : 'Solicitud creada: la aplicará una persona de tu equipo.'}
                     </p>
+                    {solicitud.redes && (
+                        <p className="mt-1 pl-5 text-[11px] text-muted-foreground">Redes: {solicitud.redes}</p>
+                    )}
                     {!solicitud.automatico && solicitud.motivo_manual && (
                         <p className="mt-1 pl-5 text-[11px] text-muted-foreground">{solicitud.motivo_manual}</p>
                     )}
@@ -834,7 +887,7 @@ function WifiDelContrato({ conversationId, contratoNro }) {
             {!abierto && !(estado === 'error' && sinPermiso) && (
                 <button
                     type="button"
-                    onClick={() => { setAbierto(true); setSolicitud(null); }}
+                    onClick={abrirFormulario}
                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-[12.5px] font-bold text-accent-foreground transition-colors hover:bg-primary/20"
                 >
                     <KeyRound className="size-3.5" /> Cambiar clave
@@ -864,6 +917,52 @@ function WifiDelContrato({ conversationId, contratoNro }) {
                         ? <p className="text-[11px] text-destructive">{problema}</p>
                         : <p className="text-[11px] text-muted-foreground">Entre 8 y 63 caracteres, sin tildes ni ñ.</p>}
 
+                    {hayEleccion && (
+                        <fieldset className="space-y-1 rounded-lg border border-border/60 bg-background/60 p-2">
+                            <legend className="px-1 text-[11px] font-bold text-foreground">¿En qué redes va la clave?</legend>
+                            {redesVisibles.map(r => (
+                                <label key={r.instancia} className="flex cursor-pointer items-center gap-2 text-[11.5px]">
+                                    <input
+                                        type="checkbox"
+                                        checked={elegidas.includes(r.instancia)}
+                                        onChange={() => alternarRed(r.instancia)}
+                                        className="shrink-0"
+                                    />
+                                    <span className="font-mono text-foreground">{r.ssid || `Red ${r.instancia}`}</span>
+                                    <span className="text-muted-foreground">
+                                        {bandaLegible(r.banda)}{r.principal ? ' · principal' : ''}{r.activa === false ? ' · apagada' : ''}
+                                    </span>
+                                </label>
+                            ))}
+                            {redesDeFabrica.length > 0 && (
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVerDeFabrica(v => !v)}
+                                        className="text-[10.5px] font-bold text-muted-foreground hover:underline"
+                                    >
+                                        {verDeFabrica ? 'Ocultar' : 'Ver'} otras redes del equipo ({redesDeFabrica.length}, apagadas o de fábrica)
+                                    </button>
+                                    {verDeFabrica && redesDeFabrica.map(r => (
+                                        <label key={r.instancia} className="mt-1 flex cursor-pointer items-center gap-2 text-[11.5px] text-muted-foreground">
+                                            <input
+                                                type="checkbox"
+                                                checked={elegidas.includes(r.instancia)}
+                                                onChange={() => alternarRed(r.instancia)}
+                                                className="shrink-0"
+                                            />
+                                            <span className="font-mono">{r.ssid || `Red ${r.instancia}`}</span>
+                                            <span>{bandaLegible(r.banda)}{r.activa === false ? ' · apagada' : ''}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                            {elegidas.length === 0 && (
+                                <p className="text-[11px] text-destructive">Marca al menos una red.</p>
+                            )}
+                        </fieldset>
+                    )}
+
                     <label className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 cursor-pointer">
                         <input
                             type="checkbox"
@@ -872,8 +971,8 @@ function WifiDelContrato({ conversationId, contratoNro }) {
                             className="mt-0.5 shrink-0"
                         />
                         <span className="text-[11.5px] leading-relaxed text-foreground">
-                            Cuando se aplique, todos los dispositivos del cliente se desconectarán y tendrá
-                            que conectarlos con la clave nueva. Ya se lo dije.
+                            Cuando se aplique, todos los dispositivos conectados a {hayEleccion ? 'esas redes' : 'su WiFi'} se
+                            desconectarán y tendrá que conectarlos con la clave nueva. Ya se lo dije.
                         </span>
                     </label>
 

@@ -724,6 +724,10 @@ class IntegrationController extends Controller
             'conversation_id' => 'required|integer',
             'contrato' => 'required|string|max:40',
             'clave' => ['required', 'string', 'min:8', 'max:63', 'regex:/^[\x20-\x7E]+$/'],
+            // Redes de la ONU donde va la clave (los `instancia` de todas_las_redes).
+            // Sin esto, Integra la pone en las dos principales.
+            'instancias' => ['nullable', 'array', 'max:16'],
+            'instancias.*' => ['integer', 'min:1', 'max:64'],
         ], [
             'clave.regex' => 'La clave sólo puede llevar letras sin tilde, números y símbolos: nada de tildes ni ñ.',
             'clave.min' => 'La clave tiene que tener al menos 8 caracteres.',
@@ -736,7 +740,7 @@ class IntegrationController extends Controller
             'Cambio de clave WiFi',
             ['clave' => 'integra:wifi', 'tope' => 10, 'mensaje' => 'Se han pedido muchos cambios de clave en el último minuto. Espera un poco antes de volver a intentarlo.'],
             function (IntegraClient $client, string $nro, ?string $identificacion) use ($data) {
-                $solicitud = $client->changeWifiPassword($nro, $data['clave'], $identificacion);
+                $solicitud = $client->changeWifiPassword($nro, $data['clave'], $identificacion, $data['instancias'] ?? null);
 
                 Log::channel('whatsapp')->info('Integra: clave WiFi cambiada desde el chat', [
                     'company_id' => $this->companyId(),
@@ -745,6 +749,7 @@ class IntegrationController extends Controller
                     'contrato' => $nro,
                     'estado' => $solicitud['estado'] ?? null,
                     'automatico' => $solicitud['automatico'] ?? null,
+                    'instancias' => $data['instancias'] ?? null,
                 ]);
 
                 return ['solicitud' => $solicitud];
