@@ -6,6 +6,8 @@ use App\Models\Instance;
 use App\Models\User;
 use App\Notifications\SystemNotification;
 use App\Services\MetaWhatsAppService;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
@@ -31,8 +33,16 @@ use Illuminate\Support\Facades\Notification;
  * - Del chequeo diario de salud, que lee `health_status` de la cuenta.
  * - Del botón «Ya lo hice, comprobar» de la guía.
  *
- * Y se apaga sola en cuanto sale una plantilla: si Meta dejó pasar una, la
- * cuenta ya paga.
+ * Y se apaga sola cuando Meta ENTREGA una plantilla enviada después de que
+ * empezara el problema (ver `PagoDeMetaObserver`). El botón de comprobar, en
+ * cambio, sólo la deja «por confirmar»: `health_status` puede decir AVAILABLE
+ * en una cuenta que falla en la primera plantilla.
+ *
+ * ## Es de la cuenta, no del número
+ *
+ * El método de pago es de la cuenta de WhatsApp Business (WABA). Todo lo que
+ * se marca o se apaga se hace a la vez en todas las líneas de la misma empresa
+ * con el mismo `waba_id`, nunca cruzando empresas.
  */
 class FacturacionDeMeta
 {
@@ -52,6 +62,21 @@ class FacturacionDeMeta
 
     /** Meta restringió los pagos de la cuenta. «payment has been restricted». */
     public const PAGO_RESTRINGIDO = 'pago_restringido';
+
+    /**
+     * El botón de comprobar dijo que Meta ya no marca el pago, pero todavía
+     * no ha salido ningún mensaje que lo demuestre. Ámbar, no rojo.
+     */
+    public const POR_CONFIRMAR = 'por_confirmar';
+
+    /** Cada cuánto, como mucho, se vuelve a avisar a los admins de la misma cuenta. */
+    public const ANTIRREBOTE_HORAS = 6;
+
+    /**
+     * Los problemas que impiden enviar. «Por confirmar» no está: ahí Meta ya
+     * no marca nada y sólo falta que entregue un mensaje que lo demuestre.
+     */
+    public const ACTIVOS = [self::SIN_MONEDA, self::SIN_METODO, self::PAGO_PENDIENTE, self::PAGO_RESTRINGIDO];
 
     /** El código de Meta para todo lo que es cobro: tarjeta, moneda, crédito. */
     public const CODIGO = '131042';
@@ -78,17 +103,13 @@ class FacturacionDeMeta
      * Qué le pasa a la cuenta, leído del texto de Meta. El título del error
      * («Business eligibility payment issue») es el mismo en todos los casos:
      * lo que distingue es el detalle, así que hay que pasar el detalle.
+     *
+     * Si el texto no dice nada concreto, «sin método». Quien no deba adivinar
+     * —porque pisaría un tipo que ya se sabía— usa `tipoConocido()`.
      */
     public static function tipo(?string $mensaje): string
     {
-        $mensaje = (string) $mensaje;
-
-        return match (true) {
-            (bool) preg_match('/currency/i', $mensaje) => self::SIN_MONEDA,
-            (bool) preg_match('/unsettled|outstanding|overdue|past due/i', $mensaje) => self::PAGO_PENDIENTE,
-            (bool) preg_match('/restricted|disabled|suspended/i', $mensaje) => self::PAGO_RESTRINGIDO,
-            default => self::SIN_METODO,
-        };
+        return self::tipoConocido($mensaje) ?? self::SIN_METODO;
     }
 
     /**
@@ -99,6 +120,11 @@ class FacturacionDeMeta
     public static function explicacion(?string $tipo): array
     {
         return match ($tipo) {
+            self::POR_CONFIRMAR => [
+                'titulo' => 'Falta que Meta confirme el pago',
+                'explicacion' => 'Meta ya no marca ningún problema de pago, pero todavía no ha entregado ningún mensaje que lo demuestre.',
+                'accion' => 'No hay que hacer nada: la alerta se apaga sola con el próximo mensaje que Meta entregue.',
+            ],
             self::PAGO_PENDIENTE => [
                 'titulo' => 'Meta tiene un cobro pendiente sin pagar',
                 'explicacion' => 'Tu tarjeta sigue asociada, pero Meta intentó cobrar lo consumido y el cobro no pasó: '
@@ -271,51 +297,222 @@ class FacturacionDeMeta
     }
 
     /**
+     * Qué falta según el texto de Meta, o null si el texto no lo dice (sólo
+     * llegó el código, como en parte del histórico).
+     *
+     * Null y no «sin método» por defecto: adivinar pisaba un `sin_moneda` que
+     * sí venía dicho por el error con un `sin_metodo` que nadie había dicho, y
+     * la guía mandaba a poner la tarjeta a quien lo que no tenía era moneda.
+     */
+    public static function tipoConocido(?string $mensaje): ?string
+    {
+        $mensaje = (string) $mensaje;
+
+        return match (true) {
+            (bool) preg_match('/currency|moneda/i', $mensaje) => self::SIN_MONEDA,
+            (bool) preg_match('/unsettled|outstanding|overdue|past due/i', $mensaje) => self::PAGO_PENDIENTE,
+            (bool) preg_match('/restricted|disabled|suspended/i', $mensaje) => self::PAGO_RESTRINGIDO,
+            (bool) preg_match('/payment|funding|billing|credit line|pago/i', $mensaje) => self::SIN_METODO,
+            default => null,
+        };
+    }
+
+
+    /**
+     * Las líneas que comparten el pago con esta: las de la MISMA empresa con
+     * la misma cuenta de WhatsApp Business. El método de pago es de la cuenta
+     * (WABA), no del número: si una línea no puede enviar por pago, las otras
+     * de esa cuenta tampoco, y arreglarlo las arregla todas.
+     *
+     * Acotado por empresa a propósito: el índice único es (empresa,
+     * phone_number_id) y dos empresas pueden haber conectado la misma cuenta.
+     * La alerta de una no puede encenderse ni apagarse por lo que pasa en la
+     * otra.
+     */
+    public static function lineasDelMismoPago(Instance $instance): Collection
+    {
+        if (! $instance->waba_id) {
+            return Instance::whereKey($instance->id)->get();
+        }
+
+        return Instance::where('company_id', $instance->company_id)
+            ->where('waba_id', $instance->waba_id)
+            ->get();
+    }
+
+    /**
      * Lo registra si el fallo es de cobro. Devuelve si lo era.
      *
-     * Avisa a los admins sólo la primera vez: cada factura fallida del mismo
-     * lote no es una noticia nueva.
+     * `$enviadoEn` es cuándo salió el mensaje que falló. Meta reintenta durante
+     * días y suelta los fallos de golpe: el 131042 de una factura del lunes
+     * puede llegar el miércoles, con la tarjeta ya puesta y la alerta ya
+     * apagada. Un fallo de un envío anterior a la última vez que se dio el
+     * pago por bueno no es noticia y no vuelve a encender nada.
      */
-    public static function registrarFallo(?Instance $instance, $codigo, ?string $mensaje): bool
+    public static function registrarFallo(?Instance $instance, $codigo, ?string $mensaje, $enviadoEn = null): bool
     {
         if (! $instance || ! self::esErrorDePago($codigo, $mensaje)) {
             return false;
         }
 
-        $nuevo = ! $instance->problema_de_pago;
+        $alDia = $instance->pago_al_dia_desde ? Carbon::parse($instance->pago_al_dia_desde) : null;
+        $enviado = $enviadoEn ? Carbon::parse($enviadoEn) : null;
 
-        $instance->forceFill([
-            'problema_de_pago' => self::tipo($mensaje),
-            'problema_de_pago_desde' => $instance->problema_de_pago_desde ?? now(),
-            'enlace_de_pago' => self::enlaceDe($mensaje) ?? $instance->enlace_de_pago,
-            'detalle_de_pago' => $mensaje ?: $instance->detalle_de_pago,
-        ])->saveQuietly();
+        if ($alDia && $enviado && $enviado->lt($alDia)) {
+            Log::channel('whatsapp')->info('💳 Fallo de pago de un envío anterior al arreglo: no se vuelve a encender la alerta', [
+                'instance_id' => $instance->id,
+                'company_id' => $instance->company_id,
+                'enviado' => $enviado->toIso8601String(),
+                'pago_al_dia_desde' => $alDia->toIso8601String(),
+            ]);
 
-        if ($nuevo) {
-            self::avisar($instance);
+            return true;
         }
+
+        self::encender($instance, self::tipoConocido($mensaje), self::enlaceDe($mensaje), $mensaje);
 
         return true;
     }
 
+    /**
+     * Apaga la alerta de todas las líneas que comparten el pago.
+     *
+     * Sólo debe llamarse con una prueba de que Meta cobra: un mensaje
+     * entregado después de que empezara el problema. Ver `PagoDeMetaObserver`.
+     */
     public static function resolver(?Instance $instance): void
     {
-        if (! $instance?->problema_de_pago) {
+        if (! $instance) {
+            return;
+        }
+
+        $lineas = self::lineasDelMismoPago($instance)->filter(fn (Instance $l) => $l->problema_de_pago);
+
+        if ($lineas->isEmpty()) {
             return;
         }
 
         Log::channel('whatsapp')->info('💳 La cuenta de Meta ya cobra: se apaga la alerta de pago', [
             'instance_id' => $instance->id,
             'company_id' => $instance->company_id,
-            'desde' => optional($instance->problema_de_pago_desde)->toIso8601String(),
+            'waba_id' => $instance->waba_id,
+            'lineas' => $lineas->pluck('id')->all(),
+            'desde' => optional($lineas->first()->problema_de_pago_desde)->toIso8601String(),
         ]);
 
-        $instance->forceFill([
+        self::guardar($instance, $lineas, fn () => [
             'problema_de_pago' => null,
             'problema_de_pago_desde' => null,
             'enlace_de_pago' => null,
             'detalle_de_pago' => null,
-        ])->saveQuietly();
+            'pago_al_dia_desde' => now(),
+        ]);
+    }
+
+    /**
+     * Meta ya no marca problema de pago, pero eso no basta para darlo por
+     * resuelto: una cuenta sin moneda puede salir AVAILABLE en `health_status`
+     * y fallar igual en la primera plantilla. La alerta pasa a «por confirmar»
+     * —ámbar, sin culpar a la tarjeta— y la apaga del todo el próximo mensaje
+     * que Meta entregue; si en cambio vuelve un 131042, se enciende otra vez.
+     */
+    public static function porConfirmar(Instance $instance): void
+    {
+        $lineas = self::lineasDelMismoPago($instance)
+            ->filter(fn (Instance $l) => in_array($l->problema_de_pago, self::ACTIVOS, true));
+
+        if ($lineas->isEmpty()) {
+            return;
+        }
+
+        self::guardar($instance, $lineas, fn () => [
+            'problema_de_pago' => self::POR_CONFIRMAR,
+            'pago_al_dia_desde' => now(),
+        ]);
+    }
+
+    /**
+     * Desde el chequeo diario o el botón de comprobar.
+     *
+     * `$monedaComprobada`: sólo quien acaba de leerle la moneda a Meta puede
+     * cambiar un `sin_moneda` por `sin_metodo`. El chequeo diario sólo sabe
+     * que «es de pago», y si pisaba el `sin_moneda` que dijo el propio error
+     * la guía mandaba a poner tarjeta a quien no tenía moneda.
+     */
+    public static function marcar(Instance $instance, string $tipo, bool $monedaComprobada = false): void
+    {
+        self::encender($instance, $tipo, null, null, $monedaComprobada);
+    }
+
+    private static function encender(Instance $instance, ?string $tipo, ?string $enlace, ?string $detalle = null, bool $monedaComprobada = false): void
+    {
+        $lineas = self::lineasDelMismoPago($instance);
+        $activos = self::ACTIVOS;
+
+        $yaEstaba = $lineas->contains(fn (Instance $l) => in_array($l->problema_de_pago, $activos, true));
+
+        // El mismo incidente para todas: la guía guarda el avance por esta
+        // fecha, y si cada línea tuviera la suya el progreso se partiría.
+        // Un «por confirmar» que vuelve a fallar sigue siendo el mismo
+        // incidente: conserva su fecha.
+        $desde = $lineas->filter(fn (Instance $l) => $l->problema_de_pago)
+            ->map(fn (Instance $l) => $l->problema_de_pago_desde)
+            ->filter()
+            ->min() ?? now();
+
+        $tipoFinal = null;
+
+        self::guardar($instance, $lineas, function (Instance $l) use ($tipo, $enlace, $detalle, $monedaComprobada, $desde, $activos, &$tipoFinal) {
+            $actual = in_array($l->problema_de_pago, $activos, true) ? $l->problema_de_pago : null;
+            $nuevo = $tipo ?? $actual ?? self::SIN_METODO;
+
+            if ($nuevo === self::SIN_METODO && $actual === self::SIN_MONEDA && ! $monedaComprobada) {
+                $nuevo = self::SIN_MONEDA;
+            }
+
+            $tipoFinal = $nuevo;
+
+            return [
+                'problema_de_pago' => $nuevo,
+                'problema_de_pago_desde' => $desde,
+                'enlace_de_pago' => $enlace ?? $l->enlace_de_pago,
+                // El texto de Meta, que la guía enseña tal cual: es lo único
+                // que dice si falta pagar, cambiar la tarjeta o qué.
+                'detalle_de_pago' => $detalle ?: $l->detalle_de_pago,
+            ];
+        });
+
+        if ($yaEstaba) {
+            return;
+        }
+
+        // Antirrebote por cuenta: con una alerta que se apaga y se vuelve a
+        // encender (un «por confirmar» que falla, un fallo rezagado) cada
+        // vuelta era otro correo a los admins por el mismo problema. Una vez
+        // cada pocas horas basta: la alerta roja sigue en pantalla.
+        $clave = 'pago-meta:aviso:'.$instance->company_id.':'.($instance->waba_id ?: 'linea-'.$instance->id);
+
+        if (Cache::add($clave, now()->toIso8601String(), now()->addHours(self::ANTIRREBOTE_HORAS))) {
+            self::avisar($instance, $lineas, $tipoFinal ?? self::SIN_METODO);
+        }
+    }
+
+    /**
+     * Guarda cada línea sin disparar observers y deja la instancia que llegó
+     * con los mismos valores, para que quien llamó no siga con una copia vieja.
+     *
+     * @param  callable(Instance): array  $cambios
+     */
+    private static function guardar(Instance $instance, Collection $lineas, callable $cambios): void
+    {
+        foreach ($lineas as $linea) {
+            $valores = $cambios($linea);
+            $linea->forceFill($valores)->saveQuietly();
+
+            if ($linea->id === $instance->id) {
+                $instance->forceFill($valores)->syncOriginalAttributes(array_keys($valores));
+            }
+        }
     }
 
     /**
@@ -341,48 +538,66 @@ class FacturacionDeMeta
         }
 
         $moneda = $meta->monedaDeLaCuenta($instance->waba_id, $instance->access_token);
-
-        if ($moneda === '') {
-            self::marcar($instance, self::SIN_MONEDA);
-
-            return ['ok' => false, 'mensaje' => 'Meta todavía no tiene moneda configurada en esta cuenta. Revisa el paso 2.'];
-        }
+        $monedaLeida = is_string($moneda) && $moneda !== '';
 
         $estado = $salud['data']['health_status']['can_send_message'] ?? null;
         $motivo = self::motivoDePago($salud['data']['health_status'] ?? []);
 
-        if ($estado === 'AVAILABLE') {
-            self::resolver($instance);
+        if ($motivo !== null) {
+            self::encender($instance, self::tipoConocido($motivo) ?? self::SIN_METODO, null, $motivo, $monedaLeida);
 
-            return ['ok' => true, 'mensaje' => 'Listo: Meta ya deja enviar por esta línea. Vuelve a enviar los mensajes que fallaron.'];
+            return ['ok' => false, 'mensaje' => 'Meta sigue sin un método de pago válido: '.$motivo];
+        }
+
+        // Moneda vacía NO enciende nada: Graph devuelve el campo vacío tanto si
+        // la cuenta no tiene moneda como si el token no tiene permiso para
+        // leerla, y no hay forma de distinguirlo. Sólo se usa para no dar por
+        // arreglado un `sin_moneda` que ya estaba encendido.
+        if (! $monedaLeida && $instance->problema_de_pago === self::SIN_MONEDA) {
+            return [
+                'ok' => false,
+                'mensaje' => 'Meta todavía no nos muestra ninguna moneda en esta cuenta. Revisa el paso 3. '
+                    .'Si ya la elegiste, la alerta se apagará sola en cuanto Meta entregue el próximo mensaje.',
+            ];
+        }
+
+        if ($estado === null) {
+            return ['ok' => false, 'mensaje' => 'Meta no dijo si la cuenta ya puede enviar. Prueba de nuevo en unos minutos.'];
+        }
+
+        // Meta no marca nada de pago. No se apaga del todo: queda «por
+        // confirmar» hasta que Meta entregue una plantilla, porque una cuenta
+        // sin moneda puede salir AVAILABLE y fallar igual en la primera.
+        $teniaProblema = in_array($instance->problema_de_pago, [...self::ACTIVOS, self::POR_CONFIRMAR], true);
+        self::porConfirmar($instance);
+
+        $confirmacion = $teniaProblema
+            ? ' La alerta se apagará del todo en cuanto Meta entregue el próximo mensaje; si vuelve a rechazar uno por pago, reaparecerá.'
+            : '';
+
+        if ($estado === 'AVAILABLE') {
+            return [
+                'ok' => true,
+                'por_confirmar' => $teniaProblema,
+                'mensaje' => 'Meta ya no marca ningún problema de pago en esta línea. Puedes volver a enviar los mensajes que fallaron.'.$confirmacion,
+            ];
         }
 
         // Ya no es el pago, pero Meta limita por otra cosa. Se dice cuál: un
         // «por otro motivo» a secas se leyó como que la tarjeta seguía mal
         // (JHeda, 30-sep-2026, con el pago ya hecho y el negocio sin
         // verificar). LIMITED no es BLOCKED: envía, con tope.
-        if ($estado !== null && $motivo === null) {
-            self::resolver($instance);
+        $otros = self::otrosMotivos($salud['data']['health_status'] ?? []);
 
-            $otros = self::otrosMotivos($salud['data']['health_status'] ?? []);
-
-            return [
-                'ok' => $estado === 'LIMITED',
-                'limitada' => true,
-                'mensaje' => $estado === 'LIMITED'
-                    ? 'El pago quedó listo y ya puedes enviar. Meta mantiene un límite en tu cuenta: '.$otros['texto']
-                    : 'El pago quedó listo, pero Meta todavía no deja enviar: '.$otros['texto'],
-                'guia' => $otros['guia'],
-            ];
-        }
-
-        if ($motivo !== null) {
-            self::marcar($instance, self::tipo($motivo));
-
-            return ['ok' => false, 'mensaje' => 'Meta sigue sin un método de pago válido: '.$motivo];
-        }
-
-        return ['ok' => false, 'mensaje' => 'Meta no dijo si la cuenta ya puede enviar. Prueba de nuevo en unos minutos.'];
+        return [
+            'ok' => $estado === 'LIMITED',
+            'limitada' => true,
+            'por_confirmar' => $teniaProblema,
+            'mensaje' => ($estado === 'LIMITED'
+                ? 'Meta ya no marca ningún problema de pago y puedes enviar, pero mantiene un límite en tu cuenta: '.$otros['texto']
+                : 'Meta ya no marca ningún problema de pago, pero todavía no deja enviar: '.$otros['texto']).$confirmacion,
+            'guia' => $otros['guia'],
+        ];
     }
 
     /**
@@ -440,26 +655,19 @@ class FacturacionDeMeta
         ];
     }
 
-    public static function marcar(Instance $instance, string $tipo): void
-    {
-        $nuevo = ! $instance->problema_de_pago;
-
-        $instance->forceFill([
-            'problema_de_pago' => $tipo,
-            'problema_de_pago_desde' => $instance->problema_de_pago_desde ?? now(),
-        ])->saveQuietly();
-
-        if ($nuevo) {
-            self::avisar($instance);
-        }
-    }
-
-    private static function avisar(Instance $instance): void
+    /**
+     * El correo a los admins. Mismas palabras que la alerta roja del layout
+     * (`alerta-pago-meta.jsx`) y la guía: tres textos distintos para el mismo
+     * problema eran tres versiones de qué hacer.
+     */
+    private static function avisar(Instance $instance, Collection $lineas, string $tipo): void
     {
         Log::channel('whatsapp')->error('💳 La cuenta de Meta no tiene con qué cobrar: no salen mensajes', [
             'instance_id' => $instance->id,
             'company_id' => $instance->company_id,
-            'problema' => $instance->problema_de_pago,
+            'waba_id' => $instance->waba_id,
+            'lineas' => $lineas->pluck('id')->all(),
+            'problema' => $tipo,
         ]);
 
         $admins = User::where('company_id', $instance->company_id)
@@ -471,13 +679,27 @@ class FacturacionDeMeta
             return;
         }
 
-        $que = self::explicacion($instance->problema_de_pago);
+        $nombres = $lineas->where('active', true)->pluck('name')->filter()->map(fn ($n) => "«{$n}»")->implode(', ')
+            ?: "«{$instance->name}»";
+
+        $que = self::explicacion($tipo);
 
         Notification::send($admins, new SystemNotification(
             'Tus mensajes de WhatsApp no están saliendo',
-            "Meta está rechazando los envíos de «{$instance->name}»: {$que['titulo']}. {$que['accion']} "
-                .'Tienes el detalle y lo consumido en Instancias → «Pago en Meta».',
+            "Meta está rechazando los envíos de {$nombres}: {$que['titulo']}. {$que['accion']} "
+                .'Tienes el detalle, lo consumido y los pasos en Instancias → «Arreglarlo paso a paso».',
             'Sistema'
         ));
+    }
+
+    /** «…porque la cuenta de WhatsApp Business» + esto. */
+    public static function queFalta(?string $tipo): string
+    {
+        return match ($tipo) {
+            self::SIN_MONEDA => 'no tiene configurada la moneda de facturación',
+            self::PAGO_PENDIENTE => 'tiene un cobro de Meta sin pagar',
+            self::PAGO_RESTRINGIDO => 'tiene los pagos restringidos por Meta',
+            default => 'no tiene un método de pago válido',
+        };
     }
 }

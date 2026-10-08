@@ -500,6 +500,81 @@ público listado en *Dominios permitidos para el SDK para JavaScript*.
   coexistencia, no el único.
 - Estos webhooks suscritos en la app, además de los de siempre: `history`,
   `smb_app_state_sync`, `smb_message_echoes`.
+- Y los cuatro de plantillas (ver la sección siguiente):
+  `message_template_status_update`, `message_template_quality_update`,
+  `template_category_update`, `message_template_components_update`.
+
+## Los avisos de plantillas (2026-10-01)
+
+**Qué pasaba.** Hasta el 1-oct-2026 el webhook descartaba sin leerlos los campos
+de plantillas, y la mayoría de apps ni siquiera estaban suscritas a ellos. Una
+plantilla que Meta pausaba por quejas seguía figurando como aprobada en tres
+sitios a la vez —la caché del guardarraíl de parámetros, el estado del respaldo
+fuera de ventana y las campañas—, y lo único que veía la empresa era su campaña
+fallando con `132015`, destinatario a destinatario, sin que nadie le dijera por
+qué ni hasta cuándo. Mientras, Ajustes ponía en verde «Webhook suscrito a la
+WABA — necesario para recibir aprobación/rechazo de plantillas»: verde con la
+app suscrita sólo a `messages`, y sin código que hiciera nada con ellos.
+
+**Qué hace ahora** (`App\Services\EventosDePlantilla`):
+
+| Aviso | Efecto |
+| --- | --- |
+| Cualquiera | Tira `wa:templates:{waba}`, la caché del catálogo de `TemplateParameterGuard` |
+| `PAUSED`, `DISABLED`, `REJECTED` | Pausa las campañas `queued`/`sending` con esa plantilla (mismo estado que el botón «Pausar») y avisa a los administradores con el motivo en español |
+| `FLAGGED`, calidad `RED` | Avisa: es el paso previo a la pausa |
+| Cambio de categoría | Avisa, tanto el anuncio (`correct_category`) como el hecho; si pasa a marketing, dice que cuesta más |
+| Edición de la plantilla | Invalida el estado del respaldo, cuyo cuerpo guardado ya no es el de Meta |
+
+Si la plantilla es la de respaldo de alguna instancia, se apunta el estado nuevo
+sin consultar el Graph (el aviso ya lo trae).
+
+**Tres cosas que no hay que "arreglar":**
+
+- **`entry.id` es la WABA, no el número.** El aviso vale para todas las
+  instancias con ese `waba_id`, **de todas las empresas**: una WABA puede estar
+  conectada en dos. Cada empresa recibe su aviso con sus campañas, no las de la
+  otra.
+- **Un aviso de una plantilla o WABA desconocida no lanza.** El webhook
+  respondería 500 y Meta lo reintentaría durante siete días.
+- **La idempotencia es por `template_id + evento + entry.time`** en caché, ocho
+  días (más que los siete de reintentos de Meta). Si el proceso falla a medias se
+  borra la marca, para que el reintento lo haga entero.
+
+**El `DISABLED` de Meta se guarda como `META_DISABLED`.** El respaldo ya usaba
+`DISABLED` para «la empresa lo apagó en Ajustes»; guardar el de Meta con el mismo
+nombre hacía que la pantalla dijera «Desactivado» con el interruptor encendido.
+`PAUSED` (TTL 30 min: la pausa dura 3 h o 6 h) e `IN_APPEAL` tienen etiqueta
+propia. Un envío del respaldo que vuelve con `132001`, `132015` o `132016`
+invalida el estado guardado (`WhatsAppFallbackTemplateService::refrescarTrasError()`),
+en vez de esperar las 12 h de TTL de una aprobada.
+
+**La suscripción es de la app, no de la WABA.** Los campos se eligen en
+`POST /{app_id}/subscriptions` y valen para todas las WABAs de esa app. Meta
+**sustituye la lista entera** en cada POST: mandar sólo los campos nuevos daría de
+baja `messages` y dejaría de entrar todo. Por eso
+`WhatsAppSettingsController::ensureAppWebhookFields()` lee los actuales y reenvía
+la unión. Se añaden al pulsar «Suscribir» en Ajustes y al habilitar llamadas; el
+check de Ajustes queda en acción mientras falte alguno, y
+`php artisan whatsapp:check-subscription` lo señala como problema.
+
+## Los acuses de entrega (2026-10-01)
+
+`App\Services\EstadosDeMensaje`, llamado desde el webhook:
+
+- **Un acuse no hace retroceder al mensaje.** Meta no garantiza el orden: un
+  `delivered` tardío borraba el `read`. `failed` sí puede llegar tras `sent`.
+- **El acuse que llega antes que el wamid se guarda 10 minutos** en
+  `wa:estado-pendiente:{wamid}`. Todo código que guarde el wamid de un envío debe
+  llamar después a `WhatsAppWebhookController::aplicarEstadoPendiente($mensaje)`
+  (ya con el mensaje en `sent`). Se eligió esto y no responder 500: los acuses de
+  mensajes enviados por fuera del CRM (otra app en el mismo número) no tendrán
+  nunca wamid aquí, y con un 500 Meta reenviaría el lote entero durante siete días.
+- **Un fallo al guardar sí responde 500**, para que Meta reintente; reintentar es
+  seguro porque un acuse repetido no hace retroceder nada.
+- **El tiempo real va al canal de la instancia del mensaje**, no al de la que
+  recibió el webhook: con dos empresas en el mismo `phone_number_id` son distintas.
+- Lo que Meta cobra (`pricing`, `conversation`) se guarda en `metadata.pricing`.
 
 ## Cómo se desconecta después
 

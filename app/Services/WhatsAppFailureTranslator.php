@@ -48,11 +48,29 @@ class WhatsAppFailureTranslator
             'action'   => 'Corrige el número del contacto.',
             'severity' => 'permanent',
         ],
+        // 131050 no es «WhatsApp decidió no entregarlo»: es el propio cliente
+        // quien pulsó «dejar de recibir ofertas» de esta empresa. Reintentar no
+        // sirve y además empeora la calidad de la línea.
         '131050' => [
-            'title'    => 'WhatsApp no entrega mensajes de este tipo a esta persona',
-            'detail'   => 'WhatsApp aplica restricciones a los mensajes promocionales según la configuración y los hábitos de cada usuario. Este quedó fuera por esa razón, no por un problema del envío.',
-            'action'   => 'Si es algo que el cliente necesita saber, contáctalo por otro canal o espera a que él escriba primero.',
+            'title'    => 'El cliente se dio de baja de los mensajes de marketing',
+            'detail'   => 'Esta persona pidió en WhatsApp dejar de recibir mensajes promocionales de la empresa, así que WhatsApp no le entrega plantillas de marketing.',
+            'action'   => 'No lo reintentes. Si es algo que necesita saber, usa una plantilla de utilidad o espera a que el cliente escriba primero.',
             'severity' => 'permanent',
+        ],
+        // Meta reserva un grupo de control en sus experimentos de marketing: a
+        // esas personas no les llega ninguna plantilla de marketing durante el
+        // experimento. Antes se confundía con el 131050 por el texto.
+        '130472' => [
+            'title'    => 'WhatsApp retuvo el mensaje por un experimento de marketing',
+            'detail'   => 'El número del cliente forma parte de un grupo de control de un experimento de Meta sobre mensajes de marketing, y durante ese experimento no recibe plantillas de marketing. No es un fallo del envío.',
+            'action'   => 'No hace falta hacer nada. Si el mensaje era importante, envíalo con una plantilla de utilidad o por otro canal.',
+            'severity' => 'permanent',
+        ],
+        '131056' => [
+            'title'    => 'Demasiados mensajes seguidos al mismo cliente',
+            'detail'   => 'Se le enviaron muchos mensajes a esta misma persona en muy poco tiempo y WhatsApp frenó los siguientes. A los demás clientes se les puede seguir escribiendo.',
+            'action'   => 'Espera unos minutos antes de volver a escribirle a este cliente.',
+            'severity' => 'temporary',
         ],
         '135000' => [
             'title'    => 'WhatsApp rechazó el mensaje',
@@ -100,10 +118,19 @@ class WhatsAppFailureTranslator
             'action'   => 'Acorta los datos que se insertan en la plantilla y vuelve a enviarla.',
             'severity' => 'permanent',
         ],
+        // 132007 es contenido contra las políticas de WhatsApp. Durante meses
+        // se explicó aquí como «saltos de línea o espacios de más», que es el
+        // 132018: el agente limpiaba los datos y el rechazo seguía igual.
         '132007' => [
-            'title'    => 'El contenido de la plantilla no cumple el formato permitido',
-            'detail'   => 'Alguno de los datos insertados tiene caracteres que WhatsApp no acepta, como saltos de línea o espacios de más.',
-            'action'   => 'Revisa los datos que se rellenan en la plantilla y vuelve a enviarla.',
+            'title'    => 'El contenido de la plantilla infringe las políticas de WhatsApp',
+            'detail'   => 'WhatsApp considera que el texto de la plantilla, o lo que se puso en sus datos variables, va contra sus políticas de contenido.',
+            'action'   => 'Un administrador debe revisar la plantilla en Plantillas; usa otra mientras tanto.',
+            'severity' => 'config',
+        ],
+        '132018' => [
+            'title'    => 'Un dato de la plantilla tiene saltos de línea o espacios de más',
+            'detail'   => 'WhatsApp no acepta datos variables con saltos de línea, tabuladores o más de cuatro espacios seguidos, como una dirección pegada en dos líneas.',
+            'action'   => 'Escribe el dato en una sola línea y vuelve a enviar la plantilla.',
             'severity' => 'permanent',
         ],
         '132012' => [
@@ -140,8 +167,20 @@ class WhatsAppFailureTranslator
         ],
         '131049' => [
             'title'    => 'WhatsApp no entregó este mensaje para cuidar la experiencia del usuario',
-            'detail'   => 'WhatsApp limita cuántos mensajes de tipo promocional recibe una persona. Este quedó fuera de ese límite.',
-            'action'   => 'Espera al día siguiente o contacta al cliente por otro canal.',
+            'detail'   => 'WhatsApp limita cuántas plantillas de marketing recibe cada persona, y esta ya recibió las que le tocaban por ahora.',
+            'action'   => 'Espera al menos 24 horas antes de volver a enviarle una plantilla de marketing, o contacta al cliente por otro canal.',
+            'severity' => 'temporary',
+        ],
+        '4' => [
+            'title'    => 'La aplicación hizo demasiadas peticiones a WhatsApp',
+            'detail'   => 'La conexión con WhatsApp alcanzó su límite de llamadas por un rato. No tiene que ver con este cliente ni con el contenido.',
+            'action'   => 'Espera unos minutos y reintenta.',
+            'severity' => 'temporary',
+        ],
+        '80007' => [
+            'title'    => 'La cuenta de WhatsApp Business alcanzó su límite de peticiones',
+            'detail'   => 'La cuenta de la empresa hizo demasiadas llamadas a WhatsApp en poco tiempo y quedó frenada temporalmente.',
+            'action'   => 'Espera unos minutos y reintenta; si pasa a menudo, revisa el ritmo de las campañas.',
             'severity' => 'temporary',
         ],
         '471' => [
@@ -151,10 +190,16 @@ class WhatsAppFailureTranslator
             'severity' => 'temporary',
         ],
         '368' => [
-            'title'    => 'La cuenta está bloqueada temporalmente',
-            'detail'   => 'WhatsApp bloqueó los envíos de esta cuenta por incumplir sus políticas.',
-            'action'   => 'Un administrador debe revisar el estado de la cuenta en WhatsApp Business.',
+            'title'    => 'La cuenta está restringida o deshabilitada por WhatsApp',
+            'detail'   => 'WhatsApp restringió o deshabilitó la cuenta de la empresa por incumplir sus políticas, y mientras dure no deja enviar.',
+            'action'   => 'Un administrador debe revisar el estado de la cuenta en WhatsApp Business y, si procede, apelar.',
             'severity' => 'config',
+        ],
+        '131057' => [
+            'title'    => 'La cuenta de WhatsApp está en mantenimiento',
+            'detail'   => 'WhatsApp tiene la cuenta de la empresa en modo de mantenimiento, normalmente mientras le sube la capacidad de envío.',
+            'action'   => 'Reintenta en un rato.',
+            'severity' => 'temporary',
         ],
 
         // ── Cuenta y configuración ───────────────────────────────────────────
@@ -168,6 +213,18 @@ class WhatsAppFailureTranslator
             'title'    => 'Falta el método de pago en Meta',
             'detail'   => 'Meta cobra cada plantilla directamente a tu tarjeta, y tu cuenta de WhatsApp Business no tiene tarjeta o moneda configuradas, así que rechaza el envío.',
             'action'   => 'Quien administra tu negocio en Meta debe asociar una tarjeta: en Instancias → «Arreglarlo paso a paso» está la guía. Después, reenvía este mensaje.',
+            'severity' => 'config',
+        ],
+        '131037' => [
+            'title'    => 'El nombre visible de la línea no está aprobado',
+            'detail'   => 'WhatsApp no deja enviar desde este número hasta que apruebe el nombre que verán los clientes.',
+            'action'   => 'Un administrador debe revisar el nombre visible del número en WhatsApp Manager y esperar su aprobación.',
+            'severity' => 'config',
+        ],
+        '131045' => [
+            'title'    => 'La línea tiene un problema con su registro en WhatsApp',
+            'detail'   => 'El número de la empresa no terminó de registrarse en WhatsApp, o el registro se perdió.',
+            'action'   => 'Un administrador debe completar o rehacer el registro de la línea en Instancias.',
             'severity' => 'config',
         ],
         '133010' => [
@@ -186,6 +243,18 @@ class WhatsAppFailureTranslator
             'title'    => 'La conexión con WhatsApp no está autorizada',
             'detail'   => 'Las credenciales con las que el sistema se conecta a WhatsApp dejaron de ser válidas.',
             'action'   => 'Un administrador debe renovar la conexión con WhatsApp.',
+            'severity' => 'config',
+        ],
+        '190' => [
+            'title'    => 'La conexión con WhatsApp caducó',
+            'detail'   => 'El permiso con el que el sistema envía en nombre de la empresa expiró, así que WhatsApp no acepta ningún envío de esta línea.',
+            'action'   => 'Un administrador debe volver a conectar la línea de WhatsApp en Instancias.',
+            'severity' => 'config',
+        ],
+        '10' => [
+            'title'    => 'La conexión con WhatsApp perdió un permiso',
+            'detail'   => 'A la cuenta conectada le falta, o le retiraron, un permiso necesario para esta operación.',
+            'action'   => 'Un administrador debe volver a conectar la línea de WhatsApp en Instancias concediendo todos los permisos.',
             'severity' => 'config',
         ],
         '3' => [
@@ -239,6 +308,20 @@ class WhatsAppFailureTranslator
             'severity' => 'permanent',
         ],
 
+        // ── Flows de WhatsApp ────────────────────────────────────────────────
+        '132068' => [
+            'title'    => 'El formulario (Flow) de la plantilla está bloqueado',
+            'detail'   => 'La plantilla abre un Flow de WhatsApp que está en estado bloqueado, así que WhatsApp no la envía.',
+            'action'   => 'Un administrador debe revisar el Flow en WhatsApp Manager; usa otra plantilla mientras tanto.',
+            'severity' => 'config',
+        ],
+        '132069' => [
+            'title'    => 'El formulario (Flow) de la plantilla alcanzó su límite de envíos',
+            'detail'   => 'El Flow que abre la plantilla está limitado: WhatsApp solo deja enviarlo unas pocas veces por hora (10) mientras no esté en buen estado.',
+            'action'   => 'Espera una hora para volver a enviarla y pide a un administrador que revise el Flow.',
+            'severity' => 'temporary',
+        ],
+
         // ── Fallos pasajeros de WhatsApp ─────────────────────────────────────
         '131000' => [
             'title'    => 'WhatsApp tuvo un problema al procesar el mensaje',
@@ -275,11 +358,31 @@ class WhatsAppFailureTranslator
         'not a whatsapp user'               => '131026',
         'business eligibility payment issue' => '131042',
         'currency is not configured'         => '131042',
-        'part of an experiment'              => '131050',
+        // «part of an experiment» es el 130472, no el 131050 (baja voluntaria
+        // de marketing): se agrupaban juntos dos motivos que no se parecen.
+        'part of an experiment'              => '130472',
+        'stop receiving marketing'           => '131050',
+        'healthy ecosystem engagement'       => '131049',
         're-engagement message'              => '131047',
         'recipient cannot be sender'         => '131021',
         'spam rate limit hit'                => '131048',
+        // El de destinatario —«(Business Account, Consumer Account) pair rate
+        // limit hit»— contiene «rate limit hit»: tiene que ir antes, o todos
+        // acaban en el límite general de la línea (130429).
+        'pair rate limit hit'                => '131056',
+        'same recipient'                     => '131056',
         'rate limit hit'                     => '130429',
+        'access token has expired'           => '190',
+        'session has expired'                => '190',
+        'maintenance mode'                   => '131057',
+        'display name'                       => '131037',
+        'flow is blocked'                    => '132068',
+        'flow is throttled'                  => '132069',
+        'new-line/tab'                       => '132018',
+        'more than 4 consecutive spaces'     => '132018',
+        'issue with the parameters'          => '132018',
+        'violates a whatsapp policy'         => '132007',
+        'policy violated'                    => '132007',
         'too many messages'                  => '130429',
         'business account is locked'         => '131031',
         'account has been locked'            => '131031',

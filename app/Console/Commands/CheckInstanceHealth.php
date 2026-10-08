@@ -112,11 +112,18 @@ class CheckInstanceHealth extends Command
                 // genérico de bloqueo sería el mismo mensaje dos veces. No se
                 // apaga desde aquí: una cuenta sin moneda puede salir como
                 // disponible y fallar igual en la primera plantilla.
+                //
+                // El tipo, sólo si el motivo lo dice: un «payment issue» a
+                // secas no puede convertir en «sin método» un «sin moneda»
+                // que dijo el propio error de Meta (`marcar` no lo pisa).
                 $esDePago = $podra['estado'] !== 'AVAILABLE'
                     && preg_match('/payment|funding|billing|currency|pago/i', (string) $podra['motivo']);
 
                 if ($esDePago) {
-                    FacturacionDeMeta::marcar($instance, FacturacionDeMeta::tipo((string) $podra['motivo']));
+                    FacturacionDeMeta::marcar(
+                        $instance,
+                        FacturacionDeMeta::tipoConocido($podra['motivo']) ?? FacturacionDeMeta::SIN_METODO
+                    );
                 } elseif ($podra['estado'] === 'BLOCKED' && $antesPodia !== $podra['estado']) {
                     // Sólo BLOCKED: LIMITED envía con tope (casi siempre el
                     // negocio sin verificar), y avisar «no está dejando

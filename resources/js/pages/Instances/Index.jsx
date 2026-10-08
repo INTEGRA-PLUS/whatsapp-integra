@@ -383,7 +383,9 @@ function estadoDe(instance) {
     if (instance.health_status === 'unreachable') {
         return { clave: 'sin-conexion', etiqueta: 'Sin conexión', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
     }
-    if (instance.problema_de_pago) {
+    // `por_confirmar` no es «sin pago»: Meta ya no lo marca y sólo falta
+    // que entregue una plantilla para apagar la alerta.
+    if (instance.problema_de_pago && instance.problema_de_pago !== 'por_confirmar') {
         return { clave: 'sin-pago', etiqueta: 'Sin pago en Meta', pastilla: 'bg-destructive/10 text-destructive', punto: 'bg-destructive', franja: 'bg-destructive' };
     }
     // LIMITED envía, con tope: casi siempre es el negocio sin verificar. Como
@@ -492,7 +494,7 @@ function TarjetaInstancia({ instance, sync, integra, puedeSincronizar, generando
                     se lo niega a quien no es BSP— pero sí la consecuencia. */}
                 {/* El pago va antes que el aviso genérico de «no envía»: es la
                     causa más común y la única con una guía que lo resuelve. */}
-                {instance.active && instance.problema_de_pago && (
+                {instance.active && instance.problema_de_pago && instance.problema_de_pago !== 'por_confirmar' && (
                     <Aviso tono="destructive" titulo="Meta rechaza los envíos: falta el método de pago.">
                         <p>
                             {instance.problema_de_pago === 'sin_moneda'

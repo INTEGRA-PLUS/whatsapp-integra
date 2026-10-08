@@ -13,6 +13,7 @@ use App\Services\WhatsAppFallbackTemplateService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -146,7 +147,24 @@ class MessageApiController extends Controller
         ]);
     }
 
+    /**
+     * Una vez por petición: el envío pasa por aquí desde la idempotencia, desde
+     * el endpoint y, si cae en plantilla, otra vez desde sendTemplate. Repetirlo
+     * apuntaba el uso por triplicado en el log del esquema viejo.
+     */
     private function validateInstance(Request $request)
+    {
+        if ($request->attributes->has('instancia_del_api')) {
+            return $request->attributes->get('instancia_del_api');
+        }
+
+        $instancia = $this->autenticarInstancia($request);
+        $request->attributes->set('instancia_del_api', $instancia);
+
+        return $instancia;
+    }
+
+    private function autenticarInstancia(Request $request)
     {
         $token = $request->header('X-Instance-Token');
 
@@ -254,6 +272,11 @@ class MessageApiController extends Controller
 
     public function sendMessage(Request $request)
     {
+        return $this->conIdempotencia($request, fn () => $this->enviarTexto($request));
+    }
+
+    private function enviarTexto(Request $request)
+    {
         $instance = $this->validateInstance($request);
         if ($instance instanceof JsonResponse) {
             return $instance;
@@ -328,7 +351,7 @@ class MessageApiController extends Controller
                 'template' => $request->template_name,
             ]);
 
-            return $this->sendTemplate($request);
+            return $this->enviarPlantilla($request);
         }
 
         // Sin plantilla en la llamada, el respaldo lo pone la propia instancia:
@@ -390,7 +413,7 @@ class MessageApiController extends Controller
         }
 
         $result = $this->metaService->sendMessage(
-            $instance->phone_number_id,
+            $instance,
             $to,
             $messageContent
         );
@@ -413,12 +436,16 @@ class MessageApiController extends Controller
                 // parseo de logs, y permite cruzarla con el estado final para
                 // saber si el guardarraíl habría acertado. El estado de la
                 // plantilla explica por qué el respaldo no pudo rescatarlo.
-                'metadata' => $windowClosed ? [
+                'metadata' => $this->conMarcaDeIdempotencia($request, $windowClosed ? [
                     'window_guard' => 'shadow_pass',
                     'fallback_status' => $fallback['status'] ?? null,
                     'fallback_reason' => $fallback['reason'] ?? null,
-                ] : null,
+                ] : null),
             ]);
+
+            // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+            // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+            \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
             $conversation->update([
                 'last_message' => $messageContent,
@@ -432,10 +459,7 @@ class MessageApiController extends Controller
             ]);
         }
 
-        return response()->json([
-            'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar a Meta',
-        ], 500);
+        return $this->rechazoDeMeta($result, 'Error al enviar a Meta');
     }
 
     /**
@@ -459,6 +483,11 @@ class MessageApiController extends Controller
      * le subes unos treinta días.
      */
     public function sendDocument(Request $request)
+    {
+        return $this->conIdempotencia($request, fn () => $this->enviarDocumento($request));
+    }
+
+    private function enviarDocumento(Request $request)
     {
         $instance = $this->validateInstance($request);
         if ($instance instanceof JsonResponse) {
@@ -582,7 +611,7 @@ class MessageApiController extends Controller
                 'ventana_cerrada' => $windowClosed,
             ]);
 
-            return $this->sendTemplate($request);
+            return $this->enviarPlantilla($request);
         }
 
         // Y si no la trae, **no** se usa la plantilla de respaldo de texto: ésa
@@ -608,7 +637,7 @@ class MessageApiController extends Controller
         }
 
         $result = $this->metaService->sendDocument(
-            $instance->phone_number_id,
+            $instance,
             $to,
             $guardado['url'],
             $guardado['filename'],
@@ -622,10 +651,7 @@ class MessageApiController extends Controller
                 trim(($result['error']['error']['message'] ?? '').' '.($result['error']['error']['error_data']['details'] ?? ''))
             );
 
-            return response()->json([
-                'success' => false,
-                'error' => $result['error']['error']['message'] ?? 'Error al enviar el documento a Meta',
-            ], 500);
+            return $this->rechazoDeMeta($result, 'Error al enviar el documento a Meta');
         }
 
         $message = WhatsAppMessage::create([
@@ -644,8 +670,12 @@ class MessageApiController extends Controller
             'incoming_payment_id' => $request->incoming_payment_id,
             'incoming_company_nit' => $request->incoming_company_nit,
             'template_id' => $request->template_id,
-            'metadata' => $windowClosed ? ['window_guard' => 'shadow_pass'] : null,
+            'metadata' => $this->conMarcaDeIdempotencia($request, $windowClosed ? ['window_guard' => 'shadow_pass'] : null),
         ]);
+
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message' => '📄 '.$guardado['filename'],
@@ -728,6 +758,11 @@ class MessageApiController extends Controller
     }
 
     public function sendTemplate(Request $request)
+    {
+        return $this->conIdempotencia($request, fn () => $this->enviarPlantilla($request));
+    }
+
+    private function enviarPlantilla(Request $request)
     {
         $instance = $this->validateInstance($request);
         if ($instance instanceof JsonResponse) {
@@ -824,33 +859,22 @@ class MessageApiController extends Controller
         $preview = $this->templateGuard->preview($instance, $templateName, $languageCode, $components);
 
         $result = $this->metaService->sendTemplate(
-            $instance->phone_number_id,
+            $instance,
             $to,
             $templateName,
             $languageCode,
             $components
         );
 
-        if ($result['success']) {
-            // Plantillas con encabezado multimedia: guardamos una copia del
-            // adjunto para que el chat pueda mostrarlo y descargarlo, no solo el
-            // texto. El media_id queda persistido aunque la descarga falle, para
-            // poder reintentarla al abrir el mensaje.
+        if ($result['success'] ?? false) {
             $mediaMetadata = ['components' => $components];
             $headerMediaId = $this->headerMediaId($mediaMetadata);
-            $mediaUrl = null;
-            $filename = $this->headerFilename($mediaMetadata);
-            $mediaMimeType = null;
 
-            if ($headerMediaId && ! empty($instance->access_token)) {
-                $mediaInfo = $this->metaService->downloadMedia($headerMediaId, $instance->access_token);
-                if ($mediaInfo) {
-                    $mediaUrl = $mediaInfo['url'];
-                    $filename = $filename ?: $mediaInfo['filename'];
-                    $mediaMimeType = $mediaInfo['mime_type'];
-                }
-            }
-
+            // La burbuja, con su wamid, se guarda en cuanto Meta acepta y antes
+            // de nada más. Antes la copia del adjunto iba primero: una descarga
+            // lenta colgaba la petición, el ERP se cansaba de esperar, la daba
+            // por fallida y la repetía, y el cliente recibía la factura dos
+            // veces sin que en el CRM constara ni la primera.
             $message = WhatsAppMessage::create([
                 'conversation_id' => $conversation->id,
                 'wamid' => $result['data']['messages'][0]['id'],
@@ -863,18 +887,16 @@ class MessageApiController extends Controller
                 // llevaban días llegando descolocados y en el chat no se veía.
                 // Si no hay catálogo se cae al nombre, como antes.
                 'content' => $preview ?? "[Plantilla: $templateName]",
-                'media_url' => $mediaUrl,
                 'media_id' => $headerMediaId,
-                'media_mime_type' => $mediaMimeType,
-                'filename' => $filename,
+                'filename' => $this->headerFilename($mediaMetadata),
                 'direction' => 'outbound',
                 'status' => 'sent',
                 'sent_at' => now(),
-                'metadata' => [
+                'metadata' => $this->conMarcaDeIdempotencia($request, [
                     'template' => $templateName,
                     'language' => $languageCode,
                     'components' => $components,
-                ],
+                ]),
                 'incoming_invoice_id' => $request->incoming_invoice_id,
                 'incoming_contract_id' => $request->incoming_contract_id,
                 'incoming_payment_id' => $request->incoming_payment_id,
@@ -882,10 +904,38 @@ class MessageApiController extends Controller
                 'template_id' => $request->template_id,
             ]);
 
+            // Meta puede mandar el "delivered"/"read"/"failed" antes de que se
+            // guarde el wamid: el webhook lo deja aparcado (EstadosDeMensaje) y se
+            // aplica aquí, ya con la burbuja en "sent", para que no se pierda.
+            \App\Services\EstadosDeMensaje::aplicarPendiente($message);
+
             $conversation->update([
                 'last_message' => $preview ?? "[Plantilla: $templateName]",
                 'last_message_at' => now(),
             ]);
+
+            // Plantillas con encabezado multimedia: copia del adjunto para que
+            // el chat pueda mostrarlo y descargarlo, no solo el texto. Ya con
+            // el mensaje guardado y con tiempo límite: si falla, el media_id
+            // queda en la burbuja y el chat reintenta la descarga al abrirla.
+            if ($headerMediaId && ! empty($instance->access_token)) {
+                try {
+                    $mediaInfo = $this->metaService->downloadMedia($headerMediaId, $instance->access_token);
+
+                    if ($mediaInfo) {
+                        $message->update([
+                            'media_url' => $mediaInfo['url'],
+                            'media_mime_type' => $mediaInfo['mime_type'],
+                            'filename' => $message->filename ?: $mediaInfo['filename'],
+                        ]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::channel('whatsapp')->warning('No se pudo copiar el adjunto de la plantilla del API', [
+                        'message_id' => $message->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -903,10 +953,221 @@ class MessageApiController extends Controller
             trim(($result['error']['error']['message'] ?? '').' '.($result['error']['error']['error_data']['details'] ?? ''))
         );
 
-        return response()->json([
+        return $this->rechazoDeMeta($result, 'Error al enviar plantilla a Meta');
+    }
+
+    /**
+     * Cuánto se recuerda un envío para no repetirlo.
+     */
+    private const IDEMPOTENCIA_TTL_HORAS = 24;
+
+    /**
+     * Pasado este tiempo, un envío "en curso" se da por abandonado: el proceso
+     * que lo llevaba murió. Una petición normal no pasa del minuto (30 s de
+     * Meta y 45 s como mucho del adjunto).
+     */
+    private const IDEMPOTENCIA_ABANDONO_MINUTOS = 10;
+
+    /**
+     * Ejecuta un envío del API como mucho una vez por clave durante 24 h.
+     *
+     * El ERP reintenta cuando no le llega respuesta a tiempo o recibe un 5xx.
+     * Hasta el 1-oct-2026 cada reintento era un envío nuevo: si Meta ya había
+     * aceptado el primero —la respuesta se perdió, o la petición se colgó
+     * copiando el adjunto— el cliente recibía la factura dos veces, y con
+     * plantilla de marketing o utilidad, Meta la cobraba dos veces.
+     *
+     * La clave es la cabecera `Idempotency-Key` si viene. Si no, y la llamada
+     * lleva factura y plantilla, la factura + la plantilla + el destinatario:
+     * el mismo aviso de la misma factura a la misma persona es el mismo envío.
+     * Va siempre acotada a la empresa del token, para que dos empresas con el
+     * mismo número de factura no se pisen.
+     *
+     * Sólo se recuerda lo que salió (2xx). Un rechazo —de validación o de
+     * Meta— suelta la clave: el ERP corrige y vuelve a intentarlo con la misma.
+     */
+    private function conIdempotencia(Request $request, \Closure $enviar)
+    {
+        $clave = $this->claveDeIdempotencia($request);
+
+        if ($clave === null) {
+            return $enviar();
+        }
+
+        $instance = $this->validateInstance($request);
+
+        if (! $instance instanceof Instance) {
+            return $enviar();
+        }
+
+        $hash = hash('sha256', $clave);
+        $cacheKey = "api:idempotencia:{$instance->company_id}:{$hash}";
+        $ttl = now()->addHours(self::IDEMPOTENCIA_TTL_HORAS);
+
+        // `add` es atómico: de dos peticiones iguales a la vez, sólo una entra.
+        if (! Cache::add($cacheKey, ['estado' => 'en_curso', 'desde' => now()->timestamp], $ttl)) {
+            $previo = Cache::get($cacheKey);
+
+            if (($previo['estado'] ?? null) === 'hecho') {
+                return $this->repeticion($previo['cuerpo'], $previo['status']);
+            }
+
+            // El primero se quedó a medias. Si llegó a guardar la burbuja,
+            // Meta lo aceptó: se contesta con ella en vez de reenviar.
+            $guardado = $this->mensajeConMarca($instance, $hash);
+
+            if ($guardado) {
+                $cuerpo = ['success' => true, 'message_id' => $guardado->id, 'wamid' => $guardado->wamid];
+                Cache::put($cacheKey, ['estado' => 'hecho', 'cuerpo' => $cuerpo, 'status' => 200], $ttl);
+
+                return $this->repeticion($cuerpo, 200);
+            }
+
+            $desde = (int) ($previo['desde'] ?? 0);
+
+            if ($previo && now()->timestamp - $desde < self::IDEMPOTENCIA_ABANDONO_MINUTOS * 60) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'idempotency_in_progress',
+                    'error' => 'Este mismo envío ya se está procesando. Espera la respuesta en vez de repetirlo.',
+                ], 409);
+            }
+
+            // Abandonado y sin burbuja: Meta no llegó a aceptarlo. Se toma el
+            // relevo.
+            Cache::put($cacheKey, ['estado' => 'en_curso', 'desde' => now()->timestamp], $ttl);
+        }
+
+        $request->attributes->set('idempotencia', $hash);
+
+        try {
+            $respuesta = $enviar();
+        } catch (\Throwable $e) {
+            Cache::forget($cacheKey);
+
+            throw $e;
+        }
+
+        if ($respuesta->isSuccessful() && $respuesta instanceof JsonResponse) {
+            Cache::put($cacheKey, [
+                'estado' => 'hecho',
+                'cuerpo' => $respuesta->getData(true),
+                'status' => $respuesta->getStatusCode(),
+            ], $ttl);
+        } else {
+            Cache::forget($cacheKey);
+        }
+
+        return $respuesta;
+    }
+
+    private function claveDeIdempotencia(Request $request): ?string
+    {
+        $cabecera = trim((string) $request->header('Idempotency-Key', ''));
+
+        if ($cabecera !== '') {
+            return 'cabecera:'.mb_substr($cabecera, 0, 255);
+        }
+
+        if ($request->filled('incoming_invoice_id') && $request->filled('template_name') && $request->filled('to')) {
+            return implode(':', [
+                'factura',
+                $request->input('incoming_invoice_id'),
+                $request->input('template_name'),
+                WhatsAppConversation::destinatarioDelApi((string) $request->input('to')),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * La marca va en la metadata de la burbuja, que se guarda en cuanto Meta
+     * acepta: es lo que permite reconocer un envío hecho aunque el proceso
+     * muriera antes de apuntarlo en la caché.
+     */
+    private function conMarcaDeIdempotencia(Request $request, ?array $metadata): ?array
+    {
+        $hash = $request->attributes->get('idempotencia');
+
+        if (! $hash) {
+            return $metadata;
+        }
+
+        return array_merge($metadata ?? [], ['idempotency_key' => $hash]);
+    }
+
+    private function mensajeConMarca(Instance $instance, string $hash): ?WhatsAppMessage
+    {
+        // Por las instancias de la empresa: la marca sola no aísla nada.
+        $instanceIds = Instance::where('company_id', $instance->company_id)->pluck('id');
+
+        return WhatsAppMessage::whereHas('conversation', fn ($q) => $q->whereIn('instance_id', $instanceIds))
+            ->where('direction', 'outbound')
+            ->whereNotNull('wamid')
+            ->where('created_at', '>=', now()->subHours(self::IDEMPOTENCIA_TTL_HORAS))
+            ->where('metadata->idempotency_key', $hash)
+            ->latest('id')
+            ->first();
+    }
+
+    private function repeticion(array $cuerpo, int $status): JsonResponse
+    {
+        return response()->json($cuerpo, $status)->header('Idempotent-Replayed', 'true');
+    }
+
+    /**
+     * La respuesta cuando Meta no aceptó el envío.
+     *
+     * Era siempre un 500, y un 500 le dice al ERP «se me cayó algo, repite».
+     * Pero un 4xx de Meta es un «no» firme —plantilla inexistente, sin método
+     * de pago, número inválido—: repetir da el mismo rechazo, o, si el fallo
+     * era otro, un segundo envío. Ahora:
+     *
+     * - 4xx de Meta → 422 con `code` (el de Meta) para que el ERP lo enseñe y
+     *   no lo reintente;
+     * - límite de ritmo de Meta → 429 con `Retry-After`: aquí sí toca repetir,
+     *   pero más tarde;
+     * - lo demás (Meta caído, sin respuesta) → 500, como siempre.
+     *
+     * `success` y `error` siguen igual que antes: el ERP que sólo mira eso no
+     * nota la diferencia.
+     */
+    private function rechazoDeMeta(array $result, string $porDefecto, ?string $codigoPropio = null): JsonResponse
+    {
+        $error = $result['error']['error'] ?? [];
+        $metaCode = is_array($error) ? ($error['code'] ?? null) : null;
+        $httpStatus = (int) ($result['http_status'] ?? 0);
+
+        $cuerpo = [
             'success' => false,
-            'error' => $result['error']['error']['message'] ?? 'Error al enviar plantilla a Meta',
-        ], 500);
+            'error' => (is_array($error) ? ($error['message'] ?? null) : null) ?? $porDefecto,
+        ];
+
+        if ($metaCode === 'ambiguous_instance') {
+            return response()->json($cuerpo + ['code' => 'ambiguous_instance'], 409);
+        }
+
+        if ($httpStatus < 400 || $httpStatus >= 500) {
+            return response()->json($cuerpo + ($codigoPropio ? ['code' => $codigoPropio] : []), 500);
+        }
+
+        $cuerpo['code'] = $codigoPropio ?? $metaCode;
+        $cuerpo['meta_code'] = $metaCode;
+
+        if (! empty($error['error_subcode'])) {
+            $cuerpo['meta_subcode'] = $error['error_subcode'];
+        }
+
+        if (! empty($error['error_data']['details'])) {
+            $cuerpo['details'] = $error['error_data']['details'];
+        }
+
+        if (in_array((string) $metaCode, \App\Jobs\SendCampaignMessage::CODIGOS_DE_RITMO, true)) {
+            return response()->json($cuerpo, 429)->header('Retry-After', '60');
+        }
+
+        return response()->json($cuerpo, 422);
     }
 
     /**
@@ -1116,6 +1377,10 @@ class MessageApiController extends Controller
             'incoming_company_nit' => $request->incoming_company_nit,
             'template_id' => $request->template_id,
         ]);
+
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message' => $content,
@@ -1382,7 +1647,7 @@ class MessageApiController extends Controller
         }
 
         $result = $this->metaService->sendTemplate(
-            $instance->phone_number_id,
+            $instance,
             $to,
             $fallback['name'],
             $fallback['language'],
@@ -1396,12 +1661,9 @@ class MessageApiController extends Controller
                 'template' => $fallback['name'],
                 'error' => $result['error'] ?? null,
             ]);
+            $this->fallbackTemplates->refrescarTrasError($instance, $result['error'] ?? null); // 132001/132015/132016: el estado guardado ya no vale
 
-            return response()->json([
-                'success' => false,
-                'code' => 'fallback_template_failed',
-                'error' => $result['error']['error']['message'] ?? 'Error al enviar la plantilla de respaldo a Meta',
-            ], 500);
+            return $this->rechazoDeMeta($result, 'Error al enviar la plantilla de respaldo a Meta', 'fallback_template_failed');
         }
 
         $content = $fallback['preview'] ?? $originalText;
@@ -1421,14 +1683,18 @@ class MessageApiController extends Controller
             'incoming_payment_id' => $request->incoming_payment_id,
             'incoming_company_nit' => $request->incoming_company_nit,
             'template_id' => $request->template_id,
-            'metadata' => [
+            'metadata' => $this->conMarcaDeIdempotencia($request, [
                 'window_guard' => 'fallback_template',
                 'template' => $fallback['name'],
                 'language' => $fallback['language'],
                 'components' => $fallback['components'],
                 'original_text' => $originalText,
-            ],
+            ]),
         ]);
+
+        // Un acuse que Meta mandó antes de guardarse la burbuja quedó
+        // aparcado en EstadosDeMensaje: se aplica ahora para que no se pierda.
+        \App\Services\EstadosDeMensaje::aplicarPendiente($message);
 
         $conversation->update([
             'last_message' => $content,

@@ -61,6 +61,10 @@ class WhatsAppMessageEvent implements ShouldBroadcastNow
                     'delivered_at' => $m->delivered_at?->toIso8601String(),
                     'read_at' => $m->read_at?->toIso8601String(),
                     'error_message' => $m->error_message,
+                    // Sin esto la burbuja que pasa a fallida en vivo enseñaba
+                    // el texto de Meta en inglés hasta recargar el chat.
+                    'error_code' => $m->error_code,
+                    'failure_reason' => $m->failure_reason,
                 ],
             ];
         }

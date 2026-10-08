@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Instance;
+use App\Services\EventosDePlantilla;
 use App\Services\MetaWhatsAppService;
 use App\Services\WhatsAppFallbackTemplateService;
 use Illuminate\Http\Request;
@@ -40,6 +41,9 @@ class WhatsAppSettingsController extends Controller
             ? $this->meta->getPhoneNumber($instance->phone_number_id, $instance->access_token)
             : ['success' => false, 'error' => 'No phone_number_id'];
         $apps = $this->meta->listSubscribedApps($instance->waba_id, $instance->access_token);
+        // La WABA suscrita no basta: los campos se eligen a nivel de app, y una
+        // app suscrita sólo a `messages` no recibe ni un aviso de plantillas.
+        $appFields = $apps['success'] ? $this->appWebhookFields($instance) : null;
 
         $wabaData = $waba['success'] ? ($waba['data'] ?? []) : [];
         $phoneData = $phone['success'] ? ($phone['data'] ?? []) : [];
@@ -102,7 +106,7 @@ class WhatsAppSettingsController extends Controller
                     ['verified_name' => $phoneData['verified_name'] ?? null]
                 ),
                 'phone_registration' => $this->buildPhoneRegistrationCheck($phone['success'], $phoneData),
-                'webhook_subscription' => $this->buildWebhookCheck($apps['success'], $appsData),
+                'webhook_subscription' => $this->buildWebhookCheck($apps['success'], $appsData, $appFields),
                 'insights' => $this->buildInsightsCheck($waba['success'], $wabaData),
             ],
             'raw' => [
@@ -121,7 +125,21 @@ class WhatsAppSettingsController extends Controller
         }
 
         $result = $this->meta->subscribeApp($instance->waba_id, $instance->access_token);
-        return $this->wrap($result, 'No se pudo suscribir la app al WABA.');
+
+        if (!($result['success'] ?? false)) {
+            return $this->wrap($result, 'No se pudo suscribir la app al WABA.');
+        }
+
+        // Suscribir la WABA sin los campos de plantillas en la app dejaba el
+        // check en verde y a Integra sin enterarse de pausas ni rechazos.
+        $fields = $this->ensureAppWebhookFields($instance, array_merge(['messages'], EventosDePlantilla::CAMPOS));
+
+        return response()->json([
+            'success' => true,
+            'data' => $result['data'] ?? null,
+            'template_fields' => $fields['success'] ?? false,
+            'warning' => ($fields['success'] ?? false) ? null : ($fields['message'] ?? null),
+        ]);
     }
 
     public function registerNumber(Request $request)
@@ -654,21 +672,27 @@ class WhatsAppSettingsController extends Controller
 
     /**
      * Garantiza que la app de Meta esté suscrita al campo de webhook "calls"
-     * (prerrequisito para habilitar llamadas). Si falta, actualiza la suscripción
-     * a nivel de app conservando los campos ya suscritos (messages, etc.).
+     * (prerrequisito para habilitar llamadas). De paso añade los de plantillas:
+     * es la misma suscripción y el mismo clic, y sin ellos Integra no se entera
+     * de que Meta pausó o rechazó una plantilla.
      */
     protected function ensureCallsWebhookSubscribed(Instance $instance): array
     {
-        $verifyToken = config('services.meta.webhook_verify_token');
+        return $this->ensureAppWebhookFields(
+            $instance,
+            array_merge(['calls', 'messages'], EventosDePlantilla::CAMPOS)
+        );
+    }
 
-        if (!$verifyToken) {
-            return [
-                'success' => false,
-                'status' => 422,
-                'message' => 'Para habilitar llamadas hace falta configurar META_WEBHOOK_VERIFY_TOKEN en el servidor (se usa para suscribir el webhook "calls" en la app de Meta).',
-            ];
-        }
-
+    /**
+     * Qué campos de `whatsapp_business_account` tiene suscritos la app a la
+     * que pertenece el token de la instancia. La suscripción de campos es de
+     * la app, no de la WABA: vale para todas las WABAs que la usan.
+     *
+     * @return array{success:bool,app_id?:string,app_secret?:string,current?:?array,fields?:array,message?:string,status?:int,error?:mixed}
+     */
+    protected function appWebhookFields(Instance $instance): array
+    {
         $debug = $this->meta->debugToken($instance->access_token);
         if (!$debug['success'] || empty($debug['data']['app_id'])) {
             return [
@@ -677,7 +701,7 @@ class WhatsAppSettingsController extends Controller
                 'error' => $debug['error'] ?? null,
             ];
         }
-        $appId = $debug['data']['app_id'];
+        $appId = (string) $debug['data']['app_id'];
 
         // El secreto se resuelve DESPUÉS de saber a qué app pertenece el token:
         // hay varias apps en juego y el par app_id|app_secret sólo funciona si
@@ -689,6 +713,7 @@ class WhatsAppSettingsController extends Controller
             return [
                 'success' => false,
                 'status' => 422,
+                'app_id' => $appId,
                 'message' => "No hay app secret configurado para la app {$appId}. Agrégalo a META_APP_SECRETS en el servidor con el formato \"{$appId}:<secreto>\".",
             ];
         }
@@ -697,6 +722,7 @@ class WhatsAppSettingsController extends Controller
         if (!($subs['success'] ?? false)) {
             return [
                 'success' => false,
+                'app_id' => $appId,
                 'message' => "No se pudo consultar la suscripción de webhooks de la app {$appId} en Meta. Verifica que su app secret en META_APP_SECRETS sea correcto.",
                 'error' => $subs['error'] ?? null,
             ];
@@ -713,27 +739,58 @@ class WhatsAppSettingsController extends Controller
             ->values()
             ->all();
 
-        if (in_array('calls', $fields)) {
-            return ['success' => true];
+        return [
+            'success' => true,
+            'app_id' => $appId,
+            'app_secret' => $appSecret,
+            'current' => $current,
+            'fields' => $fields,
+        ];
+    }
+
+    /**
+     * Añade a la suscripción de la app los campos que falten, conservando los
+     * que ya tiene: Meta sustituye la lista entera en cada POST, y mandar sólo
+     * los nuevos daría de baja `messages` y dejaría de entrar todo.
+     */
+    protected function ensureAppWebhookFields(Instance $instance, array $required): array
+    {
+        $state = $this->appWebhookFields($instance);
+
+        if (!($state['success'] ?? false)) {
+            return $state;
         }
 
-        $fields[] = 'calls';
-        if (!in_array('messages', $fields)) {
-            $fields[] = 'messages';
+        $fields = $state['fields'];
+        $missing = array_values(array_diff($required, $fields));
+
+        if ($missing === []) {
+            return ['success' => true, 'fields' => $fields];
         }
 
-        $callbackUrl = $current['callback_url'] ?? url('/webhooks/whatsapp');
+        $verifyToken = config('services.meta.webhook_verify_token');
 
-        $update = $this->meta->updateAppSubscription($appId, $appSecret, $callbackUrl, $verifyToken, array_values(array_unique($fields)));
+        if (!$verifyToken) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Hace falta configurar META_WEBHOOK_VERIFY_TOKEN en el servidor para suscribir en la app de Meta los campos de webhook que faltan ('.implode(', ', $missing).').',
+            ];
+        }
+
+        $fields = array_values(array_unique(array_merge($fields, $missing)));
+        $callbackUrl = $state['current']['callback_url'] ?? url('/webhooks/whatsapp');
+
+        $update = $this->meta->updateAppSubscription($state['app_id'], $state['app_secret'], $callbackUrl, $verifyToken, $fields);
         if (!($update['success'] ?? false)) {
             return [
                 'success' => false,
-                'message' => 'Meta rechazó la suscripción del campo "calls" en el webhook de la app.',
+                'message' => 'Meta rechazó la suscripción de los campos '.implode(', ', $missing).' en el webhook de la app.',
                 'error' => $update['error'] ?? null,
             ];
         }
 
-        return ['success' => true];
+        return ['success' => true, 'fields' => $fields];
     }
 
     protected function wrap(array $result, string $errorMessage)
@@ -854,18 +911,43 @@ class WhatsAppSettingsController extends Controller
         ];
     }
 
-    protected function buildWebhookCheck(bool $reachable, array $appsData): array
+    protected function buildWebhookCheck(bool $reachable, array $appsData, ?array $appFields = null): array
     {
         $subscribed = $reachable && count($appsData) > 0;
+        $description = 'Necesario para recibir aprobación/rechazo de plantillas y cambios de calidad del número.';
+        $state = !$reachable ? 'unknown' : ($subscribed ? 'ok' : 'action');
+        $raw = $subscribed ? 'SUBSCRIBED' : 'NOT_SUBSCRIBED';
+        $missing = [];
+
+        // Hasta el 1-oct-2026 este check se ponía en verde con la WABA suscrita
+        // aunque la app no tuviera ni un campo de plantillas, y el webhook los
+        // descartaba de todas formas: la frase de arriba era mentira.
+        if ($subscribed && $appFields !== null) {
+            if ($appFields['success'] ?? false) {
+                $missing = array_values(array_diff(EventosDePlantilla::CAMPOS, $appFields['fields'] ?? []));
+
+                if ($missing !== []) {
+                    $state = 'action';
+                    $raw = 'MISSING_TEMPLATE_FIELDS';
+                    $description = 'La WABA está suscrita, pero la app no recibe los avisos de plantillas ('
+                        .implode(', ', $missing).'): Integra no se enteraría de una pausa o un rechazo. '
+                        .'Pulsa «Suscribir» para añadirlos.';
+                }
+            } else {
+                $state = 'unknown';
+                $description .= ' No se pudo comprobar qué campos recibe la app: '.($appFields['message'] ?? 'Meta no respondió.');
+            }
+        }
 
         return [
             'id' => 'webhook_subscription',
             'title' => 'Webhook suscrito a la WABA',
-            'description' => 'Necesario para recibir aprobación/rechazo de plantillas y cambios de calidad del número.',
-            'state' => !$reachable ? 'unknown' : ($subscribed ? 'ok' : 'action'),
-            'raw_status' => $subscribed ? 'SUBSCRIBED' : 'NOT_SUBSCRIBED',
+            'description' => $description,
+            'state' => $state,
+            'raw_status' => $raw,
             'action_type' => 'subscribe_webhook',
             'extra' => [
+                'missing_fields' => $missing,
                 // Meta manda la app dentro de `whatsapp_business_api_data`; leerla
                 // arriba dejaba «App suscrita:» en blanco (CMNET, 6-oct-2026).
                 'apps' => array_map(fn($a) => [

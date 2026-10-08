@@ -136,6 +136,23 @@ return [
         // devuelve nada en la v21: responde 200 con el campo vacío. Aparte por
         // lo mismo que las otras, para no mover la versión de los envíos.
         'pricing_api_version' => env('META_PRICING_API_VERSION', 'v23.0'),
+        // Dominios de los que el servidor acepta descargar la muestra del
+        // encabezado de una plantilla para volver a subirla (al editar sin
+        // cambiar el archivo, y al copiar a otra línea). Sólo los CDN de Meta.
+        //
+        // Antes se descargaba cualquier URL que mandara el navegador: un
+        // usuario podía hacer que el servidor pidiera http://169.254.169.254/
+        // o un servicio interno y luego subir la respuesta a Meta (SSRF).
+        // Se compara por sufijo de host y sólo por https; las redirecciones
+        // pasan por la misma comprobación.
+        //
+        // Va en código y no en el .env a propósito: no es algo que cambie por
+        // despliegue, y una variable vacía en el contenedor lo abriría todo.
+        'template_media_hosts' => [
+            'whatsapp.net',
+            'fbcdn.net',
+            'fbsbx.com',
+        ],
     ],
 
     // Software Integra (integración "Pagos a facturas").
