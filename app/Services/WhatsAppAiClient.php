@@ -8,8 +8,10 @@ use App\Models\WhatsAppBotFlow;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMenuOption;
 use App\Models\WhatsAppMessage;
+use App\Services\Mcp\IntegraMcpPolicy;
 use App\Support\AiAssistantProfile;
 use App\Support\AiDecision;
+use App\Support\McpGrant;
 use App\Support\NotaParaElAsesor;
 use App\Support\MenuActionResult;
 use App\Support\ContadorDeIa;
@@ -323,9 +325,17 @@ class WhatsAppAiClient
             // El flujo consulta Integra por su cuenta con estas credenciales.
             // Si la empresa no lo tiene conectado se manda vacío y el flujo
             // deriva a un asesor, que es lo mismo que hace el menú.
+            //
+            // `mcp` es cómo el modelo alcanza el asistente de Integra de esta
+            // empresa: una URL con un permiso cifrado de minutos. Aquí NO viaja
+            // el token `itg_` de nadie —ése no sale de Laravel— y por eso el
+            // nodo de n8n puede tener una credencial estática. Va a null cuando
+            // la empresa no tiene el MCP configurado, y el flujo se va entonces
+            // por su rama de siempre.
             'integra' => [
                 'base_url' => $integra?->base_url,
                 'token' => $integra?->access_token,
+                'mcp' => $this->mcp($instance->company_id, $conversation->id, $integration),
             ],
             'conversacion' => [
                 'id' => $conversation->id,
@@ -346,6 +356,44 @@ class WhatsAppAiClient
                 'step' => $flow?->step,
                 'context' => $flow?->context ?? [],
             ],
+        ];
+    }
+
+    /**
+     * Cómo alcanza el flujo el asistente de Integra de esta empresa.
+     *
+     * Devuelve null —y el flujo se va por su rama sin herramientas— en tres
+     * casos que valen lo mismo desde fuera: la plataforma no tiene el
+     * pass-through configurado, la empresa no ha pegado su credencial, o la
+     * pegó y ya no funciona. En los tres, prometerle herramientas al modelo
+     * sería peor que no dárselas: confirmaría acciones que nadie ejecuta.
+     *
+     * @return array{url: string, escribe: bool}|null
+     */
+    private function mcp(int $companyId, int $conversationId, CompanyIntegration $integration): ?array
+    {
+        $base = (string) config('services.mcp_integra.public_url');
+
+        if (blank(config('services.mcp_integra.key')) || blank($base)) {
+            return null;
+        }
+
+        $row = CompanyIntegration::where('company_id', $companyId)
+            ->where('key', CompanyIntegration::KEY_MCP_INTEGRA)
+            ->first();
+
+        if (! $row || blank($row->base_url) || $row->status !== 'connected') {
+            return null;
+        }
+
+        return [
+            'url' => rtrim($base, '/').'/api/mcp/integra/'
+                .McpGrant::mint($companyId, $conversationId, $integration->aiPermissions()),
+            // Que el token sea de sólo lectura no es un detalle de
+            // configuración: decide si el modelo puede ofrecer abrir un
+            // radicado o sólo puede prometer que lo pasa a un asesor. Hoy los
+            // 43 tokens emitidos son de perfil `lectura`.
+            'escribe' => IntegraMcpPolicy::profileWrites(data_get($row->settings, 'perfil')),
         ];
     }
 

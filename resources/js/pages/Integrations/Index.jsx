@@ -5,13 +5,14 @@ import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import ProviderConnectForm, { Field, inputClass } from '@/components/ProviderConnectForm';
 import IntegrationsHelp from './IntegrationsHelp';
+import McpAssistant from './McpAssistant';
 import { WhatsAppPreview } from '../Templates/preview';
 import { cn } from '@/lib/utils';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import {
     Plus, Pencil, Trash2, Webhook, Info, Send, History, CheckCircle2, XCircle,
     Power, Copy, X, Plug, Wallet, ArrowRight, Blocks, ArrowLeft, HelpCircle,
-    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users, FileCheck2,
+    RefreshCw, AlertTriangle, Loader2, Save, CreditCard, Users, FileCheck2, Bot,
 } from 'lucide-react';
 
 // Los complementos son los proveedores del catálogo; los webhooks son cosa
@@ -821,6 +822,15 @@ function ProviderSection({ can, onBack }) {
                         </Panel>
                     </>
                 )}
+
+                {/* Fuera del bloque de arriba a propósito: es otra credencial
+                    (token `itg_`, no el de la API v1) y funciona sin ella. Tenerlo
+                    escondido hasta conectar la v1 obligaba a conectar algo que el
+                    asistente no usa. */}
+                <Panel title="Asistente de Integra (IA)" Icon={Bot}
+                    does="Que la IA consulte en tu Integra facturas, contratos y reportes al contestar por WhatsApp.">
+                    <McpAssistant showToast={showToast} />
+                </Panel>
             </fieldset>
         </div>
     );

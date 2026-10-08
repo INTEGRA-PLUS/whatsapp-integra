@@ -435,4 +435,49 @@ return [
         'minimo_parecido' => (float) env('EMBEDDINGS_MINIMO_PARECIDO', 0.30),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Pass-through al MCP de Integra
+    |--------------------------------------------------------------------------
+    |
+    | El servidor MCP —el "asistente de Integra", 39 herramientas— NO vive aquí:
+    | corre dentro de la instancia de Integra de cada cliente. Lo que hay en
+    | este repositorio es el pass-through que enruta por empresa, porque cada
+    | una tiene su dominio y su token y las credenciales de n8n son estáticas.
+    | El dominio y el token de cada empresa están en company_integrations
+    | (key = mcp_integra), no aquí.
+    |
+    | `key` es la llave de plataforma con la que n8n demuestra que es él. Sin
+    | ella configurada el endpoint responde 404: es preferible que el
+    | pass-through no exista a que exista abierto.
+    |
+    | `grant_ttl` son los minutos que vale el permiso por empresa que viaja en
+    | la URL. Acaba escrito en los registros de ejecución de n8n, así que dura
+    | poco a propósito.
+    |
+    | `timeout` es generoso porque alguna herramienta del MCP (diagnosticar un
+    | contrato) llega hasta el router del cliente. Tiene que caber dentro de
+    | AI_MENUS_TIMEOUT, que es el presupuesto de toda la respuesta.
+    |
+    | `public_url` es la URL con la que n8n nos alcanza: se declara aparte de
+    | APP_URL porque n8n puede vivir en la red del stack y llegar por el nombre
+    | del contenedor, que no es el dominio que ve el navegador.
+    |
+    | `write_tools` clasifica las tres escrituras del servidor. Es la red por
+    | debajo de `annotations.readOnlyHint`, que es lo que se mira primero; vive
+    | en configuración porque esos nombres están en OTRO repositorio y pueden
+    | cambiar sin que nadie toque éste. Formato: permiso => lista de nombres.
+    |
+    */
+    'mcp_integra' => [
+        'key' => env('MCP_INTEGRA_KEY'),
+        'grant_ttl' => (int) env('MCP_INTEGRA_GRANT_TTL', 15),
+        'timeout' => (int) env('MCP_INTEGRA_TIMEOUT', 60),
+        // `?:` y no el segundo argumento de env(): en docker-compose la
+        // variable llega SIEMPRE (con `:-` vacía), así que el valor por
+        // defecto de env() nunca entraría y la URL quedaría en blanco.
+        'public_url' => env('MCP_INTEGRA_URL') ?: env('APP_URL'),
+        'write_tools' => [],
+    ],
+
 ];
