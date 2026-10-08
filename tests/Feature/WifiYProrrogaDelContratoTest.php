@@ -315,6 +315,74 @@ class WifiYProrrogaDelContratoTest extends TestCase
      * Integra exige 8–63 caracteres ASCII imprimibles. Se valida aquí lo mismo
      * para que el asesor vea el error antes del viaje.
      */
+    /**
+     * Sin redes elegidas no viaja `instancias`: Integra pone la clave en las
+     * dos principales, el comportamiento de siempre.
+     */
+    public function test_sin_redes_elegidas_no_viaja_instancias(): void
+    {
+        $this->conectarIntegra();
+        $this->encender('wifi_password');
+        $this->fakeIntegra();
+
+        $this->actingAs($this->asesor)
+            ->postJson('/api/integrations/integra/wifi', $this->cuerpoWifi())
+            ->assertOk();
+
+        Http::assertSent(fn (PeticionHttp $r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/wifi')
+            && ! array_key_exists('instancias', $r->data()));
+    }
+
+    /** Con redes elegidas, viajan sus números tal cual y vuelven los nombres. */
+    public function test_las_redes_elegidas_viajan_a_integra(): void
+    {
+        $this->conectarIntegra();
+        $this->encender('wifi_password');
+        $this->fakeIntegra(wifiPost: Http::response(['success' => true, 'data' => ['solicitud' => [
+            'id' => 56, 'contrato' => '10432', 'automatico' => true, 'estado' => 'en_cola',
+            'redes' => 'Invitados', 'mensaje_cliente' => 'Tu clave cambiará en unos minutos.',
+        ]]], 201));
+
+        $this->actingAs($this->asesor)
+            ->postJson('/api/integrations/integra/wifi', $this->cuerpoWifi() + ['instancias' => [2, '2', 6]])
+            ->assertOk()
+            ->assertJsonPath('solicitud.redes', 'Invitados');
+
+        Http::assertSent(fn (PeticionHttp $r) => $r->method() === 'POST'
+            && str_contains($r->url(), '/wifi')
+            && $r['instancias'] === [2, 6]);
+    }
+
+    public function test_redes_que_no_son_numeros_no_salen_del_crm(): void
+    {
+        $this->conectarIntegra();
+        $this->encender('wifi_password');
+        $this->fakeIntegra();
+
+        foreach ([['x'], [0], [65], range(1, 17)] as $instancias) {
+            $this->actingAs($this->asesor)
+                ->postJson('/api/integrations/integra/wifi', $this->cuerpoWifi() + ['instancias' => $instancias])
+                ->assertStatus(422);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    /** Si una red ya no está en la ONU, el motivo de Integra llega tal cual al asesor. */
+    public function test_una_red_que_ya_no_esta_en_la_onu_llega_con_su_motivo(): void
+    {
+        $motivo = 'Alguna de las redes elegidas ya no aparece en el equipo del cliente. Consulta de nuevo las redes y vuelve a elegir.';
+        $this->conectarIntegra();
+        $this->encender('wifi_password');
+        $this->fakeIntegra(wifiPost: Http::response(['success' => false, 'message' => $motivo], 422));
+
+        $this->actingAs($this->asesor)
+            ->postJson('/api/integrations/integra/wifi', $this->cuerpoWifi() + ['instancias' => [9]])
+            ->assertStatus(422)
+            ->assertJsonPath('message', $motivo);
+    }
+
     public function test_una_clave_que_integra_rechazaria_no_sale_del_crm(): void
     {
         $this->conectarIntegra();

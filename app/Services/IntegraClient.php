@@ -1090,7 +1090,13 @@ class IntegraClient
     }
 
     /**
-     * Cambia la clave del WiFi del contrato, en las dos bandas a la vez.
+     * Cambia la clave del WiFi del contrato.
+     *
+     * Sin `$instancias`, en las dos redes principales a la vez (2,4 y 5 GHz).
+     * Con `$instancias` —los `instancia` de `todas_las_redes` de contractWifi()—
+     * solo en esas redes: hay ONU con varios SSID por banda (invitados, vecinos)
+     * y el cliente puede querer cambiar solo uno. Integra las valida contra la
+     * ONU y responde 422 si alguna ya no existe.
      *
      * **Tiene efecto en casa del cliente**: si su ONU está en el ACS la clave
      * llega al equipo en minutos y TODOS sus dispositivos se desconectan. Por
@@ -1102,18 +1108,21 @@ class IntegraClient
      * el motivo redactado. La clave no se registra en ningún log, ni aquí ni en
      * quien llame.
      *
-     * @return array{id?: int, contrato?: string, automatico?: bool, estado?: string, motivo_manual?: ?string, mensaje_cliente?: string}
+     * @param  list<int>|null  $instancias
+     * @return array{id?: int, contrato?: string, automatico?: bool, estado?: string, redes?: ?string, motivo_manual?: ?string, mensaje_cliente?: string}
      *
      * @throws \RuntimeException 403 si al token le falta `contratos.wifi`; 404
      *                           si el contrato no existe o no es de esa persona; 422 con el motivo.
      */
-    public function changeWifiPassword(string $nro, string $clave, ?string $identificacion = null): array
+    public function changeWifiPassword(string $nro, string $clave, ?string $identificacion = null, ?array $instancias = null): array
     {
         try {
             $res = $this->call('post', '/api/v1/contratos/'.rawurlencode($nro).'/wifi', array_filter([
                 'clave' => $clave,
                 'identificacion' => $identificacion,
-            ], fn ($v) => $v !== null && $v !== ''));
+                // Sin redes elegidas no se manda el campo: Integra usa las principales.
+                'instancias' => $instancias ? array_values(array_unique(array_map('intval', $instancias))) : null,
+            ], fn ($v) => $v !== null && $v !== '' && $v !== []));
         } catch (\RuntimeException $e) {
             // Mismo motivo que en el diagnóstico: el 403 genérico no dice qué
             // permiso falta ni que se arregla reconectando.
