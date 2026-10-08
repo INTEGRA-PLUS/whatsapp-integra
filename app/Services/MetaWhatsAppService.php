@@ -27,7 +27,7 @@ class MetaWhatsAppService
         $this->callingBaseUri = "https://graph.facebook.com/{$callingVersion}";
     }
 
-    public function sendMessage(string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
+    public function sendMessage(Instance|string $phoneNumberId, string $to, string $message, ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -55,7 +55,7 @@ class MetaWhatsAppService
      * quien conoce los límites de cada formato. Aquí sólo se envuelve en el
      * sobre del mensaje, igual que el texto o la plantilla.
      */
-    public function sendInteractive(string $phoneNumberId, string $to, array $interactive, ?string $contextWamid = null)
+    public function sendInteractive(Instance|string $phoneNumberId, string $to, array $interactive, ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -79,7 +79,7 @@ class MetaWhatsAppService
      * sale por el mismo endpoint que el texto. Un `emoji` vacío es la forma
      * documentada de quitar la reacción anterior.
      */
-    public function sendReaction(string $phoneNumberId, string $to, string $targetWamid, string $emoji = '')
+    public function sendReaction(Instance|string $phoneNumberId, string $to, string $targetWamid, string $emoji = '')
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -93,7 +93,7 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function sendImage(string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
+    public function sendImage(Instance|string $phoneNumberId, string $to, string $imageUrl, string $caption = '', ?string $contextWamid = null)
     {
         $payload = [
             'messaging_product' => 'whatsapp',
@@ -112,7 +112,7 @@ class MetaWhatsAppService
         return $this->sendRequest($phoneNumberId, $payload);
     }
 
-    public function sendAudio(string $phoneNumberId, string $to, string $audioUrl)
+    public function sendAudio(Instance|string $phoneNumberId, string $to, string $audioUrl)
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -124,7 +124,7 @@ class MetaWhatsAppService
         ]);
     }
 
-    public function sendTemplate(string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
+    public function sendTemplate(Instance|string $phoneNumberId, string $to, string $templateName, string $languageCode = 'es', array $components = [])
     {
         return $this->sendRequest($phoneNumberId, [
             'messaging_product' => 'whatsapp',
@@ -141,7 +141,7 @@ class MetaWhatsAppService
     }
 
     public function sendDocument(
-        string $phoneNumberId,
+        Instance|string $phoneNumberId,
         string $to,
         string $documentUrl,
         string $filename = '',
@@ -177,15 +177,16 @@ class MetaWhatsAppService
      * Ese id se referencia en header.parameters[].{image|video|document}.id al enviar
      * una plantilla con encabezado multimedia. Meta aloja el archivo (~30 días).
      */
-    public function uploadMedia(string $phoneNumberId, string $filePath, string $mimeType): array
+    public function uploadMedia(Instance|string $phoneNumberId, string $filePath, string $mimeType): array
     {
         try {
-            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
-            $accessToken = $instance ? $instance->access_token : null;
+            $linea = $this->lineaDeEnvio($phoneNumberId);
 
-            if (! $accessToken) {
-                return ['success' => false, 'error' => 'Access token not found'];
+            if (! $linea['ok']) {
+                return ['success' => false, 'error' => $linea['error']];
             }
+
+            [$phoneNumberId, $accessToken] = [$linea['phone_number_id'], $linea['access_token']];
 
             $url = "{$this->baseUri}/{$phoneNumberId}/media";
 
@@ -498,7 +499,12 @@ class MetaWhatsAppService
     {
         try {
             $url = "{$this->baseUri}/{$mediaId}";
-            $response = Http::withToken($accessToken)->get($url);
+
+            // Con tiempo límite: esto corre después de que Meta aceptó un
+            // envío, dentro de una petición del ERP o de un job. Sin límite, un
+            // CDN lento colgaba la petición hasta que el ERP se cansaba y la
+            // repetía, y la factura salía dos veces.
+            $response = Http::withToken($accessToken)->connectTimeout(5)->timeout(15)->get($url);
 
             if (! $response->successful()) {
                 Log::error('Error getting media URL', [
@@ -513,7 +519,7 @@ class MetaWhatsAppService
             $mediaUrl = $mediaData['url'];
             $mimeType = $mediaData['mime_type'];
 
-            $mediaResponse = Http::withToken($accessToken)->get($mediaUrl);
+            $mediaResponse = Http::withToken($accessToken)->connectTimeout(5)->timeout(30)->get($mediaUrl);
 
             if (! $mediaResponse->successful()) {
                 return null;
@@ -549,6 +555,13 @@ class MetaWhatsAppService
      * `downloadMedia()` se trae el archivo entero a S3, que es carísimo cuando lo
      * único que se quiere saber es si el id sigue vivo y de qué tipo es —el caso
      * de validar el encabezado de una plantilla antes de enviarla.
+     *
+     * Tres respuestas, no dos: la ficha, `['missing' => true]` cuando Meta dice
+     * claramente que el id no existe o no es de esta línea (404, o 400 con el
+     * código 100 «Unsupported get request»), y `null` cuando no se sabe
+     * —timeout, 5xx, 429, o un 400 de token caducado (190), que Graph también
+     * devuelve como 400—. Quien la usa no debe tratar un mal minuto de Graph, ni
+     * un token vencido, como un archivo borrado.
      */
     public function mediaInfo(string $mediaId, string $accessToken): ?array
     {
@@ -556,6 +569,11 @@ class MetaWhatsAppService
             $response = Http::withToken($accessToken)
                 ->timeout(15)
                 ->get("{$this->baseUri}/{$mediaId}");
+
+            if ($response->status() === 404
+                || ($response->status() === 400 && (int) $response->json('error.code') === 100)) {
+                return ['missing' => true];
+            }
 
             if (! $response->successful()) {
                 return null;
@@ -617,19 +635,78 @@ class MetaWhatsAppService
         return $data;
     }
 
-    protected function sendRequest(string $phoneNumberId, array $data)
+    /**
+     * Con qué número y con qué token sale un envío.
+     *
+     * Hasta el 1-oct-2026 todo envío buscaba la instancia por `phone_number_id`
+     * a secas y se quedaba con la primera fila. Pero el índice único es
+     * (company_id, phone_number_id): dos empresas pueden reclamar el mismo
+     * número, y entonces el mensaje de una salía con el token de la otra —o
+     * con el de una fila vieja ya desconectada—, según el orden en que
+     * devolviera la base. Quien llama ya tiene la instancia en la mano: que la
+     * pase. El `string` se mantiene por compatibilidad con los llamadores que
+     * aún no la pasan, pero si el número es ambiguo ya no se elige al azar.
+     *
+     * @return array{ok: true, phone_number_id: string, access_token: string}|array{ok: false, error: mixed}
+     */
+    protected function lineaDeEnvio(Instance|string $linea): array
+    {
+        if ($linea instanceof Instance) {
+            if (empty($linea->access_token) || empty($linea->phone_number_id)) {
+                Log::error('WhatsApp API Error: la instancia no tiene token o número', ['instance_id' => $linea->id]);
+
+                return ['ok' => false, 'error' => 'Access token not found'];
+            }
+
+            return ['ok' => true, 'phone_number_id' => (string) $linea->phone_number_id, 'access_token' => $linea->access_token];
+        }
+
+        $candidatas = Instance::where('phone_number_id', $linea)->orderBy('id')->get();
+
+        // Una fila vieja apagada no compite con la que está en uso.
+        if ($candidatas->count() > 1 && $candidatas->where('active', true)->isNotEmpty()) {
+            $candidatas = $candidatas->where('active', true);
+        }
+
+        $tokens = $candidatas->pluck('access_token')->filter()->unique();
+
+        if ($tokens->isEmpty()) {
+            Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $linea]);
+
+            return ['ok' => false, 'error' => 'Access token not found'];
+        }
+
+        // Si todas las filas llevan el mismo token la petición es idéntica sea
+        // cual sea: no hay nada que elegir. Con tokens distintos, elegir uno es
+        // decidir en nombre de qué empresa sale el mensaje.
+        if ($tokens->count() > 1) {
+            Log::channel('whatsapp')->error('🚨 Envío con phone_number_id ambiguo: varias empresas lo reclaman', [
+                'phone_number_id' => $linea,
+                'instances' => $candidatas->pluck('company_id', 'id'),
+            ]);
+
+            return ['ok' => false, 'error' => ['error' => [
+                'message' => 'Este número de WhatsApp está registrado en más de una empresa y no se sabe con el '
+                    .'token de cuál enviar. Un administrador debe desactivar la instancia duplicada.',
+                'code' => 'ambiguous_instance',
+            ]]];
+        }
+
+        return ['ok' => true, 'phone_number_id' => (string) $linea, 'access_token' => $tokens->first()];
+    }
+
+    protected function sendRequest(Instance|string $phoneNumberId, array $data)
     {
         $data = $this->withRecipient($data);
 
         try {
-            $instance = Instance::where('phone_number_id', $phoneNumberId)->first();
-            $accessToken = $instance ? $instance->access_token : null;
+            $linea = $this->lineaDeEnvio($phoneNumberId);
 
-            if (! $accessToken) {
-                Log::error('WhatsApp API Error: Access token not found', ['phone_number_id' => $phoneNumberId]);
-
-                return ['success' => false, 'error' => 'Access token not found'];
+            if (! $linea['ok']) {
+                return ['success' => false, 'error' => $linea['error']];
             }
+
+            [$phoneNumberId, $accessToken] = [$linea['phone_number_id'], $linea['access_token']];
 
             $url = "{$this->baseUri}/{$phoneNumberId}/messages";
 
@@ -651,9 +728,12 @@ class MetaWhatsAppService
                 'response' => $response->json(),
             ]);
 
+            // El estado HTTP distingue un rechazo de Meta (4xx: no salió y
+            // reintentar igual no lo arregla) de una caída suya (5xx).
             return [
                 'success' => false,
                 'error' => $response->json(),
+                'http_status' => $response->status(),
             ];
 
         } catch (\Exception $e) {
@@ -672,12 +752,116 @@ class MetaWhatsAppService
     public function listTemplates(string $wabaId, string $accessToken, array $params = [])
     {
         $defaults = [
-            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason',
+            // `parameter_format` hace falta para copiar una plantilla con
+            // variables con nombre: sin él se crea como POSITIONAL y Meta la
+            // rechaza por llevar {{nombre}}.
+            'fields' => 'id,name,language,status,category,parameter_format,components,quality_score,previous_category,rejected_reason',
             'limit' => 100,
         ];
         $query = array_merge($defaults, $params);
 
         return $this->graphGet("/{$wabaId}/message_templates", $accessToken, $query);
+    }
+
+    /**
+     * El catálogo entero de un WABA, siguiendo `paging.cursors.after`.
+     *
+     * `listTemplates()` devuelve UNA página, y Meta no garantiza el `limit`
+     * que se le pide: con un catálogo grande corta antes. Leer sólo la primera
+     * página hacía que una plantilla de la segunda «no existiera» —no se
+     * podía editar ni previsualizar, ni elegir para una campaña—.
+     *
+     * Devuelve la misma forma que `listTemplates()`, con todas las filas en
+     * `data.data`. Si falla cualquier página falla todo: un catálogo a medias
+     * convierte «no la leí» en «no existe», que es justo el fallo de arriba.
+     * El tope de páginas es para no quedarse en bucle si Meta repite cursor.
+     */
+    public function listAllTemplates(string $wabaId, string $accessToken, array $params = [], int $maxPaginas = 20): array
+    {
+        $filas = [];
+        $despues = null;
+        $vistos = [];
+
+        for ($pagina = 0; $pagina < $maxPaginas; $pagina++) {
+            $consulta = $params;
+            unset($consulta['before']);
+            if ($despues !== null) {
+                $consulta['after'] = $despues;
+            }
+
+            $res = $this->listTemplates($wabaId, $accessToken, $consulta);
+
+            if (! ($res['success'] ?? false)) {
+                return $res;
+            }
+
+            foreach ($res['data']['data'] ?? [] as $fila) {
+                $filas[] = $fila;
+            }
+
+            $despues = $res['data']['paging']['cursors']['after'] ?? null;
+
+            // Sin `next` no hay más páginas, aunque Meta mande cursores.
+            if (empty($res['data']['paging']['next']) || ! $despues || isset($vistos[$despues])) {
+                return ['success' => true, 'data' => ['data' => $filas, 'paging' => null], 'truncated' => false];
+            }
+
+            $vistos[$despues] = true;
+        }
+
+        Log::warning('Catálogo de plantillas cortado por el tope de páginas', [
+            'waba_id' => $wabaId,
+            'paginas' => $maxPaginas,
+            'filas' => count($filas),
+        ]);
+
+        return ['success' => true, 'data' => ['data' => $filas, 'paging' => null], 'truncated' => true];
+    }
+
+    /**
+     * Borra una plantilla: `DELETE /{waba_id}/message_templates?name=[&hsm_id=]`.
+     *
+     * Con `hsm_id` se borra ESE idioma, que es lo que pide quien borra la que
+     * tiene delante (TemplateController::destroyVariante). Sin él se van
+     * **todos los idiomas** con ese nombre, que en Meta son plantillas aparte:
+     * es lo que hace falta para rehacer una con la categoría equivocada
+     * (TemplateController::destroy). Ninguno de los dos tiene vuelta atrás.
+     */
+    public function deleteTemplate(string $wabaId, string $accessToken, string $name, ?string $hsmId = null): array
+    {
+        try {
+            $url = "{$this->baseUri}/{$wabaId}/message_templates";
+
+            $response = Http::withToken($accessToken)
+                ->timeout(30)
+                ->delete($url.'?'.http_build_query(array_filter(['hsm_id' => $hsmId, 'name' => $name])));
+
+            if ($response->successful()) {
+                Log::info('WhatsApp Template Deleted', [
+                    'waba_id' => $wabaId,
+                    'template_id' => $hsmId,
+                    'template_name' => $name,
+                ]);
+
+                return ['success' => true, 'data' => $response->json()];
+            }
+
+            Log::error('WhatsApp Template Delete Error', [
+                'waba_id' => $wabaId,
+                'template_id' => $hsmId,
+                'status' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
+        } catch (\Exception $e) {
+            Log::error('WhatsApp Template Delete Exception', [
+                'waba_id' => $wabaId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
 
     public function enableInsights(string $wabaId, string $accessToken)
@@ -1353,54 +1537,10 @@ class MetaWhatsAppService
         }
     }
 
-    /**
-     * Borra una plantilla: `DELETE /{waba_id}/message_templates?name=...`.
-     *
-     * Por nombre se van TODOS sus idiomas, que en Meta son plantillas aparte
-     * con el mismo nombre. El borrado no tiene vuelta atrás.
-     */
-    public function deleteTemplate(string $wabaId, string $accessToken, string $name)
-    {
-        try {
-            $url = "{$this->baseUri}/{$wabaId}/message_templates";
-
-            $response = Http::withToken($accessToken)
-                ->timeout(30)
-                ->delete($url.'?'.http_build_query(['name' => $name]));
-
-            if ($response->successful()) {
-                Log::info('WhatsApp Template Deleted', [
-                    'waba_id' => $wabaId,
-                    'template_name' => $name,
-                    'meta_response' => $response->json(),
-                ]);
-
-                return ['success' => true, 'data' => $response->json()];
-            }
-
-            Log::error('WhatsApp Template Delete Error', [
-                'waba_id' => $wabaId,
-                'template_name' => $name,
-                'status' => $response->status(),
-                'response' => $response->json(),
-            ]);
-
-            return ['success' => false, 'status' => $response->status(), 'error' => $response->json()];
-        } catch (\Exception $e) {
-            Log::error('WhatsApp Template Delete Exception', [
-                'waba_id' => $wabaId,
-                'template_name' => $name,
-                'message' => $e->getMessage(),
-            ]);
-
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
-    }
-
     public function getTemplate(string $templateId, string $accessToken, array $params = [])
     {
         $defaults = [
-            'fields' => 'id,name,language,status,category,components,quality_score,previous_category,rejected_reason,library_template_name',
+            'fields' => 'id,name,language,status,category,parameter_format,components,quality_score,previous_category,rejected_reason,library_template_name',
         ];
         $query = array_merge($defaults, $params);
 

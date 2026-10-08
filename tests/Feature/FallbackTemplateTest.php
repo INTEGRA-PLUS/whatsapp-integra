@@ -434,7 +434,7 @@ class FallbackTemplateTest extends TestCase
         $instance = $this->instancia();
         $this->conversacionVencida($instance);
 
-        // Meta rechaza con 132007 los parámetros con saltos de línea,
+        // Meta rechaza con 132018 los parámetros con saltos de línea,
         // tabuladores o más de cuatro espacios seguidos.
         $this->enviarAviso($instance, "Su factura fue generada.\n\nTotal:    120.000\tVence: 10/09")->assertOk();
 

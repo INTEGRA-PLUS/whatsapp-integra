@@ -116,6 +116,45 @@ class FacturaRapidaTest extends TestCase
     }
 
     /**
+     * Un cliente que oculta su número llega con un BSUID por nombre, y sin
+     * contacto vinculado la factura salía con «Estimado cliente
+     * CO.1402615141764490». Tampoco vale el número. Y el nombre del negocio,
+     * escrito a mano en Ajustes, no puede llevar un salto de línea: Meta
+     * rechaza el parámetro entero (132018).
+     */
+    public function test_la_factura_no_saluda_por_el_bsuid_ni_lleva_saltos_de_linea(): void
+    {
+        $this->conIntegra();
+        $this->instance->company->update(['name' => "Fibra del Sur\nS.A.S."]);
+
+        $conversacion = WhatsAppConversation::create([
+            'instance_id' => $this->instance->id,
+            'wa_id' => 'CO.1402615141764490',
+            'bsuid' => 'CO.1402615141764490',
+            'name' => 'CO.1402615141764490',
+            'status' => 'open',
+            'last_message_at' => now(),
+        ]);
+        $this->documento($conversacion, 100, 'Factura_100.pdf', '2026-09-01');
+
+        Http::fake(fn () => Http::response(['data' => [
+            'codigo' => 'F-100',
+            'vencimiento' => '2026-09-25',
+            'montos' => ['total' => 65000, 'por_pagar' => 65000],
+        ]], 200));
+
+        $payload = $this->actingAs($this->agente->fresh())
+            ->postJson("/api/chat/conversations/{$conversacion->id}/facturas/100/preparar")
+            ->assertOk()
+            ->json();
+
+        $textos = array_column(collect($payload['components'])->firstWhere('type', 'body')['parameters'], 'text');
+
+        $this->assertSame('cliente', $textos[0]);
+        $this->assertSame('Fibra del Sur S.A.S.', $textos[1]);
+    }
+
+    /**
      * Si Integra no responde, no se manda nada.
      *
      * Una factura con el importe en blanco o con el de otra es peor que no

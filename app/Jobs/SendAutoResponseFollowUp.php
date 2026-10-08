@@ -66,7 +66,7 @@ class SendAutoResponseFollowUp implements ShouldQueue
         $renderedMessage = $rule->renderMessage($conversation);
 
         $result = $metaService->sendMessage(
-            $instance->phone_number_id,
+            $instance,
             $conversation->recipientId(),
             $renderedMessage
         );

@@ -62,11 +62,35 @@ class WhatsAppMessage extends Model
      * El chat necesita saber si puede ofrecer el adjunto sin conocer los
      * detalles de dónde quedó guardado el media_id.
      */
-    protected $appends = ['media_available'];
+    protected $appends = ['media_available', 'failure_reason'];
 
     public function getMediaAvailableAttribute(): bool
     {
         return $this->isMediaAvailable();
+    }
+
+    /**
+     * Por qué no llegó, en castellano y para quien atiende: titular, qué pasó y
+     * qué hacer. Sólo en los fallidos; en el resto es `null`.
+     *
+     * La burbuja roja del chat enseñaba el texto de Meta tal cual —«(#131049)
+     * This message was not delivered to maintain healthy ecosystem
+     * engagement»— mientras el panel de mensajes ya lo traducía. La traducción
+     * vive en un solo sitio, {@see \App\Services\WhatsAppFailureTranslator},
+     * y aquí sólo se expone para que el chat no tenga su propia tabla en JS.
+     *
+     * Se mira `getAttributes()` y no las propiedades: hay consultas que piden
+     * sólo unas columnas y el accesor no debe obligarlas a traer más.
+     */
+    public function getFailureReasonAttribute(): ?array
+    {
+        $atributos = $this->getAttributes();
+
+        if (($atributos['status'] ?? null) !== 'failed') {
+            return null;
+        }
+
+        return app(\App\Services\WhatsAppFailureTranslator::class)->explain($this);
     }
 
     public function conversation()

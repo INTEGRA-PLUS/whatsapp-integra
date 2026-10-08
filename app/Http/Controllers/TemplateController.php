@@ -8,6 +8,7 @@ use App\Services\MetaWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
@@ -209,10 +210,13 @@ class TemplateController extends Controller
             ], 502);
         }
 
+        $this->olvidarCatalogo($instance);
+
         return response()->json([
             'success' => true,
             'already_exists' => false,
             'data' => $result['data'],
+            'categoria_cambiada' => $this->categoriaCambiada($entry['category'], $result['data'] ?? []),
         ], 201);
     }
 
@@ -351,7 +355,7 @@ class TemplateController extends Controller
         $templatesIndex = [];
 
         if (empty($templateIds)) {
-            $listResult = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+            $listResult = $this->meta->listAllTemplates($instance->waba_id, $instance->access_token, [
                 'fields' => 'id,name,language',
                 'limit' => 500,
             ]);
@@ -410,8 +414,8 @@ class TemplateController extends Controller
         }
 
         // If templatesIndex empty (because user passed ids), enrich it now with one extra fetch.
-        if (empty($templatesIndex) && ! empty($templateIds)) {
-            $listResult = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
+        if (empty($templatesIndex) && !empty($templateIds)) {
+            $listResult = $this->meta->listAllTemplates($instance->waba_id, $instance->access_token, [
                 'fields' => 'id,name,language',
                 'limit' => 500,
             ]);
@@ -662,7 +666,12 @@ class TemplateController extends Controller
             'limit', 'after', 'before',
         ]);
 
-        $result = $this->meta->listTemplates($instance->waba_id, $instance->access_token, $params);
+        // `todas=1` recorre todas las páginas: la pantalla de plantillas filtra
+        // y agrupa por familia en el navegador, y con sólo la primera página
+        // una plantilla de la segunda no aparecía en ningún lado.
+        $result = $request->boolean('todas')
+            ? $this->meta->listAllTemplates($instance->waba_id, $instance->access_token, $params)
+            : $this->meta->listTemplates($instance->waba_id, $instance->access_token, $params);
 
         if (! $result['success']) {
             if ($this->isTemplatesUnavailableError($result['error'] ?? null)) {
@@ -779,10 +788,14 @@ class TemplateController extends Controller
             'name' => 'required|string|max:512|regex:/^[a-z0-9_]+$/',
             'language' => 'required|string|max:10',
             'category' => 'required|in:MARKETING,UTILITY,AUTHENTICATION',
+            // Se sigue aceptando para no romper a quien lo mande, pero ya no
+            // se reenvía: ver más abajo.
             'allow_category_change' => 'nullable|boolean',
             'parameter_format' => 'nullable|in:POSITIONAL,NAMED',
             ...$this->reglasDeComponentes(),
         ]);
+
+        $data['components'] = $this->normalizarComponentes($data['components']);
 
         $semanticErrors = $this->validateComponentsRules(
             $data['components'],
@@ -808,9 +821,11 @@ class TemplateController extends Controller
             'components' => $this->sanitizeComponents($data['components']),
         ];
 
-        if ($request->has('allow_category_change')) {
-            $payload['allow_category_change'] = (bool) $data['allow_category_change'];
-        }
+        // `allow_category_change` no se manda: Meta lo dejó de soportar el
+        // 9-abr-2025 y desde entonces recategoriza siempre que no esté de
+        // acuerdo con la categoría pedida. Mandarlo hacía creer que una
+        // UTILITY seguiría siendo UTILITY. Lo que se hace ahora es avisar
+        // cuando Meta la cambió (`categoria_cambiada`).
 
         if (! empty($data['parameter_format'])) {
             $payload['parameter_format'] = $data['parameter_format'];
@@ -824,6 +839,8 @@ class TemplateController extends Controller
                 'error' => $result['error'] ?? null,
             ], 502);
         }
+
+        $this->olvidarCatalogo($instance);
 
         $metaTemplateId = $result['data']['id'] ?? null;
         $verified = false;
@@ -841,6 +858,7 @@ class TemplateController extends Controller
                 'display_phone_number' => $instance->display_phone_number,
             ],
             'verified_in_meta' => $verified,
+            'categoria_cambiada' => $this->categoriaCambiada($data['category'], $result['data'] ?? []),
         ], 201);
     }
 
@@ -869,6 +887,8 @@ class TemplateController extends Controller
             'parameter_format' => 'nullable|in:POSITIONAL,NAMED',
             ...$this->reglasDeComponentes(),
         ]);
+
+        $data['components'] = $this->normalizarComponentes($data['components']);
 
         $semanticErrors = $this->validateComponentsRules(
             $data['components'],
@@ -920,11 +940,21 @@ class TemplateController extends Controller
         // Si el encabezado multimedia no se cambió, el editor devuelve la URL
         // de la muestra que Meta guarda, no un handle. Meta no acepta esa URL
         // al editar: hay que volver a subir el archivo y mandar el handle nuevo.
+        //
+        // La URL que manda el navegador NO se descarga: sólo dice «no lo
+        // cambié». Se descarga la que Meta tiene guardada en ESTA plantilla,
+        // leída del listado del WABA. Descargar la del navegador dejaba que
+        // cualquiera con permiso de editar hiciera al servidor pedir una URL
+        // interna (SSRF) y subir lo que respondiera a Meta.
+        $muestraGuardada = $this->muestraDelEncabezado($actual);
+
         foreach ($componentes as $i => $componente) {
             $muestra = $componente['example']['header_handle'][0] ?? null;
 
-            if (is_string($muestra) && str_starts_with($muestra, 'http')) {
-                $handle = $this->rehacerMuestraDelEncabezado($muestra, $instance);
+            if (is_string($muestra) && preg_match('#^[a-z][a-z0-9+.-]*://#i', $muestra)) {
+                $handle = $muestraGuardada !== null
+                    ? $this->rehacerMuestraDelEncabezado($muestraGuardada, $instance)
+                    : null;
 
                 if ($handle === null) {
                     return response()->json([
@@ -950,6 +980,8 @@ class TemplateController extends Controller
             ], 502);
         }
 
+        $this->olvidarCatalogo($instance);
+
         return response()->json([
             'data' => [
                 'id' => $templateId,
@@ -965,6 +997,26 @@ class TemplateController extends Controller
             ],
             'editada' => true,
         ]);
+    }
+
+    /**
+     * La URL de la muestra del encabezado multimedia que Meta tiene guardada.
+     *
+     * @param  array<string, mixed>  $plantilla  Tal como la devuelve el listado del WABA.
+     */
+    private function muestraDelEncabezado(array $plantilla): ?string
+    {
+        foreach ($plantilla['components'] ?? [] as $componente) {
+            if (($componente['type'] ?? null) !== 'HEADER') {
+                continue;
+            }
+
+            $url = $componente['example']['header_handle'][0] ?? null;
+
+            return is_string($url) && $url !== '' ? $url : null;
+        }
+
+        return null;
     }
 
     /**
@@ -989,9 +1041,53 @@ class TemplateController extends Controller
             'components.*.buttons.*.example' => 'nullable|array',
             'components.*.buttons.*.otp_type' => 'nullable|in:COPY_CODE,ONE_TAP,ZERO_TAP',
             'components.*.buttons.*.autofill_text' => 'nullable|string|max:25',
-            'components.*.buttons.*.package_name' => 'nullable|string|max:200',
+            // Formato viejo (sueltos en el botón): se convierte a `supported_apps`
+            // en normalizarComponentes(). Meta dejó de aceptarlo en v21.
+            'components.*.buttons.*.package_name' => 'nullable|string|max:224',
             'components.*.buttons.*.signature_hash' => 'nullable|string|max:50',
+            'components.*.buttons.*.supported_apps' => 'nullable|array|max:5',
+            'components.*.buttons.*.supported_apps.*.package_name' => 'required|string|max:224',
+            // Los 11 caracteres se comprueban en reglasDeAutenticacion(), con
+            // un mensaje que se entiende.
+            'components.*.buttons.*.supported_apps.*.signature_hash' => 'required|string|max:50',
+            'components.*.buttons.*.zero_tap_terms_accepted' => 'nullable|boolean',
         ];
+    }
+
+    /**
+     * Pasa el botón OTP del formato viejo al de Meta.
+     *
+     * Meta pide `supported_apps: [{package_name, signature_hash}]` y dejó de
+     * aceptar los dos campos sueltos en el botón a partir de Graph v21 —la
+     * que usa este proyecto—, así que una plantilla de un-toque armada a la
+     * antigua se rechazaba. Se sigue aceptando de entrada por si algún
+     * cliente lo manda así, y se convierte aquí.
+     */
+    protected function normalizarComponentes(array $components): array
+    {
+        foreach ($components as $i => $c) {
+            if (($c['type'] ?? null) !== 'BUTTONS') {
+                continue;
+            }
+
+            foreach ($c['buttons'] ?? [] as $j => $b) {
+                if (($b['type'] ?? null) !== 'OTP') {
+                    continue;
+                }
+
+                if (empty($b['supported_apps']) && (! empty($b['package_name']) || ! empty($b['signature_hash']))) {
+                    $b['supported_apps'] = [[
+                        'package_name' => (string) ($b['package_name'] ?? ''),
+                        'signature_hash' => (string) ($b['signature_hash'] ?? ''),
+                    ]];
+                }
+
+                unset($b['package_name'], $b['signature_hash']);
+                $components[$i]['buttons'][$j] = $b;
+            }
+        }
+
+        return $components;
     }
 
     /**
@@ -999,9 +1095,11 @@ class TemplateController extends Controller
      * - Variables {{1}},{{2}},... deben ser secuenciales sin saltos.
      * - body.example.body_text debe tener el mismo número de valores que variables.
      * - header.example.header_text idem para HEADER TEXT.
-     * - URL con {{1}} debe traer example: ["url_completa"].
+     * - El cuerpo no empieza ni termina con variable, ni lleva dos seguidas.
+     * - URL: una sola variable, al final, y con example: ["url_completa"].
+     * - Respuestas rápidas en un solo bloque.
      * - Conteo de botones por tipo (Meta: 1 PHONE_NUMBER, 2 URL, 1 COPY_CODE, 1 OTP, 1 VOICE_CALL).
-     * - AUTHENTICATION exige botón OTP.
+     * - AUTHENTICATION tiene su propia forma: ver reglasDeAutenticacion().
      * - Con parameter_format NAMED las variables son {{nombre}} y los ejemplos van en
      *   header_text_named_params / body_text_named_params.
      */
@@ -1010,8 +1108,9 @@ class TemplateController extends Controller
         $named = $parameterFormat === 'NAMED';
         $errors = [];
         $typesSeen = [];
-        $hasOtp = false;
         $btnCount = ['PHONE_NUMBER' => 0, 'URL' => 0, 'COPY_CODE' => 0, 'OTP' => 0, 'QUICK_REPLY' => 0];
+
+        $auth = $category === 'AUTHENTICATION';
 
         foreach ($components as $i => $c) {
             $type = $c['type'] ?? null;
@@ -1019,6 +1118,15 @@ class TemplateController extends Controller
                 $errors[] = "Componente {$type} duplicado.";
             }
             $typesSeen[] = $type;
+
+            // Las de autenticación tienen la forma fija de Meta: el texto lo
+            // pone Meta («{{1}} es tu código de verificación»), y lo único que
+            // se elige es el aviso de seguridad, la caducidad y el botón.
+            if ($auth) {
+                $errors = array_merge($errors, $this->reglasDeAutenticacion($c));
+
+                continue;
+            }
 
             if ($type === 'HEADER') {
                 $format = $c['format'] ?? 'TEXT';
@@ -1085,6 +1193,7 @@ class TemplateController extends Controller
                         $errors[] = 'Debes proveer un ejemplo por cada variable del cuerpo.';
                     }
                 }
+                $errors = array_merge($errors, $this->reglasDeVariablesDelCuerpo($text));
             }
 
             if ($type === 'FOOTER') {
@@ -1109,20 +1218,25 @@ class TemplateController extends Controller
                     }
                     $btnCount[$btType]++;
 
-                    if ($btType === 'OTP') {
-                        $hasOtp = true;
-                    }
-
                     if ($btType === 'URL') {
                         $url = $b['url'] ?? '';
                         if ($url === '') {
                             $errors[] = 'Botón URL #'.($j + 1).': URL requerida.';
                         }
-                        $urlVars = $this->extractVariables($url);
-                        if (count($urlVars) > 0) {
+                        // Cualquier {{…}}, numérica o con nombre: antes sólo se
+                        // contaban las numéricas y una {{codigo}} pasaba sin
+                        // ejemplo, que Meta rechaza.
+                        $urlVars = preg_match_all('/\{\{\s*[^{}]*?\s*\}\}/', $url);
+                        if ($urlVars > 1) {
+                            $errors[] = "Botón URL #" . ($j + 1) . ": Meta admite una sola variable en la URL.";
+                        }
+                        if ($urlVars > 0 && ! preg_match('/\{\{\s*[^{}]*?\s*\}\}$/', trim($url))) {
+                            $errors[] = "Botón URL #" . ($j + 1) . ": la variable tiene que ir al final de la URL (por ejemplo https://tusitio.com/pedido/{{1}}).";
+                        }
+                        if ($urlVars > 0) {
                             $example = $b['example'] ?? [];
                             if (empty($example) || empty($example[0])) {
-                                $errors[] = 'Botón URL #'.($j + 1).': al usar {{1}} debes proveer example con la URL completa.';
+                                $errors[] = "Botón URL #" . ($j + 1) . ": al usar una variable debes dar un ejemplo con la URL completa.";
                             }
                         }
                     }
@@ -1132,13 +1246,7 @@ class TemplateController extends Controller
                     }
 
                     if ($btType === 'OTP') {
-                        $otpType = $b['otp_type'] ?? 'COPY_CODE';
-                        if (! in_array($otpType, ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'], true)) {
-                            $errors[] = 'Botón OTP #'.($j + 1).': otp_type inválido.';
-                        }
-                        if (in_array($otpType, ['ONE_TAP', 'ZERO_TAP'], true) && empty($b['package_name'])) {
-                            $errors[] = "Botón OTP {$otpType} #".($j + 1).': package_name requerido.';
-                        }
+                        $errors[] = 'El botón de código (OTP) sólo existe en las plantillas de autenticación.';
                     }
 
                     if (in_array($btType, ['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'], true)) {
@@ -1150,24 +1258,176 @@ class TemplateController extends Controller
             }
         }
 
-        if ($btnCount['PHONE_NUMBER'] > 1) {
-            $errors[] = 'Meta solo permite 1 botón de teléfono.';
-        }
-        if ($btnCount['URL'] > 2) {
-            $errors[] = 'Meta solo permite hasta 2 botones URL.';
-        }
-        if ($btnCount['COPY_CODE'] > 1) {
-            $errors[] = 'Meta solo permite 1 botón COPY_CODE.';
-        }
-        if ($btnCount['OTP'] > 1) {
-            $errors[] = 'Meta solo permite 1 botón OTP.';
+        foreach ($components as $c) {
+            if (($c['type'] ?? null) === 'BUTTONS' && ! $this->respuestasRapidasAgrupadas($c['buttons'] ?? [])) {
+                $errors[] = 'Las respuestas rápidas tienen que ir todas juntas, antes o después de los demás botones, no intercaladas con ellos.';
+            }
         }
 
-        if ($category === 'AUTHENTICATION' && ! $hasOtp) {
-            $errors[] = 'Las plantillas AUTHENTICATION requieren un botón OTP.';
+        if ($btnCount['PHONE_NUMBER'] > 1) $errors[] = 'Meta solo permite 1 botón de teléfono.';
+        if ($btnCount['URL'] > 2) $errors[] = 'Meta solo permite hasta 2 botones URL.';
+        if ($btnCount['COPY_CODE'] > 1) $errors[] = 'Meta solo permite 1 botón COPY_CODE.';
+        if ($btnCount['OTP'] > 1) $errors[] = 'Meta solo permite 1 botón OTP.';
+
+        if ($auth) {
+            $botones = collect($components)
+                ->where('type', 'BUTTONS')
+                ->flatMap(fn ($c) => $c['buttons'] ?? []);
+
+            if ($botones->where('type', 'OTP')->count() !== 1) {
+                $errors[] = 'Las plantillas de autenticación llevan exactamente un botón de código (OTP).';
+            }
+
+            if (! collect($components)->contains('type', 'BODY')) {
+                $errors[] = 'Las plantillas de autenticación necesitan el componente BODY (Meta pone el texto).';
+            }
+        }
+
+        return array_values(array_unique($errors));
+    }
+
+    /**
+     * Lo que admite cada componente de una plantilla de autenticación.
+     *
+     * Forma documentada por Meta (developers.facebook.com, «Authentication
+     * templates»): BODY sin texto con `add_security_recommendation`, FOOTER
+     * sólo con `code_expiration_minutes` (1-90), sin HEADER, y un único botón
+     * OTP con `otp_type` COPY_CODE, ONE_TAP o ZERO_TAP. Los dos últimos
+     * necesitan `supported_apps`, y ZERO_TAP además que se acepten los
+     * términos (`zero_tap_terms_accepted`).
+     *
+     * @param  array<string, mixed>  $c
+     * @return list<string>
+     */
+    protected function reglasDeAutenticacion(array $c): array
+    {
+        $errors = [];
+
+        switch ($c['type'] ?? null) {
+            case 'HEADER':
+                $errors[] = 'Las plantillas de autenticación no llevan encabezado.';
+                break;
+
+            case 'BODY':
+                if (trim((string) ($c['text'] ?? '')) !== '') {
+                    $errors[] = 'En las plantillas de autenticación el texto del cuerpo lo pone Meta: no se puede escribir uno propio.';
+                }
+                break;
+
+            case 'FOOTER':
+                if (trim((string) ($c['text'] ?? '')) !== '') {
+                    $errors[] = 'En las plantillas de autenticación el pie sólo indica cuántos minutos vale el código; no admite texto.';
+                }
+                if (empty($c['code_expiration_minutes'])) {
+                    $errors[] = 'Indica en el pie cuántos minutos vale el código (de 1 a 90), o quita el pie.';
+                }
+                break;
+
+            case 'BUTTONS':
+                foreach ($c['buttons'] ?? [] as $j => $b) {
+                    $n = $j + 1;
+
+                    if (($b['type'] ?? null) !== 'OTP') {
+                        $errors[] = "Botón #{$n}: las plantillas de autenticación sólo admiten el botón de código (OTP).";
+
+                        continue;
+                    }
+
+                    $otpType = $b['otp_type'] ?? null;
+                    if (! in_array($otpType, ['COPY_CODE', 'ONE_TAP', 'ZERO_TAP'], true)) {
+                        $errors[] = "Botón OTP #{$n}: elige el tipo (copiar código, un toque o sin toque).";
+
+                        continue;
+                    }
+
+                    if ($otpType === 'COPY_CODE') {
+                        continue;
+                    }
+
+                    $apps = $b['supported_apps'] ?? [];
+                    if (empty($apps)) {
+                        $errors[] = "Botón OTP #{$n}: los de un toque y sin toque necesitan la app Android (nombre del paquete y hash de firma).";
+                    }
+                    foreach ($apps as $app) {
+                        if (empty($app['package_name'])) {
+                            $errors[] = "Botón OTP #{$n}: falta el nombre del paquete de la app.";
+                        }
+                        if (mb_strlen((string) ($app['signature_hash'] ?? '')) !== 11) {
+                            $errors[] = "Botón OTP #{$n}: el hash de firma de la app tiene que tener exactamente 11 caracteres.";
+                        }
+                    }
+
+                    if ($otpType === 'ZERO_TAP' && ($b['zero_tap_terms_accepted'] ?? false) !== true) {
+                        $errors[] = "Botón OTP #{$n}: para el código sin toque hay que aceptar los términos de Meta (zero_tap_terms_accepted).";
+                    }
+                }
+                break;
         }
 
         return $errors;
+    }
+
+    /**
+     * Las reglas de Meta sobre dónde van las variables del cuerpo.
+     *
+     * Documentadas en «Template review» como motivos de rechazo: el cuerpo no
+     * puede empezar ni terminar con una variable. Las contiguas ({{1}}{{2}}
+     * o {{1}} {{2}}) también las rechaza, porque no hay texto que dé
+     * contexto a la segunda.
+     *
+     * La de «demasiadas variables para la longitud» NO se comprueba: Meta la
+     * nombra pero no publica el umbral, y uno inventado bloquearía plantillas
+     * que Meta aprueba.
+     *
+     * @return list<string>
+     */
+    protected function reglasDeVariablesDelCuerpo(string $text): array
+    {
+        $errors = [];
+        $limpio = trim($text);
+        $variable = '\{\{\s*[A-Za-z0-9_]+\s*\}\}';
+
+        if ($limpio === '') {
+            return [];
+        }
+
+        if (preg_match("/^{$variable}/", $limpio)) {
+            $errors[] = 'El cuerpo no puede empezar con una variable: Meta lo rechaza. Pon algo de texto antes (por ejemplo «Hola {{1}}»).';
+        }
+
+        if (preg_match("/{$variable}$/", $limpio)) {
+            $errors[] = 'El cuerpo no puede terminar con una variable: Meta lo rechaza. Añade texto después.';
+        }
+
+        if (preg_match("/{$variable}\s*{$variable}/", $limpio)) {
+            $errors[] = 'El cuerpo tiene dos variables seguidas sin texto entre ellas: Meta lo rechaza.';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Meta exige las respuestas rápidas en un solo bloque: «QR, QR, URL» o
+     * «URL, QR, QR» valen; «QR, URL, QR» falla al crear.
+     *
+     * @param  array<int, array<string, mixed>>  $buttons
+     */
+    protected function respuestasRapidasAgrupadas(array $buttons): bool
+    {
+        $bloques = 0;
+        $anterior = null;
+
+        foreach ($buttons as $b) {
+            $esRapida = ($b['type'] ?? null) === 'QUICK_REPLY';
+
+            if ($esRapida && $anterior !== true) {
+                $bloques++;
+            }
+
+            $anterior = $esRapida;
+        }
+
+        return $bloques <= 1;
     }
 
     protected function extractVariables(string $text): array
@@ -1324,17 +1584,16 @@ class TemplateController extends Controller
                     }
                     if ($b['type'] === 'OTP') {
                         $btn['otp_type'] = $b['otp_type'] ?? 'COPY_CODE';
-                        if (! empty($b['text'])) {
-                            $btn['text'] = $b['text'];
+                        if (!empty($b['text'])) $btn['text'] = $b['text'];
+                        if (!empty($b['autofill_text'])) $btn['autofill_text'] = $b['autofill_text'];
+                        if ($btn['otp_type'] !== 'COPY_CODE' && !empty($b['supported_apps'])) {
+                            $btn['supported_apps'] = array_values(array_map(fn ($app) => [
+                                'package_name' => (string) $app['package_name'],
+                                'signature_hash' => (string) $app['signature_hash'],
+                            ], $b['supported_apps']));
                         }
-                        if (! empty($b['autofill_text'])) {
-                            $btn['autofill_text'] = $b['autofill_text'];
-                        }
-                        if (! empty($b['package_name'])) {
-                            $btn['package_name'] = $b['package_name'];
-                        }
-                        if (! empty($b['signature_hash'])) {
-                            $btn['signature_hash'] = $b['signature_hash'];
+                        if ($btn['otp_type'] === 'ZERO_TAP') {
+                            $btn['zero_tap_terms_accepted'] = (bool) ($b['zero_tap_terms_accepted'] ?? false);
                         }
                     }
 
@@ -1355,6 +1614,18 @@ class TemplateController extends Controller
             return $instance;
         }
 
+        // Igual que al editar: el token de la instancia puede alcanzar los WABA
+        // de otras empresas, así que leer por el id que manda el navegador,
+        // sin más, enseñaba la plantilla de otra empresa. Primero se comprueba
+        // que está en el catálogo de ESTA línea.
+        $delListado = $this->plantillaDelListado($instance, $templateId);
+
+        if ($delListado === null) {
+            return response()->json([
+                'message' => 'No encontramos esa plantilla en esta línea.',
+            ], 404);
+        }
+
         $result = $this->meta->getTemplate($templateId, $instance->access_token);
 
         if ($result['success']) {
@@ -1368,22 +1639,88 @@ class TemplateController extends Controller
         // es la única que no se puede previsualizar, que es cuando más falta
         // hace: es la que quieres comprobar.
         //
-        // El listado del WABA sí la trae, con sus componentes. Se busca ahí.
-        $delListado = $this->plantillaDelListado($instance, $templateId);
+        // El listado del WABA sí la trae, con sus componentes: ya se leyó.
+        Log::info('Plantilla leída del listado: el detalle por id falló', [
+            'template_id' => $templateId,
+            'error' => $result['error'] ?? null,
+        ]);
 
-        if ($delListado !== null) {
-            Log::info('Plantilla leída del listado: el detalle por id falló', [
-                'template_id' => $templateId,
-                'error' => $result['error'] ?? null,
-            ]);
+        return response()->json(['data' => $this->conEjemploDelNegocio($delListado)]);
+    }
 
-            return response()->json(['data' => $this->conEjemploDelNegocio($delListado)]);
+    /**
+     * Borra una plantilla de Meta, en un solo idioma.
+     *
+     * Se borra por `name` + `hsm_id`: sólo por nombre Meta se lleva la
+     * plantilla en todos sus idiomas. Y, como al editar, antes se comprueba
+     * que el id está en el WABA de esta línea: el token alcanza otros.
+     *
+     * Meta no deja reutilizar el nombre de una plantilla borrada durante 30
+     * días, y los envíos que la usen fallarán desde ya. El aviso es del
+     * editor; aquí sólo se hace.
+     *
+     * Convive con `destroy()`, que borra la familia entera (todos los
+     * idiomas) para rehacer una plantilla con la categoría equivocada. Las
+     * dos nacieron a la vez en ramas distintas (1 y 2-oct-2026) y hacen cosas
+     * distintas: no unificarlas.
+     */
+    public function destroyVariante(Request $request, string $templateId)
+    {
+        $instance = $this->resolveInstance($request);
+        if (!$instance instanceof Instance) {
+            return $instance;
         }
 
-        return response()->json([
-            'message' => 'Error consultando la plantilla.',
-            'error' => $result['error'] ?? null,
-        ], 502);
+        $actual = $this->plantillaDelListado($instance, $templateId);
+
+        if ($actual === null || empty($actual['name'])) {
+            return response()->json([
+                'message' => 'No encontramos esa plantilla en esta línea.',
+            ], 404);
+        }
+
+        $result = $this->meta->deleteTemplate($instance->waba_id, $instance->access_token, (string) $actual['name'], $templateId);
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'message' => $this->mensajeDeMeta($result, 'Meta no dejó borrar la plantilla.'),
+                'error' => $result['error'] ?? null,
+            ], 502);
+        }
+
+        $this->olvidarCatalogo($instance);
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * El guardarraíl de envíos (`TemplateParameterGuard`) cachea el catálogo
+     * del WABA 10 minutos. Tras crear, editar o borrar, ese caché miente: una
+     * plantilla recién editada se validaría contra su versión vieja.
+     */
+    private function olvidarCatalogo(Instance $instance): void
+    {
+        Cache::forget("wa:templates:{$instance->waba_id}");
+    }
+
+    /**
+     * Si Meta asignó otra categoría que la pedida. Desde abr-2025 lo hace
+     * sin preguntar, y una UTILITY que pasa a MARKETING cuesta más y se
+     * entrega con otras reglas: el usuario tiene que enterarse.
+     *
+     * @param  array<string, mixed>  $respuesta  Lo que Meta devolvió al crear.
+     * @return array{pedida: string, asignada: string}|null
+     */
+    private function categoriaCambiada(string $pedida, array $respuesta): ?array
+    {
+        $asignada = $respuesta['category'] ?? null;
+
+        if (! is_string($asignada) || $asignada === '' || strtoupper($asignada) === strtoupper($pedida)) {
+            return null;
+        }
+
+        return ['pedida' => $pedida, 'asignada' => strtoupper($asignada)];
     }
 
     /**
@@ -1437,6 +1774,8 @@ class TemplateController extends Controller
             ], 502);
         }
 
+        $this->olvidarCatalogo($instance);
+
         Log::info('Plantilla borrada desde el CRM', [
             'company_id' => $instance->company_id,
             'instance_id' => $instance->id,
@@ -1463,8 +1802,10 @@ class TemplateController extends Controller
      */
     private function plantillaDelListado(Instance $instance, string $templateId): ?array
     {
-        $listado = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
-            'fields' => 'id,name,language,status,category,components',
+        // Todas las páginas: con sólo la primera, una plantilla de la segunda
+        // daba 404 al editarla o previsualizarla.
+        $listado = $this->meta->listAllTemplates($instance->waba_id, $instance->access_token, [
+            'fields' => 'id,name,language,status,category,parameter_format,components',
             'limit' => 500,
         ]);
 
@@ -1555,6 +1896,10 @@ class TemplateController extends Controller
 
         $copiadas = collect($resultados)->where('ok', true)->count();
 
+        if ($copiadas > 0) {
+            $this->olvidarCatalogo($destino);
+        }
+
         return response()->json([
             'copiadas' => $copiadas,
             'total' => count($resultados),
@@ -1572,7 +1917,7 @@ class TemplateController extends Controller
     /** El catálogo de una línea, o null si Meta no contesta. */
     private function catalogoDe(Instance $instancia): ?Collection
     {
-        $res = $this->meta->listTemplates($instancia->waba_id, $instancia->access_token, ['limit' => 200]);
+        $res = $this->meta->listAllTemplates($instancia->waba_id, $instancia->access_token, ['limit' => 200]);
 
         if (! ($res['success'] ?? false)) {
             return null;
@@ -1616,21 +1961,38 @@ class TemplateController extends Controller
                 $componentes[] = $componente;
             }
 
-            $res = $this->meta->createTemplate($destino->waba_id, $destino->access_token, [
+            $categoria = $plantilla['category'] ?? 'UTILITY';
+
+            $payload = [
                 'name' => $nombre,
                 'language' => $plantilla['language'] ?? 'es',
-                'category' => $plantilla['category'] ?? 'UTILITY',
+                'category' => $categoria,
                 'components' => $componentes,
-            ]);
+            ];
 
-            if ($res['success'] ?? false) {
-                return ['plantilla' => $nombre, 'ok' => true, 'estado' => $res['data']['status'] ?? 'PENDING'];
+            // Sin esto una plantilla con {{nombre}} se crea como POSITIONAL y
+            // Meta la rechaza por las variables.
+            if (! empty($plantilla['parameter_format'])) {
+                $payload['parameter_format'] = $plantilla['parameter_format'];
             }
 
+            $res = $this->meta->createTemplate($destino->waba_id, $destino->access_token, $payload);
+
+            if ($res['success'] ?? false) {
+                return [
+                    'plantilla' => $nombre,
+                    'ok' => true,
+                    'estado' => $res['data']['status'] ?? 'PENDING',
+                    'categoria_cambiada' => $this->categoriaCambiada($categoria, $res['data'] ?? []),
+                ];
+            }
+
+            // `error_user_msg` es el que explica qué cambiar; `message` suele
+            // ser un «Invalid parameter» que no dice nada.
             return [
                 'plantilla' => $nombre,
                 'ok' => false,
-                'error' => $res['error']['error']['message'] ?? 'Meta no aceptó la plantilla.',
+                'error' => $this->extractMetaErrorMessage($res['error'] ?? null) ?? 'Meta no aceptó la plantilla.',
             ];
         } catch (\Throwable $e) {
             Log::error('No se pudo duplicar la plantilla', [
@@ -1692,8 +2054,33 @@ class TemplateController extends Controller
     {
         $temporal = null;
 
+        // Sólo se descarga de los CDN de Meta, por https. La URL llega del
+        // listado del WABA, nunca del navegador, pero esto es la segunda
+        // barrera: ver `template_media_hosts` en config/services.php.
+        if (! $this->esUrlDeMeta($url)) {
+            Log::warning('Muestra de encabezado con una URL que no es de Meta: no se descarga', [
+                'host' => parse_url($url, PHP_URL_HOST),
+                'instance_id' => $destino->id,
+            ]);
+
+            return null;
+        }
+
         try {
-            $descarga = Http::timeout(60)->get($url);
+            $descarga = Http::timeout(60)
+                ->withOptions(['allow_redirects' => [
+                    'max' => 3,
+                    'protocols' => ['https'],
+                    // Una redirección es otra URL: tiene que pasar el mismo
+                    // filtro, o el CDN «de Meta» podría mandarnos a la red
+                    // interna.
+                    'on_redirect' => function ($peticion, $respuesta, $uri) {
+                        if (! $this->esUrlDeMeta((string) $uri)) {
+                            throw new \RuntimeException('Redirección a un host que no es de Meta.');
+                        }
+                    },
+                ]])
+                ->get($url);
 
             if (! $descarga->successful()) {
                 return null;
@@ -1724,6 +2111,28 @@ class TemplateController extends Controller
         }
     }
 
+    /** https y host de un CDN de Meta (por sufijo de dominio completo). */
+    private function esUrlDeMeta(string $url): bool
+    {
+        $partes = parse_url($url);
+
+        if (($partes['scheme'] ?? null) !== 'https' || empty($partes['host']) || isset($partes['user']) || isset($partes['port'])) {
+            return false;
+        }
+
+        $host = strtolower($partes['host']);
+
+        foreach ((array) config('services.meta.template_media_hosts', []) as $dominio) {
+            $dominio = strtolower(ltrim((string) $dominio, '.'));
+
+            if ($dominio !== '' && ($host === $dominio || str_ends_with($host, '.'.$dominio))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     protected function resolveInstance(Request $request)
     {
         $user = auth()->user();
@@ -1734,9 +2143,23 @@ class TemplateController extends Controller
             ->whereNotNull('waba_id')
             ->whereNotNull('access_token');
 
-        $instance = $instanceId
-            ? $query->where('id', $instanceId)->first()
-            : $query->orderBy('id')->first();
+        if (! $instanceId) {
+            // Sin `instance_id` se tomaba la primera línea en silencio. Con dos
+            // líneas de WABA distinto eso es crear, editar o borrar en la que
+            // el usuario no está mirando: las plantillas son por WABA.
+            $candidatas = (clone $query)->orderBy('id')->limit(2)->get();
+
+            if ($candidatas->count() > 1) {
+                return response()->json([
+                    'message' => 'Esta empresa tiene varias líneas de WhatsApp: indica en cuál (instance_id).',
+                    'code' => 'instance_required',
+                ], 422);
+            }
+
+            $instance = $candidatas->first();
+        } else {
+            $instance = $query->where('id', $instanceId)->first();
+        }
 
         if (! $instance) {
             return response()->json([

@@ -66,7 +66,7 @@ class PagoDeMetaTest extends TestCase
                 'template_name' => 'facturacion',
                 'language_code' => 'es',
             ])
-            ->assertStatus(500);
+            ->assertStatus(422);
 
         $instance->refresh();
         $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->problema_de_pago);
@@ -96,17 +96,128 @@ class PagoDeMetaTest extends TestCase
         $this->assertNull($instance->refresh()->problema_de_pago);
     }
 
-    /** Una plantilla entregada prueba que ya hay tarjeta: la alerta se apaga sola. */
-    public function test_una_plantilla_entregada_apaga_la_alerta(): void
+    /**
+     * Una plantilla ENTREGADA después de que empezara el problema prueba que
+     * Meta ya cobra: la alerta se apaga sola. `sent` no basta: es sólo «Meta lo
+     * aceptó», y el 131042 llega después por webhook.
+     */
+    public function test_una_plantilla_entregada_despues_del_problema_apaga_la_alerta(): void
     {
-        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()]);
+        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()->subHour()]);
 
-        // Un texto dentro de las 24 h sale gratis aun sin tarjeta: no prueba nada.
+        // Desde el 1-oct-2026 Meta cobra también el texto libre, pero cada
+        // número tiene 1.000 de servicio gratis al mes y Meta los entrega
+        // aunque no haya método de pago: no prueba nada.
         $this->mensaje($instance, 'delivered', 'text');
         $this->assertNotNull($instance->refresh()->problema_de_pago);
 
-        $this->mensaje($instance, 'delivered', 'template');
+        $plantilla = $this->mensaje($instance, 'sent', 'template');
+        $this->assertNotNull($instance->refresh()->problema_de_pago, 'Aceptada no es entregada.');
+
+        $plantilla->update(['status' => 'delivered']);
         $this->assertNull($instance->refresh()->problema_de_pago);
+        $this->assertNotNull($instance->pago_al_dia_desde);
+    }
+
+    /** El «leído» de la factura de ayer llega hoy y no dice nada de cómo está la cuenta ahora. */
+    public function test_un_leido_de_un_envio_anterior_al_problema_no_la_apaga(): void
+    {
+        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_METODO, 'problema_de_pago_desde' => now()->subHour()]);
+
+        $this->mensaje($instance, 'read', 'template', enviado: now()->subDay());
+
+        $this->assertSame(FacturacionDeMeta::SIN_METODO, $instance->refresh()->problema_de_pago);
+    }
+
+    /**
+     * Meta reintenta durante días: el 131042 de una factura enviada antes del
+     * arreglo puede llegar después. No vuelve a encender la alerta.
+     */
+    public function test_un_fallo_rezagado_de_antes_del_arreglo_no_la_reenciende(): void
+    {
+        Notification::fake();
+        [$instance, $admin] = $this->linea(['pago_al_dia_desde' => now()->subMinutes(10)]);
+
+        $this->mensaje($instance, 'failed', 'template', '131042', self::ERROR_DE_META, now()->subDays(2));
+        $this->assertNull($instance->refresh()->problema_de_pago);
+
+        $this->mensaje($instance, 'failed', 'template', '131042', self::ERROR_DE_META, now());
+        $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->refresh()->problema_de_pago);
+        Notification::assertSentToTimes($admin, SystemNotification::class, 1);
+    }
+
+    /** Apagar y volver a encender en un rato no es otra noticia: un solo correo cada pocas horas. */
+    public function test_no_vuelve_a_avisar_si_ya_aviso_hace_poco(): void
+    {
+        Notification::fake();
+        [$instance, $admin] = $this->linea();
+
+        $this->mensaje($instance, 'failed', 'text', '131042', self::ERROR_DE_META);
+        FacturacionDeMeta::resolver($instance->refresh());
+        $this->travel(1)->minutes();
+        $this->mensaje($instance, 'failed', 'text', '131042', self::ERROR_DE_META);
+
+        $this->assertNotNull($instance->refresh()->problema_de_pago);
+        Notification::assertSentToTimes($admin, SystemNotification::class, 1);
+
+        FacturacionDeMeta::resolver($instance->refresh());
+        $this->travel(FacturacionDeMeta::ANTIRREBOTE_HORAS + 1)->hours();
+        $this->mensaje($instance, 'failed', 'text', '131042', self::ERROR_DE_META);
+
+        Notification::assertSentToTimes($admin, SystemNotification::class, 2);
+    }
+
+    /** El pago es de la cuenta: todas las líneas de esa WABA, y sólo las de esa empresa. */
+    public function test_marca_y_apaga_todas_las_lineas_de_la_misma_cuenta_sin_cruzar_empresas(): void
+    {
+        Notification::fake();
+        [$instance, $admin] = $this->linea();
+        $hermana = $this->otraLinea($instance, ['name' => 'jheda soporte']);
+        $otraCuenta = $this->otraLinea($instance, ['name' => 'otra cuenta', 'waba_id' => '999']);
+        [$ajena] = $this->linea(); // otra empresa, MISMO waba_id
+
+        $this->mensaje($instance, 'failed', 'template', '131042', self::ERROR_DE_META);
+
+        $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $hermana->refresh()->problema_de_pago);
+        $this->assertEquals($instance->refresh()->problema_de_pago_desde, $hermana->problema_de_pago_desde);
+        $this->assertNull($otraCuenta->refresh()->problema_de_pago);
+        $this->assertNull($ajena->refresh()->problema_de_pago);
+        Notification::assertSentToTimes($admin, SystemNotification::class, 1);
+
+        $this->travel(1)->minutes();
+        $this->mensaje($hermana, 'delivered', 'template');
+
+        $this->assertNull($instance->refresh()->problema_de_pago);
+        $this->assertNull($hermana->refresh()->problema_de_pago);
+    }
+
+    /** El correo dice lo que falta de verdad, con las mismas palabras que la alerta. */
+    public function test_el_aviso_dice_si_falta_la_moneda_o_el_metodo(): void
+    {
+        Notification::fake();
+        [$conMoneda, $admin] = $this->linea();
+        [$sinMetodo, $admin2] = $this->linea();
+
+        $this->mensaje($conMoneda, 'failed', 'template', '131042', self::ERROR_DE_META);
+        $this->mensaje($sinMetodo, 'failed', 'template', '131042', 'Business eligibility payment issue');
+
+        // Los títulos de FacturacionDeMeta::explicacion(), los mismos que la alerta roja.
+        Notification::assertSentTo($admin, SystemNotification::class, fn ($n) => str_contains($n->body, 'no tiene moneda ni tarjeta')
+            && ! str_contains($n->body, 'cinco minutos'));
+        Notification::assertSentTo($admin2, SystemNotification::class, fn ($n) => str_contains($n->body, 'método de pago válido'));
+    }
+
+    /** El chequeo diario sólo sabe «es de pago»: no convierte un «sin moneda» en «sin tarjeta». */
+    public function test_un_aviso_generico_de_pago_no_pisa_el_sin_moneda(): void
+    {
+        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()]);
+
+        FacturacionDeMeta::marcar($instance, FacturacionDeMeta::SIN_METODO);
+        $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->refresh()->problema_de_pago);
+
+        // Un fallo con sólo el código tampoco.
+        $this->mensaje($instance, 'failed', 'text', '131042', null);
+        $this->assertSame(FacturacionDeMeta::SIN_MONEDA, $instance->refresh()->problema_de_pago);
     }
 
     /**
@@ -133,7 +244,7 @@ class PagoDeMetaTest extends TestCase
         Notification::fake();
         [$instance] = $this->linea();
 
-        $this->mensaje($instance, 'failed', 'template', '131042', 'Business eligibility payment issue', self::PAGO_PENDIENTE_DE_META);
+        $this->mensaje($instance, 'failed', 'template', '131042', 'Business eligibility payment issue', detalle: self::PAGO_PENDIENTE_DE_META);
 
         $instance->refresh();
         $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, $instance->problema_de_pago);
@@ -173,9 +284,36 @@ class PagoDeMetaTest extends TestCase
                 'template_name' => 'facturacion',
                 'language_code' => 'es',
             ])
-            ->assertStatus(500);
+            // 422 y no 500: un rechazo de Meta no se arregla repitiendo, y con
+            // un 500 el ERP reintentaba (fix/plantillas-de-punta-a-punta).
+            ->assertStatus(422);
 
         $this->assertSame(FacturacionDeMeta::PAGO_PENDIENTE, $instance->refresh()->problema_de_pago);
+    }
+
+    /**
+     * Los tipos finos (cobro pendiente, pago restringido) y el «por confirmar»
+     * nacieron en ramas distintas (3 y 1-oct-2026). Juntos: un cobro pendiente
+     * que Meta deja de marcar pasa a ámbar, no se queda en rojo, y lo apaga la
+     * próxima plantilla entregada.
+     */
+    public function test_un_cobro_pendiente_tambien_pasa_por_confirmar(): void
+    {
+        [$instance] = $this->linea([
+            'problema_de_pago' => FacturacionDeMeta::PAGO_PENDIENTE,
+            'problema_de_pago_desde' => now()->subHour(),
+            'detalle_de_pago' => self::PAGO_PENDIENTE_DE_META,
+        ]);
+
+        FacturacionDeMeta::porConfirmar($instance);
+        $this->assertSame(FacturacionDeMeta::POR_CONFIRMAR, $instance->refresh()->problema_de_pago);
+        $this->assertSame('Falta que Meta confirme el pago', FacturacionDeMeta::explicacion(FacturacionDeMeta::POR_CONFIRMAR)['titulo']);
+
+        $this->travel(1)->minutes();
+        $this->mensaje($instance, 'delivered', 'template');
+
+        $this->assertNull($instance->refresh()->problema_de_pago);
+        $this->assertNull($instance->detalle_de_pago, 'El motivo viejo no se queda colgado.');
     }
 
     /** La guía enseña lo que dijo Meta, sin el enlace, que ya es un botón. */
@@ -288,13 +426,64 @@ class PagoDeMetaTest extends TestCase
             );
     }
 
-    public function test_comprobar_con_meta_disponible_apaga_la_alerta(): void
+    /**
+     * AVAILABLE no basta para apagarla: una cuenta sin moneda puede salir así y
+     * fallar en la primera plantilla. Queda «por confirmar» y la apaga la
+     * próxima plantilla entregada.
+     */
+    public function test_comprobar_con_meta_disponible_la_deja_por_confirmar(): void
     {
-        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA]);
+        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()->subHour()]);
 
         Http::fake(function ($r) {
             return str_contains($r->url(), 'currency')
                 ? Http::response(['currency' => 'COP', 'id' => '1'])
+                : Http::response(['health_status' => ['can_send_message' => 'AVAILABLE'], 'id' => '1']);
+        });
+
+        $this->actingAs($admin)
+            ->postJson("/instances/{$instance->id}/comprobar-pago")
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('por_confirmar', true);
+
+        $this->assertSame(FacturacionDeMeta::POR_CONFIRMAR, $instance->refresh()->problema_de_pago);
+
+        $this->actingAs($admin)
+            ->get('/instances/pago-en-meta')
+            ->assertInertia(fn ($page) => $page->where('alertaPagoMeta.0.problema', FacturacionDeMeta::POR_CONFIRMAR));
+
+        // Un fallo de una factura que salió antes de comprobar no la reenciende…
+        $this->mensaje($instance, 'failed', 'template', '131042', self::ERROR_DE_META, now()->subMinutes(5));
+        $this->assertSame(FacturacionDeMeta::POR_CONFIRMAR, $instance->refresh()->problema_de_pago);
+
+        // …y la primera plantilla entregada la apaga del todo.
+        $this->travel(1)->minutes();
+        $this->mensaje($instance, 'delivered', 'template');
+        $this->assertNull($instance->refresh()->problema_de_pago);
+    }
+
+    /** Si tras comprobar vuelve un 131042 de un envío nuevo, vuelve el rojo. */
+    public function test_por_confirmar_que_vuelve_a_fallar_se_enciende_otra_vez(): void
+    {
+        [$instance] = $this->linea(['problema_de_pago' => FacturacionDeMeta::POR_CONFIRMAR, 'problema_de_pago_desde' => now()->subHour(), 'pago_al_dia_desde' => now()->subMinute()]);
+
+        $this->mensaje($instance, 'failed', 'template', '131042', 'Business eligibility payment issue');
+
+        $this->assertSame(FacturacionDeMeta::SIN_METODO, $instance->refresh()->problema_de_pago);
+    }
+
+    /**
+     * Graph devuelve la moneda vacía también cuando el token no puede leerla.
+     * Eso no puede encender la alerta en una línea que estaba bien.
+     */
+    public function test_comprobar_con_moneda_vacia_no_enciende_nada(): void
+    {
+        [$instance, $admin] = $this->linea();
+
+        Http::fake(function ($r) {
+            return str_contains($r->url(), 'currency')
+                ? Http::response(['id' => '1'])
                 : Http::response(['health_status' => ['can_send_message' => 'AVAILABLE'], 'id' => '1']);
         });
 
@@ -330,7 +519,7 @@ class PagoDeMetaTest extends TestCase
      */
     public function test_pagada_pero_sin_verificar_dice_el_motivo_real(): void
     {
-        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA]);
+        [$instance, $admin] = $this->linea(['problema_de_pago' => FacturacionDeMeta::SIN_MONEDA, 'problema_de_pago_desde' => now()]);
 
         Http::fake(function ($r) {
             return str_contains($r->url(), 'currency')
@@ -355,7 +544,7 @@ class PagoDeMetaTest extends TestCase
             ->assertJsonPath('guia', '/instances/guia-limites-whatsapp')
             ->assertJsonPath('mensaje', fn ($m) => str_contains($m, 'verificación'));
 
-        $this->assertNull($instance->refresh()->problema_de_pago);
+        $this->assertSame(FacturacionDeMeta::POR_CONFIRMAR, $instance->refresh()->problema_de_pago);
     }
 
     public function test_no_se_comprueba_la_linea_de_otra_empresa(): void
@@ -385,6 +574,11 @@ class PagoDeMetaTest extends TestCase
             'access_token' => 'token',
         ], $extra));
 
+        // No está en $fillable a propósito: sólo la escribe FacturacionDeMeta.
+        if (isset($extra['pago_al_dia_desde'])) {
+            $instance->forceFill(['pago_al_dia_desde' => $extra['pago_al_dia_desde']])->saveQuietly();
+        }
+
         $admin = User::create([
             'company_id' => $company->id,
             'name' => 'Admin',
@@ -397,7 +591,21 @@ class PagoDeMetaTest extends TestCase
         return [$instance, $admin];
     }
 
-    private function mensaje(Instance $instance, string $estado, string $tipo, ?string $codigo = null, ?string $error = null, ?string $detalle = null): WhatsAppMessage
+    private function otraLinea(Instance $de, array $extra = []): Instance
+    {
+        return Instance::create(array_merge([
+            'company_id' => $de->company_id,
+            'uuid' => (string) Str::uuid(),
+            'name' => 'otra línea',
+            'phone_number_id' => (string) random_int(100000, 999999),
+            'waba_id' => $de->waba_id,
+            'type' => 'meta',
+            'active' => true,
+            'access_token' => 'token',
+        ], $extra));
+    }
+
+    private function mensaje(Instance $instance, string $estado, string $tipo, ?string $codigo = null, ?string $error = null, $enviado = null, ?string $detalle = null): WhatsAppMessage
     {
         $conversacion = WhatsAppConversation::firstOrCreate(
             ['instance_id' => $instance->id, 'wa_id' => '573001112233'],
@@ -413,7 +621,7 @@ class PagoDeMetaTest extends TestCase
             'error_code' => $codigo,
             'error_message' => $error,
             'error_details' => $detalle,
-            'sent_at' => now(),
+            'sent_at' => $enviado ?? now(),
             'wamid' => 'wamid.'.Str::random(10),
         ]);
     }

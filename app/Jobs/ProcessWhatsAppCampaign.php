@@ -180,8 +180,10 @@ class ProcessWhatsAppCampaign implements ShouldQueue
             file_put_contents($tmp, $disco->get($campaign->header_media_path));
 
             try {
+                // La instancia, no su número: el archivo se sube con el token
+                // de esta empresa aunque otra reclame el mismo phone_number_id.
                 $subida = app(MetaWhatsAppService::class)->uploadMedia(
-                    $campaign->instance->phone_number_id,
+                    $campaign->instance,
                     $tmp,
                     $campaign->header_media_mime ?: 'application/octet-stream'
                 );

@@ -325,10 +325,10 @@ class WhatsAppCampaignController extends Controller
                     .'créala de nuevo eligiendo una plantilla.']);
         }
 
-        // Relanzar tras un fallo vuelve a poner en cola solo lo que no llegó.
-        $campaign->recipients()
-            ->where('status', 'failed')
-            ->update(['status' => 'pending', 'error_message' => null, 'error_code' => null, 'error_details' => null]);
+        // Relanzar tras un fallo vuelve a poner en cola solo lo que no llegó, y
+        // de eso sólo lo que puede llegar: ver fallidosReintentables().
+        $campaign->fallidosReintentables()
+            ->update(['status' => 'pending', 'error_message' => null, 'error_code' => null, 'error_details' => null, 'attempts' => 0]);
 
         $campaign->update(['status' => 'queued', 'paused_at' => null, 'cancelled_at' => null]);
         ProcessWhatsAppCampaign::dispatch($campaign->id);
@@ -430,24 +430,40 @@ class WhatsAppCampaignController extends Controller
     {
         $campaign = $this->ownCampaign($id);
 
-        $pending = $campaign->recipients()->where('status', 'failed')->count();
+        $fallidos = $campaign->recipients()->where('status', 'failed')->count();
 
-        if ($pending === 0) {
+        if ($fallidos === 0) {
             return back()->withErrors(['campaign' => 'No hay envíos fallidos que reintentar.']);
         }
 
-        $campaign->recipients()->where('status', 'failed')->update([
+        // Ni las bajas de marketing (131050) ni lo que Meta frenó por saturar al
+        // cliente hace menos de 24 h (131049): reintentarlos es escribir a quien
+        // dijo que no o comerse el mismo rechazo y bajar la calidad del número.
+        $pending = $campaign->fallidosReintentables()->count();
+
+        if ($pending === 0) {
+            return back()->withErrors(['campaign' => 'Los envíos fallidos no se pueden reintentar todavía: '
+                .'son clientes que se dieron de baja de los mensajes de marketing o que WhatsApp pidió no '
+                .'volver a contactar hasta pasadas 24 horas.']);
+        }
+
+        $campaign->fallidosReintentables()->update([
             'status' => 'pending',
             'error_message' => null,
             'error_code' => null,
             'error_details' => null,
             'wamid' => null,
+            'attempts' => 0,
         ]);
 
         $campaign->update(['status' => 'queued', 'paused_at' => null, 'cancelled_at' => null, 'completed_at' => null]);
         ProcessWhatsAppCampaign::dispatch($campaign->id);
 
-        return back()->with('success', "Se reintentarán {$pending} envíos");
+        $fuera = $fallidos - $pending;
+
+        return back()->with('success', $fuera > 0
+            ? "Se reintentarán {$pending} envíos. {$fuera} no, porque el cliente se dio de baja o WhatsApp pide esperar 24 horas."
+            : "Se reintentarán {$pending} envíos");
     }
 
     public function destroy($id)
@@ -509,7 +525,9 @@ class WhatsAppCampaignController extends Controller
             return response()->json(['templates' => [], 'error' => 'La línea no tiene WhatsApp Business conectado.']);
         }
 
-        $result = $this->metaService->listTemplates($instance->waba_id, $instance->access_token, ['limit' => 200]);
+        // Todas las páginas: con sólo la primera, una plantilla aprobada de
+        // la segunda no se podía elegir para la campaña.
+        $result = $this->metaService->listAllTemplates($instance->waba_id, $instance->access_token, ['limit' => 200]);
 
         if (! ($result['success'] ?? false)) {
             return response()->json([
@@ -545,7 +563,7 @@ class WhatsAppCampaignController extends Controller
         }
 
         $file = $request->file('file');
-        $result = $this->metaService->uploadMedia($instance->phone_number_id, $file->getRealPath(), $file->getMimeType());
+        $result = $this->metaService->uploadMedia($instance, $file->getRealPath(), $file->getMimeType());
 
         if (! ($result['success'] ?? false)) {
             return response()->json([

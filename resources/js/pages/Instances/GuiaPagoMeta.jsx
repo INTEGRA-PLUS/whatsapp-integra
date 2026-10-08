@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import AppLayout from '@/layouts/AppLayout';
 import { Aviso, Paso, useAvance } from '@/components/guia';
+import { conProblemaDePago, nombresDe, queFalta } from '@/components/alerta-pago-meta';
 import CabeceraModulo from '@/components/cabecera-modulo';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,6 +29,25 @@ import {
  * trae el propio error de Meta: abre el asistente de esa cuenta con el
  * portafolio ya elegido.
  *
+ * ## De dónde sale cada dato
+ *
+ * Verificado en la documentación de Meta el 1-oct-2026, el mismo día en que
+ * Meta empezó a cobrar los mensajes de servicio. Antes la guía decía que
+ * responder en las 24 h era gratis, y desde ese día ya no lo es:
+ *
+ * - Cobro por mensaje entregado, servicio cobrado desde el 1-oct-2026, 1.000
+ *   de servicio gratis al mes por número, reacciones gratis y COP como moneda:
+ *   developers.facebook.com/documentation/business-messaging/whatsapp/pricing
+ *   y …/pricing/non-template-messages
+ * - Tarifas de Colombia: la tabla de Meta vigente desde el 1-oct-2026 (en la
+ *   misma página de precios).
+ * - Causas del 131042 (moneda, zona horaria, línea de crédito, cuenta
+ *   suspendida): …/whatsapp/support/error-codes
+ * - Cambiar la moneda = crear otra cuenta de mensajería y migrar:
+ *   …/whatsapp/pricing/change-billing-currency
+ * - Permiso necesario («administrar la configuración de pagos» de la cuenta
+ *   de mensajería), sólo Visa y Mastercard: facebook.com/business/help/488291839463771
+ *
  * Sin capturas a propósito: el centro de facturación de Meta cambia de aspecto
  * cada pocos meses, y una captura vieja confunde más que un texto que nombra el
  * botón.
@@ -48,13 +68,24 @@ const EN_CRM = (
 );
 
 export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
-    const { paso, reiniciar, completados, porcentaje, terminado } = useAvance('guia-pago-meta:pasos-hechos', TOTAL);
-
-    const conProblema = lineas.filter(l => l.problema);
+    const conProblema = lineas.filter(conProblemaDePago);
+    const porConfirmar = lineas.filter(l => l.problema === 'por_confirmar');
     const [lineaId, setLineaId] = useState(elegida ?? conProblema[0]?.id ?? lineas[0]?.id ?? null);
     const linea = lineas.find(l => l.id === lineaId) ?? null;
     const consumo = useConsumo(linea?.waba_id ? linea.id : null);
     const portafolio = consumo.datos?.portafolio;
+
+    // Las otras líneas de la misma cuenta de WhatsApp: el pago es de la
+    // cuenta, así que se arreglan (y se marcan) juntas.
+    const hermanas = l => (l?.waba_id ? lineas.filter(o => o.id !== l.id && o.waba_id === l.waba_id) : []);
+
+    // El avance va por cuenta y por incidente. Con una clave fija, quien
+    // arregló el pago en marzo encontraba en octubre «5 de 5, terminaste» ante
+    // un problema nuevo, y la guía de una línea se marcaba hecha en otra.
+    const { paso, reiniciar, completados, porcentaje, terminado } = useAvance(
+        `guia-pago-meta:${linea?.waba_id ?? `linea-${linea?.id ?? 'ninguna'}`}:${linea?.desde ?? 'sin-incidente'}`,
+        TOTAL,
+    );
 
     return (
         <>
@@ -65,24 +96,36 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                     icono={CreditCard}
                     volver="/instances"
                     titulo="Activar el pago en Meta"
-                    descripcion="Meta cobra cada plantilla que envías (facturas, avisos, campañas) directamente a tu tarjeta. Sin tarjeta ni moneda configuradas en tu cuenta de WhatsApp, rechaza los envíos."
+                    descripcion="Meta cobra los mensajes que entrega al método de pago de tu cuenta de WhatsApp Business. Si la cuenta no tiene moneda configurada o un método de pago válido, Meta rechaza los envíos."
                 />
 
-                {linea?.problema ? (
+                {/* «por confirmar» no es un rechazo: cae al aviso ámbar de abajo. */}
+                {linea && conProblemaDePago(linea) ? (
                     <EstadoDeLaLinea linea={linea} />
                 ) : conProblema.length > 0 ? (
                     <Aviso tono="alto" titulo="Tus mensajes no están saliendo">
                         <p>
-                            Meta está rechazando los envíos de{' '}
-                            <strong>{conProblema.map(l => `${l.nombre}${l.numero ? ` (${l.numero})` : ''}`).join(', ')}</strong>.
-                            Elige la línea abajo para ver el motivo.
+                            Meta está rechazando los envíos de <strong>{nombresDe(conProblema)}</strong> porque la
+                            cuenta de WhatsApp Business {queFalta(conProblema)}. Mientras no se arregle,{' '}
+                            <strong>no salen las plantillas</strong>: facturas, avisos ni campañas. Y desde el
+                            1 de octubre de 2026, cuando se acaban los 1.000 mensajes de servicio gratis del mes,
+                            tampoco las respuestas a tus clientes.
+                        </p>
+                        <p>Si tienes el acceso y la tarjeta a mano, son unos minutos. Sigue los pasos de abajo.</p>
+                    </Aviso>
+                ) : porConfirmar.length > 0 ? (
+                    <Aviso tono="ojo" titulo="Parece arreglado, falta confirmarlo">
+                        <p>
+                            Meta ya no marca ningún problema de pago en <strong>{nombresDe(porConfirmar)}</strong>.
+                            La alerta se apagará del todo en cuanto Meta entregue la próxima plantilla; si vuelve a
+                            rechazar un envío por pago, reaparecerá.
                         </p>
                     </Aviso>
                 ) : (
                     <Aviso tono="bien" titulo="Tus líneas no tienen problemas de pago ahora mismo">
                         <p>
-                            Esta guía queda aquí por si Meta rechaza un envío por falta de tarjeta. Si en
-                            algún momento ves la alerta roja arriba de la pantalla, vuelve aquí.
+                            Esta guía queda aquí por si Meta rechaza un envío por el pago. Si en algún momento ves
+                            la alerta roja arriba de la pantalla, vuelve aquí.
                         </p>
                     </Aviso>
                 )}
@@ -92,13 +135,19 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                 {/* ── Lo que hay que entender antes de tocar nada ───────────── */}
                 <section className="grid gap-3 sm:grid-cols-3">
                     <Dato icono={Receipt} titulo="Quién cobra">
-                        Meta, directo a tu tarjeta. Integra no cobra ni ve este dinero.
+                        Meta, directo al método de pago de tu cuenta de WhatsApp Business, normalmente una
+                        tarjeta. Integra no cobra ni ve este dinero.
                     </Dato>
                     <Dato icono={CreditCard} titulo="Qué cobra">
-                        Cada plantilla: facturas, recordatorios, campañas. En Colombia, unos pocos pesos por mensaje de Utilidad.
+                        Cada mensaje entregado. En Colombia: <strong>marketing</strong> 0,0125 USD (46 pesos);{' '}
+                        <strong>utilidad</strong> (facturas, avisos), autenticación y respuestas 0,0008 USD
+                        (unos 3 pesos). Tarifa de Meta vigente desde el 1-oct-2026.
                     </Dato>
                     <Dato icono={ShieldCheck} titulo="Qué es gratis">
-                        Responder a un cliente que te escribió en las últimas 24 horas.
+                        Desde el 1-oct-2026 responder en las 24 horas ya se cobra. Siguen gratis los primeros
+                        1.000 mensajes de servicio de cada número al mes, las reacciones y lo que respondes a quien
+                        te escribe desde un anuncio de clic a WhatsApp (72 horas según la ayuda de Meta; su
+                        documentación técnica ya habla de hasta 7 días).
                     </Dato>
                 </section>
 
@@ -124,10 +173,17 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                                     <span className="min-w-0 flex-1">
                                         <span className="font-semibold text-foreground">{l.nombre}</span>
                                         {l.numero && <span className="ml-2 tabular-nums text-muted-foreground">{l.numero}</span>}
+                                        {hermanas(l).length > 0 && (
+                                            <span className="block text-[12px] text-muted-foreground">
+                                                Misma cuenta de WhatsApp que {hermanas(l).map(o => o.nombre).join(', ')}: se arreglan juntas.
+                                            </span>
+                                        )}
                                     </span>
-                                    {l.problema
+                                    {conProblemaDePago(l)
                                         ? <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-bold text-destructive">{ETIQUETA[l.problema] ?? 'Sin pago'}</span>
-                                        : <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold text-success">Al día</span>}
+                                        : l.problema === 'por_confirmar'
+                                            ? <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">Por confirmar</span>
+                                            : <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold text-success">Al día</span>}
                                 </label>
                             ))}
                         </div>
@@ -147,18 +203,21 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                    <Paso {...paso(1)} titulo="Ten a mano quién administra tu negocio en Meta" etiqueta={EN_META}>
+                    <Paso {...paso(1)} titulo="Ten a mano a quien gestiona los pagos en Meta" etiqueta={EN_META}>
                         <p>
-                            Solo puede hacerlo alguien con <strong>control total</strong> del portafolio
-                            comercial de Meta de tu empresa: normalmente quien creó la cuenta de WhatsApp
-                            Business o el Facebook de la empresa.
+                            Hace falta alguien con permiso para <strong>administrar la configuración de pagos</strong> de
+                            la cuenta de WhatsApp Business en Meta. Quien creó la cuenta lo tiene siempre; si no eres tú,
+                            pídeselo a quien administra el portafolio comercial de Meta de tu empresa.
                         </p>
                         <p>Necesitas también:</p>
                         <ul className="ml-4 list-disc space-y-1">
-                            <li>Una <strong>tarjeta de crédito o débito</strong> a nombre de la empresa o de su representante.</li>
                             <li>
-                                Que la tarjeta tenga <strong>habilitadas las compras por internet internacionales</strong>.
-                                Es lo que más falla en Colombia: si el banco las tiene bloqueadas, Meta la rechaza sin explicar por qué.
+                                Una tarjeta <strong>Visa o Mastercard</strong> a nombre de la empresa o de su representante.
+                                Meta no acepta American Express ni PayPal.
+                            </li>
+                            <li>
+                                Que la tarjeta tenga <strong>habilitadas las compras internacionales por internet</strong>:
+                                si el banco las bloquea, el cargo de Meta se rechaza.
                             </li>
                             <li>El <strong>NIT</strong> y la dirección de la empresa, para los recibos de Meta.</li>
                         </ul>
@@ -170,6 +229,12 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                             El botón te lleva directo a la cuenta de {linea ? <strong>{linea.nombre}</strong> : 'tu línea'}.
                             Se abre en otra pestaña: deja esta abierta para volver al final.
                         </p>
+                        {linea && hermanas(linea).length > 0 && (
+                            <p>
+                                El pago es de la cuenta, no del número: arreglarlo aquí arregla también{' '}
+                                <strong>{hermanas(linea).map(o => o.nombre).join(', ')}</strong>.
+                            </p>
+                        )}
                         {linea && (
                             <a href={linea.enlace} target="_blank" rel="noopener noreferrer">
                                 <Button className="gap-2 bg-[#1877f2] text-white hover:bg-[#166fe0]">
@@ -181,34 +246,37 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                             <p>
                                 Si Meta te pide elegir un portafolio, elige <strong>{portafolio.nombre ?? portafolio.id}</strong>{' '}
                                 <span className="tabular-nums text-muted-foreground">(ID {portafolio.id})</span>: es el que tiene esta
-                                línea y al que Meta le cobra. Si no te aparece o te dice que no tienes acceso, no eres
-                                administrador de ese portafolio: vuelve al paso 1.
+                                línea y al que Meta le cobra. Si no te aparece o te dice que no tienes acceso, te falta
+                                el permiso de pagos de esa cuenta: vuelve al paso 1.
                             </p>
                         ) : (
                             <p>
                                 Si Meta te pide elegir un portafolio, elige el de tu empresa, el que tiene tu
-                                número de WhatsApp. Si te dice que no tienes acceso, no eres administrador: vuelve al paso 1.
+                                número de WhatsApp. Si te dice que no tienes acceso, te falta el permiso de pagos de esa
+                                cuenta: vuelve al paso 1.
                             </p>
                         )}
                     </Paso>
 
-                    <Paso {...paso(3)} titulo="Elige el país y la moneda" etiqueta={EN_META}>
+                    <Paso {...paso(3)} titulo="Elige el país, la moneda y la zona horaria" etiqueta={EN_META}>
                         <p>
-                            Si la cuenta no tiene moneda, Meta te abre un asistente. Elige <strong>Colombia</strong> como
-                            país y la moneda que te ofrezca.
+                            Si a la cuenta le falta la moneda o la zona horaria, Meta te abre un asistente. Elige{' '}
+                            <strong>Colombia</strong>, la zona horaria de <strong>Bogotá</strong> y la moneda: Meta
+                            factura en <strong>pesos colombianos (COP)</strong> o en <strong>dólares (USD)</strong>.
                         </p>
-                        <Aviso tono="alto" titulo="La moneda no se puede cambiar después">
+                        <Aviso tono="ojo" titulo="Piensa la moneda antes de guardar">
                             <p>
-                                Una vez guardada, cambiarla obliga a rehacer la cuenta de WhatsApp. Si dudas,
-                                pregúntale a tu contador antes de confirmar.
+                                Meta no la deja editar sin más: cambiarla después supone crear otra cuenta de facturación
+                                para WhatsApp y pasar a ella. Si dudas entre pesos y dólares, pregúntale a tu contador antes
+                                de confirmar.
                             </p>
                         </Aviso>
                     </Paso>
 
-                    <Paso {...paso(4)} titulo="Añade la tarjeta y tus datos de facturación" etiqueta={EN_META}>
+                    <Paso {...paso(4)} titulo="Añade el método de pago y tus datos de facturación" etiqueta={EN_META}>
                         <p>
                             En la misma pantalla, pulsa <strong>Añadir método de pago</strong> y escribe los datos de la
-                            tarjeta. Meta puede hacer un cobro pequeño de verificación que luego devuelve.
+                            tarjeta.
                         </p>
                         <p>
                             Completa también los <strong>datos de la empresa</strong>: razón social, NIT, dirección y el
@@ -217,14 +285,26 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
                         </p>
                         <Aviso tono="info" titulo="Si ya tenías tarjeta y aun así falla">
                             <p>
-                                Mira si está <strong>vencida</strong>, si Meta la marca como <strong>rechazada</strong> o si hay un
-                                saldo pendiente sin pagar. Cualquiera de las tres bloquea los envíos igual que no tenerla.
+                                Mira si la tarjeta está <strong>vencida</strong> o Meta la marca como <strong>rechazada</strong>,
+                                si a la cuenta le falta la <strong>moneda</strong> o la <strong>zona horaria</strong> (paso 3) y,
+                                si la cuenta la paga un proveedor con una <strong>línea de crédito</strong>, si esa línea sigue
+                                activa y por debajo de su límite. Meta da el mismo error para todas.
+                            </p>
+                        </Aviso>
+                        <Aviso tono="alto" titulo="Una cuenta suspendida no se arregla con una tarjeta">
+                            <p>
+                                Meta usa el mismo error cuando la cuenta de WhatsApp Business está <strong>suspendida</strong> o
+                                eliminada. Si en Meta la ves así, el problema no es el pago: escríbenos y lo revisamos.
                             </p>
                         </Aviso>
                     </Paso>
 
                     <Paso {...paso(5)} titulo="Vuelve aquí y comprueba" etiqueta={EN_CRM}>
-                        <p>Cuando Meta guarde la tarjeta, pulsa el botón. Le preguntamos a Meta si ya te deja enviar.</p>
+                        <p>
+                            Cuando Meta guarde el método de pago, pulsa el botón. Le preguntamos a Meta si todavía marca
+                            algún problema de pago. Si no marca ninguno, la alerta queda «por confirmar» y se apaga sola
+                            en cuanto Meta entregue la próxima plantilla.
+                        </p>
                         {linea && <Comprobar linea={linea} />}
                         <p>
                             Los mensajes que fallaron mientras tanto <strong>no se reenvían solos</strong>. Reenvíalos desde{' '}
@@ -238,7 +318,8 @@ export default function GuiaPagoMeta({ lineas = [], elegida = null }) {
 
                 <p className="text-xs leading-relaxed text-muted-foreground">
                     ¿Te atascaste? Escríbenos y lo hacemos contigo por videollamada. Lo que no podemos hacer es
-                    poner la tarjeta por ti: Meta sólo deja hacerlo al dueño de la cuenta.
+                    poner la tarjeta por ti: Meta no deja asociarla por API y exige que la añada alguien con permiso
+                    de pagos sobre tu cuenta.
                 </p>
             </div>
         </>

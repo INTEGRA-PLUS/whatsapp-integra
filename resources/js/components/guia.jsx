@@ -137,16 +137,21 @@ export function useAvance(memoria, total) {
     const [hechos, setHechos] = useState([]);
     const [abierto, setAbierto] = useState(1);
 
+    // `memoria` puede cambiar sin desmontar: la guía del pago la arma con la
+    // cuenta y la fecha del incidente, y al elegir otra línea o abrirse un
+    // incidente nuevo tiene que empezar de cero. Por eso se pone a cero ANTES
+    // de leer, y no sólo cuando hay algo guardado: si no, el «3 de 5» de la
+    // cuenta anterior se quedaba pegado a la nueva.
     useEffect(() => {
+        let guardado = [];
         try {
-            const guardado = JSON.parse(localStorage.getItem(memoria) ?? '[]');
-            if (Array.isArray(guardado) && guardado.length) {
-                setHechos(guardado);
-                setAbierto(Math.min(Math.max(...guardado) + 1, total));
-            }
+            const leido = JSON.parse(localStorage.getItem(memoria) ?? '[]');
+            if (Array.isArray(leido)) guardado = leido;
         } catch {
             /* sin memoria, pero la guía se sigue igual */
         }
+        setHechos(guardado);
+        setAbierto(guardado.length ? Math.min(Math.max(...guardado) + 1, total) : 1);
     }, [memoria, total]);
 
     function marcar(n) {

@@ -542,7 +542,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
             WhatsAppMenuOption::MAX_CAPTION
         );
 
-        $result = $meta->sendImage($instance->phone_number_id, $conversation->recipientId(), $url, $caption);
+        $result = $meta->sendImage($instance, $conversation->recipientId(), $url, $caption);
 
         if (! ($result['success'] ?? false)) {
             Log::channel('whatsapp')->warning('⚠️ Imagen de menú no enviada; se responde el texto', [
@@ -756,7 +756,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         }
 
         $result = $meta->sendInteractive(
-            $instance->phone_number_id,
+            $instance,
             $conversation->recipientId(),
             $menus->buildPayload($menu, $conversation)
         );
@@ -975,7 +975,7 @@ class ProcessWhatsAppMenu implements ShouldQueue
         $text = $this->conVueltaAlMenu($instance, $text, $metadata);
 
         $result = $meta->sendMessage(
-            $instance->phone_number_id,
+            $instance,
             $conversation->recipientId(),
             $text
         );

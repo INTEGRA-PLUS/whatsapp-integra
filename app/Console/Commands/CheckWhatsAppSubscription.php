@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Instance;
 use App\Models\WhatsAppMessage;
+use App\Services\EventosDePlantilla;
 use App\Services\MetaWhatsAppService;
 use Illuminate\Console\Command;
 
@@ -62,6 +63,7 @@ class CheckWhatsAppSubscription extends Command
             }
 
             $problems += $this->reportSubscription($instance);
+            $problems += $this->reportAppFields($instance);
         }
 
         $this->newLine();
@@ -75,6 +77,7 @@ class CheckWhatsAppSubscription extends Command
         $this->newLine();
         $this->line('Si falta la suscripción, se re-suscribe desde Ajustes de WhatsApp → "Suscribir webhook",');
         $this->line('o con POST /{waba_id}/subscribed_apps usando el token de la instancia.');
+        $this->line('Los campos de plantillas se añaden con el mismo botón (o al habilitar llamadas).');
 
         return self::SUCCESS;
     }
@@ -203,5 +206,55 @@ class CheckWhatsAppSubscription extends Command
         }
 
         return 0;
+    }
+
+    /** Campos de la app ya consultados en esta ejecución, por app_id. */
+    private array $camposPorApp = [];
+
+    /**
+     * Los campos se suscriben a nivel de app, no de WABA. Una app con sólo
+     * `messages` recibe los mensajes pero no se entera de que Meta pausó,
+     * rechazó o recategorizó una plantilla: las campañas seguían enviando
+     * una plantilla pausada y la pantalla de respaldo la daba por aprobada.
+     */
+    private function reportAppFields(Instance $instance): int
+    {
+        $debug = $this->meta->debugToken($instance->access_token);
+        $appId = $debug['data']['app_id'] ?? null;
+
+        if (! ($debug['success'] ?? false) || ! $appId) {
+            $this->warn('  ⚠️  No se pudo identificar la app del token: no se revisan los campos de plantillas.');
+            return 0;
+        }
+
+        if (! array_key_exists($appId, $this->camposPorApp)) {
+            $secret = $this->meta->appSecretForAppId((string) $appId);
+            $subs = $secret ? $this->meta->getAppSubscriptions((string) $appId, $secret) : null;
+
+            $this->camposPorApp[$appId] = ($subs['success'] ?? false)
+                ? collect($subs['data']['data'] ?? [])
+                    ->first(fn ($s) => ($s['object'] ?? null) === 'whatsapp_business_account')['fields'] ?? []
+                : null;
+        }
+
+        $campos = $this->camposPorApp[$appId];
+
+        if ($campos === null) {
+            $this->warn("  ⚠️  No se pudo leer la suscripción de la app {$appId} (¿falta su secreto en META_APP_SECRETS?).");
+            return 0;
+        }
+
+        $nombres = collect($campos)->map(fn ($f) => is_array($f) ? ($f['name'] ?? null) : $f)->filter()->all();
+        $faltan = array_values(array_diff(EventosDePlantilla::CAMPOS, $nombres));
+
+        if ($faltan === []) {
+            $this->line("  App {$appId}: recibe los avisos de plantillas.");
+            return 0;
+        }
+
+        $this->error("  ❌ La app {$appId} no está suscrita a: " . implode(', ', $faltan)
+            . '. Integra no se entera de pausas, rechazos ni cambios de categoría.');
+
+        return 1;
     }
 }

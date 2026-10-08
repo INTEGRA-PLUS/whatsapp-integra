@@ -31,37 +31,64 @@ arrancar ese trámite el primer día porque no depende de nosotros.
 
 ## Lo que cuesta Meta en Colombia
 
-Desde el 1-jul-2025 Meta cobra **por mensaje**, no por conversación. Tarifas por
-mensaje entregado (tarifario vigente en 2026; Meta lo actualiza el primer día de
-cada trimestre, así que hay que verificarlo antes de firmar):
+Desde el 1-jul-2025 Meta cobra **por mensaje entregado**, no por conversación
+ni por mensaje enviado. Tarifario de Meta para Colombia **vigente desde el
+1-oct-2026**, verificado ese día en
+<https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing>
+(Meta lo actualiza cada trimestre: hay que volver a mirarlo antes de firmar):
 
-| Categoría | Colombia | Para qué es |
-|---|---|---|
-| **Servicio** | **Gratis** | Todo lo que respondemos dentro de las 24 h desde que el socio escribió |
-| **Utility** | **~0,0009 USD** | Avisos de factura, recordatorios de pago, estados de cuenta, confirmaciones |
-| **Authentication** | ~0,0009 USD | Códigos de verificación |
-| **Marketing** | **~0,0138 USD** | Promociones, campañas comerciales |
+| Categoría | USD | COP | Para qué es |
+|---|---|---|---|
+| **Servicio** | **0,0008** | 2,9455 | Lo que respondemos dentro de las 24 h desde que el socio escribió. **Cobrado desde el 1-oct-2026**, con 1.000 gratis al mes por número |
+| **Utility** | **0,0008** | 2,9455 | Avisos de factura, recordatorios de pago, estados de cuenta, confirmaciones. **Cobrada también dentro de la ventana desde el 1-oct-2026** |
+| **Authentication** | 0,0008 | 2,9455 | Códigos de verificación |
+| **Marketing** | **0,0125** | 46,0227 | Promociones, campañas comerciales |
 
-**Colombia es de los mercados más baratos del mundo.** Alemania paga 0,0550 USD
-por el mismo mensaje utility; nosotros 0,0009.
+COP es moneda de facturación de Meta desde el 1-abr-2026; antes sólo USD.
 
-Las consecuencias son grandes y conviene entenderlas antes de poner precio:
+### El cambio del 1-oct-2026: responder ya no es gratis
 
-- **12.000 avisos de utility al mes ≈ 11 USD.** El costo de Meta es
+Hasta el 30-sep-2026 lo que el cliente iniciaba no costaba nada y este
+documento lo vendía así («un chatbot que atiende consultas entrantes tiene
+costo de Meta cero»). **Ya no es cierto.** Meta, en
+<https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/non-template-messages>:
+
+> Effective October 1, 2026 - Meta will charge on a per-message basis for all
+> service messages, consistent with how Meta charges for template messages.
+
+> Effective October 1, 2026 - Meta will charge on a per-message basis for
+> utility messages sent in response to users (within an open 24-hour customer
+> service window).
+
+Lo que sigue gratis: 1.000 mensajes de servicio entregados al mes por número
+(«one shared free tier of 1,000 delivered service messages per month»), las
+reacciones, y lo que se responde en la ventana que abre un anuncio de clic a
+WhatsApp (72 h según el centro de ayuda de Meta; la documentación técnica ya
+habla de «up to 7 days»).
+
+Y la consecuencia que importa para el soporte: **sin método de pago, pasados
+esos 1.000, Meta deja de entregar también las respuestas** («Meta will deliver
+service messages within the shared free tier but not deliver them after the
+free tier has been used»). Hasta septiembre una cuenta sin tarjeta podía
+atender chats y sólo le fallaban las plantillas; desde octubre se le cae
+también la atención. Es lo que explica la alerta roja de «Activar el pago en
+Meta» (`app/Support/FacturacionDeMeta.php`) y por qué un texto libre entregado
+**no** sirve para apagarla: puede ser de los 1.000 gratis.
+
+Las cuentas siguen siendo baratas, y conviene entenderlo antes de poner precio:
+
+- **12.000 avisos de utility al mes ≈ 10 USD.** El costo de Meta es
   prácticamente ruido frente a cualquier tarifa de plataforma razonable.
-- **Los mismos 12.000 como marketing ≈ 165 USD**, quince veces más. Clasificar
+- **Los mismos 12.000 como marketing ≈ 150 USD**, quince veces más. Clasificar
   bien las plantillas no es un detalle técnico: es la diferencia entre un costo
   irrelevante y uno que se nota.
 - Para una cooperativa, casi todo lo que va a mandar —cuotas, moras, estados de
   cuenta, avisos de asamblea— **es legítimamente utility**. Ahí hay una asesoría
   que vale dinero y que la competencia no siempre da.
-- **Lo que el socio inicia no cuesta nada.** Un chatbot que atiende consultas
-  entrantes tiene costo de Meta cero. Todo el uso de "CRM + chatbot" que la
-  cooperativa quiere automatizar cae en servicio, es decir, gratis.
-
-Nota sobre la ventana de 24 h: las plantillas utility son gratis **dentro** de
-una ventana de servicio abierta y se cobran fuera. Como una campaña va por
-definición a quien no acaba de escribir, hay que presupuestarlas como pagadas.
+- **Lo que el socio inicia cuesta poco, pero ya no cero.** Un chatbot que
+  atiende consultas entrantes paga 0,0008 USD por respuesta pasadas las 1.000
+  del mes. Y necesita la tarjeta puesta aunque la cooperativa no mande ninguna
+  campaña.
 
 ## Qué hace el producto
 

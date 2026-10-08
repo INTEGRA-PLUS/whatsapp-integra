@@ -279,7 +279,7 @@ class PlantillasDeIntegraTest extends TestCase
         $user = $this->admin();
         $instancia = $this->instancia($user->company_id);
 
-        Http::fake(['*' => Http::response([
+        $plantilla = [
             'id' => '1619457086301827',
             'name' => 'aviso_automatico_cliente',
             'language' => 'es',
@@ -290,7 +290,14 @@ class PlantillasDeIntegraTest extends TestCase
                 'text' => 'Hola, te compartimos un aviso de *{{1}}*:',
                 'example' => ['body_text' => [['MEGASTORE', 'Su soporte de pago ha sido generado bajo el Nro. 6780']]],
             ]],
-        ], 200)]);
+        ];
+
+        // El listado también: ver una plantilla comprueba antes que sea del
+        // WABA de la línea, porque el token alcanza los de otras empresas.
+        Http::fake([
+            '*/message_templates*' => Http::response(['data' => [$plantilla]], 200),
+            '*' => Http::response($plantilla, 200),
+        ]);
 
         $this->actingAs($user)
             ->getJson('/api/templates/1619457086301827?instance_id='.$instancia->id)

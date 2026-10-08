@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\WhatsAppConversation;
 use App\Services\Integra;
+use App\Services\TemplateParameterGuard;
 use App\Support\FacturasDelCliente;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -78,7 +79,7 @@ class FacturaRapidaController extends Controller
             ], 422);
         }
 
-        $nombreCliente = trim((string) ($conversation->contact?->name ?: $conversation->name)) ?: 'cliente';
+        $nombreCliente = $this->nombreDelCliente($conversation);
         $plantilla = config('whatsapp_default_templates.'.self::PLANTILLA);
 
         return response()->json([
@@ -97,7 +98,11 @@ class FacturaRapidaController extends Controller
                     'type' => 'body',
                     'parameters' => [
                         ['type' => 'text', 'text' => $nombreCliente],
-                        ['type' => 'text', 'text' => $company->name],
+                        // El nombre de la empresa se escribe a mano en Ajustes y
+                        // alguno lleva un salto de línea o un doble espacio pegado:
+                        // Meta rechaza el parámetro entero (132018).
+                        ['type' => 'text', 'text' => TemplateParameterGuard::cleanText((string) $company->name)
+                            ?: TemplateParameterGuard::cleanText((string) $conversation->instance?->businessDisplayName())],
                         ['type' => 'text', 'text' => $detalle['total_texto']],
                         ['type' => 'text', 'text' => $detalle['plazo']],
                     ],
@@ -153,6 +158,36 @@ class FacturaRapidaController extends Controller
                 ? 'antes del '.Carbon::parse($vencimiento)->locale('es')->isoFormat('D [de] MMMM')
                 : 'lo antes posible',
         ];
+    }
+
+    /**
+     * Con qué nombre saludar al cliente en la factura.
+     *
+     * El nombre de la conversación arranca siendo el propio número, o un BSUID
+     * («CO.1402615141764490») cuando el cliente oculta el suyo. Ese era el
+     * respaldo de antes, y la factura salía con «Hola CO.1402615141764490».
+     * Mismo criterio que la plantilla de respaldo: un nombre que no es un
+     * nombre se cambia por «cliente».
+     */
+    private function nombreDelCliente(WhatsAppConversation $conversation): string
+    {
+        $telefono = trim((string) $conversation->phone_number);
+
+        foreach ([$conversation->contact?->name, $conversation->name] as $candidato) {
+            $candidato = TemplateParameterGuard::cleanText((string) $candidato);
+
+            if ($candidato === ''
+                || $candidato === $telefono
+                || $candidato === trim((string) $conversation->wa_id)
+                || preg_match('/^[\d\s+.\-()]+$/', $candidato)
+                || WhatsAppConversation::isBsuid($candidato)) {
+                continue;
+            }
+
+            return $candidato;
+        }
+
+        return 'cliente';
     }
 
     /** La conversación es de esta empresa, y esta empresa tiene Integra. */

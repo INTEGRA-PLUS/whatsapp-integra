@@ -56,8 +56,8 @@ class VerPlantillas extends Command
             return $res['success'] ? self::SUCCESS : self::FAILURE;
         }
 
-        $resultado = $this->meta->listTemplates($instance->waba_id, $instance->access_token, [
-            'fields' => 'id,name,status,category,language,components',
+        $resultado = $this->meta->listAllTemplates($instance->waba_id, $instance->access_token, [
+            'fields' => 'id,name,status,category,language,parameter_format,components',
             'limit' => 500,
         ]);
 
@@ -81,6 +81,10 @@ class VerPlantillas extends Command
 
         $this->newLine();
         $this->line("  <options=bold>{$instance->name}</> · WABA {$instance->waba_id} · {$plantillas->count()} plantillas");
+
+        if ($resultado['truncated'] ?? false) {
+            $this->warn('  El catálogo se cortó en el tope de páginas: puede haber más plantillas.');
+        }
         $this->newLine();
 
         foreach ($plantillas as $t) {

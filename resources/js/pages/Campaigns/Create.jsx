@@ -12,6 +12,7 @@ import { WhatsAppPreview } from '@/pages/Templates/preview';
 import {
     CATEGORY_LABEL, HEADER_MEDIA_ACCEPT, HEADER_MEDIA_LABEL,
     templateBodyComponent, templateHeaderComponent, templateHeaderFormat,
+    templateDynamicButtons, templateVarNames,
 } from '@/lib/templates';
 import { DAY_OPTIONS } from './shared';
 
@@ -35,6 +36,9 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
         headerMedia: null,
         headerVars: [],
         bodyVars: [],
+        // Botones que cambian en cada mensaje (URL con {{1}}, código para
+        // copiar): un hueco más, con el índice del botón dentro de la plantilla.
+        buttonVars: [],
         recipients: [],
         csvColumns: [],
         schedule_type: 'manual',
@@ -82,7 +86,8 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
                     e.header = `Esta plantilla lleva ${HEADER_MEDIA_LABEL[fmt].toLowerCase()} en el encabezado: sube el archivo antes de continuar.`;
                 }
                 const pendientes = form.headerVars.filter(v => !slotCompleto(v)).length
-                    + form.bodyVars.filter(v => !slotCompleto(v)).length;
+                    + form.bodyVars.filter(v => !slotCompleto(v)).length
+                    + form.buttonVars.filter(v => !slotCompleto(v)).length;
                 if (pendientes > 0) {
                     e.vars = pendientes === 1
                         ? 'Falta un dato por rellenar: esta plantilla tiene un hueco que cambia en cada mensaje.'
@@ -193,6 +198,7 @@ export default function CampaignsCreate({ instances = [], defaultInstanceId = nu
             variable_map: {
                 header: form.headerVars,
                 body: form.bodyVars,
+                buttons: form.buttonVars.map(({ index, sub_type, source, value, field }) => ({ index, sub_type, source, value, field })),
             },
             header_media_id: form.headerMedia?.mediaId ?? null,
             header_media_url: form.headerMedia?.url ?? null,
@@ -393,7 +399,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
 
     // Cuántos huecos quedan sin rellenar, visible desde el primer momento y no
     // solo al chocar con el botón.
-    const pendientes = [...form.headerVars, ...form.bodyVars].filter(v => !slotCompleto(v)).length;
+    const pendientes = [...form.headerVars, ...form.bodyVars, ...form.buttonVars].filter(v => !slotCompleto(v)).length;
 
     const filtradas = useMemo(() => {
         const q = busqueda.trim().toLowerCase();
@@ -415,6 +421,11 @@ function PasoPlantilla({ form, update, errors, fields }) {
                 ? Array.from({ length: contarVars(header.text || '') }, () => ({ ...EMPTY_SLOT }))
                 : [],
             headerMedia: fmt && fmt !== 'LOCATION' ? { format: fmt, mediaId: '', filename: '', url: '' } : null,
+            // El botón de código de una plantilla de autenticación no entra: ese
+            // código es distinto para cada persona y no sale de ninguna campaña.
+            buttonVars: templateDynamicButtons(t)
+                .filter(b => !b.otp)
+                .map(b => ({ ...EMPTY_SLOT, index: b.index, sub_type: b.subType, label: b.text, url: b.url })),
         });
     }
 
@@ -489,7 +500,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                 <SubidaEncabezado form={form} update={update} error={errors.header} />
             )}
 
-            {form.template && (form.bodyVars.length > 0 || form.headerVars.length > 0) && (
+            {form.template && (form.bodyVars.length > 0 || form.headerVars.length > 0 || form.buttonVars.length > 0) && (
                 <Card
                     id="seccion-variables"
                     resaltada={!!errors.vars}
@@ -511,7 +522,7 @@ function PasoPlantilla({ form, update, errors, fields }) {
                     {form.headerVars.map((slot, i) => (
                         <SlotVariable
                             key={`h${i}`}
-                            etiqueta={`Encabezado · dato {{${i + 1}}}`}
+                            etiqueta={`Encabezado · dato {{${nombreDeHueco(templateHeaderComponent(form.template)?.text, i)}}}`}
                             slot={slot}
                             fields={fields}
                             pendiente={!slotCompleto(slot)}
@@ -521,11 +532,23 @@ function PasoPlantilla({ form, update, errors, fields }) {
                     {form.bodyVars.map((slot, i) => (
                         <SlotVariable
                             key={`b${i}`}
-                            etiqueta={`Dato {{${i + 1}}}`}
+                            etiqueta={`Dato {{${nombreDeHueco(templateBodyComponent(form.template)?.text, i)}}}`}
                             slot={slot}
                             fields={fields}
                             pendiente={!slotCompleto(slot)}
                             onChange={s => update(f => ({ bodyVars: f.bodyVars.map((x, j) => j === i ? s : x) }))}
+                        />
+                    ))}
+                    {form.buttonVars.map((slot, i) => (
+                        <SlotVariable
+                            key={`btn${slot.index}`}
+                            etiqueta={slot.sub_type === 'copy_code'
+                                ? `Botón «${slot.label}» · código para copiar`
+                                : `Botón «${slot.label}» · final del enlace ${slot.url || ''}`}
+                            slot={slot}
+                            fields={fields}
+                            pendiente={!slotCompleto(slot)}
+                            onChange={s => update(f => ({ buttonVars: f.buttonVars.map((x, j) => j === i ? { ...x, ...s } : x) }))}
                         />
                     ))}
                     {errors.vars && <p className="text-sm text-destructive">{errors.vars}</p>}
@@ -1370,11 +1393,17 @@ function buildPreviewModel(form, destinatario) {
     };
 }
 
+/** El nombre de la variable i-ésima distinta del texto: «1» o «numero_factura». */
+function nombreDeHueco(texto, i) {
+    return templateVarNames(texto)[i] ?? String(i + 1);
+}
+
 function sustituir(texto, slots, destinatario) {
-    let i = 0;
+    // Un {{nombre}} repetido es el mismo hueco: se busca por su posición entre
+    // las variables distintas, no por cuántas veces apareció ya.
+    const nombres = templateVarNames(texto);
     return (texto || '').replace(/{{\s*([A-Za-z0-9_]+)\s*}}/g, (coincidencia, clave) => {
-        const slot = /^\d+$/.test(clave) ? slots[Number(clave) - 1] : slots[i];
-        i++;
+        const slot = /^\d+$/.test(clave) ? slots[Number(clave) - 1] : slots[nombres.indexOf(clave)];
         const valor = resolverSlot(slot, destinatario);
         return valor === '' ? coincidencia : valor;
     });
