@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import CabeceraModulo from '@/components/cabecera-modulo';
+import { clsx } from 'clsx';
 import { 
     Sparkles,
     Check,
