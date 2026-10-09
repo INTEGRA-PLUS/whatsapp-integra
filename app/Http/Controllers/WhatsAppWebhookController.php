@@ -818,7 +818,17 @@ class WhatsAppWebhookController extends Controller
                 $skipAutoResponse = true;
                 // Se guarda el payload íntegro: es la única forma de saber después
                 // qué tipos están llegando y a cuáles vale la pena darles soporte.
-                $messageData = array_merge($messageData, MensajeNoEntregado::columnas($message));
+                $messageData = array_merge($messageData, MensajeNoEntregado::columnas(
+                    $message,
+                    enCelular: $instance->estaEnCoexistencia()
+                ));
+
+                if ($messageData['metadata']['eliminado'] ?? false) {
+                    // Borrar no es escribir: ni suma «sin leer» ni le quita el
+                    // chat al asesor que lo atiende.
+                    $isSystemNotice = true;
+                    $this->marcarEliminado($conversation, $message);
+                }
 
                 Log::channel('whatsapp')->warning('⚠️ WhatsApp no entregó el contenido de un mensaje entrante', [
                     'instance_id' => $instance->id,
@@ -855,8 +865,16 @@ class WhatsAppWebhookController extends Controller
                 // "unsupported"): eso no le dice nada a quien atiende el chat.
                 $skipAutoResponse = true;
                 $messageData = array_merge($messageData, MensajeNoEntregado::columnas(
-                    array_merge($message, ['unsupported' => ['type' => $message['type']]])
+                    array_merge($message, ['unsupported' => ['type' => $message['type']]]),
+                    enCelular: $instance->estaEnCoexistencia()
                 ));
+
+                if ($messageData['metadata']['eliminado'] ?? false) {
+                    // Borrar no es escribir: ni suma «sin leer» ni le quita el
+                    // chat al asesor que lo atiende.
+                    $isSystemNotice = true;
+                    $this->marcarEliminado($conversation, $message);
+                }
 
                 Log::channel('whatsapp')->warning('⚠️ Tipo de mensaje sin soporte', [
                     'instance_id' => $instance->id,
@@ -873,7 +891,10 @@ class WhatsAppWebhookController extends Controller
         // El aviso de reapertura se registra ANTES del mensaje del cliente: el
         // hilo se ordena por created_at, así que al revés la pastilla saldría
         // después del mensaje que la provocó.
-        $reopenedByCustomer = $conversation->status === 'closed';
+        // Que el cliente borre un mensaje en un chat ya cerrado no es que haya
+        // vuelto a escribir: no lo reabre.
+        $reopenedByCustomer = $conversation->status === 'closed'
+            && ! ($messageData['metadata']['eliminado'] ?? false);
 
         if ($reopenedByCustomer) {
             // Sin esta constancia el hilo mostraba dos "cerrada" seguidas sin
@@ -1043,6 +1064,36 @@ class WhatsAppWebhookController extends Controller
             'target_wamid' => $targetWamid,
             'emoji' => $emoji ?: '(removida)',
         ]);
+    }
+
+    /**
+     * Marca como borrado por el cliente el mensaje al que apunta un `revoke`.
+     *
+     * Meta documenta `revoke.original_message_id` en los ecos; en los
+     * entrantes no lo garantiza. Si no viene, queda solo el aviso en el hilo.
+     */
+    private function marcarEliminado(WhatsAppConversation $conversation, array $message): void
+    {
+        $original = $message['revoke']['original_message_id']
+            ?? $message['unsupported']['original_message_id']
+            ?? null;
+
+        if (! $original) {
+            return;
+        }
+
+        $mensaje = WhatsAppMessage::where('wamid', $original)
+            ->where('conversation_id', $conversation->id)
+            ->first();
+
+        if (! $mensaje) {
+            return;
+        }
+
+        $meta = $mensaje->metadata ?? [];
+        $meta['eliminado_at'] = now()->toIso8601String();
+        $mensaje->metadata = $meta;
+        $mensaje->save();
     }
 
     /**

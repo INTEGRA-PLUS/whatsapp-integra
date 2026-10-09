@@ -44,6 +44,13 @@ class MensajeNoEntregado
         'location'          => 'una ubicación',
     ];
 
+    /**
+     * Tipos con los que Meta no dice nada: «unknown» llega tal cual dentro de
+     * `unsupported` y el chat lo enseñaba entre paréntesis («El cliente envió
+     * un mensaje (unknown)»), que al asesor no le dice nada.
+     */
+    private const SIN_DETALLE = ['unknown', 'unsupported', 'errors'];
+
     /** «una encuesta» describe bien dentro de una frase, pero como título sobra el artículo. */
     public static function sinArticulo(string $etiqueta): string
     {
@@ -55,15 +62,31 @@ class MensajeNoEntregado
      * @param  array    $error      El primer elemento de `errors[]`.
      * @param  bool     $saliente   El mensaje lo mandó el negocio, no el cliente.
      * @param  bool     $delHistorial  Vino del volcado de coexistencia.
+     * @param  bool     $enCelular  El número está en coexistencia: aunque la API
+     *                              no lo reciba, el mensaje está en la app del
+     *                              celular del negocio.
      */
     public static function describir(
         ?string $tipoReal,
         array $error = [],
         bool $saliente = false,
-        bool $delHistorial = false
+        bool $delHistorial = false,
+        bool $enCelular = false
     ): string {
+        // Borrar un mensaje («Se eliminó este mensaje» en el celular) le llega
+        // a la API como `unsupported` de tipo `revoke`. No falta nada que
+        // reenviar: el cliente lo quitó. Pedirle que lo reenviara como texto,
+        // foto o archivo —lo que decía el chat el 9-oct-2026— no tenía sentido.
+        if ($tipoReal === 'revoke') {
+            return $saliente ? 'Eliminaste un mensaje.' : 'El cliente eliminó un mensaje.';
+        }
+
         $quien = $saliente ? 'Enviaste' : 'El cliente envió';
         $que   = $tipoReal !== null ? (self::ETIQUETAS[$tipoReal] ?? null) : null;
+
+        if (in_array($tipoReal, self::SIN_DETALLE, true)) {
+            $tipoReal = null;
+        }
 
         // Sin tipo reconocible, el detalle de Meta es lo único que queda. Sus
         // títulos genéricos ("Message type unknown") no aportan nada al agente,
@@ -82,10 +105,21 @@ class MensajeNoEntregado
         // Del historial el mensaje sigue en el celular: eso es accionable y es
         // lo primero que el agente necesita saber. En vivo, no: ahí lo único
         // que sirve es pedirle al cliente que lo reenvíe.
-        return $delHistorial
-            ? "{$quien} {$que}. WhatsApp no incluyó su contenido en el historial importado; "
-                . 'sigue visible en la app del celular.'
-            : "{$quien} {$que}. WhatsApp no entrega ese tipo de mensaje a la API, "
+        if ($delHistorial) {
+            return "{$quien} {$que}. WhatsApp no incluyó su contenido en el historial importado; "
+                . 'sigue visible en la app del celular.';
+        }
+
+        // En coexistencia el mensaje SÍ está en el WhatsApp del celular del
+        // negocio. El 9-oct-2026 un cliente de River mandó un video que se veía
+        // en el celular y el CRM decía «pídele que lo reenvíe»: lo primero que
+        // el asesor tiene que saber es dónde mirarlo.
+        if ($enCelular) {
+            return "{$quien} {$que} que WhatsApp no pasó al CRM. "
+                . 'Está en el WhatsApp del celular del negocio: míralo ahí o pídele que lo reenvíe.';
+        }
+
+        return "{$quien} {$que}. WhatsApp no entrega ese tipo de mensaje a la API, "
                 . 'así que su contenido no se puede mostrar. Pídele que lo reenvíe como texto, foto o archivo.';
     }
 
@@ -96,22 +130,31 @@ class MensajeNoEntregado
      * de la plataforma como un cambio de número, son huecos en la conversación
      * y se dibujan en su lado con el resto del hilo.
      */
-    public static function columnas(array $mensaje, bool $saliente = false, bool $delHistorial = false): array
-    {
+    public static function columnas(
+        array $mensaje,
+        bool $saliente = false,
+        bool $delHistorial = false,
+        bool $enCelular = false
+    ): array {
         $error       = $mensaje['errors'][0] ?? [];
         $unsupported = $mensaje['unsupported'] ?? null;
         $tipoReal    = is_array($unsupported) ? ($unsupported['type'] ?? null) : $unsupported;
+        $eliminado   = $tipoReal === 'revoke';
 
         return [
             'type'     => 'system',
-            'content'  => self::describir($tipoReal, $error, $saliente, $delHistorial),
+            'content'  => self::describir($tipoReal, $error, $saliente, $delHistorial, $enCelular),
             'metadata' => [
                 // La frase entera no sirve como vista previa en la lista de
                 // chats: ahí sólo caben unas palabras.
-                'resumen'         => isset(self::ETIQUETAS[(string) $tipoReal])
-                    ? self::sinArticulo(self::ETIQUETAS[(string) $tipoReal]) . ' (WhatsApp no lo entregó)'
-                    : 'Mensaje que WhatsApp no entregó',
+                'resumen'         => match (true) {
+                    $eliminado => 'Mensaje eliminado',
+                    isset(self::ETIQUETAS[(string) $tipoReal]) => self::sinArticulo(self::ETIQUETAS[(string) $tipoReal]) . ' (WhatsApp no lo entregó)',
+                    default => 'Mensaje que WhatsApp no entregó',
+                },
                 'no_entregado'    => true,
+                'eliminado'       => $eliminado,
+                'en_celular'      => $enCelular,
                 'tipo_original'   => $tipoReal,
                 'error_code'      => $error['code'] ?? null,
                 'del_historial'   => $delHistorial,

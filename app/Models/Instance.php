@@ -456,6 +456,19 @@ class Instance extends Model
     }
 
     /**
+     * Si el número vive también en la app WhatsApp Business del celular.
+     *
+     * Vale cualquiera de las dos pistas: lo que Meta contestó la última vez
+     * (`is_on_biz_app`) o que haya habido importación de historial, que sólo
+     * existe en coexistencia.
+     */
+    public function estaEnCoexistencia(): bool
+    {
+        return (bool) ($this->plataformaEnMeta()['coexistencia'] ?? false)
+            || $this->coexistenceSync()->exists();
+    }
+
+    /**
      * Guarda lo que Meta dijo del número —la respuesta de `getPhoneNumber`—
      * conservando el resto del JSON `meta`.
      */

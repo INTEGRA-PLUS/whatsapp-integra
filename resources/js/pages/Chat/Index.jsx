@@ -107,6 +107,8 @@ import {
     Eye,
     UserCheck,
     EyeOff,
+    Ban,
+    Smartphone,
     PanelLeftClose,
     PanelLeftOpen,
     Bot,
@@ -6463,8 +6465,16 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                            que ver que falta algo, no leer un aviso de la plataforma. */
                                                         <div className={`flex mb-2 sm:mb-3 ${isOut ? 'justify-end pr-2' : 'justify-start pl-2'}`}>
                                                             <div className="max-w-[85%] lg:max-w-[70%] flex items-start gap-2 rounded-lg border border-dashed border-black/20 dark:border-white/15 bg-white/60 dark:bg-white/[0.03] px-3 py-2">
-                                                                <EyeOff className="size-3.5 mt-[2px] shrink-0 text-muted-foreground/50" />
-                                                                <p className="text-[11.5px] leading-[16px] text-[#54656f] dark:text-white/55 break-words">
+                                                                {/* Borrado: como el «Se eliminó este mensaje» del celular, no
+                                                                    como algo que falta. En coexistencia, el móvil sí lo tiene. */}
+                                                                {msg.metadata?.eliminado ? (
+                                                                    <Ban className="size-3.5 mt-[2px] shrink-0 text-muted-foreground/50" />
+                                                                ) : msg.metadata?.en_celular ? (
+                                                                    <Smartphone className="size-3.5 mt-[2px] shrink-0 text-muted-foreground/50" />
+                                                                ) : (
+                                                                    <EyeOff className="size-3.5 mt-[2px] shrink-0 text-muted-foreground/50" />
+                                                                )}
+                                                                <p className={`text-[11.5px] leading-[16px] text-[#54656f] dark:text-white/55 break-words ${msg.metadata?.eliminado ? 'italic' : ''}`}>
                                                                     {msg.content}
                                                                     <span className="ml-2 text-[9.5px] uppercase tracking-wide opacity-70">{formatMessageTimeOnly(msg.created_at)}</span>
                                                                 </p>
@@ -6759,6 +6769,26 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                 <div className="absolute bottom-[0px] right-[0px] flex items-center gap-1.5 p-1">
                                                                     {/* Marca de corrección. El título deja claro el alcance:
                                                                         el cliente conserva el texto que se le envió. */}
+                                                                    {/* Cambios hechos fuera del CRM: el cliente borró el mensaje
+                                                                        en su WhatsApp, o el negocio lo borró o corrigió desde la
+                                                                        app del celular (coexistencia). Aquí se conserva lo que fue. */}
+                                                                    {msg.metadata?.eliminado_at && (
+                                                                        <span
+                                                                            className="inline-flex items-center gap-0.5 text-[9px] font-bold italic text-destructive/80 whitespace-nowrap"
+                                                                            title={`${isOut ? 'Se eliminó desde el celular del negocio' : 'El cliente eliminó este mensaje en su WhatsApp'} el ${new Date(msg.metadata.eliminado_at).toLocaleString('es-CO')}. Aquí se conserva el original.`}
+                                                                        >
+                                                                            <Ban className="size-2.5" />
+                                                                            eliminado
+                                                                        </span>
+                                                                    )}
+                                                                    {msg.metadata?.editado_at && !msg.metadata?.edited_at && (
+                                                                        <span
+                                                                            className="text-[9px] font-bold italic text-muted-foreground/80 dark:text-white/65 whitespace-nowrap"
+                                                                            title={`Editado desde el celular el ${new Date(msg.metadata.editado_at).toLocaleString('es-CO')}.\nAntes decía: "${msg.metadata.contenido_original ?? ''}"`}
+                                                                        >
+                                                                            editado
+                                                                        </span>
+                                                                    )}
                                                                     {msg.metadata?.edited_at && !msg.is_internal && (
                                                                         <span
                                                                             className="text-[9px] font-bold italic text-muted-foreground/80 dark:text-white/65 whitespace-nowrap"

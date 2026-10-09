@@ -271,6 +271,15 @@ class CoexistenceIngestService
                 continue;
             }
 
+            // Borrar o corregir desde el celular no es un mensaje nuevo: cambia
+            // uno que ya está en el hilo. Antes caían como mensaje no entregado
+            // y el chat enseñaba «Enviaste un mensaje (revoke)».
+            if (in_array($eco['type'] ?? null, ['revoke', 'edit'], true)) {
+                $this->aplicarCambioDelCelular($instance, $eco);
+
+                continue;
+            }
+
             $conversacion = WhatsAppConversation::resolveFor($instance->id, $waId, [
                 'phone_number' => $waId,
                 'name' => $waId,
@@ -291,6 +300,50 @@ class CoexistenceIngestService
 
             $this->registrarContacto($instance, $conversacion, $waId);
         }
+    }
+
+    /**
+     * Un `revoke` o un `edit` hecho desde la app del celular sobre un mensaje
+     * ya guardado. Si el original no está (quedó fuera del historial), no hay
+     * nada que tocar.
+     */
+    private function aplicarCambioDelCelular(Instance $instance, array $eco): void
+    {
+        $tipo = $eco['type'];
+        $original = $eco[$tipo]['original_message_id'] ?? null;
+
+        if (! $original) {
+            return;
+        }
+
+        $mensaje = $this->mensajeDeLaInstancia($instance, $original);
+
+        if (! $mensaje) {
+            return;
+        }
+
+        $meta = $mensaje->metadata ?? [];
+
+        if ($tipo === 'revoke') {
+            $meta['eliminado_at'] = now()->toIso8601String();
+            $mensaje->update(['metadata' => $meta]);
+
+            return;
+        }
+
+        $nuevo = $eco['edit']['message'] ?? [];
+        $texto = $nuevo['text']['body']
+            ?? $nuevo['caption']
+            ?? $nuevo[$nuevo['type'] ?? '']['caption']
+            ?? null;
+
+        if ($texto === null) {
+            return;
+        }
+
+        $meta['contenido_original'] ??= $mensaje->content;
+        $meta['editado_at'] = now()->toIso8601String();
+        $mensaje->update(['content' => $texto, 'metadata' => $meta]);
     }
 
     /**

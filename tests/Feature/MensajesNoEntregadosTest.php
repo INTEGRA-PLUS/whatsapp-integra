@@ -177,6 +177,147 @@ class MensajesNoEntregadosTest extends TestCase
         $this->assertStringContainsString('reenvíe', $mensaje->content);
     }
 
+    // ------------------------------------------------- borrados y coexistencia
+
+    /**
+     * El cliente borró un mensaje («Se eliminó este mensaje» en el celular) y
+     * Meta lo manda como `unsupported` de tipo `revoke`. El chat decía «envió
+     * un mensaje (revoke)… pídele que lo reenvíe» (River, 9-oct-2026).
+     */
+    public function test_un_mensaje_borrado_por_el_cliente_se_dice_asi(): void
+    {
+        $instancia = $this->instanciaMeta();
+        $conversacion = WhatsAppConversation::create([
+            'instance_id' => $instancia->id, 'wa_id' => self::CLIENTE, 'phone_number' => self::CLIENTE,
+            'name' => 'Maria', 'status' => 'closed', 'unread_count' => 0,
+        ]);
+        $original = WhatsAppMessage::create([
+            'conversation_id' => $conversacion->id, 'wamid' => 'wamid.original', 'direction' => 'inbound',
+            'type' => 'text', 'content' => 'mensaje que luego borra', 'status' => 'delivered',
+        ]);
+
+        $this->webhookEnVivo($instancia, [
+            'from' => self::CLIENTE,
+            'id' => 'wamid.revoke',
+            'timestamp' => (string) now()->timestamp,
+            'type' => 'unsupported',
+            'unsupported' => ['type' => 'revoke', 'original_message_id' => 'wamid.original'],
+            'errors' => [['code' => 131051, 'title' => 'Message type unknown']],
+        ]);
+
+        $aviso = WhatsAppMessage::where('wamid', 'wamid.revoke')->first();
+
+        $this->assertSame('El cliente eliminó un mensaje.', $aviso->content);
+        $this->assertTrue($aviso->metadata['eliminado']);
+        $this->assertNotNull($original->fresh()->metadata['eliminado_at'] ?? null);
+
+        // Borrar no es volver a escribir: ni reabre el chat ni suma sin leer.
+        $conversacion->refresh();
+        $this->assertSame('closed', $conversacion->status);
+        $this->assertSame(0, (int) $conversacion->unread_count);
+    }
+
+    /**
+     * En coexistencia el mensaje que Meta no pasa a la API sí está en el
+     * celular del negocio: un video del 9-oct-2026 se veía en el móvil y el
+     * CRM decía «(unknown)… pídele que lo reenvíe».
+     */
+    public function test_en_coexistencia_el_mensaje_no_entregado_remite_al_celular(): void
+    {
+        $instancia = $this->instanciaMeta();
+        $instancia->setPlataformaEnMeta(['is_on_biz_app' => true, 'platform_type' => 'CLOUD_API']);
+        $instancia->save();
+
+        $this->webhookEnVivo($instancia, [
+            'from' => self::CLIENTE,
+            'id' => 'wamid.video',
+            'timestamp' => (string) now()->timestamp,
+            'type' => 'unsupported',
+            'unsupported' => ['type' => 'unknown'],
+            'errors' => [['code' => 131051, 'title' => 'Message type unknown']],
+        ]);
+
+        $mensaje = WhatsAppMessage::where('wamid', 'wamid.video')->first();
+
+        $this->assertStringNotContainsString('unknown', $mensaje->content);
+        $this->assertStringContainsString('celular del negocio', $mensaje->content);
+        $this->assertTrue($mensaje->metadata['en_celular']);
+    }
+
+    /** Lo que el negocio borra o corrige desde el celular cambia el original. */
+    public function test_borrar_o_editar_desde_el_celular_cambia_el_original(): void
+    {
+        $instancia = $this->instancia();
+        $eco = fn (array $m) => $this->ingesta()->reflejarEco($instancia, [
+            'metadata' => ['display_phone_number' => self::NEGOCIO, 'phone_number_id' => '1247515825107349'],
+            'message_echoes' => [array_merge([
+                'from' => self::NEGOCIO, 'to' => self::CLIENTE, 'timestamp' => (string) now()->timestamp,
+            ], $m)],
+        ]);
+
+        $eco(['id' => 'wamid.a', 'type' => 'text', 'text' => ['body' => 'Mañana a las 8']]);
+        $eco(['id' => 'wamid.b', 'type' => 'text', 'text' => ['body' => 'Mensaje equivocado']]);
+        $eco(['id' => 'wamid.c', 'type' => 'edit', 'edit' => [
+            'original_message_id' => 'wamid.a',
+            'message' => ['type' => 'text', 'text' => ['body' => 'Mañana a las 9']],
+        ]]);
+        $eco(['id' => 'wamid.d', 'type' => 'revoke', 'revoke' => ['original_message_id' => 'wamid.b']]);
+
+        // Ni el borrado ni la edición son burbujas nuevas.
+        $this->assertSame(2, WhatsAppMessage::count());
+
+        $editado = WhatsAppMessage::where('wamid', 'wamid.a')->first();
+        $this->assertSame('Mañana a las 9', $editado->content);
+        $this->assertSame('Mañana a las 8', $editado->metadata['contenido_original']);
+
+        $this->assertNotNull(WhatsAppMessage::where('wamid', 'wamid.b')->first()->metadata['eliminado_at'] ?? null);
+    }
+
+    public function test_la_migracion_del_9_oct_reescribe_revoke_y_unknown(): void
+    {
+        $instancia = $this->instanciaMeta();
+        $instancia->setPlataformaEnMeta(['is_on_biz_app' => true]);
+        $instancia->save();
+        $conversacion = WhatsAppConversation::create([
+            'instance_id' => $instancia->id, 'wa_id' => self::CLIENTE, 'phone_number' => self::CLIENTE,
+            'name' => 'Maria', 'status' => 'open',
+        ]);
+
+        foreach (['revoke', 'unknown'] as $tipo) {
+            $payload = ['id' => "wamid.{$tipo}", 'type' => 'unsupported', 'unsupported' => ['type' => $tipo]];
+            WhatsAppMessage::create([
+                'conversation_id' => $conversacion->id, 'wamid' => "wamid.{$tipo}", 'direction' => 'inbound',
+                'type' => 'system', 'status' => 'delivered',
+                'content' => "El cliente envió un mensaje ({$tipo}). WhatsApp no entrega ese tipo de mensaje a la API, así que su contenido no se puede mostrar. Pídele que lo reenvíe como texto, foto o archivo.",
+                'metadata' => ['no_entregado' => true, 'tipo_original' => $tipo, 'unhandled' => $payload, 'del_historial' => false],
+            ]);
+        }
+
+        (require database_path('migrations/2026_10_09_120000_repair_revoke_y_no_entregados_en_coexistencia.php'))->up();
+
+        $this->assertSame('El cliente eliminó un mensaje.', WhatsAppMessage::where('wamid', 'wamid.revoke')->value('content'));
+        $this->assertStringContainsString('celular del negocio', WhatsAppMessage::where('wamid', 'wamid.unknown')->value('content'));
+    }
+
+    private function webhookEnVivo(Instance $instancia, array $mensaje): void
+    {
+        $this->postSignedWebhook([
+            'object' => 'whatsapp_business_account',
+            'entry' => [[
+                'id' => '2212436902867081',
+                'changes' => [[
+                    'field' => 'messages',
+                    'value' => [
+                        'messaging_product' => 'whatsapp',
+                        'metadata' => ['display_phone_number' => '573104047030', 'phone_number_id' => $instancia->phone_number_id],
+                        'contacts' => [['profile' => ['name' => 'Maria'], 'wa_id' => self::CLIENTE]],
+                        'messages' => [$mensaje],
+                    ],
+                ]],
+            ]],
+        ])->assertOk();
+    }
+
     // --------------------------------------------------------------- reparación
 
     /**
