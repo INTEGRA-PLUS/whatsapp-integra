@@ -10,6 +10,8 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Services\CoexistenceIngestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -167,6 +169,7 @@ class CoexistenceIngestTest extends TestCase
      */
     public function test_el_multimedia_completa_el_marcador_guardado_antes(): void
     {
+        $this->fingirGraph();
         $instancia = $this->instancia();
 
         $this->ingesta()->importarHistorial($instancia, $this->lote([[
@@ -192,6 +195,44 @@ class CoexistenceIngestTest extends TestCase
         $this->assertSame('image', $mensaje->type);
         $this->assertSame('24230790383178626', $mensaje->media_id);
         $this->assertSame('el poste', $mensaje->content);
+        // Sin copiar el archivo, el chat pintaba una imagen rota.
+        $this->assertNotNull($mensaje->media_url);
+        $this->assertArrayNotHasKey('pendiente_de_media', $mensaje->metadata ?? []);
+    }
+
+    /**
+     * El webhook del adjunto es pequeño y el del hilo enorme: en la cola el
+     * primero termina antes. Antes se descartaba y el comprobante quedaba como
+     * «Archivo adjunto» para siempre (9-oct-2026).
+     */
+    public function test_el_multimedia_que_llega_antes_que_su_marcador_no_se_pierde(): void
+    {
+        $this->fingirGraph();
+        $instancia = $this->instancia();
+
+        $this->ingesta()->importarHistorial($instancia, [
+            'metadata' => ['display_phone_number' => self::NEGOCIO, 'phone_number_id' => '1247515825107349'],
+            'messages' => [[
+                'id'    => 'wamid.comprobante',
+                'type'  => 'image',
+                'image' => ['id' => '24230790383178626', 'mime_type' => 'image/jpeg'],
+            ]],
+        ]);
+
+        $this->assertSame(0, WhatsAppMessage::count());
+
+        $this->ingesta()->importarHistorial($instancia, $this->lote([[
+            'from'      => self::CLIENTE,
+            'id'        => 'wamid.comprobante',
+            'timestamp' => (string) now()->timestamp,
+            'type'      => 'media_placeholder',
+        ]]));
+
+        $mensaje = WhatsAppMessage::where('wamid', 'wamid.comprobante')->first();
+
+        $this->assertSame('image', $mensaje->type);
+        $this->assertSame('24230790383178626', $mensaje->media_id);
+        $this->assertNotNull($mensaje->media_url);
     }
 
     public function test_los_contactos_del_celular_entran_en_la_agenda(): void
@@ -324,6 +365,16 @@ class CoexistenceIngestTest extends TestCase
 
     // ------------------------------------------------------------- utilidades
 
+    /** Graph devuelve la URL del archivo y luego el archivo; S3 en memoria. */
+    private function fingirGraph(): void
+    {
+        Storage::fake('s3_media');
+        Http::fake([
+            '*graph.facebook.com/*' => Http::response(['url' => 'https://lookaside.fbsbx.com/foto', 'mime_type' => 'image/jpeg']),
+            'lookaside.fbsbx.com/*' => Http::response('jpeg', 200),
+        ]);
+    }
+
     private function ingesta(): CoexistenceIngestService
     {
         return app(CoexistenceIngestService::class);
@@ -339,6 +390,7 @@ class CoexistenceIngestTest extends TestCase
             'name'                 => 'Principal',
             'phone_number_id'      => '1247515825107349',
             'waba_id'              => '1421384372768123',
+            'access_token'         => 'EAAtoken',
             'display_phone_number' => '+57 318 1454747',
             'type'                 => 'meta',
             'status'               => 'active',

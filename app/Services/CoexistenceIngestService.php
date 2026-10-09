@@ -10,6 +10,7 @@ use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMessage;
 use App\Support\MensajeNoEntregado;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -62,7 +63,7 @@ class CoexistenceIngestService
         // en un webhook `history` aparte que sí usa la forma normal
         // (`value.messages[]`) y que completa un mensaje ya guardado.
         if (! empty($value['messages'])) {
-            $this->completarMultimedia($value['messages']);
+            $this->completarMultimedia($instance, $value['messages']);
 
             return;
         }
@@ -129,6 +130,7 @@ class CoexistenceIngestService
 
         foreach ($hilo['messages'] ?? [] as $mensaje) {
             $guardado = $this->guardarMensaje(
+                $instance,
                 $conversacion,
                 $mensaje,
                 $telefonoNegocio,
@@ -275,7 +277,7 @@ class CoexistenceIngestService
                 'status' => 'open',
             ]);
 
-            $guardado = $this->guardarMensaje($conversacion, $eco, $telefonoNegocio, 'SENT');
+            $guardado = $this->guardarMensaje($instance, $conversacion, $eco, $telefonoNegocio, 'SENT');
 
             if ($guardado === null) {
                 continue;
@@ -326,6 +328,7 @@ class CoexistenceIngestService
      * Devuelve el mensaje creado, o null si ya existía o no se pudo interpretar.
      */
     private function guardarMensaje(
+        Instance $instance,
         WhatsAppConversation $conversacion,
         array $mensaje,
         string $telefonoNegocio,
@@ -379,7 +382,20 @@ class CoexistenceIngestService
         // segunda vuelta no crea nada y `wasRecentlyCreated` lo delata.
         $guardado = WhatsAppMessage::firstOrCreate(['wamid' => $wamid], $datos);
 
-        return $guardado->wasRecentlyCreated ? $guardado : null;
+        if (! $guardado->wasRecentlyCreated) {
+            return null;
+        }
+
+        // El adjunto pudo llegar antes que su marcador: ver completarMultimedia().
+        if ($guardado->type === 'media_placeholder') {
+            $pendiente = Cache::pull($this->clavePendiente($instance, $wamid));
+
+            if ($pendiente) {
+                $this->rellenarMultimedia($instance, $guardado, $pendiente);
+            }
+        }
+
+        return $guardado;
     }
 
     /**
@@ -502,8 +518,20 @@ class CoexistenceIngestService
      *
      * Sólo actualiza si el mensaje existe y sigue siendo un marcador: si el
      * webhook se repite, la segunda vuelta no encuentra nada que hacer.
+     *
+     * Dos cosas que fallaban en silencio y dejaban «Archivo adjunto» para
+     * siempre (comprobante de pago de un cliente de River, 9-oct-2026):
+     *
+     *  - **El adjunto llega antes que su marcador.** Son dos webhooks que van a
+     *    la cola por separado: el del hilo trae cientos de mensajes y tarda; el
+     *    del adjunto trae uno y termina primero. No encontraba el marcador, lo
+     *    descartaba, y Meta no lo vuelve a mandar. Ahora se aparca en caché y
+     *    lo recoge guardarMensaje() cuando el marcador por fin se guarda.
+     *  - **Meta manda el id del archivo, no el archivo.** Se guardaba sólo el
+     *    `media_id`; el chat pinta la imagen con `media_url` y salía rota. Se
+     *    descarga aquí, como hace el webhook de entrantes, porque el id caduca.
      */
-    private function completarMultimedia(array $mensajes): void
+    private function completarMultimedia(Instance $instance, array $mensajes): void
     {
         foreach ($mensajes as $mensaje) {
             $wamid = $mensaje['id'] ?? null;
@@ -512,16 +540,68 @@ class CoexistenceIngestService
                 continue;
             }
 
-            $existente = WhatsAppMessage::where('wamid', $wamid)
-                ->where('type', 'media_placeholder')
-                ->first();
+            $existente = $this->mensajeDeLaInstancia($instance, $wamid);
 
             if (! $existente) {
+                Cache::put($this->clavePendiente($instance, $wamid), $mensaje, now()->addDays(15));
+
+                // El hilo pudo guardarse entre la consulta y el `put`: sin esta
+                // segunda mirada, ninguno de los dos vería al otro.
+                $existente = $this->mensajeDeLaInstancia($instance, $wamid);
+
+                if (! $existente || ! Cache::pull($this->clavePendiente($instance, $wamid))) {
+                    continue;
+                }
+            }
+
+            if ($existente->type !== 'media_placeholder') {
                 continue;
             }
 
-            $existente->update($this->interpretar($mensaje));
+            $this->rellenarMultimedia($instance, $existente, $mensaje);
         }
+    }
+
+    /**
+     * El mensaje con ese wamid, sólo si es de una conversación de la instancia.
+     *
+     * `WhatsAppMessage` no tiene `company_id`: sin acotar por la instancia, un
+     * wamid de otra empresa se completaría con este webhook.
+     */
+    private function mensajeDeLaInstancia(Instance $instance, string $wamid): ?WhatsAppMessage
+    {
+        return WhatsAppMessage::where('wamid', $wamid)
+            ->whereIn('conversation_id', WhatsAppConversation::where('instance_id', $instance->id)->select('id'))
+            ->first();
+    }
+
+    /** Convierte un marcador en el mensaje multimedia real, con el archivo copiado. */
+    private function rellenarMultimedia(Instance $instance, WhatsAppMessage $marcador, array $mensaje): void
+    {
+        $datos = $this->interpretar($mensaje, $marcador->direction === 'outbound');
+
+        if (! empty($datos['media_id']) && ! empty($instance->access_token)) {
+            $archivo = app(MetaWhatsAppService::class)->downloadMedia($datos['media_id'], $instance->access_token);
+
+            if ($archivo) {
+                $datos['media_url'] = $archivo['url'];
+                $datos['media_mime_type'] = $datos['media_mime_type'] ?: $archivo['mime_type'];
+                // El nombre que puso el cliente a un documento vale más que el
+                // generado al guardarlo.
+                $datos['filename'] = $datos['filename'] ?: $archivo['filename'];
+            }
+        }
+
+        $metadata = $marcador->metadata ?? [];
+        unset($metadata['pendiente_de_media']);
+        $datos['metadata'] = $metadata ?: null;
+
+        $marcador->update($datos);
+    }
+
+    private function clavePendiente(Instance $instance, string $wamid): string
+    {
+        return "coexistencia:multimedia-pendiente:{$instance->id}:{$wamid}";
     }
 
     /** Da de alta el contacto del hilo si la conversación aún no tiene uno. */

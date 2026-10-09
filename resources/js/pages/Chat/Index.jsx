@@ -315,6 +315,13 @@ function mediaUrlFor(msg, { inline = false } = {}) {
     return `/api/chat/messages/${msg.id}/media${inline ? '?inline=1' : ''}`;
 }
 
+// Lo que se pinta en <img>/<audio>/<video>. Sin copia propia pero con media_id
+// (adjuntos del historial de coexistencia), el backend lo resuelve contra Meta.
+function mediaSrc(msg) {
+    if (msg?.media_url) return msg.media_url;
+    return hasAttachment(msg) ? mediaUrlFor(msg, { inline: true }) : undefined;
+}
+
 /**
  * Tarjeta de documento adjunto. Cuando no hay archivo recuperable no se pinta
  * un enlace muerto: se dice explícitamente que no está disponible, en vez de
@@ -6575,12 +6582,12 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                     <div className="p-1 pb-1">
                                                                         <div className="relative group overflow-hidden rounded-md bg-black/5 mb-2">
                                                                             <img
-                                                                                src={msg.media_url}
+                                                                                src={mediaSrc(msg)}
                                                                                 onLoad={handleMediaLoad}
                                                                                 className="max-h-[300px] w-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
-                                                                                    setSelectedImage(msg.media_url);
+                                                                                    setSelectedImage(mediaSrc(msg));
                                                                                 }}
                                                                                 alt="media"
                                                                             />
@@ -6603,7 +6610,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                 
                                                                 {msg.type === 'audio' && (
                                                                     <div className="min-w-[220px] py-1 pr-14">
-                                                                        <audio controls src={msg.media_url} className="w-full h-8 opacity-90 scale-90 origin-left" />
+                                                                        <audio controls src={mediaSrc(msg)} className="w-full h-8 opacity-90 scale-90 origin-left" />
                                                                     </div>
                                                                 )}
 
@@ -6611,7 +6618,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                     <div className="p-1 pb-1">
                                                                         <video
                                                                             controls
-                                                                            src={msg.media_url}
+                                                                            src={mediaSrc(msg)}
                                                                             onLoadedData={handleMediaLoad}
                                                                             className="max-h-[320px] w-full rounded-md bg-black mb-2"
                                                                         />
@@ -6622,7 +6629,7 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                 {msg.type === 'sticker' && (
                                                                     <div className="p-1 pb-5">
                                                                         <img
-                                                                            src={msg.media_url}
+                                                                            src={mediaSrc(msg)}
                                                                             onLoad={handleMediaLoad}
                                                                             className="max-h-[140px] max-w-[140px] object-contain"
                                                                             alt="sticker"
@@ -6729,8 +6736,21 @@ export default function ChatIndex({ instances, integrations = [], umbral_seguimi
                                                                     </div>
                                                                 )}
 
+                                                                {/* Adjunto del historial de coexistencia que Meta no llegó a
+                                                                    mandar: solo entrega los de los 14 días previos a conectar
+                                                                    el número. Sin esta explicación parecía un fallo del CRM. */}
+                                                                {msg.type === 'media_placeholder' && (
+                                                                    <div className="flex items-start gap-2 pr-16 pb-1 text-[12.5px] leading-[17px]">
+                                                                        <Paperclip className="size-4 shrink-0 mt-0.5 opacity-70" />
+                                                                        <div>
+                                                                            <p className="font-semibold">Archivo adjunto</p>
+                                                                            <p className="text-[11px] opacity-70">Llegó con el historial sin el archivo: sigue en el celular del negocio.</p>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
                                                                 {/* Fallback: tipos no reconocidos (o type vacío) muestran el contenido en vez de una burbuja vacía */}
-                                                                {!['text', 'image', 'audio', 'video', 'sticker', 'document', 'location', 'contacts', 'template'].includes(msg.type)
+                                                                {!['text', 'image', 'audio', 'video', 'sticker', 'document', 'location', 'contacts', 'template', 'media_placeholder'].includes(msg.type)
                                                                     && !msg.metadata?.location && !msg.metadata?.contacts && (
                                                                     <p className="text-[12.5px] leading-[17px] whitespace-pre-wrap break-words pr-20 pb-1">{msg.content || 'Mensaje sin contenido'}</p>
                                                                 )}
