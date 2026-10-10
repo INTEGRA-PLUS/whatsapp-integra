@@ -628,6 +628,8 @@ class WhatsAppWebhookController extends Controller
         try {
             if (! $isBsuid) {
                 $this->ensureContactRegistered($conversation, $instance, $conversation->phone_number, $contactName, $username);
+            } elseif ($username) {
+                $this->linkContactByUsername($conversation, $instance, $username);
             }
         } catch (\Throwable $e) {
             Log::channel('whatsapp')->warning('⚠️ No se pudo registrar el contacto del mensaje entrante', [
@@ -1283,6 +1285,31 @@ class WhatsAppWebhookController extends Controller
         if ($cambios) {
             $conversation->update($cambios);
         }
+    }
+
+    /**
+     * Vincula el hilo de un cliente sin teléfono con la ficha que ya tenga su
+     * nombre de usuario (la crea a mano el agente o la trae la sincronización
+     * con Integra). No crea ninguna: un BSUID no es un abonado.
+     */
+    private function linkContactByUsername(WhatsAppConversation $conversation, Instance $instance, string $username): void
+    {
+        if ($conversation->contact_id) {
+            return;
+        }
+
+        $contact = Contact::where('company_id', $instance->company_id)
+            ->where('username', ContactController::cleanUsername($username))
+            ->first();
+
+        if (! $contact) {
+            return;
+        }
+
+        $conversation->update([
+            'contact_id' => $contact->id,
+            'name' => $contact->full_name ?: $conversation->name,
+        ]);
     }
 
     /**

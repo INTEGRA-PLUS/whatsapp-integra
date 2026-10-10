@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Http\Controllers\ContactController;
 use App\Models\CompanyIntegration;
 use App\Models\Contact;
 use Illuminate\Bus\Queueable;
@@ -20,6 +21,10 @@ use Illuminate\Support\Facades\Log;
  * celular en formato local y WhatsApp con indicativo), NO se duplica ni se
  * sobrescribe el nombre — solo se etiqueta con los datos de Integra en
  * `metadata.integra_contactos`. Si el teléfono es nuevo, se crea el contacto.
+ *
+ * Antes del teléfono se cruza por `username` (usuario de WhatsApp, columna
+ * contactos.username de Integra): es la única llave de los clientes que
+ * esconden su número, y con ella el webhook vincula su hilo a la ficha.
  *
  * Sincronización incremental: la primera corrida trae todo (`estado=todos`,
  * sin `actualizado_desde`); las siguientes solo piden lo que cambió desde
@@ -145,15 +150,18 @@ class SyncContactsFromIntegra implements ShouldQueue
 
         $nombre = $row['nombre_completo'] ?? $row['nombre'] ?? $contacto['nombre'] ?? '';
         $celular = $row['celular'] ?? $contacto['celular'] ?? $row['telefono1'] ?? $contacto['telefono1'] ?? null;
+        $username = ContactController::cleanUsername($row['username'] ?? $contacto['username'] ?? null);
         $identificacion = $row['identificacion'] ?? $contacto['identificacion'] ?? null;
         $estado = $row['estado'] ?? $contacto['estado'] ?? null;
         $externalId = $row['id'] ?? null;
 
         $digits = preg_replace('/\D+/', '', (string) $celular);
-        if ($digits === '') {
-            return false; // sin teléfono no hay forma de vincular ni de crear (phone_number es requerido).
-        }
         $last10 = strlen($digits) > 10 ? substr($digits, -10) : $digits;
+
+        // Sin teléfono ni usuario de WhatsApp no hay forma de vincularlo con un chat.
+        if ($last10 === '' && ! $username) {
+            return false;
+        }
 
         $tag = [
             'external_id'    => $externalId,
@@ -163,27 +171,59 @@ class SyncContactsFromIntegra implements ShouldQueue
             'synced_at'      => now()->toIso8601String(),
         ];
 
-        $existing = Contact::where('company_id', $companyId)
-            ->where(function ($q) use ($last10) {
-                $q->where('phone_number', 'like', "%{$last10}")
-                    ->orWhere('phone_numbers', 'like', '%"%'.$last10.'"%');
-            })
-            ->first();
+        // El usuario va primero: es único por empresa, mientras que un celular
+        // puede estar en la ficha de varios familiares.
+        $existing = $username
+            ? Contact::where('company_id', $companyId)->where('username', $username)->first()
+            : null;
+
+        if (! $existing && $last10 !== '') {
+            $existing = Contact::where('company_id', $companyId)
+                ->where(function ($q) use ($last10) {
+                    $q->where('phone_number', 'like', "%{$last10}")
+                        ->orWhere('phone_numbers', 'like', '%"%'.$last10.'"%');
+                })
+                ->first();
+        }
+
+        // El usuario es único por empresa: si ya lo lleva otra ficha no se copia,
+        // o la escritura reventaría contra el índice y cortaría la sincronización.
+        $usernameLibre = $username && ! Contact::where('company_id', $companyId)
+            ->where('username', $username)
+            ->when($existing, fn ($q) => $q->where('id', '<>', $existing->id))
+            ->exists();
 
         if ($existing) {
             // No se toca name/phone_number: solo se etiqueta con los datos de
             // Integra para que el frontend muestre el badge sin duplicar el contacto.
-            $existing->update([
+            // Lo que la ficha no tenga se completa: sin identificación, un cliente
+            // que solo escribe por usuario no tendría con qué buscarse en Integra.
+            $cambios = [
                 'metadata' => array_merge($existing->metadata ?? [], ['integra_contactos' => $tag]),
-            ]);
+            ];
+            if (empty($existing->username) && $usernameLibre) {
+                $cambios['username'] = $username;
+            }
+            if (empty($existing->identificacion) && $identificacion) {
+                $cambios['identificacion'] = $identificacion;
+            }
+            if (empty($existing->external_id) && $externalId) {
+                $cambios['external_id'] = $externalId;
+            }
+            $existing->update($cambios);
 
+            return false;
+        }
+
+        if ($last10 === '' && ! $usernameLibre) {
             return false;
         }
 
         Contact::create([
             'company_id'     => $companyId,
             'name'           => $nombre ?: 'Sin nombre',
-            'phone_number'   => $last10,
+            'phone_number'   => $last10 !== '' ? $last10 : null,
+            'username'       => $usernameLibre ? $username : null,
             'email'          => $row['email'] ?? $contacto['email'] ?? null,
             'source'         => 'integra_contactos',
             'identificacion' => $identificacion,

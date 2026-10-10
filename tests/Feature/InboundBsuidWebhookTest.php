@@ -124,6 +124,26 @@ class InboundBsuidWebhookTest extends TestCase
         $this->assertSame(0, Contact::count());
     }
 
+    public function test_un_cliente_sin_telefono_se_vincula_a_la_ficha_con_su_usuario(): void
+    {
+        $instance = $this->metaInstance();
+
+        // Ficha traída de Integra por la sincronización, sin teléfono.
+        $contact = Contact::create([
+            'company_id'     => $instance->company_id,
+            'name'           => 'Katherine Pérez',
+            'username'       => '_katherine_perezc',
+            'identificacion' => '1073722061',
+        ]);
+
+        $this->postSignedWebhook($this->payload())->assertOk();
+
+        $conversation = WhatsAppConversation::firstWhere('instance_id', $instance->id);
+
+        $this->assertSame($contact->id, $conversation->contact_id);
+        $this->assertSame(1, Contact::count(), 'Vincular no debe crear otra ficha.');
+    }
+
     public function test_un_mensaje_con_telefono_sigue_funcionando_igual(): void
     {
         $instance = $this->metaInstance();
