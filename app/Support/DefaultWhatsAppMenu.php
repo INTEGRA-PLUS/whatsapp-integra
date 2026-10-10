@@ -81,6 +81,14 @@ class DefaultWhatsAppMenu
                 'action_type' => 'estado_servicio',
                 'config' => ['segmento' => 'consumo'],
             ],
+            // En el menú principal y no en «Mi plan y contrato»: es de lo más
+            // atractivo que tiene el bot y escondido en el submenú no lo
+            // encontraba nadie (10-oct-2026).
+            [
+                'title' => '🔐 Cambiar clave WiFi',
+                'description' => 'Pon una clave nueva a tu red, en las dos bandas',
+                'action_type' => 'cambiar_clave',
+            ],
             [
                 'title' => '📋 Mi plan y contrato',
                 'description' => 'Velocidad, fechas de corte, permanencia y clave WiFi',
@@ -133,11 +141,6 @@ class DefaultWhatsAppMenu
                 'description' => 'La clave que quedó registrada en la instalación',
                 'action_type' => 'estado_servicio',
                 'config' => ['segmento' => 'wifi'],
-            ],
-            [
-                'title' => '🔐 Cambiar clave WiFi',
-                'description' => 'Pon una clave nueva a tu red, en las dos bandas',
-                'action_type' => 'cambiar_clave',
             ],
             [
                 'title' => '🔧 Mis reportes',

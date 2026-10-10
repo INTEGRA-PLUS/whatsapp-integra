@@ -40,6 +40,18 @@ return new class extends Migration
                 continue;
             }
 
+            // Ni si la empresa ya la tiene en otro menú: desde la siguiente
+            // migración vive en el principal, y un entorno nuevo la traería
+            // por partida doble.
+            $empresa = \App\Models\WhatsAppMenu::whereKey($menuId)->value('company_id');
+            $yaLaTiene = WhatsAppMenuOption::where('action_type', 'cambiar_clave')
+                ->whereIn('menu_id', \App\Models\WhatsAppMenu::where('company_id', $empresa)->pluck('id'))
+                ->exists();
+
+            if ($yaLaTiene) {
+                continue;
+            }
+
             DB::transaction(function () use ($menuId, $verClave) {
                 WhatsAppMenuOption::where('menu_id', $menuId)
                     ->where('position', '>', $verClave->position)

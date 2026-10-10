@@ -71,7 +71,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $this->assertNotNull($menu, 'La empresa nueva no recibió su menú por defecto.');
         $this->assertSame(DefaultWhatsAppMenu::NAME, $menu->name);
-        $this->assertCount(8, $menu->options);
+        $this->assertCount(9, $menu->options);
         $this->assertSame('list', $menu->format());
 
         // El nombre de la empresa encabeza el menú, y las variables del módulo
@@ -181,7 +181,7 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $menu = $this->rootMenu($company);
         $this->assertNotNull($menu);
-        $this->assertCount(8, $menu->options);
+        $this->assertCount(9, $menu->options);
         $this->assertFalse($menu->active);
     }
 
@@ -255,8 +255,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertNotNull($submenu);
         $this->assertTrue($submenu->active);
         $this->assertFalse($submenu->is_root);
-        // Siete segmentos del contrato y, desde el 10-oct-2026, cambiar la clave del WiFi.
-        $this->assertCount(8, $submenu->options);
+        $this->assertCount(7, $submenu->options);
 
         // Con el principal apagado, el cliente no recibe nada: un submenú activo
         // sigue siendo inalcanzable por su cuenta.
@@ -295,11 +294,6 @@ class DefaultWhatsAppMenuTest extends TestCase
 
         $this->assertSame(['plan', 'corte', 'contrato', 'wifi', 'soportes', 'television', 'datos'], $segments->all());
         $this->assertCount(7, $segments->unique());
-        $this->assertSame(
-            'cambiar_clave',
-            $submenu->options->sortBy('position')->values()->get(4)?->action_type,
-            'Va justo debajo de «Mi clave WiFi».'
-        );
 
         foreach ($segments as $segment) {
             $this->assertArrayHasKey($segment, WhatsAppMenuOption::STATUS_SEGMENTS);
@@ -351,7 +345,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $root = $this->rootMenu($company);
 
         $this->assertNotNull($root, 'La empresa se quedó sin menú principal.');
-        $this->assertCount(8, $root->options);
+        $this->assertCount(9, $root->options);
         $this->assertSame('💵 Mis últimos pagos', $root->options[3]->title);
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
         $this->assertSame(
@@ -412,7 +406,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertSame($primeraOpcion, $actualizado->options[0]->id);
 
         // Y ya trae la plantilla nueva, con su submenú.
-        $this->assertCount(8, $actualizado->options);
+        $this->assertCount(9, $actualizado->options);
         $this->assertSame('📄 Mis facturas', $actualizado->options[0]->title);
         $this->assertSame('💵 Mis últimos pagos', $actualizado->options[3]->title);
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
@@ -437,8 +431,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertSame(DefaultWhatsAppMenu::SUBMENU_NAME, $submenu->name);
         $this->assertSame($submenu->id, $opcion->target_menu_id);
         $this->assertTrue($submenu->active);
-        // Siete segmentos del contrato y, desde el 10-oct-2026, cambiar la clave del WiFi.
-        $this->assertCount(8, $submenu->options);
+        $this->assertCount(7, $submenu->options);
     }
 
     /**
@@ -543,35 +536,48 @@ class DefaultWhatsAppMenuTest extends TestCase
      * aplica a demanda. Este test es sobre la plantilla de ISP, así que se
      * cambia una por otra a propósito.
      */
-    /**
-     * La migración del 10-oct-2026 añade «Cambiar clave WiFi» a los submenús
-     * ya en uso: justo debajo de «Mi clave WiFi», corriendo las siguientes en
-     * su sitio (sus ids viajan a WhatsApp) y sin duplicarla si se repite.
-     */
-    public function test_la_migracion_anade_cambiar_clave_a_un_submenu_en_uso(): void
+    /** «Cambiar clave WiFi» va en el menú principal, encima de «Mi plan y contrato». */
+    public function test_cambiar_clave_wifi_esta_en_el_menu_principal(): void
     {
         $company = $this->company();
-        $submenu = WhatsAppMenu::where('company_id', $company->id)
-            ->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)
-            ->firstOrFail();
+        $titulos = $this->rootMenu($company)->options->sortBy('position')->pluck('title')->values();
 
-        // Como estaba antes: sin la opción nueva.
-        $submenu->options()->where('action_type', 'cambiar_clave')->delete();
-        $antes = $submenu->options()->orderBy('position')->get();
-        $wifi = $antes->first(fn ($o) => ($o->config['segmento'] ?? null) === 'wifi');
-        $siguiente = $antes->first(fn ($o) => $o->position > $wifi->position);
-        WhatsAppMenuOption::where('menu_id', $submenu->id)->where('position', '>', $wifi->position)->decrement('position');
+        $this->assertSame($titulos->search('📋 Mi plan y contrato') - 1, $titulos->search('🔐 Cambiar clave WiFi'));
+    }
 
-        $migracion = require database_path('migrations/2026_10_10_120000_agregar_cambiar_clave_wifi_a_los_menus.php');
-        $migracion->up();
-        $migracion->up();
+    /**
+     * Las dos migraciones del 10-oct-2026 sobre un menú en uso: la primera la
+     * pone en el submenú y la segunda la MUEVE al principal, conservando su id
+     * (al tocar una opción se busca por id) y sin dejar huecos en el submenú.
+     */
+    public function test_las_migraciones_la_dejan_en_el_principal_con_el_mismo_id(): void
+    {
+        $company = $this->company();
+        $raiz = $this->rootMenu($company);
+        $submenu = WhatsAppMenu::where('company_id', $company->id)->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)->firstOrFail();
 
-        $despues = $submenu->options()->orderBy('position')->get();
+        // Como estaba un menú en uso: sin la opción en ninguna parte.
+        $vieja = $raiz->options()->where('action_type', 'cambiar_clave')->first();
+        WhatsAppMenuOption::where('menu_id', $raiz->id)->where('position', '>', $vieja->position)->decrement('position');
+        $vieja->delete();
 
-        $this->assertSame(1, $despues->where('action_type', 'cambiar_clave')->count());
-        $nueva = $despues->firstWhere('action_type', 'cambiar_clave');
-        $this->assertSame($wifi->position + 1, $nueva->position);
-        $this->assertSame($nueva->position + 1, $despues->firstWhere('id', $siguiente->id)->position, 'La siguiente conserva su id y baja un puesto.');
+        $primera = require database_path('migrations/2026_10_10_120000_agregar_cambiar_clave_wifi_a_los_menus.php');
+        $primera->up();
+        $enSubmenu = $submenu->options()->where('action_type', 'cambiar_clave')->firstOrFail();
+
+        $segunda = require database_path('migrations/2026_10_10_130000_sacar_cambiar_clave_wifi_al_menu_principal.php');
+        $segunda->up();
+        $segunda->up();
+
+        $movida = WhatsAppMenuOption::findOrFail($enSubmenu->id);
+        $this->assertSame($raiz->id, $movida->menu_id);
+        $this->assertSame(0, $submenu->options()->where('action_type', 'cambiar_clave')->count());
+        $this->assertSame(1, WhatsAppMenuOption::where('action_type', 'cambiar_clave')->count());
+
+        $titulos = $raiz->options()->orderBy('position')->pluck('title')->values();
+        $this->assertSame($titulos->search('📋 Mi plan y contrato') - 1, $titulos->search('🔐 Cambiar clave WiFi'));
+        $this->assertSame(range(0, $titulos->count() - 1), $raiz->options()->orderBy('position')->pluck('position')->all());
+        $this->assertSame(range(0, 6), $submenu->options()->orderBy('position')->pluck('position')->all());
     }
 
     private function company(): Company
