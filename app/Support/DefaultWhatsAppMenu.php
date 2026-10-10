@@ -135,6 +135,11 @@ class DefaultWhatsAppMenu
                 'config' => ['segmento' => 'wifi'],
             ],
             [
+                'title' => '🔐 Cambiar clave WiFi',
+                'description' => 'Pon una clave nueva a tu red, en las dos bandas',
+                'action_type' => 'cambiar_clave',
+            ],
+            [
                 'title' => '🔧 Mis reportes',
                 'description' => 'Las fallas que ya tienes abiertas, con su estado',
                 'action_type' => 'estado_servicio',

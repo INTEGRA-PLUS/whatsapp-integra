@@ -194,7 +194,7 @@ class DefaultWhatsAppMenuTest extends TestCase
         DefaultWhatsAppMenu::createFor($company);
 
         $this->assertSame(2, WhatsAppMenu::where('company_id', $company->id)->count());
-        $this->assertSame(15, WhatsAppMenuOption::whereIn(
+        $this->assertSame(16, WhatsAppMenuOption::whereIn(
             'menu_id',
             WhatsAppMenu::where('company_id', $company->id)->pluck('id')
         )->count());
@@ -255,7 +255,8 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertNotNull($submenu);
         $this->assertTrue($submenu->active);
         $this->assertFalse($submenu->is_root);
-        $this->assertCount(7, $submenu->options);
+        // Siete segmentos del contrato y, desde el 10-oct-2026, cambiar la clave del WiFi.
+        $this->assertCount(8, $submenu->options);
 
         // Con el principal apagado, el cliente no recibe nada: un submenú activo
         // sigue siendo inalcanzable por su cuenta.
@@ -289,10 +290,16 @@ class DefaultWhatsAppMenuTest extends TestCase
             ->with('options')
             ->firstOrFail();
 
-        $segments = $submenu->options->map->statusSegment();
+        // «Cambiar clave WiFi» no muestra ningún segmento: cambia la clave.
+        $segments = $submenu->options->where('action_type', 'estado_servicio')->values()->map->statusSegment();
 
         $this->assertSame(['plan', 'corte', 'contrato', 'wifi', 'soportes', 'television', 'datos'], $segments->all());
         $this->assertCount(7, $segments->unique());
+        $this->assertSame(
+            'cambiar_clave',
+            $submenu->options->sortBy('position')->values()->get(4)?->action_type,
+            'Va justo debajo de «Mi clave WiFi».'
+        );
 
         foreach ($segments as $segment) {
             $this->assertArrayHasKey($segment, WhatsAppMenuOption::STATUS_SEGMENTS);
@@ -430,7 +437,8 @@ class DefaultWhatsAppMenuTest extends TestCase
         $this->assertSame(DefaultWhatsAppMenu::SUBMENU_NAME, $submenu->name);
         $this->assertSame($submenu->id, $opcion->target_menu_id);
         $this->assertTrue($submenu->active);
-        $this->assertCount(7, $submenu->options);
+        // Siete segmentos del contrato y, desde el 10-oct-2026, cambiar la clave del WiFi.
+        $this->assertCount(8, $submenu->options);
     }
 
     /**
@@ -535,6 +543,37 @@ class DefaultWhatsAppMenuTest extends TestCase
      * aplica a demanda. Este test es sobre la plantilla de ISP, así que se
      * cambia una por otra a propósito.
      */
+    /**
+     * La migración del 10-oct-2026 añade «Cambiar clave WiFi» a los submenús
+     * ya en uso: justo debajo de «Mi clave WiFi», corriendo las siguientes en
+     * su sitio (sus ids viajan a WhatsApp) y sin duplicarla si se repite.
+     */
+    public function test_la_migracion_anade_cambiar_clave_a_un_submenu_en_uso(): void
+    {
+        $company = $this->company();
+        $submenu = WhatsAppMenu::where('company_id', $company->id)
+            ->where('name', DefaultWhatsAppMenu::SUBMENU_NAME)
+            ->firstOrFail();
+
+        // Como estaba antes: sin la opción nueva.
+        $submenu->options()->where('action_type', 'cambiar_clave')->delete();
+        $antes = $submenu->options()->orderBy('position')->get();
+        $wifi = $antes->first(fn ($o) => ($o->config['segmento'] ?? null) === 'wifi');
+        $siguiente = $antes->first(fn ($o) => $o->position > $wifi->position);
+        WhatsAppMenuOption::where('menu_id', $submenu->id)->where('position', '>', $wifi->position)->decrement('position');
+
+        $migracion = require database_path('migrations/2026_10_10_120000_agregar_cambiar_clave_wifi_a_los_menus.php');
+        $migracion->up();
+        $migracion->up();
+
+        $despues = $submenu->options()->orderBy('position')->get();
+
+        $this->assertSame(1, $despues->where('action_type', 'cambiar_clave')->count());
+        $nueva = $despues->firstWhere('action_type', 'cambiar_clave');
+        $this->assertSame($wifi->position + 1, $nueva->position);
+        $this->assertSame($nueva->position + 1, $despues->firstWhere('id', $siguiente->id)->position, 'La siguiente conserva su id y baja un puesto.');
+    }
+
     private function company(): Company
     {
         $company = Company::create(['name' => 'Cmnet', 'slug' => 'cmnet', 'active' => true]);

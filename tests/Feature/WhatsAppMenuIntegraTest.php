@@ -46,6 +46,12 @@ class WhatsAppMenuIntegraTest extends TestCase
     private bool $contactoBuscablePorCelular = true;
     private ?int $estadoContratoFalla = null;
 
+    /** El celular que Integra tiene en el contrato del cliente. */
+    private string $celularDelContrato = '3007852081';
+
+    /** Lo que responde Integra al cambiar la clave del WiFi; null = éxito. */
+    private ?array $wifiRechazo = null;
+
     /**
      * Lo que cada prueba quiera cambiar del resumen, sólo la rama que le
      * importa: el resto del payload sigue siendo el de fábrica.
@@ -84,6 +90,20 @@ class WhatsAppMenuIntegraTest extends TestCase
                     $this->servicioActivo ? 0 : 70000,
                     $this->resumenExtra
                 ));
+            }
+
+            if (str_contains($url, '/wifi')) {
+                if ($this->wifiRechazo) {
+                    return Http::response($this->wifiRechazo, 422);
+                }
+
+                return Http::response(['success' => true, 'data' => ['solicitud' => [
+                    'id' => 77,
+                    'contrato' => '15',
+                    'automatico' => true,
+                    'estado' => 'aplicando',
+                    'mensaje_cliente' => 'Listo, en unos minutos tu WiFi tendrá la clave nueva.',
+                ]]], 201);
             }
 
             if (str_contains($url, '/radicados')) {
@@ -601,6 +621,113 @@ class WhatsAppMenuIntegraTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Cambiar la clave del WiFi
+    // ------------------------------------------------------------------
+
+    /**
+     * Antes del 10-oct-2026 la opción contestaba «próximamente». Ahora pide la
+     * clave, avisa de la desconexión, la cambia en Integra y la tapa en el chat.
+     */
+    public function test_cambiar_clave_wifi_la_pide_y_la_cambia_en_integra(): void
+    {
+        $instance = $this->connectedInstance();
+        $this->conLaExtensionDelWifi($instance);
+        $option = $this->option($instance, 'Cambiar clave WiFi', 'cambiar_clave');
+
+        $this->tap($instance, $option);
+
+        $this->assertStringContainsString('clave nueva', $this->lastText());
+        $this->assertStringContainsString('se desconectarán', $this->lastText());
+        $this->assertSame(WhatsAppBotFlow::STEP_WIFI_PASSWORD, WhatsAppBotFlow::first()?->step);
+        // La clave todavía no existe: en el flujo no puede haber nada parecido.
+        $this->assertArrayNotHasKey('clave', WhatsAppBotFlow::first()->context);
+
+        $this->postSignedWebhook($this->inbound($instance, 'MiCasa2026!', 'wamid.INW1'))->assertOk();
+
+        $body = $this->lastBodyTo('/api/v1/contratos/15/wifi');
+        $this->assertSame('MiCasa2026!', $body['clave']);
+        $this->assertSame('40389154', $body['identificacion']);
+        $this->assertStringContainsString('en unos minutos tu WiFi', $this->lastText());
+
+        // En el chat no queda la clave a la vista del equipo.
+        $this->assertFalse(\App\Models\WhatsAppMessage::where('content', 'MiCasa2026!')->exists());
+        $this->assertTrue(\App\Models\WhatsAppMessage::where('content', 'like', '%oculta por seguridad%')->exists());
+    }
+
+    /** Cambiar la clave desconecta la casa: con la cédula de otro no basta. */
+    public function test_cambiar_clave_wifi_solo_desde_un_celular_del_contrato(): void
+    {
+        $instance = $this->connectedInstance();
+        $this->conLaExtensionDelWifi($instance);
+        $agent = $this->agent($instance, 'Laura');
+        $option = $this->option($instance, 'Cambiar clave WiFi', 'cambiar_clave');
+
+        $this->celularDelContrato = '3110000000';
+        $this->contactoBuscablePorCelular = false;
+
+        $this->tap($instance, $option);
+        $this->postSignedWebhook($this->inbound($instance, '40389154', 'wamid.INW2'))->assertOk();
+
+        $enviados = collect(Http::recorded())
+            ->map(fn ($par) => $par[0]->data()['text']['body'] ?? '')
+            ->implode("\n");
+        $this->assertStringContainsString('celular registrado en tu contrato', $enviados);
+        $this->assertSame($agent->id, WhatsAppConversation::first()->assigned_to);
+        $this->assertSame([], $this->lastBodyTo('/api/v1/contratos/15/wifi'));
+    }
+
+    /** Sin la extensión encendida, la empresa no ha dicho que sus clientes puedan hacerlo. */
+    public function test_cambiar_clave_wifi_sin_la_extension_pasa_a_un_asesor(): void
+    {
+        $instance = $this->connectedInstance();
+        $agent = $this->agent($instance, 'Laura');
+        $option = $this->option($instance, 'Cambiar clave WiFi', 'cambiar_clave');
+
+        $this->tap($instance, $option);
+
+        $this->assertStringContainsString('asesor', $this->lastText());
+        $this->assertSame($agent->id, WhatsAppConversation::first()->assigned_to);
+    }
+
+    public function test_una_clave_wifi_invalida_se_pide_otra_vez_sin_llamar_a_integra(): void
+    {
+        $instance = $this->connectedInstance();
+        $this->conLaExtensionDelWifi($instance);
+        $option = $this->option($instance, 'Cambiar clave WiFi', 'cambiar_clave');
+
+        $this->tap($instance, $option);
+        $this->postSignedWebhook($this->inbound($instance, 'corta', 'wamid.INW3'))->assertOk();
+
+        $this->assertStringContainsString('Esa clave no sirve', $this->lastText());
+        $this->assertSame(WhatsAppBotFlow::STEP_WIFI_PASSWORD, WhatsAppBotFlow::first()?->step);
+        $this->assertSame([], $this->lastBodyTo('/api/v1/contratos/15/wifi'));
+    }
+
+    /** El rechazo de Integra (ya hay una solicitud en curso) trae el motivo para el cliente. */
+    public function test_el_rechazo_de_integra_se_le_dice_al_cliente(): void
+    {
+        $instance = $this->connectedInstance();
+        $this->conLaExtensionDelWifi($instance);
+        $option = $this->option($instance, 'Cambiar clave WiFi', 'cambiar_clave');
+        $this->wifiRechazo = ['success' => false, 'message' => 'Ya tienes un cambio de clave en curso.'];
+
+        $this->tap($instance, $option);
+        $this->postSignedWebhook($this->inbound($instance, 'MiCasa2026!', 'wamid.INW4'))->assertOk();
+
+        $this->assertStringContainsString('Ya tienes un cambio de clave en curso', $this->lastText());
+    }
+
+    private function conLaExtensionDelWifi(Instance $instance): void
+    {
+        \App\Models\CompanyExtension::create([
+            'company_id' => $instance->company_id,
+            'slug' => 'wifi_password',
+            'enabled' => true,
+            'settings' => [],
+        ]);
+    }
+
+    // ------------------------------------------------------------------
     // Andamiaje
     // ------------------------------------------------------------------
 
@@ -929,7 +1056,7 @@ class WhatsAppMenuIntegraTest extends TestCase
                     'nombre' => 'MARIA TERESA',
                     'apellidos' => 'SANCHEZ',
                     'identificacion' => '40389154',
-                    'celular' => '3007852081',
+                    'celular' => $this->celularDelContrato,
                 ],
                 'resumen' => [
                     'total_contratos' => 1,

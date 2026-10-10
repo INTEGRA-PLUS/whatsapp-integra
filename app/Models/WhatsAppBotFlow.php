@@ -23,6 +23,9 @@ class WhatsAppBotFlow extends Model
     public const STEP_CONTRACT = 'awaiting_contract';
     public const STEP_REPORT = 'awaiting_report';
 
+    /** Esperando la clave nueva del WiFi (ver WhatsAppMenuActionService::changeWifi). */
+    public const STEP_WIFI_PASSWORD = 'awaiting_wifi_password';
+
     /**
      * La pregunta la hizo la IA, no una opción del menú.
      *

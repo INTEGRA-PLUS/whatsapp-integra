@@ -71,6 +71,14 @@ class WhatsAppMenuOption extends Model
             'label' => 'Estado del contrato',
             'reply' => null,
         ],
+        // Era «pendiente» hasta el 10-oct-2026: la API de Integra no tocaba el
+        // equipo del cliente. Ahora sí (`POST /contratos/{nro}/wifi`, la misma
+        // que usa la extensión del chat), y el menú la usa con dos frenos: la
+        // extensión encendida y un celular del contrato.
+        'cambiar_clave' => [
+            'label' => 'Cambiar clave WiFi',
+            'reply' => null,
+        ],
     ];
 
     /**
@@ -82,15 +90,10 @@ class WhatsAppMenuOption extends Model
      * implementar el caso: el tipo, la opción configurada y los menús ya
      * enviados siguen siendo los mismos.
      *
-     * Cambiar la clave del WiFi sigue aquí porque la API de Integra no expone
-     * hoy ninguna ruta que toque el Mikrotik/OLT del cliente.
+     * Hoy no queda ninguna: «Cambiar clave WiFi» pasó a INTEGRA_ACTIONS cuando
+     * Integra abrió la ruta que toca el equipo del cliente (10-oct-2026).
      */
-    public const PENDING_ACTIONS = [
-        'cambiar_clave' => [
-            'label' => 'Cambiar clave WiFi',
-            'reply' => 'Por ahora no puedo cambiar la clave desde aquí. Estamos habilitando esta opción muy pronto.',
-        ],
-    ];
+    public const PENDING_ACTIONS = [];
 
     public const ACTION_TYPES = [
         'reply_text', self::ACTION_IMAGE, 'submenu', 'handoff',

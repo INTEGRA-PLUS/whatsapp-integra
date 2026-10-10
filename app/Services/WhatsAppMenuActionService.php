@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\CompanyExtension;
 use App\Models\Instance;
 use App\Models\WhatsAppBotFlow;
 use App\Models\WhatsAppConversation;
 use App\Models\WhatsAppMenuOption;
+use App\Models\WhatsAppMessage;
 use App\Support\MenuActionResult;
 use Illuminate\Support\Facades\Log;
 
@@ -74,6 +76,7 @@ class WhatsAppMenuActionService
             WhatsAppBotFlow::STEP_IDENTIFICATION => $this->resumeIdentification($client, $instance, $conversation, $flow, $option, $text),
             WhatsAppBotFlow::STEP_CONTRACT => $this->resumeContract($client, $instance, $conversation, $flow, $option, $text),
             WhatsAppBotFlow::STEP_REPORT => $this->createTicket($client, $instance, $conversation, $option, $flow->context ?? [], $text),
+            WhatsAppBotFlow::STEP_WIFI_PASSWORD => $this->applyWifiPassword($client, $instance, $conversation, $option, $flow->context ?? [], $text),
             default => MenuActionResult::silent(),
         };
     }
@@ -98,6 +101,7 @@ class WhatsAppMenuActionService
                 'pagar_en_linea' => $this->payment($instance, $conversation, $option, $contact),
                 'estado_servicio' => $this->serviceStatus($client, $instance, $conversation, $option, $contact, $state),
                 'reportar_falla' => $this->reportFailure($client, $instance, $conversation, $option, $contact, $state),
+                'cambiar_clave' => $this->changeWifi($instance, $conversation, $option, $contact, $state),
                 default => MenuActionResult::silent(),
             };
         } catch (\RuntimeException $e) {
@@ -976,6 +980,207 @@ class WhatsAppMenuActionService
     }
 
     /**
+     * Cambiar la clave del WiFi: la primera mitad, hasta pedir la clave nueva.
+     *
+     * Usa la misma API que la extensión del chat (`POST /contratos/{nro}/wifi`),
+     * pero sin asesor delante, así que tiene dos frenos que el chat no necesita:
+     *
+     * - **La extensión tiene que estar encendida.** Es el interruptor con el que
+     *   la empresa decide si sus clientes pueden cambiar la clave; sin él, la
+     *   petición pasa a una persona en vez de quedarse sin respuesta.
+     * - **Tiene que escribir desde un celular del contrato.** Cambiar la clave
+     *   desconecta todos los equipos de la casa. Con la cédula sola, cualquiera
+     *   que la conozca se lo podría hacer al vecino; la cédula se le pide a
+     *   cualquiera para consultar facturas, pero esto no es una consulta.
+     *
+     * Se pregunta UNA vez y la clave se aplica al recibirla. El aviso de que se
+     * desconectarán los equipos va en la misma pregunta: un segundo paso de
+     * «¿confirmas?» obligaría a guardar la clave mientras tanto.
+     */
+    private function changeWifi(
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        ?WhatsAppMenuOption $option,
+        array $contact,
+        array $state
+    ): MenuActionResult {
+        $activa = CompanyExtension::where('company_id', $instance->company_id)
+            ->where('slug', 'wifi_password')
+            ->where('enabled', true)
+            ->exists();
+
+        if (!$activa) {
+            return MenuActionResult::escalate(
+                'Para cambiar la clave de tu WiFi te comunico con un asesor, que te ayuda en un momento.'
+            );
+        }
+
+        if (!$this->escribeDesdeUnCelularDelContrato($conversation, $contact)) {
+            Log::channel('whatsapp')->info('🔐 Cambio de clave WiFi: el WhatsApp no es un celular del contrato', [
+                'conversation_id' => $conversation->id,
+                'cliente_id' => $contact['id'] ?? null,
+            ]);
+
+            return MenuActionResult::escalate(
+                'Por tu seguridad, la clave del WiFi sólo se puede cambiar desde el celular registrado en tu contrato. '
+                .'Te comunico con un asesor para ayudarte.'
+            );
+        }
+
+        $contract = $this->pickContract($contact, $state);
+
+        if ($contract === null) {
+            return $this->contractQuestion($contact, 'cambiar_clave', $option?->id);
+        }
+
+        if (!$contract) {
+            return MenuActionResult::escalate(
+                'No encuentro un servicio activo a tu nombre. Te comunico con un asesor.'
+            );
+        }
+
+        return MenuActionResult::ask(
+            "🔐 *Cambiar la clave de tu WiFi*\n\n"
+                ."Escríbeme la *clave nueva* que quieres poner. Debe tener entre 8 y 63 caracteres, sin tildes ni ñ.\n\n"
+                ."⚠️ Al cambiarla, *todos tus equipos se desconectarán* del WiFi y tendrás que volver a conectarlos con la clave nueva.\n\n"
+                ."Si prefieres no cambiarla, escribe *MENU*.",
+            WhatsAppBotFlow::STEP_WIFI_PASSWORD,
+            [
+                'action' => 'cambiar_clave',
+                'option_id' => $option?->id,
+                'cliente' => $this->clientPayload($contact),
+                'contrato_nro' => (string) ($contract['nro'] ?? ''),
+                'attempts' => 0,
+            ]
+        );
+    }
+
+    /**
+     * La segunda mitad: llegó la clave nueva.
+     *
+     * La clave no se guarda en ningún sitio de este lado —ni en el flujo, ni
+     * en el log— y el mensaje en que la escribió se oculta en el chat, que
+     * es el único sitio donde quedaría a la vista del equipo.
+     */
+    private function applyWifiPassword(
+        IntegraClient $client,
+        Instance $instance,
+        WhatsAppConversation $conversation,
+        ?WhatsAppMenuOption $option,
+        array $context,
+        string $text
+    ): MenuActionResult {
+        $clave = trim($text);
+        $attempts = (int) ($context['attempts'] ?? 0) + 1;
+
+        // Lo mismo que valida Integra: ASCII imprimible, de 8 a 63. Se comprueba
+        // aquí para poder pedirla otra vez sin gastar la llamada.
+        if (!preg_match('/^[\x20-\x7E]{8,63}$/', $clave)) {
+            $this->ocultarClave($conversation, $text);
+
+            if ($attempts >= WhatsAppBotFlow::MAX_ATTEMPTS) {
+                return MenuActionResult::escalate(
+                    'No logré registrar la clave. Te comunico con un asesor para ayudarte a cambiarla.'
+                );
+            }
+
+            return MenuActionResult::ask(
+                'Esa clave no sirve: debe tener entre 8 y 63 caracteres, sin tildes, sin ñ y sin emojis. '
+                .'Escríbeme otra, o *MENU* para cancelar.',
+                WhatsAppBotFlow::STEP_WIFI_PASSWORD,
+                ['attempts' => $attempts] + $context
+            );
+        }
+
+        try {
+            $solicitud = $client->changeWifiPassword(
+                (string) ($context['contrato_nro'] ?? ''),
+                $clave,
+                (string) data_get($context, 'cliente.identificacion', '')
+            );
+        } catch (\RuntimeException $e) {
+            $this->ocultarClave($conversation, $text);
+
+            // 422 trae el motivo ya redactado por Integra (clave inválida, o ya
+            // hay una solicitud en curso): es para el cliente, no un fallo.
+            if ($e->getCode() === 422) {
+                return MenuActionResult::reply('⚠️ '.$e->getMessage());
+            }
+
+            return $this->integraFailed($option, $conversation, $e);
+        }
+
+        $this->ocultarClave($conversation, $text);
+
+        $this->emit($instance, $conversation, 'wifi.password_changed', [
+            'cliente' => data_get($context, 'cliente'),
+            'contrato_nro' => $context['contrato_nro'] ?? null,
+            'automatico' => (bool) ($solicitud['automatico'] ?? false),
+            'estado' => $solicitud['estado'] ?? null,
+        ]);
+
+        Log::channel('whatsapp')->info('🔐 Clave WiFi cambiada desde el menú', [
+            'conversation_id' => $conversation->id,
+            'contrato_nro' => $context['contrato_nro'] ?? null,
+            'automatico' => $solicitud['automatico'] ?? null,
+        ]);
+
+        $mensaje = trim((string) ($solicitud['mensaje_cliente'] ?? ''));
+
+        if ($mensaje === '') {
+            $mensaje = ($solicitud['automatico'] ?? false)
+                ? "✅ *Listo.* En unos minutos tu WiFi tendrá la clave nueva y tus equipos se desconectarán: vuelve a conectarlos con ella."
+                : "✅ *Solicitud registrada.* Nuestro equipo aplicará la clave nueva en tu equipo y te avisaremos cuando esté lista.";
+        }
+
+        return MenuActionResult::reply($mensaje);
+    }
+
+    /**
+     * ¿El WhatsApp desde el que escribe es uno de los teléfonos del contacto?
+     *
+     * Integra guarda los teléfonos a 10 dígitos y WhatsApp llega con el
+     * indicativo: se comparan los últimos 10. Un cliente que oculta su número
+     * (BSUID) no tiene con qué compararse, y no pasa.
+     */
+    private function escribeDesdeUnCelularDelContrato(WhatsAppConversation $conversation, array $contact): bool
+    {
+        if (!$conversation->hasPhone()) {
+            return false;
+        }
+
+        $propio = substr(preg_replace('/\D+/', '', (string) $conversation->phone_number), -10);
+
+        if (strlen($propio) < 10) {
+            return false;
+        }
+
+        $telefonos = [];
+        foreach ([$contact, (array) ($contact['contacto'] ?? [])] as $fuente) {
+            foreach (['celular', 'celular2', 'telefono', 'telefono1', 'telefono2', 'whatsapp'] as $campo) {
+                $digitos = preg_replace('/\D+/', '', (string) ($fuente[$campo] ?? ''));
+
+                if (strlen($digitos) >= 10) {
+                    $telefonos[] = substr($digitos, -10);
+                }
+            }
+        }
+
+        return in_array($propio, $telefonos, true);
+    }
+
+    /** Tapa en el chat el mensaje en que el cliente escribió la clave. */
+    private function ocultarClave(WhatsAppConversation $conversation, string $text): void
+    {
+        WhatsAppMessage::where('conversation_id', $conversation->id)
+            ->where('direction', 'inbound')
+            ->where('content', $text)
+            ->latest('id')
+            ->limit(1)
+            ->update(['content' => '🔒 Clave WiFi (oculta por seguridad)']);
+    }
+
+    /**
      * El estado del contrato, si se puede consultar.
      *
      * Mirar si el servicio está cortado por mora es una conveniencia —ahorra un
@@ -1212,6 +1417,7 @@ class WhatsAppMenuActionService
             'pagar_en_linea' => 'generar tu pago',
             'reportar_falla' => 'registrar tu reporte',
             'estado_servicio' => 'revisar tu servicio',
+            'cambiar_clave' => 'cambiar tu clave WiFi',
             default => 'ayudarte',
         };
 

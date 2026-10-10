@@ -127,8 +127,8 @@ export const ACTION_HELP = {
         needs: 'Bajo qué servicio de Integra entra el radicado. Ojo: la falla la describe el cliente con sus palabras; esto es sólo la categoría con la que se archiva. Sin ella no se puede crear y el cliente acaba con un asesor.',
     },
     cambiar_clave: {
-        does: 'Todavía no cambia nada: responde un aviso de que la función está en camino.',
-        needs: 'Tu propio texto, para que el cliente no quede sin salida.',
+        does: 'Le pide la clave nueva avisándole de que se le desconectarán los equipos, y la cambia en Integra: llega sola al equipo si está en el ACS o queda como solicitud para tu equipo. La clave no se guarda y su mensaje se oculta en el chat.',
+        needs: 'La extensión «Cambio de clave WiFi» encendida. Por seguridad sólo funciona si escribe desde un celular del contrato; si no, pasa a un asesor.',
     },
     ia: {
         does: 'La contesta la IA con lo que le enseñaste: tu prompt, tu contexto y los documentos que subiste en «IA que responde». Para lo que cambia —tarifas, horarios, requisitos, reglamento—: se actualiza el documento y la respuesta se actualiza sola, sin volver a escribirla aquí.',
@@ -212,8 +212,9 @@ export const ACTION_SAMPLES = {
         '(por ejemplo: *sin internet desde anoche*, *se corta a ratos*, ' +
         '*el televisor no da señal*).',
     cambiar_clave:
-        'Por ahora no puedo cambiar la clave desde aquí. Estamos habilitando ' +
-        'esta opción muy pronto.',
+        '🔐 *Cambiar la clave de tu WiFi*\n\n' +
+        'Escríbeme la *clave nueva* que quieres poner. Debe tener entre 8 y 63 caracteres, sin tildes ni ñ.\n\n' +
+        '⚠️ Al cambiarla, *todos tus equipos se desconectarán* del WiFi y tendrás que volver a conectarlos con la clave nueva.',
 };
 
 /** Y lo mismo para cada parte del servicio que puede mostrar "Estado del contrato". */

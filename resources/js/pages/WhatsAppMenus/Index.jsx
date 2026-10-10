@@ -2676,7 +2676,7 @@ function describeOption(option, actionMeta, target, empresa = '') {
             return 'Le decimos cuánto debe y le entregamos tu enlace de pago'
                 + (option.config?.payment_url ? '.' : ' ⚠️ que todavía no has configurado: vería el total sin dónde pagar.');
         case 'cambiar_clave':
-            return 'Todavía no existe la integración detrás: recibe un aviso de «próximamente». Escríbele tu propio texto para que sepa a dónde acudir.';
+            return 'Si escribe desde un celular de su contrato, le pedimos la clave nueva y la cambiamos en Integra. Si no, o si la extensión «Cambio de clave WiFi» está apagada, pasa a un asesor.';
         default:
             return label + '.';
     }
